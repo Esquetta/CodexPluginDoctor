@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-templates",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid resources/templates/list result.",
+  "mcpServers": "./.mcp.json"
+}
+

@@ -217,8 +217,31 @@ describe("runCli", () => {
     expect(stderr.join("")).toContain("<- tools/list");
     expect(stderr.join("")).toContain("<- tools/call");
     expect(stderr.join("")).toContain("<- resources/list");
+    expect(stderr.join("")).toContain("<- resources/read");
+    expect(stderr.join("")).toContain("<- resources/templates/list");
     expect(stderr.join("")).toContain("<- prompts/list");
+    expect(stderr.join("")).toContain("<- prompts/get");
     expect(() => JSON.parse(stdout.join(""))).not.toThrow();
+  });
+
+  it("redacts generated prompt argument values in verbose runtime transcripts", async () => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/runtime-valid", "--json", "--runtime", "--verbose-runtime"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: true,
+          stderrIsTTY: true,
+          env: {}
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join("")).toContain("\"diff\":\"[REDACTED]\"");
+    expect(stderr.join("")).not.toContain("codex-plugin-doctor-probe");
   });
 
   it("renders ASCII-safe output when --ascii is requested", async () => {

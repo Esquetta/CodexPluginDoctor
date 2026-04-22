@@ -13,6 +13,7 @@ export interface CheckResult {
   status: "pass" | "warn" | "fail";
   exitCode: 0 | 1;
   findings: Finding[];
+  runtimeScorecard?: RuntimeScorecard;
 }
 
 export interface CheckOptions {
@@ -39,6 +40,7 @@ export interface JsonReportSummary {
   status: "pass" | "warn" | "fail";
   exitCode: 0 | 1;
   runtimeProbeEnabled: boolean;
+  runtimeScorecard?: RuntimeScorecard;
   findingCounts: {
     fail: number;
     warn: number;
@@ -51,4 +53,27 @@ export interface JsonReport {
   generatedAt: string;
   summary: JsonReportSummary;
   findings: Finding[];
+}
+
+export type RuntimeCapabilityStatus =
+  | "pass"
+  | "fail"
+  | "warn"
+  | "skipped"
+  | "unsupported";
+
+export interface RuntimeScorecard {
+  initialize: RuntimeCapabilityStatus;
+  toolsList: RuntimeCapabilityStatus;
+  toolsCall: RuntimeCapabilityStatus;
+  resourcesList: RuntimeCapabilityStatus;
+  resourceRead: RuntimeCapabilityStatus;
+  resourceTemplatesList: RuntimeCapabilityStatus;
+  promptsList: RuntimeCapabilityStatus;
+  promptGet: RuntimeCapabilityStatus;
+}
+
+export interface RuntimeProbeResult {
+  findings: Finding[];
+  scorecard: RuntimeScorecard;
 }

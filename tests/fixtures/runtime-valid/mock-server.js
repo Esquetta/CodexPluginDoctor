@@ -69,6 +69,24 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (message.method === "resources/templates/list") {
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          resourceTemplates: [
+            {
+              name: "doc",
+              uriTemplate: "file:///workspace/docs/{name}.md"
+            }
+          ]
+        }
+      })}\n`
+    );
+    return;
+  }
+
   if (message.method === "prompts/list") {
     process.stdout.write(
       `${JSON.stringify({
@@ -94,6 +112,20 @@ rl.on("line", (line) => {
   }
 
   if (message.method === "prompts/get") {
+    if (message.params?.arguments?.diff !== "codex-plugin-doctor-probe") {
+      process.stdout.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: message.id,
+          error: {
+            code: -32602,
+            message: "Missing required diff argument"
+          }
+        })}\n`
+      );
+      return;
+    }
+
     process.stdout.write(
       `${JSON.stringify({
         jsonrpc: "2.0",

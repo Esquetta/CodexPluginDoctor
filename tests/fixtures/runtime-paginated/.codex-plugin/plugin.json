@@ -1,0 +1,7 @@
+{
+  "name": "runtime-paginated",
+  "version": "1.0.0",
+  "description": "Fixture with paginated tools, resources, templates, and prompts.",
+  "mcpServers": "./.mcp.json"
+}
+

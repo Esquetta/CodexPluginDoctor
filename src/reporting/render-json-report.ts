@@ -19,6 +19,9 @@ export function buildJsonReport(
       status: result.status,
       exitCode: result.exitCode,
       runtimeProbeEnabled: options.runtimeProbeEnabled,
+      ...(result.runtimeScorecard
+        ? { runtimeScorecard: result.runtimeScorecard }
+        : {}),
       findingCounts: {
         fail: failCount,
         warn: warnCount,

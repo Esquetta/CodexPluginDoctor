@@ -27,7 +27,21 @@ export function buildMarkdownReport(
 
   if (result.findings.length === 0) {
     lines.push("", "No findings.");
-    return lines.join("\n");
+      return lines.join("\n");
+  }
+
+  if (result.runtimeScorecard) {
+    lines.push("", "## Runtime Scorecard", "");
+    lines.push("| Operation | Status |");
+    lines.push("| --- | --- |");
+    lines.push(`| initialize | ${result.runtimeScorecard.initialize.toUpperCase()} |`);
+    lines.push(`| tools/list | ${result.runtimeScorecard.toolsList.toUpperCase()} |`);
+    lines.push(`| tools/call | ${result.runtimeScorecard.toolsCall.toUpperCase()} |`);
+    lines.push(`| resources/list | ${result.runtimeScorecard.resourcesList.toUpperCase()} |`);
+    lines.push(`| resources/read | ${result.runtimeScorecard.resourceRead.toUpperCase()} |`);
+    lines.push(`| resources/templates/list | ${result.runtimeScorecard.resourceTemplatesList.toUpperCase()} |`);
+    lines.push(`| prompts/list | ${result.runtimeScorecard.promptsList.toUpperCase()} |`);
+    lines.push(`| prompts/get | ${result.runtimeScorecard.promptGet.toUpperCase()} |`);
   }
 
   lines.push("", "## Findings", "");

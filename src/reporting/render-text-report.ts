@@ -45,6 +45,18 @@ export function renderTextReport(
   ];
 
   if (result.findings.length === 0) {
+    if (result.runtimeScorecard) {
+      lines.push("", "Runtime Scorecard", "----------------");
+      lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
+      lines.push(`tools/list: ${result.runtimeScorecard.toolsList}`);
+      lines.push(`tools/call: ${result.runtimeScorecard.toolsCall}`);
+      lines.push(`resources/list: ${result.runtimeScorecard.resourcesList}`);
+      lines.push(`resources/read: ${result.runtimeScorecard.resourceRead}`);
+      lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
+      lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
+      lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
+    }
+
     lines.push("", "No findings.");
     return lines.join("\n");
   }
@@ -73,6 +85,18 @@ export function renderTextReport(
 
   appendSection("Failures", failures, glyphs.fail);
   appendSection("Warnings", warnings, glyphs.warn);
+
+  if (result.runtimeScorecard) {
+    lines.push("", "Runtime Scorecard", "----------------");
+    lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
+    lines.push(`tools/list: ${result.runtimeScorecard.toolsList}`);
+    lines.push(`tools/call: ${result.runtimeScorecard.toolsCall}`);
+    lines.push(`resources/list: ${result.runtimeScorecard.resourcesList}`);
+    lines.push(`resources/read: ${result.runtimeScorecard.resourceRead}`);
+    lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
+    lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
+    lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
+  }
 
   return lines.join("\n");
 }

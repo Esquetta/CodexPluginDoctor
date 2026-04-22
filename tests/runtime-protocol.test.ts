@@ -11,6 +11,15 @@ describe("runtime protocol probing", () => {
 
     expect(result.status).toBe("pass");
     expect(result.findings).toEqual([]);
+    expect(result.runtimeScorecard).toBeDefined();
+    expect(result.runtimeScorecard?.initialize).toBe("pass");
+    expect(result.runtimeScorecard?.toolsList).toBe("pass");
+    expect(result.runtimeScorecard?.toolsCall).toBe("pass");
+    expect(result.runtimeScorecard?.resourcesList).toBe("pass");
+    expect(result.runtimeScorecard?.resourceRead).toBe("pass");
+    expect(result.runtimeScorecard?.resourceTemplatesList).toBe("pass");
+    expect(result.runtimeScorecard?.promptsList).toBe("pass");
+    expect(result.runtimeScorecard?.promptGet).toBe("pass");
   });
 
   it("fails when initialize returns an invalid MCP response", async () => {
@@ -140,6 +149,38 @@ describe("runtime protocol probing", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.runtime.prompt_get.invalid",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("passes when list operations paginate across multiple pages", async () => {
+    const result = await runCheck(path.resolve("tests/fixtures/runtime-paginated"), {
+      runtime: true
+    });
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+    expect(result.runtimeScorecard?.toolsList).toBe("pass");
+    expect(result.runtimeScorecard?.resourcesList).toBe("pass");
+    expect(result.runtimeScorecard?.resourceTemplatesList).toBe("pass");
+    expect(result.runtimeScorecard?.promptsList).toBe("pass");
+  });
+
+  it("fails when resources/templates/list returns invalid resource template definitions", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-invalid-templates"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.resource_templates_list.invalid",
           severity: "fail"
         })
       ])

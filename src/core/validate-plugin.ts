@@ -439,16 +439,18 @@ export async function validatePlugin(
     };
   }
 
+  const runtimeResult = options.runtime
+    ? await probeRuntime(discoveredPackage, {
+        transcript: options.runtimeTranscript
+      })
+    : null;
+
   const findings = [
     ...validateRequiredManifestFields(discoveredPackage),
     ...(await validateSkillsDirectory(discoveredPackage)),
     ...(await validateSkillDefinitions(discoveredPackage)),
     ...(await validateMcpConfig(discoveredPackage)),
-    ...(options.runtime
-      ? await probeRuntime(discoveredPackage, {
-          transcript: options.runtimeTranscript
-        })
-      : [])
+    ...(runtimeResult ? runtimeResult.findings : [])
   ];
 
   const hasFailures = findings.some((finding) => finding.severity === "fail");
@@ -459,7 +461,8 @@ export async function validatePlugin(
       targetPath: discoveredPackage.rootPath,
       status: "pass",
       exitCode: 0,
-      findings: []
+      findings: [],
+      ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {})
     };
   }
 
@@ -467,6 +470,7 @@ export async function validatePlugin(
     targetPath: discoveredPackage.rootPath,
     status: hasFailures ? "fail" : "warn",
     exitCode: hasFailures ? 1 : 0,
-    findings
+    findings,
+    ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {})
   };
 }
