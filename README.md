@@ -22,7 +22,7 @@ The first working slice validates:
 - referenced `skills` directory existence when declared
 - `SKILL.md` presence and required frontmatter fields for declared skills
 - optional `.mcp.json` discovery and structural validation
-- opt-in runtime probing for command-based MCP servers with real MCP `initialize` and `tools/list` validation
+- opt-in runtime probing for command-based MCP servers with real MCP `initialize`, `tools/list`, and `tools/call` validation
 - security checks for path traversal and hard-coded secret-like env values
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing
@@ -98,7 +98,7 @@ The next implementation slices are:
 
 1. Add deeper schema and context-bloat heuristics.
 2. Expand security rules beyond path and env checks.
-3. Add richer MCP transport validation beyond `tools/list`, including more protocol error paths.
+3. Add richer MCP transport validation beyond `tools/call`, including more protocol error paths.
 4. Introduce package-path configuration in CI examples.
 5. Add GitHub Action artifact publishing and richer summary formatting.
 

@@ -19,7 +19,7 @@ rl.on("line", (line) => {
             tools: {}
           },
           serverInfo: {
-            name: "valid-runtime-server",
+            name: "invalid-call-server",
             version: "1.0.0"
           }
         }
@@ -57,14 +57,12 @@ rl.on("line", (line) => {
         jsonrpc: "2.0",
         id: message.id,
         result: {
-          content: [
-            {
-              type: "text",
-              text: "pong"
-            }
-          ]
+          structuredContent: {
+            ok: true
+          }
         }
       })}\n`
     );
   }
 });
+

@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-call",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid tools/call result.",
+  "mcpServers": "./.mcp.json"
+}
+

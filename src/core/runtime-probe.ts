@@ -290,28 +290,117 @@ async function probeCommandServer(input: {
       return isPlainObject(capabilities) && isPlainObject(capabilities.tools);
     };
 
-    const isValidToolsListResult = (message: Record<string, unknown>): boolean => {
+    type ToolDefinition = {
+      name: string;
+      inputSchema: Record<string, unknown>;
+    };
+
+    const extractTools = (
+      message: Record<string, unknown>
+    ): ToolDefinition[] | null => {
       if (!isPlainObject(message.result)) {
-        return false;
+        return null;
       }
 
       const tools = message.result.tools;
 
       if (!Array.isArray(tools)) {
+        return null;
+      }
+
+      const parsedTools: ToolDefinition[] = [];
+
+      for (const tool of tools) {
+        if (!isPlainObject(tool)) {
+          return null;
+        }
+
+        if (
+          typeof tool.name !== "string" ||
+          !isPlainObject(tool.inputSchema) ||
+          tool.inputSchema.type !== "object"
+        ) {
+          return null;
+        }
+
+        parsedTools.push({
+          name: tool.name,
+          inputSchema: tool.inputSchema
+        });
+      }
+
+      return parsedTools;
+    };
+
+    const findCallableTool = (
+      tools: ToolDefinition[]
+    ): ToolDefinition | null => {
+      for (const tool of tools) {
+        const required = tool.inputSchema.required;
+
+        if (required === undefined) {
+          return tool;
+        }
+
+        if (Array.isArray(required) && required.length === 0) {
+          return tool;
+        }
+      }
+
+      return null;
+    };
+
+    const isValidContentBlock = (value: unknown): boolean => {
+      if (!isPlainObject(value) || typeof value.type !== "string") {
         return false;
       }
 
-      return tools.every((tool) => {
-        if (!isPlainObject(tool)) {
+      switch (value.type) {
+        case "text":
+          return typeof value.text === "string";
+        case "image":
+        case "audio":
+          return (
+            typeof value.data === "string" &&
+            typeof value.mimeType === "string"
+          );
+        case "resource":
+          return (
+            isPlainObject(value.resource) &&
+            typeof value.resource.uri === "string" &&
+            (typeof value.resource.text === "string" ||
+              typeof value.resource.blob === "string")
+          );
+        case "resource_link":
+          return typeof value.uri === "string";
+        default:
           return false;
-        }
+      }
+    };
 
-        return (
-          typeof tool.name === "string" &&
-          isPlainObject(tool.inputSchema) &&
-          tool.inputSchema.type === "object"
-        );
-      });
+    const isValidCallToolResult = (message: Record<string, unknown>): boolean => {
+      if (!isPlainObject(message.result)) {
+        return false;
+      }
+
+      const result = message.result;
+
+      if (!Array.isArray(result.content)) {
+        return false;
+      }
+
+      if (
+        result.structuredContent !== undefined &&
+        !isPlainObject(result.structuredContent)
+      ) {
+        return false;
+      }
+
+      if (result.isError !== undefined && typeof result.isError !== "boolean") {
+        return false;
+      }
+
+      return result.content.every((content) => isValidContentBlock(content));
     };
 
     const runProtocolProbe = async () => {
@@ -377,13 +466,56 @@ async function probeCommandServer(input: {
         )
       );
 
-      if (!isValidToolsListResult(toolsListResponse)) {
+      const tools = extractTools(toolsListResponse);
+
+      if (!tools) {
         settle(
           buildFailure(
             "plugin.runtime.tools_list.invalid",
             `The MCP server \`${serverName}\` returned an invalid tools/list result.`,
             "Codex cannot safely consume malformed tool definitions from `tools/list`.",
             "Return a `tools` array where every tool has a string `name` and an object-shaped `inputSchema` with `type: \"object\"`."
+          )
+        );
+        return;
+      }
+
+      const callableTool = findCallableTool(tools);
+
+      if (!callableTool) {
+        settle(
+          buildWarning(
+            "plugin.runtime.tool_call.skipped",
+            `The MCP server \`${serverName}\` does not expose a safely callable zero-argument tool for probing.`,
+            "The validator confirmed tool discovery but could not safely perform a non-destructive `tools/call` probe.",
+            "Expose at least one zero-argument healthcheck-style tool to enable deeper runtime validation."
+          )
+        );
+        return;
+      }
+
+      const toolCallResponse = await sendRequest(
+        3,
+        "tools/call",
+        {
+          name: callableTool.name,
+          arguments: {}
+        },
+        buildFailure(
+          "plugin.runtime.tool_call.timeout",
+          `The MCP server \`${serverName}\` did not answer the tools/call request in time.`,
+          "A server that cannot complete a basic tool invocation in time will feel broken in real Codex usage.",
+          "Inspect the selected tool implementation and reduce its response latency."
+        )
+      );
+
+      if (!isValidCallToolResult(toolCallResponse)) {
+        settle(
+          buildFailure(
+            "plugin.runtime.tool_call.invalid",
+            `The MCP server \`${serverName}\` returned an invalid tools/call result.`,
+            "Codex cannot safely consume malformed tool call results from the server.",
+            "Return a CallToolResult with a `content` array containing valid MCP content blocks."
           )
         );
         return;
