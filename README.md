@@ -23,7 +23,7 @@ The first working slice validates:
 - `SKILL.md` presence and required frontmatter fields for declared skills
 - optional `.mcp.json` discovery and structural validation
 - opt-in runtime probing for command-based MCP servers with real MCP `initialize`, `tools/list`, and `tools/call` validation
-- capability-gated `resources/list` and `prompts/list` runtime validation
+- capability-gated `resources/list`, `resources/read`, `prompts/list`, and `prompts/get` runtime validation
 - security checks for path traversal and hard-coded secret-like env values
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing

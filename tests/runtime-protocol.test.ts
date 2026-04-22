@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { runCheck } from "../src/index.js";
 
 describe("runtime protocol probing", () => {
-  it("passes when the stdio server completes initialize and supports tools, resources, and prompts probing", async () => {
+  it("passes when the stdio server completes initialize and supports tools, resources, prompts, read, and get probing", async () => {
     const result = await runCheck(path.resolve("tests/fixtures/runtime-valid"), {
       runtime: true
     });
@@ -102,6 +102,44 @@ describe("runtime protocol probing", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.runtime.prompts_list.invalid",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when resources/read returns invalid resource contents", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-invalid-read"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.resource_read.invalid",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when prompts/get returns invalid prompt messages", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-invalid-get"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.prompt_get.invalid",
           severity: "fail"
         })
       ])

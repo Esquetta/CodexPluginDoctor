@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-get",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid prompts/get result.",
+  "mcpServers": "./.mcp.json"
+}
+

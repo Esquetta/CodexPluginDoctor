@@ -450,6 +450,69 @@ async function probeCommandServer(input: {
       });
     };
 
+    type ResourceDefinition = {
+      name: string;
+      uri: string;
+    };
+
+    const extractResources = (
+      message: Record<string, unknown>
+    ): ResourceDefinition[] | null => {
+      if (!isPlainObject(message.result)) {
+        return null;
+      }
+
+      const resources = message.result.resources;
+
+      if (!Array.isArray(resources)) {
+        return null;
+      }
+
+      const parsedResources: ResourceDefinition[] = [];
+
+      for (const resource of resources) {
+        if (
+          !isPlainObject(resource) ||
+          typeof resource.name !== "string" ||
+          typeof resource.uri !== "string"
+        ) {
+          return null;
+        }
+
+        parsedResources.push({
+          name: resource.name,
+          uri: resource.uri
+        });
+      }
+
+      return parsedResources;
+    };
+
+    const isValidReadResourceResult = (
+      message: Record<string, unknown>
+    ): boolean => {
+      if (!isPlainObject(message.result)) {
+        return false;
+      }
+
+      const contents = message.result.contents;
+
+      if (!Array.isArray(contents)) {
+        return false;
+      }
+
+      return contents.every((content) => {
+        if (!isPlainObject(content) || typeof content.uri !== "string") {
+          return false;
+        }
+
+        const hasText = typeof content.text === "string";
+        const hasBlob = typeof content.blob === "string";
+
+        return hasText || hasBlob;
+      });
+    };
+
     const isValidPromptsListResult = (
       message: Record<string, unknown>
     ): boolean => {
@@ -484,6 +547,111 @@ async function probeCommandServer(input: {
               typeof argument.required === "boolean")
           );
         });
+      });
+    };
+
+    type PromptDefinition = {
+      name: string;
+      arguments?: Array<{
+        name: string;
+        required?: boolean;
+      }>;
+    };
+
+    const extractPrompts = (
+      message: Record<string, unknown>
+    ): PromptDefinition[] | null => {
+      if (!isPlainObject(message.result)) {
+        return null;
+      }
+
+      const prompts = message.result.prompts;
+
+      if (!Array.isArray(prompts)) {
+        return null;
+      }
+
+      const parsedPrompts: PromptDefinition[] = [];
+
+      for (const prompt of prompts) {
+        if (!isPlainObject(prompt) || typeof prompt.name !== "string") {
+          return null;
+        }
+
+        let promptArguments:
+          | Array<{ name: string; required?: boolean }>
+          | undefined;
+
+        if (prompt.arguments !== undefined) {
+          if (!Array.isArray(prompt.arguments)) {
+            return null;
+          }
+
+          promptArguments = [];
+
+          for (const argument of prompt.arguments) {
+            if (
+              !isPlainObject(argument) ||
+              typeof argument.name !== "string" ||
+              (argument.required !== undefined &&
+                typeof argument.required !== "boolean")
+            ) {
+              return null;
+            }
+
+            promptArguments.push({
+              name: argument.name,
+              required:
+                typeof argument.required === "boolean"
+                  ? argument.required
+                  : undefined
+            });
+          }
+        }
+
+        parsedPrompts.push({
+          name: prompt.name,
+          arguments: promptArguments
+        });
+      }
+
+      return parsedPrompts;
+    };
+
+    const findPromptForGet = (
+      prompts: PromptDefinition[]
+    ): PromptDefinition | null => {
+      for (const prompt of prompts) {
+        const requiredArguments =
+          prompt.arguments?.filter((argument) => argument.required) ?? [];
+
+        if (requiredArguments.length === 0) {
+          return prompt;
+        }
+      }
+
+      return null;
+    };
+
+    const isValidPromptGetResult = (
+      message: Record<string, unknown>
+    ): boolean => {
+      if (!isPlainObject(message.result)) {
+        return false;
+      }
+
+      const messages = message.result.messages;
+
+      if (!Array.isArray(messages)) {
+        return false;
+      }
+
+      return messages.every((promptMessage) => {
+        return (
+          isPlainObject(promptMessage) &&
+          (promptMessage.role === "user" || promptMessage.role === "assistant") &&
+          isValidContentBlock(promptMessage.content)
+        );
       });
     };
 
@@ -623,7 +791,9 @@ async function probeCommandServer(input: {
         );
         transcript?.("<- resources/list");
 
-        if (!isValidResourcesListResult(resourcesListResponse)) {
+        const resources = extractResources(resourcesListResponse);
+
+        if (!resources || !isValidResourcesListResult(resourcesListResponse)) {
           settle(
             buildFailure(
               "plugin.runtime.resources_list.invalid",
@@ -634,11 +804,40 @@ async function probeCommandServer(input: {
           );
           return;
         }
+
+        if (resources.length > 0) {
+          const resourceReadResponse = await sendRequest(
+            5,
+            "resources/read",
+            {
+              uri: resources[0].uri
+            },
+            buildFailure(
+              "plugin.runtime.resource_read.timeout",
+              `The MCP server \`${serverName}\` did not answer the resources/read request in time.`,
+              "A server that lists resources but cannot read them in time will feel broken in Codex.",
+              "Inspect the resource read path and reduce latency before returning resource contents."
+            )
+          );
+          transcript?.("<- resources/read");
+
+          if (!isValidReadResourceResult(resourceReadResponse)) {
+            settle(
+              buildFailure(
+                "plugin.runtime.resource_read.invalid",
+                `The MCP server \`${serverName}\` returned an invalid resources/read result.`,
+                "Codex cannot safely consume malformed resource contents from `resources/read`.",
+                "Return a `contents` array where each entry has a string `uri` plus either string `text` or string `blob`."
+              )
+            );
+            return;
+          }
+        }
       }
 
       if (hasPromptsCapability(initializeResponse)) {
         const promptsListResponse = await sendRequest(
-          5,
+          6,
           "prompts/list",
           undefined,
           buildFailure(
@@ -650,7 +849,9 @@ async function probeCommandServer(input: {
         );
         transcript?.("<- prompts/list");
 
-        if (!isValidPromptsListResult(promptsListResponse)) {
+        const prompts = extractPrompts(promptsListResponse);
+
+        if (!prompts || !isValidPromptsListResult(promptsListResponse)) {
           settle(
             buildFailure(
               "plugin.runtime.prompts_list.invalid",
@@ -660,6 +861,37 @@ async function probeCommandServer(input: {
             )
           );
           return;
+        }
+
+        const promptForGet = findPromptForGet(prompts);
+
+        if (promptForGet) {
+          const promptGetResponse = await sendRequest(
+            7,
+            "prompts/get",
+            {
+              name: promptForGet.name
+            },
+            buildFailure(
+              "plugin.runtime.prompt_get.timeout",
+              `The MCP server \`${serverName}\` did not answer the prompts/get request in time.`,
+              "A server that lists prompts but cannot return prompt content in time will feel broken in Codex.",
+              "Inspect the prompt retrieval path and reduce latency before returning prompt messages."
+            )
+          );
+          transcript?.("<- prompts/get");
+
+          if (!isValidPromptGetResult(promptGetResponse)) {
+            settle(
+              buildFailure(
+                "plugin.runtime.prompt_get.invalid",
+                `The MCP server \`${serverName}\` returned an invalid prompts/get result.`,
+                "Codex cannot safely consume malformed prompt messages from `prompts/get`.",
+                "Return a `messages` array where each entry has a valid `role` and a valid MCP content block."
+              )
+            );
+            return;
+          }
         }
       }
 

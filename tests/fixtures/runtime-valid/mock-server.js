@@ -50,6 +50,25 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (message.method === "resources/read") {
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          contents: [
+            {
+              uri: "file:///workspace/README.md",
+              mimeType: "text/markdown",
+              text: "# Workspace README"
+            }
+          ]
+        }
+      })}\n`
+    );
+    return;
+  }
+
   if (message.method === "prompts/list") {
     process.stdout.write(
       `${JSON.stringify({
@@ -66,6 +85,28 @@ rl.on("line", (line) => {
                   required: true
                 }
               ]
+            }
+          ]
+        }
+      })}\n`
+    );
+    return;
+  }
+
+  if (message.method === "prompts/get") {
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          description: "Prompt for code review",
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "Review this diff for bugs."
+              }
             }
           ]
         }

@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-read",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid resources/read result.",
+  "mcpServers": "./.mcp.json"
+}
+
