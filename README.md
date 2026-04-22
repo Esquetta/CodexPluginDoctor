@@ -2,17 +2,25 @@
 
 Codex Plugin Doctor is a CLI-first validator for Codex plugins, skills, and MCP package surfaces.
 
-## Current Scope
+It helps plugin authors and engineering teams catch packaging, configuration, and structural issues before a broken plugin reaches users or internal rollout workflows.
 
-This repository currently contains:
+## Status
 
-- product and engineering documentation in [`docs/`](D:\Workstation\CodexPluginDoctor\docs\README.md)
+The repository currently contains:
+
+- a documented product foundation in [`docs/`](./docs/README.md)
 - an initial TypeScript CLI scaffold
-- fixture-based tests for package discovery and manifest validation
+- fixture-based tests for plugin discovery and manifest validation
+- a minimal `check` command with text and JSON output
 
-## Near-Term Goal
+## Current Validation Scope
 
-Ship a local command that validates a plugin bundle before release and produces a deterministic PASS/WARN/FAIL report.
+The first working slice validates:
+
+- required `.codex-plugin/plugin.json` presence
+- required manifest fields: `name`, `version`, `description`
+- referenced `skills` directory existence when declared
+- deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
 
@@ -21,4 +29,62 @@ codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --runtime
 ```
+
+## Quick Start
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Run tests
+
+```bash
+npm test
+```
+
+### Build the CLI
+
+```bash
+npm run build
+```
+
+### Run against a local fixture
+
+```bash
+npm run dev -- check tests/fixtures/valid-plugin
+npm run dev -- check tests/fixtures/missing-manifest --json
+```
+
+## Repository Layout
+
+```text
+docs/      Product, brand, security, operations, and engineering documentation
+src/       CLI entrypoint, validation logic, domain types, and reporting
+tests/     Fixture-based tests and sample plugin bundles
+```
+
+## Documentation Highlights
+
+- [Vision and Strategy](./docs/product/vision-and-strategy.md)
+- [MVP Specification](./docs/product/mvp-spec.md)
+- [Technical Architecture](./docs/engineering/technical-architecture.md)
+- [Security Architecture](./docs/security/security-architecture.md)
+- [Initial Implementation Plan](./docs/engineering/initial-implementation-plan.md)
+- [Initial Issue Breakdown](./docs/operations/initial-issue-breakdown.md)
+
+## Near-Term Roadmap
+
+The next implementation slices are:
+
+1. Add `.mcp.json` discovery and structural validation.
+2. Add runtime startup probing behind `--runtime`.
+3. Add JSON report hardening for CI consumption.
+4. Add GitHub Action support for release gating.
+5. Add security checks for risky env usage and path traversal.
+
+## Product Direction
+
+The product starts as a Codex-specific validator and is designed to grow into a broader `MCP Doctor` platform over time. The immediate goal is not to build a marketplace or a dashboard. The immediate goal is to provide reliable preflight validation for Codex-compatible package bundles.
 
