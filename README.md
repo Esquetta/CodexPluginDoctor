@@ -26,6 +26,7 @@ The first working slice validates:
 - security checks for path traversal and hard-coded secret-like env values
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing
+- TTY-aware live status rendering for human text runs, with machine outputs kept clean
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands

@@ -4,10 +4,24 @@ import { runCheck } from "./index.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
+import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
+import { determineOutputPolicy } from "./terminal/output-policy.js";
+import { getSpinner } from "./terminal/spinner-registry.js";
 
 export interface CliIo {
   writeStdout(message: string): void;
   writeStderr(message: string): void;
+}
+
+export interface CliTerminalContext {
+  stdoutIsTTY: boolean;
+  stderrIsTTY: boolean;
+  env: Record<string, string | undefined>;
+}
+
+export interface RunCliOptions {
+  terminalContext?: CliTerminalContext;
+  runCheckImpl?: typeof runCheck;
 }
 
 const defaultIo: CliIo = {
@@ -27,7 +41,8 @@ function printUsage(io: CliIo): void {
 
 export async function runCli(
   args: string[],
-  io: CliIo = defaultIo
+  io: CliIo = defaultIo,
+  options: RunCliOptions = {}
 ): Promise<number> {
   const [command, maybePath, ...remainingArgs] = args;
 
@@ -53,7 +68,36 @@ export async function runCli(
     return 2;
   }
 
-  const result = await runCheck(targetPath, { runtime: runtimeProbeEnabled });
+  const terminalContext: CliTerminalContext = options.terminalContext ?? {
+    stdoutIsTTY: Boolean(process.stdout.isTTY),
+    stderrIsTTY: Boolean(process.stderr.isTTY),
+    env: process.env
+  };
+
+  const outputPolicy = determineOutputPolicy({
+    jsonOutput,
+    markdownOutput,
+    outputPath,
+    stdoutIsTTY: terminalContext.stdoutIsTTY,
+    stderrIsTTY: terminalContext.stderrIsTTY,
+    env: terminalContext.env
+  });
+
+  const runCheckImpl = options.runCheckImpl ?? runCheck;
+  const renderer = outputPolicy.interactive
+    ? createLiveStatusRenderer(io, getSpinner("braille"))
+    : null;
+
+  renderer?.start("Validating package");
+  const result = await runCheckImpl(targetPath, { runtime: runtimeProbeEnabled });
+  if (renderer) {
+    if (result.status === "fail") {
+      renderer.stopFailure("Validation failed");
+    } else {
+      renderer.stopSuccess("Validation complete");
+    }
+  }
+
   const report = markdownOutput
     ? buildMarkdownReport(result, { runtimeProbeEnabled })
     : jsonOutput

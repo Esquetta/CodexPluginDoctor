@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
 
@@ -119,5 +119,43 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(writtenReport).toContain("# Codex Plugin Doctor Report");
     expect(writtenReport).toContain("plugin.heuristic.description.too_long");
+  });
+
+  it("writes live status updates to stderr for interactive TTY text runs", async () => {
+    vi.useFakeTimers();
+
+    const { io, stdout, stderr } = createIo();
+
+    const exitCodePromise = runCli(
+      ["check", "tests/fixtures/valid-plugin-with-mcp"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: true,
+          stderrIsTTY: true,
+          env: {}
+        },
+        runCheckImpl: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+
+          return {
+            targetPath: path.resolve("tests/fixtures/valid-plugin-with-mcp"),
+            status: "pass",
+            exitCode: 0,
+            findings: []
+          };
+        }
+      }
+    );
+
+    await vi.advanceTimersByTimeAsync(250);
+    const exitCode = await exitCodePromise;
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join("")).toContain("Validating package");
+    expect(stderr.join("")).toContain("Validation complete");
+    expect(stdout.join("")).toContain("Status: PASS");
+
+    vi.useRealTimers();
   });
 });
