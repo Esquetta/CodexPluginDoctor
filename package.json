@@ -1,0 +1,36 @@
+{
+  "name": "codex-plugin-doctor",
+  "version": "0.1.0",
+  "description": "CLI-first validator for Codex plugins, skills, and MCP package surfaces.",
+  "type": "module",
+  "bin": {
+    "codex-plugin-doctor": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "codex",
+    "mcp",
+    "plugin",
+    "skills",
+    "validation"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
+
