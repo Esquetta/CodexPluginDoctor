@@ -23,7 +23,7 @@ The first working slice validates:
 - `SKILL.md` presence and required frontmatter fields for declared skills
 - optional `.mcp.json` discovery and structural validation
 - opt-in runtime probing for command-based MCP servers with real MCP `initialize`, `tools/list`, and `tools/call` validation
-- capability-gated `resources/list`, `resources/read`, `prompts/list`, and `prompts/get` runtime validation
+- capability-gated `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`, and `prompts/get` runtime validation
 - security checks for path traversal and hard-coded secret-like env values
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing
@@ -31,6 +31,9 @@ The first working slice validates:
 - `--ascii` fallback rendering for terminal-safe text output
 - `--no-animations` for quiet human runs
 - `--verbose-runtime` for stderr protocol transcript output
+- runtime capability scorecard in reports
+- paginated MCP list probing
+- redacted transcript output for generated prompt arguments and sensitive payloads
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
@@ -74,6 +77,7 @@ npm run dev -- check tests/fixtures/missing-manifest --json
 node dist/cli.js check tests/fixtures/security-hardcoded-secret --ascii
 node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --no-animations
 node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --verbose-runtime
+node dist/cli.js check tests/fixtures/runtime-paginated --json --runtime --verbose-runtime
 node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output report.json
 ```
 
