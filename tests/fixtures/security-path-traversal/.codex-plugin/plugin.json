@@ -1,0 +1,7 @@
+{
+  "name": "security-path-traversal",
+  "version": "1.0.0",
+  "description": "Fixture with a path traversal attempt.",
+  "skills": "../shared-skills/"
+}
+

@@ -25,6 +25,21 @@ function buildFailure(
   };
 }
 
+function buildWarning(
+  id: string,
+  message: string,
+  impact: string,
+  suggestedFix: string
+): Finding {
+  return {
+    id,
+    severity: "warn",
+    message,
+    impact,
+    suggestedFix
+  };
+}
+
 async function directoryExists(targetPath: string): Promise<boolean> {
   try {
     const details = await stat(targetPath);
@@ -45,6 +60,33 @@ async function fileExists(targetPath: string): Promise<boolean> {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(rootPath, candidatePath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /(token|secret|password|api[_-]?key|private[_-]?key)/i.test(key);
+}
+
+function looksLikeLiteralSecret(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (trimmed.length < 12) {
+    return false;
+  }
+
+  if (/^\$\{?[A-Z0-9_]+\}?$/i.test(trimmed)) {
+    return false;
+  }
+
+  return true;
 }
 
 function parseSkillFrontmatter(content: string): Record<string, string> | null {
@@ -114,6 +156,17 @@ function validateRequiredManifestFields(
     );
   }
 
+  if (manifest.description && manifest.description.length > 180) {
+    findings.push(
+      buildWarning(
+        "plugin.heuristic.description.too_long",
+        "The plugin manifest description is likely too verbose.",
+        "Overly long metadata increases context cost and can dilute plugin discovery quality.",
+        "Shorten the manifest description to a precise one- or two-sentence summary."
+      )
+    );
+  }
+
   return findings;
 }
 
@@ -127,6 +180,18 @@ async function validateSkillsDirectory(
   }
 
   const skillsPath = path.resolve(rootPath, manifest.skills);
+
+  if (!isPathWithinRoot(rootPath, skillsPath)) {
+    return [
+      buildFailure(
+        "plugin.security.path_traversal",
+        "The plugin manifest points the skills path outside the package root.",
+        "Paths that escape the package root make the package harder to audit and can expose unintended files during packaging or validation.",
+        "Keep the `skills` path inside the plugin root."
+      )
+    ];
+  }
+
   const exists = await directoryExists(skillsPath);
 
   if (exists) {
@@ -153,6 +218,11 @@ async function validateSkillDefinitions(
   }
 
   const skillsPath = path.resolve(rootPath, manifest.skills);
+
+  if (!isPathWithinRoot(rootPath, skillsPath)) {
+    return [];
+  }
+
   const skillsDirectoryExists = await directoryExists(skillsPath);
 
   if (!skillsDirectoryExists) {
@@ -204,6 +274,17 @@ async function validateSkillDefinitions(
         )
       );
     }
+
+    if (frontmatter?.description && frontmatter.description.length > 180) {
+      findings.push(
+        buildWarning(
+          "plugin.heuristic.skill_description.too_long",
+          `The skill \`${skillDirectory.name}\` description is likely too verbose.`,
+          "Overly long skill descriptions increase context cost and reduce the precision of skill matching.",
+          `Shorten the \`description\` field in \`${skillFilePath}\` to a tightly scoped summary.`
+        )
+      );
+    }
   }
 
   return findings;
@@ -219,6 +300,18 @@ async function validateMcpConfig(
   }
 
   const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+    return [
+      buildFailure(
+        "plugin.security.path_traversal",
+        "The plugin manifest points the MCP config path outside the package root.",
+        "Paths that escape the package root make the package harder to audit and can expose unintended files during packaging or validation.",
+        "Keep the `mcpServers` path inside the plugin root."
+      )
+    ];
+  }
+
   const mcpConfigExists = await fileExists(mcpConfigPath);
 
   if (!mcpConfigExists) {
@@ -288,6 +381,7 @@ async function validateMcpConfig(
 
     const command = serverConfig.command;
     const url = serverConfig.url;
+    const env = serverConfig.env;
 
     if (typeof command !== "string" && typeof url !== "string") {
       findings.push(
@@ -298,6 +392,25 @@ async function validateMcpConfig(
           `Add either \`command\` or \`url\` to the \`${serverName}\` entry in \`${mcpConfigPath}\`.`
         )
       );
+    }
+
+    if (isPlainObject(env)) {
+      for (const [envKey, envValue] of Object.entries(env)) {
+        if (
+          isSensitiveKey(envKey) &&
+          typeof envValue === "string" &&
+          looksLikeLiteralSecret(envValue)
+        ) {
+          findings.push(
+            buildFailure(
+              "plugin.security.hard_coded_secret",
+              `The MCP server \`${serverName}\` contains a hard-coded secret-like env value for \`${envKey}\`.`,
+              "Hard-coded credentials inside plugin bundles increase leakage risk and make secure rotation difficult.",
+              `Replace the literal value for \`${envKey}\` with an environment reference or injected secret outside the package.`
+            )
+          );
+        }
+      }
     }
   }
 
@@ -334,7 +447,10 @@ export async function validatePlugin(
     ...(options.runtime ? await probeRuntime(discoveredPackage) : [])
   ];
 
-  if (findings.length === 0) {
+  const hasFailures = findings.some((finding) => finding.severity === "fail");
+  const hasWarnings = findings.some((finding) => finding.severity === "warn");
+
+  if (!hasFailures && !hasWarnings) {
     return {
       targetPath: discoveredPackage.rootPath,
       status: "pass",
@@ -345,8 +461,8 @@ export async function validatePlugin(
 
   return {
     targetPath: discoveredPackage.rootPath,
-    status: "fail",
-    exitCode: 1,
+    status: hasFailures ? "fail" : "warn",
+    exitCode: hasFailures ? 1 : 0,
     findings
   };
 }

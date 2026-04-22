@@ -1,0 +1,7 @@
+{
+  "name": "security-hardcoded-secret",
+  "version": "1.0.0",
+  "description": "Fixture with a hard-coded secret in MCP env.",
+  "mcpServers": "./.mcp.json"
+}
+

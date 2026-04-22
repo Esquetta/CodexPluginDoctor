@@ -1,0 +1,7 @@
+{
+  "name": "heuristic-long-plugin-description",
+  "version": "1.0.0",
+  "description": "This fixture intentionally uses an extremely verbose plugin description so the validator can flag likely context bloat and discovery noise before the package is shipped into a real Codex installation workflow where every extra token and every extra word matters to the user experience and system prompt budget.",
+  "skills": "./skills/"
+}
+

@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 
 import { runCheck } from "./index.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
+import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
 
 export interface CliIo {
@@ -20,7 +21,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path> [--json] [--output <path>] [--runtime]"
+    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime]"
   );
 }
 
@@ -42,6 +43,7 @@ export async function runCli(
       : remainingArgs;
 
   const jsonOutput = normalizedFlags.includes("--json");
+  const markdownOutput = normalizedFlags.includes("--markdown");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
   const outputIndex = normalizedFlags.indexOf("--output");
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
@@ -52,9 +54,11 @@ export async function runCli(
   }
 
   const result = await runCheck(targetPath, { runtime: runtimeProbeEnabled });
-  const report = jsonOutput
-    ? renderJsonReport(result, { runtimeProbeEnabled })
-    : renderTextReport(result);
+  const report = markdownOutput
+    ? buildMarkdownReport(result, { runtimeProbeEnabled })
+    : jsonOutput
+      ? renderJsonReport(result, { runtimeProbeEnabled })
+      : renderTextReport(result);
 
   if (outputPath) {
     await writeFile(outputPath, report, "utf8");

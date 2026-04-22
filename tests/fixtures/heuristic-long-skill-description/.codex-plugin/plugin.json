@@ -1,0 +1,7 @@
+{
+  "name": "heuristic-long-skill-description",
+  "version": "1.0.0",
+  "description": "Fixture with a verbose skill description.",
+  "skills": "./skills/"
+}
+

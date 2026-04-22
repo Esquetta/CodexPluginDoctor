@@ -98,5 +98,26 @@ describe("runCli", () => {
     expect(writtenReport.summary.runtimeProbeEnabled).toBe(true);
     expect(writtenReport.findings).toEqual([]);
   });
-});
 
+  it("writes a markdown summary when --markdown is requested", async () => {
+    const outputPath = await createTempFilePath("report.md");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/heuristic-long-plugin-description",
+        "--markdown",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+
+    const writtenReport = await readFile(outputPath, "utf8");
+
+    expect(exitCode).toBe(0);
+    expect(writtenReport).toContain("# Codex Plugin Doctor Report");
+    expect(writtenReport).toContain("plugin.heuristic.description.too_long");
+  });
+});

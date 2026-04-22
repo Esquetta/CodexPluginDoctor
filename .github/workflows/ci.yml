@@ -31,3 +31,11 @@ jobs:
 
       - name: Build CLI
         run: npm run build
+
+      - name: Generate validation summary
+        run: node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --markdown --output codex-plugin-doctor-summary.md
+
+      - name: Publish validation summary
+        if: always()
+        shell: bash
+        run: cat codex-plugin-doctor-summary.md >> "$GITHUB_STEP_SUMMARY"

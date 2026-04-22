@@ -23,6 +23,9 @@ The first working slice validates:
 - `SKILL.md` presence and required frontmatter fields for declared skills
 - optional `.mcp.json` discovery and structural validation
 - opt-in runtime startup probing for command-based MCP servers
+- security checks for path traversal and hard-coded secret-like env values
+- warn-level heuristics for overly verbose plugin and skill descriptions
+- markdown summaries for CI-friendly report publishing
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
@@ -31,6 +34,7 @@ The first working slice validates:
 codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
+codex-plugin-doctor check . --markdown --output report.md
 codex-plugin-doctor check . --runtime
 ```
 
@@ -78,16 +82,17 @@ tests/     Fixture-based tests and sample plugin bundles
 - [Security Architecture](./docs/security/security-architecture.md)
 - [Initial Implementation Plan](./docs/engineering/initial-implementation-plan.md)
 - [Initial Issue Breakdown](./docs/operations/initial-issue-breakdown.md)
+- [Release Gating Workflow](./docs/engineering/release-gating-workflow.md)
 
 ## Near-Term Roadmap
 
 The next implementation slices are:
 
-1. Add `.mcp.json` discovery and structural validation.
-2. Add runtime startup probing behind `--runtime`.
-3. Add JSON report hardening for CI consumption.
-4. Add GitHub Action support for release gating.
-5. Add security checks for risky env usage and path traversal.
+1. Add deeper schema and context-bloat heuristics.
+2. Expand security rules beyond path and env checks.
+3. Add richer MCP transport validation and `tools/list` probing.
+4. Introduce package-path configuration in CI examples.
+5. Add GitHub Action artifact publishing and richer summary formatting.
 
 ## Product Direction
 

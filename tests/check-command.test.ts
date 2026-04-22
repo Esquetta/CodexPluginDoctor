@@ -104,4 +104,70 @@ describe("runCheck", () => {
     expect(result.exitCode).toBe(0);
     expect(result.findings).toEqual([]);
   });
+
+  it("fails when plugin paths escape the package root", async () => {
+    const targetPath = path.resolve("tests/fixtures/security-path-traversal");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.path_traversal",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when MCP config contains hard-coded secret values", async () => {
+    const targetPath = path.resolve("tests/fixtures/security-hardcoded-secret");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.hard_coded_secret",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("returns a warn status when only plugin metadata verbosity heuristics fail", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-long-plugin-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.heuristic.description.too_long",
+          severity: "warn"
+        })
+      ])
+    );
+  });
+
+  it("returns a warn status when skill descriptions are overly verbose", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-long-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.heuristic.skill_description.too_long",
+          severity: "warn"
+        })
+      ])
+    );
+  });
 });
