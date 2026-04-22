@@ -29,6 +29,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [CLI and Rule Engine Specification](engineering/cli-and-rule-engine-spec.md)
 - [Testing and Release](engineering/testing-and-release.md)
 - [Release Gating Workflow](engineering/release-gating-workflow.md)
+- [CLI Presentation Plan](engineering/cli-presentation-plan.md)
 
 ### Security
 
@@ -40,6 +41,7 @@ This documentation set defines the product, brand, technical architecture, secur
 
 - [Ops, Support, and SLA](operations/ops-support-and-sla.md)
 - [Roadmap and Risk Register](operations/roadmap-and-risk-register.md)
+- [CLI Presentation Issue Breakdown](operations/cli-presentation-issue-breakdown.md)
 
 ## Product Snapshot
 
