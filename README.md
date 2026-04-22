@@ -20,6 +20,9 @@ The first working slice validates:
 - required `.codex-plugin/plugin.json` presence
 - required manifest fields: `name`, `version`, `description`
 - referenced `skills` directory existence when declared
+- `SKILL.md` presence and required frontmatter fields for declared skills
+- optional `.mcp.json` discovery and structural validation
+- opt-in runtime startup probing for command-based MCP servers
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
@@ -27,6 +30,7 @@ The first working slice validates:
 ```bash
 codex-plugin-doctor check .
 codex-plugin-doctor check . --json
+codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --runtime
 ```
 
@@ -55,6 +59,7 @@ npm run build
 ```bash
 npm run dev -- check tests/fixtures/valid-plugin
 npm run dev -- check tests/fixtures/missing-manifest --json
+node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output report.json
 ```
 
 ## Repository Layout
@@ -87,4 +92,3 @@ The next implementation slices are:
 ## Product Direction
 
 The product starts as a Codex-specific validator and is designed to grow into a broader `MCP Doctor` platform over time. The immediate goal is not to build a marketplace or a dashboard. The immediate goal is to provide reliable preflight validation for Codex-compatible package bundles.
-

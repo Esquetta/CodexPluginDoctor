@@ -1,0 +1,7 @@
+{
+  "name": "runtime-valid",
+  "version": "1.0.0",
+  "description": "Fixture with a long-running mock stdio MCP server.",
+  "mcpServers": "./.mcp.json"
+}
+

@@ -1,0 +1,102 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+import { runCli } from "../src/run-cli.js";
+
+function createIo() {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  return {
+    stdout,
+    stderr,
+    io: {
+      writeStdout(message: string) {
+        stdout.push(message);
+      },
+      writeStderr(message: string) {
+        stderr.push(message);
+      }
+    }
+  };
+}
+
+async function createTempFilePath(filename: string): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-"));
+  return path.join(directory, filename);
+}
+
+describe("runCli", () => {
+  it("writes the JSON report to the requested output path", async () => {
+    const outputPath = await createTempFilePath("report.json");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/valid-plugin-with-mcp", "--json", "--output", outputPath],
+      io
+    );
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(writtenReport.schemaVersion).toBe("1.0.0");
+    expect(writtenReport.summary.runtimeProbeEnabled).toBe(false);
+    expect(writtenReport.summary.findingCounts.total).toBe(0);
+  });
+
+  it("fails runtime probing when a configured stdio server exits early", async () => {
+    const outputPath = await createTempFilePath("runtime-fail.json");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/runtime-crash",
+        "--json",
+        "--runtime",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(1);
+    expect(writtenReport.summary.runtimeProbeEnabled).toBe(true);
+    expect(writtenReport.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.exited_early",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("passes runtime probing when a configured stdio server stays alive through the startup window", async () => {
+    const outputPath = await createTempFilePath("runtime-pass.json");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/runtime-valid",
+        "--json",
+        "--runtime",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(writtenReport.summary.runtimeProbeEnabled).toBe(true);
+    expect(writtenReport.findings).toEqual([]);
+  });
+});
+

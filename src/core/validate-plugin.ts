@@ -1,8 +1,14 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { CheckResult, DiscoveredPackage, Finding } from "../domain/types.js";
+import type {
+  CheckOptions,
+  CheckResult,
+  DiscoveredPackage,
+  Finding
+} from "../domain/types.js";
 import { discoverPackage } from "./discover-package.js";
+import { probeRuntime } from "./runtime-probe.js";
 
 function buildFailure(
   id: string,
@@ -298,7 +304,10 @@ async function validateMcpConfig(
   return findings;
 }
 
-export async function validatePlugin(targetPath: string): Promise<CheckResult> {
+export async function validatePlugin(
+  targetPath: string,
+  options: CheckOptions = {}
+): Promise<CheckResult> {
   const discoveredPackage = await discoverPackage(targetPath);
 
   if (!discoveredPackage) {
@@ -321,7 +330,8 @@ export async function validatePlugin(targetPath: string): Promise<CheckResult> {
     ...validateRequiredManifestFields(discoveredPackage),
     ...(await validateSkillsDirectory(discoveredPackage)),
     ...(await validateSkillDefinitions(discoveredPackage)),
-    ...(await validateMcpConfig(discoveredPackage))
+    ...(await validateMcpConfig(discoveredPackage)),
+    ...(options.runtime ? await probeRuntime(discoveredPackage) : [])
   ];
 
   if (findings.length === 0) {

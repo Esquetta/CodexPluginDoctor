@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mockServer": {
+      "command": "node",
+      "args": ["./crash-server.js"]
+    }
+  }
+}
+

@@ -1,0 +1,7 @@
+{
+  "name": "runtime-crash",
+  "version": "1.0.0",
+  "description": "Fixture with a crashing mock stdio MCP server.",
+  "mcpServers": "./.mcp.json"
+}
+
