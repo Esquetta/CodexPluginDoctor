@@ -22,6 +22,8 @@ describe("determineOutputPolicy", () => {
       jsonOutput: true,
       markdownOutput: false,
       outputPath: null,
+      noAnimations: false,
+      asciiMode: false,
       stdoutIsTTY: true,
       stderrIsTTY: true,
       env: {}
@@ -36,6 +38,8 @@ describe("determineOutputPolicy", () => {
       jsonOutput: false,
       markdownOutput: false,
       outputPath: "report.txt",
+      noAnimations: false,
+      asciiMode: false,
       stdoutIsTTY: true,
       stderrIsTTY: true,
       env: {}
@@ -50,6 +54,8 @@ describe("determineOutputPolicy", () => {
       jsonOutput: false,
       markdownOutput: false,
       outputPath: null,
+      noAnimations: false,
+      asciiMode: false,
       stdoutIsTTY: true,
       stderrIsTTY: true,
       env: { CI: "true" }
@@ -64,6 +70,8 @@ describe("determineOutputPolicy", () => {
       jsonOutput: false,
       markdownOutput: false,
       outputPath: null,
+      noAnimations: false,
+      asciiMode: false,
       stdoutIsTTY: true,
       stderrIsTTY: false,
       env: {}
@@ -72,5 +80,35 @@ describe("determineOutputPolicy", () => {
     expect(policy.interactive).toBe(false);
     expect(policy.reason).toBe("non_tty");
   });
-});
 
+  it("disables live rendering when --no-animations is requested", () => {
+    const policy = determineOutputPolicy({
+      jsonOutput: false,
+      markdownOutput: false,
+      outputPath: null,
+      noAnimations: true,
+      asciiMode: false,
+      stdoutIsTTY: true,
+      stderrIsTTY: true,
+      env: {}
+    });
+
+    expect(policy.interactive).toBe(false);
+    expect(policy.reason).toBe("disabled_by_flag");
+  });
+
+  it("switches the text style to ASCII when --ascii is requested", () => {
+    const policy = determineOutputPolicy({
+      jsonOutput: false,
+      markdownOutput: false,
+      outputPath: null,
+      noAnimations: false,
+      asciiMode: true,
+      stdoutIsTTY: true,
+      stderrIsTTY: true,
+      env: {}
+    });
+
+    expect(policy.style).toBe("ascii");
+  });
+});

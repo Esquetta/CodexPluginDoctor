@@ -10,6 +10,13 @@ describe("spinner registry", () => {
     expect(spinner.frames.length).toBeGreaterThan(1);
     expect(spinner.intervalMs).toBeGreaterThan(0);
   });
+
+  it("exposes the branded doctor spinner", () => {
+    const spinner = getSpinner("doctor");
+
+    expect(spinner.name).toBe("doctor");
+    expect(spinner.frames.length).toBeGreaterThan(1);
+  });
 });
 
 describe("createLiveStatusRenderer", () => {

@@ -10,6 +10,11 @@ const spinners: Record<string, SpinnerDefinition> = {
     frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
     intervalMs: 80
   },
+  doctor: {
+    name: "doctor",
+    frames: ["⠑", "⠒", "⠲", "⠴", "⠦", "⠖", "⠒", "⠐"],
+    intervalMs: 75
+  },
   dots: {
     name: "dots",
     frames: ["⠁", "⠂", "⠄", "⠂"],
@@ -30,4 +35,3 @@ const spinners: Record<string, SpinnerDefinition> = {
 export function getSpinner(name: keyof typeof spinners): SpinnerDefinition {
   return spinners[name];
 }
-

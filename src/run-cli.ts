@@ -35,7 +35,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime]"
+    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime] [--no-animations] [--ascii]"
   );
 }
 
@@ -60,6 +60,8 @@ export async function runCli(
   const jsonOutput = normalizedFlags.includes("--json");
   const markdownOutput = normalizedFlags.includes("--markdown");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
+  const noAnimations = normalizedFlags.includes("--no-animations");
+  const asciiMode = normalizedFlags.includes("--ascii");
   const outputIndex = normalizedFlags.indexOf("--output");
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
 
@@ -78,6 +80,8 @@ export async function runCli(
     jsonOutput,
     markdownOutput,
     outputPath,
+    noAnimations,
+    asciiMode,
     stdoutIsTTY: terminalContext.stdoutIsTTY,
     stderrIsTTY: terminalContext.stderrIsTTY,
     env: terminalContext.env
@@ -85,7 +89,10 @@ export async function runCli(
 
   const runCheckImpl = options.runCheckImpl ?? runCheck;
   const renderer = outputPolicy.interactive
-    ? createLiveStatusRenderer(io, getSpinner("braille"))
+    ? createLiveStatusRenderer(
+        io,
+        getSpinner(outputPolicy.style === "ascii" ? "ascii" : "doctor")
+      )
     : null;
 
   renderer?.start("Validating package");
@@ -102,7 +109,7 @@ export async function runCli(
     ? buildMarkdownReport(result, { runtimeProbeEnabled })
     : jsonOutput
       ? renderJsonReport(result, { runtimeProbeEnabled })
-      : renderTextReport(result);
+      : renderTextReport(result, { ascii: outputPolicy.style === "ascii" });
 
   if (outputPath) {
     await writeFile(outputPath, report, "utf8");

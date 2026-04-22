@@ -27,6 +27,8 @@ The first working slice validates:
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing
 - TTY-aware live status rendering for human text runs, with machine outputs kept clean
+- `--ascii` fallback rendering for terminal-safe text output
+- `--no-animations` for quiet human runs
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
@@ -36,6 +38,8 @@ codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
+codex-plugin-doctor check . --ascii
+codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 ```
 
@@ -64,6 +68,8 @@ npm run build
 ```bash
 npm run dev -- check tests/fixtures/valid-plugin
 npm run dev -- check tests/fixtures/missing-manifest --json
+node dist/cli.js check tests/fixtures/security-hardcoded-secret --ascii
+node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --no-animations
 node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output report.json
 ```
 

@@ -158,4 +158,54 @@ describe("runCli", () => {
 
     vi.useRealTimers();
   });
+
+  it("does not write live status to stderr when --no-animations is used", async () => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/valid-plugin-with-mcp", "--no-animations"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: true,
+          stderrIsTTY: true,
+          env: {}
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+  });
+
+  it("keeps stderr clean for JSON output even when running in a TTY", async () => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/runtime-valid", "--json", "--runtime"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: true,
+          stderrIsTTY: true,
+          env: {}
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+  });
+
+  it("renders ASCII-safe output when --ascii is requested", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/security-hardcoded-secret", "--ascii"],
+      io
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("x plugin.security.hard_coded_secret");
+  });
 });
