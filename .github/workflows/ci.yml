@@ -32,10 +32,23 @@ jobs:
       - name: Build CLI
         run: npm run build
 
-      - name: Generate validation summary
-        run: node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --markdown --output codex-plugin-doctor-summary.md
+      - name: Generate validation reports
+        run: |
+          node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --markdown --output codex-plugin-doctor-summary.md
+          node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --json --output codex-plugin-doctor-report.json
+          node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output codex-plugin-doctor-runtime-report.json
 
       - name: Publish validation summary
         if: always()
         shell: bash
         run: cat codex-plugin-doctor-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-plugin-doctor-reports
+          path: |
+            codex-plugin-doctor-summary.md
+            codex-plugin-doctor-report.json
+            codex-plugin-doctor-runtime-report.json

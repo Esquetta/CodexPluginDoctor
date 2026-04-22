@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-prompts",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid prompts/list result.",
+  "mcpServers": "./.mcp.json"
+}
+

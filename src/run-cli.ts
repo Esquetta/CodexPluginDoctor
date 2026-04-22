@@ -35,7 +35,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime] [--no-animations] [--ascii]"
+    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]"
   );
 }
 
@@ -60,6 +60,7 @@ export async function runCli(
   const jsonOutput = normalizedFlags.includes("--json");
   const markdownOutput = normalizedFlags.includes("--markdown");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
+  const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
   const noAnimations = normalizedFlags.includes("--no-animations");
   const asciiMode = normalizedFlags.includes("--ascii");
   const outputIndex = normalizedFlags.indexOf("--output");
@@ -89,6 +90,7 @@ export async function runCli(
 
   const runCheckImpl = options.runCheckImpl ?? runCheck;
   const renderer = outputPolicy.interactive
+    && !verboseRuntime
     ? createLiveStatusRenderer(
         io,
         getSpinner(outputPolicy.style === "ascii" ? "ascii" : "doctor")
@@ -96,7 +98,13 @@ export async function runCli(
     : null;
 
   renderer?.start("Validating package");
-  const result = await runCheckImpl(targetPath, { runtime: runtimeProbeEnabled });
+  const result = await runCheckImpl(targetPath, {
+    runtime: runtimeProbeEnabled,
+    runtimeTranscript:
+      runtimeProbeEnabled && verboseRuntime
+        ? (line) => io.writeStderr(line)
+        : undefined
+  });
   if (renderer) {
     if (result.status === "fail") {
       renderer.stopFailure("Validation failed");

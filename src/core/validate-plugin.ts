@@ -444,7 +444,11 @@ export async function validatePlugin(
     ...(await validateSkillsDirectory(discoveredPackage)),
     ...(await validateSkillDefinitions(discoveredPackage)),
     ...(await validateMcpConfig(discoveredPackage)),
-    ...(options.runtime ? await probeRuntime(discoveredPackage) : [])
+    ...(options.runtime
+      ? await probeRuntime(discoveredPackage, {
+          transcript: options.runtimeTranscript
+        })
+      : [])
   ];
 
   const hasFailures = findings.some((finding) => finding.severity === "fail");

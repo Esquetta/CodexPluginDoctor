@@ -104,8 +104,9 @@ async function probeCommandServer(input: {
   args: string[];
   cwd: string;
   startupTimeoutMs: number;
+  transcript?: (line: string) => void;
 }): Promise<Finding | null> {
-  const { serverName, command, args, cwd, startupTimeoutMs } = input;
+  const { serverName, command, args, cwd, startupTimeoutMs, transcript } = input;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -204,6 +205,9 @@ async function probeCommandServer(input: {
 
         clearTimeout(pendingRequest.timer);
         pendingRequests.delete(id);
+        if (isPlainObject(message) && typeof message.id === "number") {
+          transcript?.(`<~ response ${message.id}`);
+        }
         pendingRequest.resolve(message);
       }
     });
@@ -243,6 +247,7 @@ async function probeCommandServer(input: {
       timeoutFinding: Finding
     ): Promise<Record<string, unknown>> =>
       new Promise((requestResolve, requestReject) => {
+        transcript?.(`-> ${method}`);
         const timer = setTimeout(() => {
           pendingRequests.delete(id);
           requestReject(timeoutFinding);
@@ -280,14 +285,34 @@ async function probeCommandServer(input: {
       );
     };
 
-    const hasToolsCapability = (message: Record<string, unknown>): boolean => {
+    const getCapabilities = (
+      message: Record<string, unknown>
+    ): Record<string, unknown> | null => {
       if (!isPlainObject(message.result)) {
-        return false;
+        return null;
       }
 
       const capabilities = message.result.capabilities;
 
-      return isPlainObject(capabilities) && isPlainObject(capabilities.tools);
+      return isPlainObject(capabilities) ? capabilities : null;
+    };
+
+    const hasToolsCapability = (message: Record<string, unknown>): boolean => {
+      const capabilities = getCapabilities(message);
+
+      return capabilities !== null && isPlainObject(capabilities.tools);
+    };
+
+    const hasResourcesCapability = (message: Record<string, unknown>): boolean => {
+      const capabilities = getCapabilities(message);
+
+      return capabilities !== null && isPlainObject(capabilities.resources);
+    };
+
+    const hasPromptsCapability = (message: Record<string, unknown>): boolean => {
+      const capabilities = getCapabilities(message);
+
+      return capabilities !== null && isPlainObject(capabilities.prompts);
     };
 
     type ToolDefinition = {
@@ -403,6 +428,65 @@ async function probeCommandServer(input: {
       return result.content.every((content) => isValidContentBlock(content));
     };
 
+    const isValidResourcesListResult = (
+      message: Record<string, unknown>
+    ): boolean => {
+      if (!isPlainObject(message.result)) {
+        return false;
+      }
+
+      const resources = message.result.resources;
+
+      if (!Array.isArray(resources)) {
+        return false;
+      }
+
+      return resources.every((resource) => {
+        return (
+          isPlainObject(resource) &&
+          typeof resource.name === "string" &&
+          typeof resource.uri === "string"
+        );
+      });
+    };
+
+    const isValidPromptsListResult = (
+      message: Record<string, unknown>
+    ): boolean => {
+      if (!isPlainObject(message.result)) {
+        return false;
+      }
+
+      const prompts = message.result.prompts;
+
+      if (!Array.isArray(prompts)) {
+        return false;
+      }
+
+      return prompts.every((prompt) => {
+        if (!isPlainObject(prompt) || typeof prompt.name !== "string") {
+          return false;
+        }
+
+        if (prompt.arguments === undefined) {
+          return true;
+        }
+
+        if (!Array.isArray(prompt.arguments)) {
+          return false;
+        }
+
+        return prompt.arguments.every((argument) => {
+          return (
+            isPlainObject(argument) &&
+            typeof argument.name === "string" &&
+            (argument.required === undefined ||
+              typeof argument.required === "boolean")
+          );
+        });
+      });
+    };
+
     const runProtocolProbe = async () => {
       const initializeResponse = await sendRequest(
         1,
@@ -422,6 +506,7 @@ async function probeCommandServer(input: {
           "Reduce server startup latency or inspect why the initialize request is not being handled."
         )
       );
+      transcript?.("<- initialize");
 
       if (!isValidInitializeResult(initializeResponse)) {
         settle(
@@ -441,6 +526,7 @@ async function probeCommandServer(input: {
           method: "notifications/initialized"
         })}\n`
       );
+      transcript?.("-> notifications/initialized");
 
       if (!hasToolsCapability(initializeResponse)) {
         settle(
@@ -465,6 +551,7 @@ async function probeCommandServer(input: {
           "Inspect the tool discovery path and reduce latency before returning the tool list."
         )
       );
+      transcript?.("<- tools/list");
 
       const tools = extractTools(toolsListResponse);
 
@@ -508,6 +595,7 @@ async function probeCommandServer(input: {
           "Inspect the selected tool implementation and reduce its response latency."
         )
       );
+      transcript?.("<- tools/call");
 
       if (!isValidCallToolResult(toolCallResponse)) {
         settle(
@@ -519,6 +607,60 @@ async function probeCommandServer(input: {
           )
         );
         return;
+      }
+
+      if (hasResourcesCapability(initializeResponse)) {
+        const resourcesListResponse = await sendRequest(
+          4,
+          "resources/list",
+          undefined,
+          buildFailure(
+            "plugin.runtime.resources_list.timeout",
+            `The MCP server \`${serverName}\` did not answer the resources/list request in time.`,
+            "A server that advertises resources support but cannot list resources in time will feel incomplete or broken in Codex.",
+            "Inspect the resources implementation and reduce latency before returning the resource list."
+          )
+        );
+        transcript?.("<- resources/list");
+
+        if (!isValidResourcesListResult(resourcesListResponse)) {
+          settle(
+            buildFailure(
+              "plugin.runtime.resources_list.invalid",
+              `The MCP server \`${serverName}\` returned an invalid resources/list result.`,
+              "Codex cannot safely consume malformed resource definitions from `resources/list`.",
+              "Return a `resources` array where every resource has at least a string `name` and string `uri`."
+            )
+          );
+          return;
+        }
+      }
+
+      if (hasPromptsCapability(initializeResponse)) {
+        const promptsListResponse = await sendRequest(
+          5,
+          "prompts/list",
+          undefined,
+          buildFailure(
+            "plugin.runtime.prompts_list.timeout",
+            `The MCP server \`${serverName}\` did not answer the prompts/list request in time.`,
+            "A server that advertises prompts support but cannot list prompts in time will feel incomplete or broken in Codex.",
+            "Inspect the prompts implementation and reduce latency before returning the prompt list."
+          )
+        );
+        transcript?.("<- prompts/list");
+
+        if (!isValidPromptsListResult(promptsListResponse)) {
+          settle(
+            buildFailure(
+              "plugin.runtime.prompts_list.invalid",
+              `The MCP server \`${serverName}\` returned an invalid prompts/list result.`,
+              "Codex cannot safely consume malformed prompt definitions from `prompts/list`.",
+              "Return a `prompts` array where every prompt has a string `name`, and any prompt arguments have string `name` fields."
+            )
+          );
+          return;
+        }
       }
 
       settle(null);
@@ -550,8 +692,12 @@ async function probeCommandServer(input: {
 
 export async function probeRuntime(
   discoveredPackage: DiscoveredPackage,
-  startupTimeoutMs = 400
+  options: {
+    startupTimeoutMs?: number;
+    transcript?: (line: string) => void;
+  } = {}
 ): Promise<Finding[]> {
+  const startupTimeoutMs = options.startupTimeoutMs ?? 400;
   const servers = await loadMcpServers(discoveredPackage);
 
   if (!servers) {
@@ -585,7 +731,8 @@ export async function probeRuntime(
       command,
       args,
       cwd,
-      startupTimeoutMs
+      startupTimeoutMs,
+      transcript: options.transcript
     });
 
     if (finding) {

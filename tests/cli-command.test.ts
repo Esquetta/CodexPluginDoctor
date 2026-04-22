@@ -197,6 +197,30 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
   });
 
+  it("writes a runtime transcript to stderr when --verbose-runtime is enabled", async () => {
+    const { io, stderr, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/runtime-valid", "--json", "--runtime", "--verbose-runtime"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: true,
+          stderrIsTTY: true,
+          env: {}
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join("")).toContain("-> initialize");
+    expect(stderr.join("")).toContain("<- tools/list");
+    expect(stderr.join("")).toContain("<- tools/call");
+    expect(stderr.join("")).toContain("<- resources/list");
+    expect(stderr.join("")).toContain("<- prompts/list");
+    expect(() => JSON.parse(stdout.join(""))).not.toThrow();
+  });
+
   it("renders ASCII-safe output when --ascii is requested", async () => {
     const { io, stdout } = createIo();
 

@@ -1,20 +1,33 @@
 {
   "name": "codex-plugin-doctor",
   "version": "0.1.0",
-  "description": "CLI-first validator for Codex plugins, skills, and MCP package surfaces.",
+  "description": "CLI-first validator for Codex plugins, skills, and MCP package surfaces with runtime MCP protocol validation.",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "codex-plugin-doctor": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
+    "prepare-release": "npm test && npm run build && npm pack --dry-run",
+    "prepublishOnly": "npm test && npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "packageManager": "npm@11.11.1",
   "engines": {
     "node": ">=22"
   },
@@ -26,6 +39,17 @@
     "validation"
   ],
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Esquetta/CodexPluginDoctor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Esquetta/CodexPluginDoctor/issues"
+  },
+  "homepage": "https://github.com/Esquetta/CodexPluginDoctor#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^24.2.1",
     "tsx": "^4.20.4",
@@ -33,4 +57,3 @@
     "vitest": "^3.2.4"
   }
 }
-

@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-resources",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid resources/list result.",
+  "mcpServers": "./.mcp.json"
+}
+

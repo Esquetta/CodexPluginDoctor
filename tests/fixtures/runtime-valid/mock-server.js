@@ -16,12 +16,58 @@ rl.on("line", (line) => {
         result: {
           protocolVersion: "2025-11-25",
           capabilities: {
-            tools: {}
+            tools: {},
+            resources: {},
+            prompts: {}
           },
           serverInfo: {
             name: "valid-runtime-server",
             version: "1.0.0"
           }
+        }
+      })}\n`
+    );
+    return;
+  }
+
+  if (message.method === "resources/list") {
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          resources: [
+            {
+              name: "workspace-readme",
+              uri: "file:///workspace/README.md",
+              description: "Project README",
+              mimeType: "text/markdown"
+            }
+          ]
+        }
+      })}\n`
+    );
+    return;
+  }
+
+  if (message.method === "prompts/list") {
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          prompts: [
+            {
+              name: "code_review",
+              description: "Review code for bugs and regressions.",
+              arguments: [
+                {
+                  name: "diff",
+                  required: true
+                }
+              ]
+            }
+          ]
         }
       })}\n`
     );
