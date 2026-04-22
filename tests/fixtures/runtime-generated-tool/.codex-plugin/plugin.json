@@ -1,0 +1,7 @@
+{
+  "name": "runtime-generated-tool",
+  "version": "1.0.0",
+  "description": "Fixture with a safe tool requiring generated arguments.",
+  "mcpServers": "./.mcp.json"
+}
+

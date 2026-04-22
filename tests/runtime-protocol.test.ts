@@ -79,6 +79,40 @@ describe("runtime protocol probing", () => {
     );
   });
 
+  it("passes when a safe tool requires generated arguments from its schema", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-generated-tool"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+    expect(result.runtimeScorecard?.toolsCall).toBe("pass");
+  });
+
+  it("warns and skips tool invocation when only destructive tools are available", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-destructive-tool"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.exitCode).toBe(0);
+    expect(result.runtimeScorecard?.toolsCall).toBe("skipped");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.tool_call.skipped",
+          severity: "warn"
+        })
+      ])
+    );
+  });
+
   it("fails when resources/list returns invalid resource definitions", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/runtime-invalid-resources"),

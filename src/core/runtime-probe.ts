@@ -521,16 +521,88 @@ function extractPromptsPage(
   };
 }
 
-function findCallableTool(tools: ToolDefinition[]): ToolDefinition | null {
-  for (const tool of tools) {
-    const required = tool.inputSchema.required;
+function isDestructiveTool(tool: ToolDefinition): boolean {
+  return /(delete|remove|drop|destroy|erase|wipe|purge|send|deploy|refund|payment|charge|merge|push)/i.test(
+    tool.name
+  );
+}
 
-    if (required === undefined) {
-      return tool;
+function buildSchemaValue(
+  schema: unknown
+): unknown {
+  if (!isPlainObject(schema)) {
+    return undefined;
+  }
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum[0];
+  }
+
+  switch (schema.type) {
+    case "string":
+      return "codex-plugin-doctor-sample";
+    case "integer":
+      return 1;
+    case "number":
+      return 1.5;
+    case "boolean":
+      return false;
+    case "array": {
+      const itemValue = buildSchemaValue(schema.items);
+
+      return itemValue === undefined ? undefined : [itemValue];
+    }
+    case "object": {
+      const properties = isPlainObject(schema.properties) ? schema.properties : {};
+      const required = Array.isArray(schema.required)
+        ? schema.required.filter((value): value is string => typeof value === "string")
+        : [];
+      const value: Record<string, unknown> = {};
+
+      for (const key of required) {
+        const propertyValue = buildSchemaValue(properties[key]);
+
+        if (propertyValue === undefined) {
+          return undefined;
+        }
+
+        value[key] = propertyValue;
+      }
+
+      return value;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function buildToolArguments(
+  tool: ToolDefinition
+): Record<string, unknown> | undefined {
+  const schemaValue = buildSchemaValue(tool.inputSchema);
+
+  if (schemaValue === undefined) {
+    return undefined;
+  }
+
+  return isPlainObject(schemaValue) ? schemaValue : undefined;
+}
+
+function findCallableTool(
+  tools: ToolDefinition[]
+): { tool: ToolDefinition; args: Record<string, unknown> } | null {
+  for (const tool of tools) {
+    if (isDestructiveTool(tool)) {
+      continue;
     }
 
-    if (Array.isArray(required) && required.length === 0) {
-      return tool;
+    const args = buildToolArguments(tool);
+
+    if (args !== undefined) {
+      return {
+        tool,
+        args
+      };
     }
   }
 
@@ -979,12 +1051,21 @@ async function probeCommandServer(input: {
 
       if (!callableTool) {
         scorecard.toolsCall = "skipped";
+        settle(
+          buildWarning(
+            "plugin.runtime.tool_call.skipped",
+            `The MCP server \`${serverName}\` does not expose a safely callable tool for probing.`,
+            "The validator confirmed tool discovery but could not safely perform a non-destructive `tools/call` probe.",
+            "Expose at least one non-destructive tool with a JSON schema the validator can generate arguments for."
+          )
+        );
+        return;
       } else {
         const toolCallResponse = await sendRequest(
           "tools/call",
           {
-            name: callableTool.name,
-            arguments: {}
+            name: callableTool.tool.name,
+            arguments: callableTool.args
           },
           buildFailure(
             "plugin.runtime.tool_call.timeout",

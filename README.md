@@ -24,6 +24,7 @@ The first working slice validates:
 - optional `.mcp.json` discovery and structural validation
 - opt-in runtime probing for command-based MCP servers with real MCP `initialize`, `tools/list`, and `tools/call` validation
 - capability-gated `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`, and `prompts/get` runtime validation
+- safe schema-based `tools/call` argument generation with destructive-tool skipping
 - security checks for path traversal and hard-coded secret-like env values
 - warn-level heuristics for overly verbose plugin and skill descriptions
 - markdown summaries for CI-friendly report publishing

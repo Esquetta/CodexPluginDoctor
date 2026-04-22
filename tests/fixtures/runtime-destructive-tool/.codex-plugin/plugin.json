@@ -1,0 +1,7 @@
+{
+  "name": "runtime-destructive-tool",
+  "version": "1.0.0",
+  "description": "Fixture with only destructive tools available.",
+  "mcpServers": "./.mcp.json"
+}
+
