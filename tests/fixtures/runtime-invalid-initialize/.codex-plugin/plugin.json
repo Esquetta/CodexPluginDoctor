@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-initialize",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid initialize result.",
+  "mcpServers": "./.mcp.json"
+}
+

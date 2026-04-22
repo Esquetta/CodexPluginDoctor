@@ -19,7 +19,7 @@ rl.on("line", (line) => {
             tools: {}
           },
           serverInfo: {
-            name: "valid-runtime-server",
+            name: "invalid-tools-server",
             version: "1.0.0"
           }
         }
@@ -36,12 +36,9 @@ rl.on("line", (line) => {
         result: {
           tools: [
             {
-              name: "ping",
-              description: "Return a healthcheck response.",
+              description: "Missing name and invalid schema",
               inputSchema: {
-                type: "object",
-                properties: {},
-                required: []
+                type: "string"
               }
             }
           ]
@@ -50,3 +47,4 @@ rl.on("line", (line) => {
     );
   }
 });
+

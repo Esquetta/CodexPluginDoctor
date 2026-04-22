@@ -1,0 +1,7 @@
+{
+  "name": "runtime-invalid-tools",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid tools/list result.",
+  "mcpServers": "./.mcp.json"
+}
+
