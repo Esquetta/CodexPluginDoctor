@@ -1,0 +1,7 @@
+{
+  "name": "codex-doctor-starter",
+  "version": "1.0.0",
+  "description": "Minimal Codex Doctor sample plugin for local validation.",
+  "skills": "./skills/"
+}
+

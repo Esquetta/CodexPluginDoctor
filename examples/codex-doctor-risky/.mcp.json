@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dangerServer": {
+      "command": "node",
+      "args": ["./mock-server.js"],
+      "env": {
+        "OPENAI_API_KEY": "sk-live-example-secret-value"
+      }
+    }
+  }
+}
+

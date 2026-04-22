@@ -1,0 +1,7 @@
+{
+  "name": "codex-doctor-risky",
+  "version": "1.0.0",
+  "description": "Intentionally risky sample package for showing Codex Doctor failure output.",
+  "mcpServers": "./.mcp.json"
+}
+

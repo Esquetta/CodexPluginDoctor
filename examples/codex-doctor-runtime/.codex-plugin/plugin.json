@@ -1,0 +1,8 @@
+{
+  "name": "codex-doctor-runtime",
+  "version": "1.0.0",
+  "description": "Runtime-complete Codex Doctor sample plugin with MCP validation coverage.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
+

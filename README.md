@@ -85,6 +85,7 @@ node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output re
 
 ```text
 docs/      Product, brand, security, operations, and engineering documentation
+examples/  Manual sample plugin packs for local CLI testing
 src/       CLI entrypoint, validation logic, domain types, and reporting
 tests/     Fixture-based tests and sample plugin bundles
 ```
@@ -100,6 +101,7 @@ tests/     Fixture-based tests and sample plugin bundles
 - [Release Gating Workflow](./docs/engineering/release-gating-workflow.md)
 - [Runtime Tools List Probe Plan](./docs/engineering/runtime-tools-list-implementation-plan.md)
 - [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
+- [Examples](./examples/README.md)
 
 ## Near-Term Roadmap
 
