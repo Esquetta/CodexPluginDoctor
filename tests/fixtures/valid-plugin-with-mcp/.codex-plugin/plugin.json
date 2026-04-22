@@ -1,0 +1,8 @@
+{
+  "name": "valid-plugin-with-mcp",
+  "version": "1.0.0",
+  "description": "Fixture with a valid MCP config and valid skill metadata.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
+

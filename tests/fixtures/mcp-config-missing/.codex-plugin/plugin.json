@@ -1,0 +1,8 @@
+{
+  "name": "mcp-config-missing",
+  "version": "1.0.0",
+  "description": "Fixture with a missing MCP config file.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
+

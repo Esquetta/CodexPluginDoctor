@@ -1,0 +1,7 @@
+{
+  "name": "skill-missing-skill-md",
+  "version": "1.0.0",
+  "description": "Fixture with a missing SKILL.md file.",
+  "skills": "./skills/"
+}
+

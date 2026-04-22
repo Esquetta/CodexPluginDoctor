@@ -20,6 +20,7 @@ export interface PluginManifest {
   version?: string;
   description?: string;
   skills?: string;
+  mcpServers?: string;
 }
 
 export interface DiscoveredPackage {
@@ -27,4 +28,3 @@ export interface DiscoveredPackage {
   manifestPath: string;
   manifest: PluginManifest;
 }
-

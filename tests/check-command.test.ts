@@ -30,5 +30,78 @@ describe("runCheck", () => {
     expect(result.exitCode).toBe(0);
     expect(result.findings).toEqual([]);
   });
-});
 
+  it("fails when the manifest points to a missing .mcp.json file", async () => {
+    const targetPath = path.resolve("tests/fixtures/mcp-config-missing");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.mcp.path.missing",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when .mcp.json does not expose a valid mcpServers object", async () => {
+    const targetPath = path.resolve("tests/fixtures/mcp-config-invalid");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.mcp.invalid_shape",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when a declared skill directory does not contain SKILL.md", async () => {
+    const targetPath = path.resolve("tests/fixtures/skill-missing-skill-md");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.skill.skill_md.missing",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when SKILL.md is missing required frontmatter fields", async () => {
+    const targetPath = path.resolve("tests/fixtures/skill-missing-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.skill.description.missing",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("passes when the plugin includes a valid .mcp.json file and valid skills", async () => {
+    const targetPath = path.resolve("tests/fixtures/valid-plugin-with-mcp");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+});

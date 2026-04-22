@@ -1,0 +1,8 @@
+{
+  "name": "mcp-config-invalid",
+  "version": "1.0.0",
+  "description": "Fixture with an invalid MCP config shape.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
+

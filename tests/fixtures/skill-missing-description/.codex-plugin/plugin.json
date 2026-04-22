@@ -1,0 +1,7 @@
+{
+  "name": "skill-missing-description",
+  "version": "1.0.0",
+  "description": "Fixture with invalid skill frontmatter.",
+  "skills": "./skills/"
+}
+
