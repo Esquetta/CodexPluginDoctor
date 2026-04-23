@@ -1,0 +1,20 @@
+changelog:
+  categories:
+    - title: Runtime Validation
+      labels:
+        - runtime
+        - mcp
+    - title: CLI UX
+      labels:
+        - cli
+        - ux
+    - title: Security and Guardrails
+      labels:
+        - security
+    - title: Documentation
+      labels:
+        - docs
+    - title: Maintenance
+      labels:
+        - chore
+
