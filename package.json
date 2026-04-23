@@ -23,6 +23,7 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "generate-validation-artifacts": "node scripts/generate-validation-artifacts.mjs",
+    "prepare-rc": "tsx scripts/prepare-release-candidate.ts",
     "prepare-release": "npm test && npm run build && npm pack --dry-run",
     "prepublishOnly": "npm test && npm run build",
     "test": "vitest run",

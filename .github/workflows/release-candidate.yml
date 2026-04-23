@@ -1,0 +1,45 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      validation_target:
+        description: Static validation target path
+        required: false
+        default: examples/codex-doctor-runtime
+      runtime_target:
+        description: Runtime validation target path
+        required: false
+        default: examples/codex-doctor-runtime
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-release-candidate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare release candidate
+        run: >
+          npm run prepare-rc --
+          --target "${{ github.event.inputs.validation_target }}"
+          --runtime-target "${{ github.event.inputs.runtime_target }}"
+
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-plugin-doctor-release-candidate
+          path: release-candidate/**

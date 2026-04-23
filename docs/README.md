@@ -33,6 +33,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [NPM Release Checklist](engineering/npm-release-checklist.md)
 - [Versioning and Releases](engineering/versioning-and-releases.md)
 - [Publish Decision Log](engineering/publish-decision-log.md)
+- [Release Candidate Workflow](engineering/release-candidate-workflow.md)
 
 ### Security
 
