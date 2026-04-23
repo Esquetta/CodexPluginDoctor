@@ -9,6 +9,10 @@ import type {
   RuntimeProbeResult,
   RuntimeScorecard
 } from "../domain/types.js";
+import {
+  formatRequestTranscript as formatRequestTranscriptForLog,
+  formatResponseTranscript as formatResponseTranscriptForLog
+} from "./runtime-transcript.js";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const PROMPT_PROBE_PLACEHOLDER = "codex-plugin-doctor-probe";
@@ -786,7 +790,7 @@ async function probeCommandServer(input: {
     ): Promise<JsonObject> =>
       new Promise((requestResolve, requestReject) => {
         const id = nextRequestId++;
-        transcript?.(formatRequestTranscript(method, params));
+        transcript?.(formatRequestTranscriptForLog(method, params));
 
         const timer = setTimeout(() => {
           pendingRequests.delete(id);
@@ -811,7 +815,7 @@ async function probeCommandServer(input: {
       });
 
     const sendNotification = (method: string, params?: JsonObject) => {
-      transcript?.(formatRequestTranscript(method, params));
+      transcript?.(formatRequestTranscriptForLog(method, params));
       child.stdin.write(
         `${JSON.stringify({
           jsonrpc: "2.0",
@@ -837,7 +841,7 @@ async function probeCommandServer(input: {
           input.timeoutFinding
         );
 
-        transcript?.(formatResponseTranscript(input.method, response));
+        transcript?.(formatResponseTranscriptForLog(input.method, response));
 
         if (isErrorResponse(response)) {
           if (getErrorCode(response) === METHOD_NOT_FOUND && input.onMethodNotFound) {
@@ -913,7 +917,7 @@ async function probeCommandServer(input: {
 
         clearTimeout(pendingRequest.timer);
         pendingRequests.delete(id);
-        transcript?.(formatResponseTranscript(pendingRequest.method, message));
+        transcript?.(formatResponseTranscriptForLog(pendingRequest.method, message));
         pendingRequest.resolve(message);
       }
     });

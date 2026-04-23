@@ -34,7 +34,7 @@ The first working slice validates:
 - `--verbose-runtime` for stderr protocol transcript output
 - runtime capability scorecard in reports
 - paginated MCP list probing
-- redacted transcript output for generated prompt arguments and sensitive payloads
+- redacted transcript output for generated prompt arguments, token-like strings, sensitive query parameters, and long payloads
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands
