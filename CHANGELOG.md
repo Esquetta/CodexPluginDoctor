@@ -4,9 +4,9 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
-## [0.1.0] - 2026-04-22
+## [0.1.0-rc.1] - 2026-04-23
 
-Initial local validation release for Codex plugin packages and MCP-backed runtime validation.
+First release candidate for the local Codex plugin validation workflow and deep MCP runtime validation stack.
 
 ### Foundation and Repository Setup
 

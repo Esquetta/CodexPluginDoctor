@@ -71,7 +71,7 @@ async function main() {
   const version = packageJson.version;
   const releaseDir = outDir
     ? path.resolve(repoRoot, outDir)
-    : path.resolve(repoRoot, "release-candidate", version);
+    : path.join(repoRoot, "release-candidate", version);
 
   await rm(releaseDir, { recursive: true, force: true });
   await mkdir(releaseDir, { recursive: true });
@@ -86,13 +86,13 @@ async function main() {
       "--runtime-target",
       runtimeTarget,
       "--out-dir",
-      releaseDir
+      path.relative(repoRoot, releaseDir)
     ],
     repoRoot
   );
   await runCommand(
     "npm",
-    ["pack", "--pack-destination", releaseDir],
+    ["pack", "--pack-destination", path.relative(repoRoot, releaseDir)],
     repoRoot
   );
 
