@@ -17,6 +17,9 @@ import {
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const PROMPT_PROBE_PLACEHOLDER = "codex-plugin-doctor-probe";
 const METHOD_NOT_FOUND = -32601;
+const MAX_TOOL_CALL_CONTENT_LENGTH = 4096;
+const MAX_RESOURCE_READ_CONTENT_LENGTH = 4096;
+const MAX_PROMPT_GET_CONTENT_LENGTH = 4096;
 
 type JsonObject = Record<string, unknown>;
 
@@ -728,6 +731,120 @@ function isValidPromptGetResult(message: JsonObject): boolean {
   });
 }
 
+function getContentBlockLength(content: JsonObject): number {
+  if (content.type === "text" && typeof content.text === "string") {
+    return content.text.length;
+  }
+
+  if (
+    (content.type === "image" || content.type === "audio") &&
+    typeof content.data === "string"
+  ) {
+    return content.data.length;
+  }
+
+  if (content.type === "resource" && isPlainObject(content.resource)) {
+    if (typeof content.resource.text === "string") {
+      return content.resource.text.length;
+    }
+
+    if (typeof content.resource.blob === "string") {
+      return content.resource.blob.length;
+    }
+  }
+
+  return 0;
+}
+
+function collectOversizedToolCallWarnings(
+  message: JsonObject
+): Finding[] {
+  if (!isPlainObject(message.result) || !Array.isArray(message.result.content)) {
+    return [];
+  }
+
+  const hasOversizedContent = message.result.content.some((content) => {
+    return isPlainObject(content) && getContentBlockLength(content) > MAX_TOOL_CALL_CONTENT_LENGTH;
+  });
+
+  if (!hasOversizedContent) {
+    return [];
+  }
+
+  return [
+    buildWarning(
+      "plugin.runtime.tool_call.content_too_large",
+      "The tools/call response contains unusually large content payloads.",
+      "Large tool call payloads increase runtime cost, transcript size, and the risk of degraded model performance.",
+      "Keep tool responses concise or move large payloads into resource references instead of inline content."
+    )
+  ];
+}
+
+function collectOversizedResourceReadWarnings(
+  message: JsonObject
+): Finding[] {
+  if (!isPlainObject(message.result) || !Array.isArray(message.result.contents)) {
+    return [];
+  }
+
+  const hasOversizedContent = message.result.contents.some((content) => {
+    if (!isPlainObject(content)) {
+      return false;
+    }
+
+    const textLength = typeof content.text === "string" ? content.text.length : 0;
+    const blobLength = typeof content.blob === "string" ? content.blob.length : 0;
+
+    return (
+      textLength > MAX_RESOURCE_READ_CONTENT_LENGTH ||
+      blobLength > MAX_RESOURCE_READ_CONTENT_LENGTH
+    );
+  });
+
+  if (!hasOversizedContent) {
+    return [];
+  }
+
+  return [
+    buildWarning(
+      "plugin.runtime.resource_read.content_too_large",
+      "The resources/read response contains unusually large resource payloads.",
+      "Large resource contents increase runtime cost and can make downstream model use less reliable.",
+      "Reduce inline resource size or break large resources into smaller references."
+    )
+  ];
+}
+
+function collectOversizedPromptGetWarnings(
+  message: JsonObject
+): Finding[] {
+  if (!isPlainObject(message.result) || !Array.isArray(message.result.messages)) {
+    return [];
+  }
+
+  const hasOversizedContent = message.result.messages.some((promptMessage) => {
+    if (!isPlainObject(promptMessage) || !isPlainObject(promptMessage.content)) {
+      return false;
+    }
+
+    return getContentBlockLength(promptMessage.content) > MAX_PROMPT_GET_CONTENT_LENGTH;
+  });
+
+  if (!hasOversizedContent) {
+    return [];
+  }
+
+  return [
+    buildWarning(
+      "plugin.runtime.prompt_get.content_too_large",
+      "The prompts/get response contains unusually large prompt message payloads.",
+      "Large prompt bodies increase token cost and reduce the usefulness of prompt probing as a lightweight validation step.",
+      "Keep prompt message content concise or move large context into resources."
+    )
+  ];
+}
+
 async function probeCommandServer(input: {
   serverName: string;
   command: string;
@@ -740,6 +857,7 @@ async function probeCommandServer(input: {
 
   return new Promise((resolve) => {
     const scorecard = createRuntimeScorecard();
+    const warnings: Finding[] = [];
     let settled = false;
     let stderrPreview = "";
     let finalizeRequested = false;
@@ -778,7 +896,7 @@ async function probeCommandServer(input: {
       }
 
       resolve({
-        findings: finding ? [finding] : [],
+        findings: [...warnings, ...(finding ? [finding] : [])],
         scorecard
       });
     };
@@ -1093,6 +1211,7 @@ async function probeCommandServer(input: {
         }
 
         scorecard.toolsCall = "pass";
+        warnings.push(...collectOversizedToolCallWarnings(toolCallResponse));
       }
 
       if (!hasResourcesCapability(initializeResponse)) {
@@ -1157,6 +1276,7 @@ async function probeCommandServer(input: {
           }
 
           scorecard.resourceRead = "pass";
+          warnings.push(...collectOversizedResourceReadWarnings(resourceReadResponse));
         } else {
           scorecard.resourceRead = "skipped";
         }
@@ -1265,6 +1385,7 @@ async function probeCommandServer(input: {
           }
 
           scorecard.promptGet = "pass";
+          warnings.push(...collectOversizedPromptGetWarnings(promptGetResponse));
         }
       }
 

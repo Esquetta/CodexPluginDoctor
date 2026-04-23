@@ -35,6 +35,7 @@ The first working slice validates:
 - runtime capability scorecard in reports
 - paginated MCP list probing
 - redacted transcript output for generated prompt arguments, token-like strings, sensitive query parameters, and long payloads
+- warn-level runtime payload size guardrails for large tool/resource/prompt content
 - deterministic PASS/FAIL reporting with CLI exit codes
 
 ## Planned Commands

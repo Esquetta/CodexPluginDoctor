@@ -220,4 +220,32 @@ describe("runtime protocol probing", () => {
       ])
     );
   });
+
+  it("warns when runtime payloads are structurally valid but excessively large", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-large-payloads"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.tool_call.content_too_large",
+          severity: "warn"
+        }),
+        expect.objectContaining({
+          id: "plugin.runtime.resource_read.content_too_large",
+          severity: "warn"
+        }),
+        expect.objectContaining({
+          id: "plugin.runtime.prompt_get.content_too_large",
+          severity: "warn"
+        })
+      ])
+    );
+  });
 });

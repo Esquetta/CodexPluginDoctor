@@ -1,0 +1,7 @@
+{
+  "name": "runtime-large-payloads",
+  "version": "1.0.0",
+  "description": "Fixture with valid but oversized runtime payloads.",
+  "mcpServers": "./.mcp.json"
+}
+
