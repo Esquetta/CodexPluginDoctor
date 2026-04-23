@@ -71,6 +71,12 @@ npm test
 npm run build
 ```
 
+### Generate CI-style validation artifacts locally
+
+```bash
+npm run generate-validation-artifacts -- --target examples/codex-doctor-runtime --runtime-target examples/codex-doctor-runtime --out-dir validation-artifacts-local
+```
+
 ### Run against a local fixture
 
 ```bash

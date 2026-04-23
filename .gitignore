@@ -3,4 +3,4 @@ dist/
 coverage/
 .DS_Store
 *.log
-
+validation-artifacts*/
