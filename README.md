@@ -6,12 +6,15 @@ It helps plugin authors and engineering teams catch packaging, configuration, an
 
 ## Status
 
-The repository currently contains:
+Codex Plugin Doctor is pre-release and local-first. The repository is currently the primary product surface; there is no hosted dashboard or marketing website.
 
-- a documented product foundation in [`docs/`](./docs/README.md)
-- an initial TypeScript CLI scaffold
-- fixture-based tests for plugin discovery and manifest validation
-- a minimal `check` command with text and JSON output
+The current build includes:
+
+- static validation for Codex plugin packages, skills, and MCP config
+- runtime MCP protocol probing for command-based servers
+- text, JSON, and Markdown reports
+- CI-friendly artifacts and release-candidate tooling
+- real-world validation notes under [`validation-sessions/`](./validation-sessions/README.md)
 
 ## Current Validation Scope
 
@@ -127,3 +130,21 @@ The next implementation slices are:
 ## Product Direction
 
 The product starts as a Codex-specific validator and is designed to grow into a broader `MCP Doctor` platform over time. The immediate goal is not to build a marketplace or a dashboard. The immediate goal is to provide reliable preflight validation for Codex-compatible package bundles.
+
+## Open Source
+
+This project is licensed under the [MIT License](./LICENSE).
+
+Useful repo documents:
+
+- [Contributing](./CONTRIBUTING.md)
+- [Security Policy](./SECURITY.md)
+- [Changelog](./CHANGELOG.md)
+
+## Support
+
+If this tool saves you time, GitHub stars and sponsorship help signal that the project is worth continuing.
+
+- Star the repository on GitHub.
+- Use GitHub Sponsors through the repository funding link.
+- Open validation tuning issues when you find false positives or false negatives.

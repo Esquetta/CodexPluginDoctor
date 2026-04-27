@@ -1,0 +1,40 @@
+name: Validation tuning
+description: Report a false positive, false negative, or heuristic tuning case.
+title: "[Validation]: "
+labels:
+  - validation
+body:
+  - type: dropdown
+    id: classification
+    attributes:
+      label: Classification
+      options:
+        - False positive
+        - False negative
+        - Unclear
+        - Missing expected finding
+    validations:
+      required: true
+  - type: input
+    id: finding
+    attributes:
+      label: Finding ID
+      placeholder: plugin.heuristic.skill_description.too_long
+  - type: textarea
+    id: package
+    attributes:
+      label: Package or fixture
+      description: Describe the plugin, skill, or MCP package that triggered the case.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: CLI output
+      description: Paste relevant text or JSON output.
+      render: text
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Suggested decision
+      description: Explain whether this should pass, warn, or fail and why.

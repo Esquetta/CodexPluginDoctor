@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a new validator rule, report format, runtime probe, or workflow improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the behavior you want.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Static validation
+        - Runtime MCP probing
+        - Reporting
+        - CLI UX
+        - CI or release workflow
+        - Documentation
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Add links, sample packages, CLI output, or comparable tools if useful.
