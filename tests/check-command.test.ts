@@ -250,4 +250,29 @@ describe("runCheck", () => {
     expect(result.status).toBe("pass");
     expect(result.findings).toEqual([]);
   });
+
+  it("warns when a YAML block scalar skill description is long and vague", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-vague-block-scalar-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.heuristic.skill_description.too_long",
+          severity: "warn"
+        })
+      ])
+    );
+  });
+
+  it("passes when a YAML folded block scalar skill description is concrete", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-folded-block-scalar-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
 });

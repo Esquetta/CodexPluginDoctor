@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-folded-block-scalar-skill-description",
+  "version": "1.0.0",
+  "description": "Fixture with a concrete folded block scalar skill description.",
+  "skills": "./skills/"
+}

@@ -29,3 +29,4 @@ Example filename:
 | [`2026-04-27-real-world-validation-wave-00-bootstrap.md`](./2026-04-27-real-world-validation-wave-00-bootstrap.md) | Repo-owned examples and edge-case fixtures. |
 | [`2026-04-27-real-world-validation-wave-01.md`](./2026-04-27-real-world-validation-wave-01.md) | Curated plugin cache heuristic tuning. |
 | [`2026-04-27-real-world-validation-wave-02.md`](./2026-04-27-real-world-validation-wave-02.md) | Marketplace snapshot heuristic tuning. |
+| [`2026-04-27-real-world-validation-wave-03.md`](./2026-04-27-real-world-validation-wave-03.md) | YAML block scalar metadata parsing. |

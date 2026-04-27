@@ -96,23 +96,64 @@ function parseSkillFrontmatter(content: string): Record<string, string> | null {
     return null;
   }
 
-  const entries = match[1]
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separatorIndex = line.indexOf(":");
+  const lines = match[1].split(/\r?\n/);
+  const entries: [string, string][] = [];
 
-      if (separatorIndex === -1) {
-        return null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(":");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const rawValue = line.slice(separatorIndex + 1).trim();
+
+    if (!key || !rawValue) {
+      continue;
+    }
+
+    const blockScalarMatch = rawValue.match(/^([|>])[+-]?$/);
+
+    if (blockScalarMatch) {
+      const blockLines: string[] = [];
+      let blockIndex = index + 1;
+
+      for (; blockIndex < lines.length; blockIndex += 1) {
+        const blockLine = lines[blockIndex];
+
+        if (blockLine.trim() !== "" && !/^\s/.test(blockLine)) {
+          break;
+        }
+
+        blockLines.push(blockLine.replace(/^\s{2}/, ""));
       }
 
-      const key = line.slice(0, separatorIndex).trim();
-      const value = line.slice(separatorIndex + 1).trim();
+      const value =
+        blockScalarMatch[1] === ">"
+          ? blockLines.join("\n").replace(/\n[ \t]*\n/g, "\n\n").replace(/\n/g, " ").trim()
+          : blockLines.join("\n").trim();
 
-      return key && value ? [key, value] : null;
-    })
-    .filter((entry): entry is [string, string] => entry !== null);
+      if (value) {
+        entries.push([key, value]);
+      }
+
+      index = blockIndex - 1;
+      continue;
+    }
+
+    const value = rawValue.replace(/^"([\s\S]*)"$/, "$1").replace(/^'([\s\S]*)'$/, "$1");
+
+    if (value) {
+      entries.push([key, value]);
+    }
+  }
 
   return Object.fromEntries(entries);
 }
@@ -138,7 +179,7 @@ function isDescriptionLikelyVerbose(
     );
   const productSignals = countMatches(
     trimmed,
-    /\b(frontend|dashboard|dashboards|website|websites|hero|UI|browser|testing|Stripe|Checkout|PaymentIntents|Connect|billing|subscriptions|payment|payments|marketplace|marketplaces|Jira|Confluence|bug|bugs|issue|issues|ticket|tickets|backlog|Epic|Epics|status|report|reports|project|tasks|meeting|notes|action items|assignees|knowledge|documentation|deployment|authentication|infrastructure|architecture|duplicates)\b/gi
+    /\b(frontend|dashboard|dashboards|website|websites|hero|UI|browser|testing|Stripe|Checkout|PaymentIntents|Connect|billing|subscriptions|payment|payments|marketplace|marketplaces|Jira|Confluence|bug|bugs|issue|issues|ticket|tickets|backlog|Epic|Epics|status|report|reports|project|tasks|meeting|notes|action items|assignees|knowledge|documentation|deployment|authentication|infrastructure|architecture|duplicates|Postgres|database|databases|bills|costs|transfer|egress|query|queries|overfetching|SELECT|optimization|application)\b/gi
   );
   const structuredSignals =
     countMatches(trimmed, /\(\d+\)/g) +
