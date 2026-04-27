@@ -28,16 +28,16 @@ The immediate question for this wave is:
 
 | Label | Path |
 | --- | --- |
-| github-curated | `C:\Users\fb_52\.codex\plugins\cache\openai-curated\github\b066e4a0` |
-| cloudflare-curated | `C:\Users\fb_52\.codex\plugins\cache\openai-curated\cloudflare\b066e4a0` |
-| figma-curated | `C:\Users\fb_52\.codex\plugins\cache\openai-curated\figma\b066e4a0` |
+| github-curated | `<codex-home>\plugins\cache\openai-curated\github\b066e4a0` |
+| cloudflare-curated | `<codex-home>\plugins\cache\openai-curated\cloudflare\b066e4a0` |
+| figma-curated | `<codex-home>\plugins\cache\openai-curated\figma\b066e4a0` |
 
 ## Commands Run
 
 ```bash
-node dist/cli.js check "C:\Users\fb_52\.codex\plugins\cache\openai-curated\github\b066e4a0" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\plugins\cache\openai-curated\cloudflare\b066e4a0" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\plugins\cache\openai-curated\figma\b066e4a0" --json
+node dist/cli.js check "<codex-home>\plugins\cache\openai-curated\github\b066e4a0" --json
+node dist/cli.js check "<codex-home>\plugins\cache\openai-curated\cloudflare\b066e4a0" --json
+node dist/cli.js check "<codex-home>\plugins\cache\openai-curated\figma\b066e4a0" --json
 ```
 
 ## Findings Review

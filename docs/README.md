@@ -47,6 +47,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [Ops, Support, and SLA](operations/ops-support-and-sla.md)
 - [Roadmap and Risk Register](operations/roadmap-and-risk-register.md)
 - [CLI Presentation Issue Breakdown](operations/cli-presentation-issue-breakdown.md)
+- [Public Release Checklist](operations/public-release-checklist.md)
 
 ## Product Snapshot
 

@@ -28,16 +28,16 @@ The immediate question is:
 
 | Label | Path |
 | --- | --- |
-| cloudflare-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\cloudflare` |
-| neon-postgres-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\neon-postgres` |
-| hyperframes-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\hyperframes` |
+| cloudflare-marketplace | `<codex-home>\.tmp\plugins\plugins\cloudflare` |
+| neon-postgres-marketplace | `<codex-home>\.tmp\plugins\plugins\neon-postgres` |
+| hyperframes-marketplace | `<codex-home>\.tmp\plugins\plugins\hyperframes` |
 
 ## Commands Run
 
 ```bash
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\cloudflare" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\neon-postgres" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\hyperframes" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\cloudflare" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\neon-postgres" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\hyperframes" --json
 ```
 
 ## Initial Finding

@@ -10,7 +10,7 @@ These targets are chosen from local plugin and skill inventories outside the `Co
 
 ### 1. GitHub Curated Plugin Cache
 
-- Path: `C:\Users\fb_52\.codex\plugins\cache\openai-curated\github\b066e4a0`
+- Path: `<codex-home>\plugins\cache\openai-curated\github\b066e4a0`
 - Target type: plugin cache package
 - Recommended pass type: static first, then optional runtime if the MCP config is available and safe to run
 
@@ -28,7 +28,7 @@ Observed current output:
 
 ### 2. Cloudflare Curated Plugin Cache
 
-- Path: `C:\Users\fb_52\.codex\plugins\cache\openai-curated\cloudflare\b066e4a0`
+- Path: `<codex-home>\plugins\cache\openai-curated\cloudflare\b066e4a0`
 - Target type: plugin cache package with MCP surface
 - Recommended pass type: static first, then optional runtime if local MCP dependencies are safe to execute
 
@@ -46,7 +46,7 @@ Observed current output:
 
 ### 3. Figma Curated Plugin Cache
 
-- Path: `C:\Users\fb_52\.codex\plugins\cache\openai-curated\figma\b066e4a0`
+- Path: `<codex-home>\plugins\cache\openai-curated\figma\b066e4a0`
 - Target type: plugin cache package
 - Recommended pass type: static first
 
@@ -67,14 +67,14 @@ These are useful but lower priority for wave 01 because they are not immediately
 
 ### ChatGPT Apps Skill Pack
 
-- Path: `C:\Users\fb_52\.codex\skills\chatgpt-apps`
+- Path: `<codex-home>\skills\chatgpt-apps`
 - Type: skill-only package
 - Value: strong docs-heavy, reference-heavy skill
 - Limitation: not a direct `.codex-plugin` root without wrapping
 
 ### ASP.NET Core Skill Pack
 
-- Path: `C:\Users\fb_52\.codex\skills\aspnet-core`
+- Path: `<codex-home>\skills\aspnet-core`
 - Type: skill-only package
 - Value: stable long-form reference skill
 - Limitation: not a direct `.codex-plugin` root without wrapping

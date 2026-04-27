@@ -43,11 +43,19 @@ Use a major release when:
 
 ## Current Publish Position
 
-The project is technically ready for npm release dry runs, but public publication should wait until:
+The project is technically ready for npm release dry runs. GitHub-first public release is preferred before npm publication.
 
-- license is finalized
-- package naming is confirmed
-- release communication is ready
+Confirmed:
+
+- license is MIT
+- package name remains `codex-plugin-doctor`
+- release communication has a `v0.1.0` draft
+
+Still manual:
+
+- changing repository visibility from private to public
+- deciding whether to publish `v0.1.0` to npm
+- replacing or publishing the current draft prerelease
 
 ## Release Notes Guidance
 
@@ -58,4 +66,3 @@ Each release should call out:
 - new report fields
 - changed runtime behavior
 - any new warning or failure IDs that may affect CI users
-

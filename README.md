@@ -94,7 +94,7 @@ Passing runtime package:
 Codex Plugin Doctor
 ===================
 Status: PASS
-Target: D:\Workstation\CodexPluginDoctor\examples\codex-doctor-runtime
+Target: <repo>\examples\codex-doctor-runtime
 Summary: 0 fail, 0 warn, 0 total
 
 Runtime Scorecard
@@ -117,7 +117,7 @@ Risky package:
 Codex Plugin Doctor
 ===================
 Status: FAIL
-Target: D:\Workstation\CodexPluginDoctor\examples\codex-doctor-risky
+Target: <repo>\examples\codex-doctor-risky
 Summary: 1 fail, 0 warn, 1 total
 
 Failures

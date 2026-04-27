@@ -4,16 +4,16 @@
 
 - Date: 2026-04-27
 - Source: local Codex marketplace snapshot
-- Search root: `C:\Users\fb_52\.codex\.tmp\plugins\plugins`
+- Search root: `<codex-home>\.tmp\plugins\plugins`
 - Purpose: find marketplace packages that expose true-positive or false-negative validator behavior after wave 02 reduced description-noise false positives.
 
 ## Selected Targets
 
 | Rank | Label | Path | Initial Signal | Why It Was Selected |
 | --- | --- | --- | --- | --- |
-| 1 | `cloudflare-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\cloudflare` | block scalar descriptions | Uses `description: |` in skill frontmatter. This exposed that the validator was reading the scalar marker instead of the real description text. |
-| 2 | `neon-postgres-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\neon-postgres` | folded block scalar descriptions | Uses `description: >-` in skill frontmatter. This validates folded YAML scalar handling. |
-| 3 | `hyperframes-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\hyperframes` | mixed block scalar and long concrete descriptions | Includes block scalar metadata plus remaining long-description warning cases for future manual review. |
+| 1 | `cloudflare-marketplace` | `<codex-home>\.tmp\plugins\plugins\cloudflare` | block scalar descriptions | Uses `description: |` in skill frontmatter. This exposed that the validator was reading the scalar marker instead of the real description text. |
+| 2 | `neon-postgres-marketplace` | `<codex-home>\.tmp\plugins\plugins\neon-postgres` | folded block scalar descriptions | Uses `description: >-` in skill frontmatter. This validates folded YAML scalar handling. |
+| 3 | `hyperframes-marketplace` | `<codex-home>\.tmp\plugins\plugins\hyperframes` | mixed block scalar and long concrete descriptions | Includes block scalar metadata plus remaining long-description warning cases for future manual review. |
 
 ## Discovery Notes
 

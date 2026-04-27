@@ -12,7 +12,7 @@
 
 This wave validates the static heuristic behavior against marketplace snapshot packages under:
 
-`C:\Users\fb_52\.codex\.tmp\plugins\plugins`
+`<codex-home>\.tmp\plugins\plugins`
 
 The immediate question is:
 
@@ -30,16 +30,16 @@ The immediate question is:
 
 | Label | Path |
 | --- | --- |
-| linear-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\linear` |
-| build-web-apps-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\build-web-apps` |
-| atlassian-rovo-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\atlassian-rovo` |
+| linear-marketplace | `<codex-home>\.tmp\plugins\plugins\linear` |
+| build-web-apps-marketplace | `<codex-home>\.tmp\plugins\plugins\build-web-apps` |
+| atlassian-rovo-marketplace | `<codex-home>\.tmp\plugins\plugins\atlassian-rovo` |
 
 ## Commands Run
 
 ```bash
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\linear" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\build-web-apps" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\atlassian-rovo" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\linear" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\build-web-apps" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\atlassian-rovo" --json
 ```
 
 ## Initial Output Summary

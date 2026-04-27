@@ -29,18 +29,18 @@ The immediate question is:
 
 | Label | Path |
 | --- | --- |
-| hyperframes-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\hyperframes` |
-| canva-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\canva` |
-| remotion-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\remotion` |
-| biorender-marketplace | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\biorender` |
+| hyperframes-marketplace | `<codex-home>\.tmp\plugins\plugins\hyperframes` |
+| canva-marketplace | `<codex-home>\.tmp\plugins\plugins\canva` |
+| remotion-marketplace | `<codex-home>\.tmp\plugins\plugins\remotion` |
+| biorender-marketplace | `<codex-home>\.tmp\plugins\plugins\biorender` |
 
 ## Commands Run
 
 ```bash
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\hyperframes" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\canva" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\remotion" --json
-node dist/cli.js check "C:\Users\fb_52\.codex\.tmp\plugins\plugins\biorender" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\hyperframes" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\canva" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\remotion" --json
+node dist/cli.js check "<codex-home>\.tmp\plugins\plugins\biorender" --json
 ```
 
 ## Initial Output Summary

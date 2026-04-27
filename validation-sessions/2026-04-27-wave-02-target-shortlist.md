@@ -4,16 +4,16 @@
 
 - Date: 2026-04-27
 - Source: local Codex marketplace snapshot
-- Search root: `C:\Users\fb_52\.codex\.tmp\plugins\plugins`
+- Search root: `<codex-home>\.tmp\plugins\plugins`
 - Purpose: find non-curated, external-like plugin packages that exercise real marketplace metadata beyond repo-owned fixtures and curated cache packages.
 
 ## Selected Targets
 
 | Rank | Label | Path | Initial Status | Why It Was Selected |
 | --- | --- | --- | --- | --- |
-| 1 | `linear-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\linear` | pass | Clean baseline with app and skill metadata. Useful to confirm the validator is not noisy on smaller marketplace packages. |
-| 2 | `build-web-apps-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\build-web-apps` | warn | Engineering workflow package with frontend and payment-integration skill descriptions that are concrete but not MCP-heavy. |
-| 3 | `atlassian-rovo-marketplace` | `C:\Users\fb_52\.codex\.tmp\plugins\plugins\atlassian-rovo` | warn | Enterprise workflow package with structured trigger descriptions for Jira and Confluence workflows. Good stress test for non-protocol product language. |
+| 1 | `linear-marketplace` | `<codex-home>\.tmp\plugins\plugins\linear` | pass | Clean baseline with app and skill metadata. Useful to confirm the validator is not noisy on smaller marketplace packages. |
+| 2 | `build-web-apps-marketplace` | `<codex-home>\.tmp\plugins\plugins\build-web-apps` | warn | Engineering workflow package with frontend and payment-integration skill descriptions that are concrete but not MCP-heavy. |
+| 3 | `atlassian-rovo-marketplace` | `<codex-home>\.tmp\plugins\plugins\atlassian-rovo` | warn | Enterprise workflow package with structured trigger descriptions for Jira and Confluence workflows. Good stress test for non-protocol product language. |
 
 ## Alternates
 
