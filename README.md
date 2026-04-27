@@ -1,47 +1,134 @@
 # Codex Plugin Doctor
 
-Codex Plugin Doctor is a CLI-first validator for Codex plugins, skills, and MCP package surfaces.
+[![CI](https://github.com/Esquetta/CodexPluginDoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/Esquetta/CodexPluginDoctor/actions/workflows/ci.yml)
 
-It helps plugin authors and engineering teams catch packaging, configuration, and structural issues before a broken plugin reaches users or internal rollout workflows.
+Codex Plugin Doctor is a local CLI validator for Codex plugin packages, skills, and MCP server bundles.
+
+It catches packaging, metadata, security, and runtime protocol problems before a plugin reaches users, teammates, or release workflows.
 
 ## Status
 
-Codex Plugin Doctor is pre-release and local-first. The repository is currently the primary product surface; there is no hosted dashboard or marketing website.
+Codex Plugin Doctor is currently pre-release and local-first.
 
-The current build includes:
+- Primary surface: GitHub repository
+- Distribution today: local source install, `npm link`, `npm pack`, GitHub Releases
+- Public npm publish: prepared, but not yet required
+- License: [MIT](./LICENSE)
 
-- static validation for Codex plugin packages, skills, and MCP config
-- runtime MCP protocol probing for command-based servers
-- text, JSON, and Markdown reports
-- CI-friendly artifacts and release-candidate tooling
-- real-world validation notes under [`validation-sessions/`](./validation-sessions/README.md)
+## Why This Exists
 
-## Current Validation Scope
+Codex plugin packages can fail in several places:
 
-The first working slice validates:
+- the package manifest is missing or points outside the package root
+- skills exist but do not expose valid `SKILL.md` metadata
+- `.mcp.json` is malformed or references unsafe secrets
+- an MCP server starts but does not complete the protocol handshake
+- tools, resources, or prompts list successfully but fail deeper runtime checks
+- verbose metadata creates noisy matching and unnecessary context cost
 
-- required `.codex-plugin/plugin.json` presence
-- required manifest fields: `name`, `version`, `description`
-- referenced `skills` directory existence when declared
-- `SKILL.md` presence and required frontmatter fields for declared skills
-- optional `.mcp.json` discovery and structural validation
-- opt-in runtime probing for command-based MCP servers with real MCP `initialize`, `tools/list`, and `tools/call` validation
-- capability-gated `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`, and `prompts/get` runtime validation
-- safe schema-based `tools/call` argument generation with destructive-tool skipping
-- security checks for path traversal and hard-coded secret-like env values
-- warn-level heuristics for overly verbose plugin and skill descriptions
-- markdown summaries for CI-friendly report publishing
-- TTY-aware live status rendering for human text runs, with machine outputs kept clean
-- `--ascii` fallback rendering for terminal-safe text output
-- `--no-animations` for quiet human runs
-- `--verbose-runtime` for stderr protocol transcript output
-- runtime capability scorecard in reports
-- paginated MCP list probing
-- redacted transcript output for generated prompt arguments, token-like strings, sensitive query parameters, and long payloads
-- warn-level runtime payload size guardrails for large tool/resource/prompt content
-- deterministic PASS/FAIL reporting with CLI exit codes
+This tool gives plugin authors a repeatable preflight check before distribution.
 
-## Planned Commands
+## What It Checks
+
+Static validation:
+
+- required `.codex-plugin/plugin.json`
+- manifest fields: `name`, `version`, `description`
+- skill directory wiring
+- `SKILL.md` presence and frontmatter fields
+- YAML single-line and block-scalar skill descriptions
+- `.mcp.json` structure
+- path traversal risks
+- hard-coded secret-like env values
+- description quality heuristics tuned against real plugin packages
+
+Runtime MCP validation with `--runtime`:
+
+- `initialize`
+- `notifications/initialized`
+- `tools/list`
+- `tools/call`
+- `resources/list`
+- `resources/read`
+- `resources/templates/list`
+- `prompts/list`
+- `prompts/get`
+- paginated list responses
+- runtime capability scorecard
+- redacted verbose transcript with `--verbose-runtime`
+
+Output formats:
+
+- human text output
+- JSON reports
+- Markdown reports
+- `--output` file writing
+- CI summary and artifact generation
+
+## Quick Start
+
+```bash
+npm install
+npm run build
+node dist/cli.js check examples/codex-doctor-runtime --runtime
+```
+
+For local global usage:
+
+```bash
+npm link
+codex-plugin-doctor check examples/codex-doctor-runtime --runtime
+```
+
+Generate validation artifacts locally:
+
+```bash
+npm run generate-validation-artifacts -- --target examples/codex-doctor-runtime --runtime-target examples/codex-doctor-runtime --out-dir validation-artifacts-local
+```
+
+## Example Output
+
+Passing runtime package:
+
+```text
+Codex Plugin Doctor
+===================
+Status: PASS
+Target: D:\Workstation\CodexPluginDoctor\examples\codex-doctor-runtime
+Summary: 0 fail, 0 warn, 0 total
+
+Runtime Scorecard
+----------------
+initialize: pass
+tools/list: pass
+tools/call: pass
+resources/list: pass
+resources/read: pass
+resources/templates/list: pass
+prompts/list: pass
+prompts/get: pass
+
+No findings.
+```
+
+Risky package:
+
+```text
+Codex Plugin Doctor
+===================
+Status: FAIL
+Target: D:\Workstation\CodexPluginDoctor\examples\codex-doctor-risky
+Summary: 1 fail, 0 warn, 1 total
+
+Failures
+--------
+x plugin.security.hard_coded_secret
+  Message: The MCP server `dangerServer` contains a hard-coded secret-like env value for `OPENAI_API_KEY`.
+  Impact: Hard-coded credentials inside plugin bundles increase leakage risk and make secure rotation difficult.
+  Suggested fix: Replace the literal value for `OPENAI_API_KEY` with an environment reference or injected secret outside the package.
+```
+
+## Useful Commands
 
 ```bash
 codex-plugin-doctor check .
@@ -50,96 +137,59 @@ codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
 codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
-codex-plugin-doctor check . --json --runtime --verbose-runtime
 codex-plugin-doctor check . --runtime
-```
-
-## Quick Start
-
-### Install dependencies
-
-```bash
-npm install
-```
-
-### Run tests
-
-```bash
-npm test
-```
-
-### Build the CLI
-
-```bash
-npm run build
-```
-
-### Generate CI-style validation artifacts locally
-
-```bash
-npm run generate-validation-artifacts -- --target examples/codex-doctor-runtime --runtime-target examples/codex-doctor-runtime --out-dir validation-artifacts-local
-```
-
-### Run against a local fixture
-
-```bash
-npm run dev -- check tests/fixtures/valid-plugin
-npm run dev -- check tests/fixtures/missing-manifest --json
-node dist/cli.js check tests/fixtures/security-hardcoded-secret --ascii
-node dist/cli.js check tests/fixtures/valid-plugin-with-mcp --no-animations
-node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --verbose-runtime
-node dist/cli.js check tests/fixtures/runtime-paginated --json --runtime --verbose-runtime
-node dist/cli.js check tests/fixtures/runtime-valid --json --runtime --output report.json
+codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
 ## Repository Layout
 
 ```text
-docs/      Product, brand, security, operations, and engineering documentation
-examples/  Manual sample plugin packs for local CLI testing
-src/       CLI entrypoint, validation logic, domain types, and reporting
-tests/     Fixture-based tests and sample plugin bundles
-validation-sessions/  Structured notes and templates for real-world validation waves
+docs/                 Product, engineering, security, and release docs
+examples/             Manual plugin packs for local CLI testing
+src/                  CLI, validation logic, runtime probing, reports
+tests/                Fixture-based regression tests
+validation-sessions/  Real-world validation waves and tuning notes
 ```
 
-## Documentation Highlights
+## Validation Evidence
 
-- [Vision and Strategy](./docs/product/vision-and-strategy.md)
-- [MVP Specification](./docs/product/mvp-spec.md)
-- [Technical Architecture](./docs/engineering/technical-architecture.md)
-- [Security Architecture](./docs/security/security-architecture.md)
-- [Initial Implementation Plan](./docs/engineering/initial-implementation-plan.md)
-- [Initial Issue Breakdown](./docs/operations/initial-issue-breakdown.md)
-- [Release Gating Workflow](./docs/engineering/release-gating-workflow.md)
-- [Runtime Tools List Probe Plan](./docs/engineering/runtime-tools-list-implementation-plan.md)
-- [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
-- [Examples](./examples/README.md)
+The validator is tuned against local fixtures and real marketplace-style plugin packages. See:
+
 - [Real-World Validation Workflow](./docs/engineering/real-world-validation-workflow.md)
-- [Real-World Validation Checklist](./docs/operations/real-world-validation-checklist.md)
+- [Validation Sessions](./validation-sessions/README.md)
+- [Examples](./examples/README.md)
 
-## Near-Term Roadmap
+Recent validation waves covered:
 
-The next implementation slices are:
+- curated Codex plugin cache packages
+- marketplace-style plugin snapshots
+- YAML block-scalar skill metadata
+- media and visual workflow metadata
 
-1. Add deeper schema and context-bloat heuristics.
-2. Expand security rules beyond path and env checks.
-3. Add richer MCP transport validation beyond `tools/call`, including more protocol error paths.
-4. Introduce package-path configuration in CI examples.
-5. Add GitHub Action artifact publishing and richer summary formatting.
+## Release Readiness
 
-## Product Direction
+Release preparation is reproducible from the repository:
 
-The product starts as a Codex-specific validator and is designed to grow into a broader `MCP Doctor` platform over time. The immediate goal is not to build a marketplace or a dashboard. The immediate goal is to provide reliable preflight validation for Codex-compatible package bundles.
+```bash
+npm run prepare-release
+```
 
-## Open Source
+This runs tests, builds the TypeScript output, and performs `npm pack --dry-run`.
 
-This project is licensed under the [MIT License](./LICENSE).
+Related docs:
 
-Useful repo documents:
+- [Changelog](./CHANGELOG.md)
+- [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
+- [Release Candidate Workflow](./docs/engineering/release-candidate-workflow.md)
+- [v0.1.0 Final Release Notes Draft](./docs/engineering/v0.1.0-final-release-notes.md)
+
+## Contributing
+
+Contributions are welcome once the repository is public. Start with:
 
 - [Contributing](./CONTRIBUTING.md)
 - [Security Policy](./SECURITY.md)
-- [Changelog](./CHANGELOG.md)
+- [Validation tuning issue template](./.github/ISSUE_TEMPLATE/validation_tuning.yml)
 
 ## Support
 
@@ -147,4 +197,10 @@ If this tool saves you time, GitHub stars and sponsorship help signal that the p
 
 - Star the repository on GitHub.
 - Use GitHub Sponsors through the repository funding link.
-- Open validation tuning issues when you find false positives or false negatives.
+- Open validation tuning issues for false positives or false negatives.
+
+## Product Direction
+
+Codex Plugin Doctor starts as a Codex-specific validator and can grow into a broader MCP Doctor over time.
+
+The immediate goal is not a marketplace, dashboard, or hosted website. The immediate goal is a trustworthy local preflight check for Codex-compatible plugin bundles.

@@ -4,6 +4,27 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.1.0] - Draft
+
+Draft final release notes for the first open-source-ready local release. This version is not tagged yet.
+
+### Added Since `0.1.0-rc.1`
+
+- MIT license and open-source repository documents
+- GitHub issue templates for bugs, feature requests, and validation tuning
+- GitHub Sponsors funding configuration
+- stronger README positioning for GitHub-first distribution
+- real-world validation sessions for curated cache, marketplace snapshots, YAML block scalar metadata, and media/visual metadata
+- YAML block scalar parsing for `SKILL.md` frontmatter descriptions
+- expanded description heuristics for concrete product, enterprise workflow, database, media, visual design, and platform terms
+- regression fixtures for marketplace-style skill metadata false positives and block-scalar false negatives
+
+### Release Focus
+
+- reliable local validation before distribution
+- reproducible release checks through `npm run prepare-release`
+- GitHub-first open-source readiness without requiring a hosted website
+
 ## [0.1.0-rc.1] - 2026-04-23
 
 First release candidate for the local Codex plugin validation workflow and deep MCP runtime validation stack.
@@ -101,4 +122,4 @@ Highlights:
 
 ## Notes
 
-This project is currently optimized for local testing and iterative hardening rather than public package publication. The package metadata and release-prep flow are in place, but public npm release decisions such as license and publish policy remain intentionally deferred.
+This project is currently optimized for local testing and iterative hardening rather than public package publication. The package metadata and release-prep flow are in place. The repository now uses the MIT license; public npm publication remains a separate release decision.
