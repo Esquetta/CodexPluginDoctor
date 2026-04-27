@@ -96,6 +96,7 @@ docs/      Product, brand, security, operations, and engineering documentation
 examples/  Manual sample plugin packs for local CLI testing
 src/       CLI entrypoint, validation logic, domain types, and reporting
 tests/     Fixture-based tests and sample plugin bundles
+validation-sessions/  Structured notes and templates for real-world validation waves
 ```
 
 ## Documentation Highlights
@@ -110,6 +111,8 @@ tests/     Fixture-based tests and sample plugin bundles
 - [Runtime Tools List Probe Plan](./docs/engineering/runtime-tools-list-implementation-plan.md)
 - [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
 - [Examples](./examples/README.md)
+- [Real-World Validation Workflow](./docs/engineering/real-world-validation-workflow.md)
+- [Real-World Validation Checklist](./docs/operations/real-world-validation-checklist.md)
 
 ## Near-Term Roadmap
 

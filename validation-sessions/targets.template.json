@@ -1,0 +1,25 @@
+{
+  "targets": [
+    {
+      "label": "target-01",
+      "path": "D:/Path/To/Plugin",
+      "type": "healthy",
+      "runtime": true,
+      "notes": "Expected to pass with no findings."
+    },
+    {
+      "label": "target-02",
+      "path": "D:/Path/To/BrokenPlugin",
+      "type": "broken",
+      "runtime": true,
+      "notes": "Expected to fail due to a real configuration or runtime issue."
+    },
+    {
+      "label": "target-03",
+      "path": "D:/Path/To/EdgeCasePlugin",
+      "type": "edge-case",
+      "runtime": true,
+      "notes": "Expected to pressure-test heuristics or protocol assumptions."
+    }
+  ]
+}
