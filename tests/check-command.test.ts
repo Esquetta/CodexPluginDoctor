@@ -275,4 +275,31 @@ describe("runCheck", () => {
     expect(result.status).toBe("pass");
     expect(result.findings).toEqual([]);
   });
+
+  it("passes when a media animation reference skill description is concrete", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-animation-reference-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when a long video-production workflow description is concrete", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-video-workflow-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when a visual design workflow description is concrete", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-visual-design-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
 });

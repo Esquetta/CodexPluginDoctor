@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-animation-reference-description",
+  "version": "1.0.0",
+  "description": "Fixture with a concrete media animation reference description.",
+  "skills": "./skills/"
+}

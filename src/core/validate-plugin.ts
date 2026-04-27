@@ -179,7 +179,7 @@ function isDescriptionLikelyVerbose(
     );
   const productSignals = countMatches(
     trimmed,
-    /\b(frontend|dashboard|dashboards|website|websites|hero|UI|browser|testing|Stripe|Checkout|PaymentIntents|Connect|billing|subscriptions|payment|payments|marketplace|marketplaces|Jira|Confluence|bug|bugs|issue|issues|ticket|tickets|backlog|Epic|Epics|status|report|reports|project|tasks|meeting|notes|action items|assignees|knowledge|documentation|deployment|authentication|infrastructure|architecture|duplicates|Postgres|database|databases|bills|costs|transfer|egress|query|queries|overfetching|SELECT|optimization|application)\b/gi
+    /\b(frontend|dashboard|dashboards|website|websites|hero|UI|browser|testing|Stripe|Checkout|PaymentIntents|Connect|billing|subscriptions|payment|payments|marketplace|marketplaces|Jira|Confluence|bug|bugs|issue|issues|ticket|tickets|backlog|Epic|Epics|status|report|reports|project|tasks|meeting|notes|action items|assignees|knowledge|documentation|deployment|authentication|infrastructure|architecture|duplicates|Postgres|database|databases|bills|costs|transfer|egress|query|queries|overfetching|SELECT|optimization|application|GSAP|animation|animations|animate|easing|stagger|timeline|timelines|playback|transforms|will-change|quickTo|video|videos|composition|compositions|title cards|overlays|captions|subtitles|voiceovers|audio|audio-reactive|visuals|scene|scenes|transitions|HTML|text-to-speech|music|highlighting|crossfades|wipes|shader|media|render|preview|transcribe|Canva|presentation|presentations|slide|slides|deck|brief|outline|design|designs|brand|brand kit|social media|Facebook|Instagram|LinkedIn|export-ready|formats|localized|translated|layout)\b/gi
   );
   const structuredSignals =
     countMatches(trimmed, /\(\d+\)/g) +
@@ -208,6 +208,10 @@ function isDescriptionLikelyVerbose(
   }
 
   if (concreteSignals >= 8 && vagueSignals <= 2 && length <= 650) {
+    return false;
+  }
+
+  if (concreteSignals >= 12 && vagueSignals <= 2 && length <= 780) {
     return false;
   }
 

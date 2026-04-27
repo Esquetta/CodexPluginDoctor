@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-video-workflow-description",
+  "version": "1.0.0",
+  "description": "Fixture with a concrete video production workflow description.",
+  "skills": "./skills/"
+}
