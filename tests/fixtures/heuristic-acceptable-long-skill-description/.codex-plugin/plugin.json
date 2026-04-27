@@ -1,0 +1,7 @@
+{
+  "name": "heuristic-acceptable-long-skill-description",
+  "version": "1.0.0",
+  "description": "Fixture with a detailed but still acceptable skill description.",
+  "skills": "./skills/"
+}
+

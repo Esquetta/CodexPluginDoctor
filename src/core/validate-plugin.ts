@@ -117,6 +117,54 @@ function parseSkillFrontmatter(content: string): Record<string, string> | null {
   return Object.fromEntries(entries);
 }
 
+function countMatches(input: string, pattern: RegExp): number {
+  const matches = input.match(pattern);
+
+  return matches ? matches.length : 0;
+}
+
+function isDescriptionLikelyVerbose(
+  description: string,
+  mode: "plugin" | "skill"
+): boolean {
+  const trimmed = description.trim();
+  const length = trimmed.length;
+
+  const technicalSignals =
+    countMatches(trimmed, /`[^`]+`/g) +
+    countMatches(trimmed, /\b(MCP|SDK|CLI|API|JSON|schema|resource|resources|prompt|prompts|tool|tools|repo|repository|command|commands|connector|metadata|workflow|validation|inputs|outputs)\b/gi);
+  const vagueSignals = countMatches(
+    trimmed,
+    /\b(general|generally|many different|many|broad|various|different situations|possibilities|ideas|concepts|directions)\b/gi
+  );
+
+  if (mode === "plugin") {
+    return length > 240;
+  }
+
+  if (length <= 240) {
+    return false;
+  }
+
+  if (vagueSignals >= 2) {
+    return true;
+  }
+
+  if (length >= 700) {
+    return true;
+  }
+
+  if (technicalSignals >= 3 && vagueSignals === 0 && length <= 600) {
+    return false;
+  }
+
+  if (technicalSignals >= 2 && vagueSignals === 0 && length <= 420) {
+    return false;
+  }
+
+  return true;
+}
+
 function validateRequiredManifestFields(
   discoveredPackage: DiscoveredPackage
 ): Finding[] {
@@ -156,7 +204,10 @@ function validateRequiredManifestFields(
     );
   }
 
-  if (manifest.description && manifest.description.length > 180) {
+  if (
+    manifest.description &&
+    isDescriptionLikelyVerbose(manifest.description, "plugin")
+  ) {
     findings.push(
       buildWarning(
         "plugin.heuristic.description.too_long",
@@ -275,7 +326,10 @@ async function validateSkillDefinitions(
       );
     }
 
-    if (frontmatter?.description && frontmatter.description.length > 180) {
+    if (
+      frontmatter?.description &&
+      isDescriptionLikelyVerbose(frontmatter.description, "skill")
+    ) {
       findings.push(
         buildWarning(
           "plugin.heuristic.skill_description.too_long",

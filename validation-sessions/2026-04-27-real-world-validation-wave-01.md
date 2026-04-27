@@ -69,9 +69,17 @@ Runtime was intentionally skipped in wave 01 because these curated packages may 
 
 ## Concrete Counts
 
+### Before Heuristic Tuning
+
 - `github-curated`: 4 warnings, 0 failures
 - `cloudflare-curated`: 7 warnings, 0 failures
 - `figma-curated`: 7 warnings, 0 failures
+
+### After Heuristic Tuning
+
+- `github-curated`: 1 warning, 0 failures
+- `cloudflare-curated`: 4 warnings, 0 failures
+- `figma-curated`: 4 warnings, 0 failures
 
 ## Early Interpretation
 
@@ -80,6 +88,8 @@ All three curated plugin packages primarily trigger the same heuristic family:
 - `plugin.heuristic.skill_description.too_long`
 
 That consistency is useful. It means the validator is not spraying unrelated noise. But it also strongly suggests that the current threshold may be tuned too aggressively for high-quality curated plugin packages with intentionally detailed skill descriptions.
+
+After the first tuning pass, warning volume dropped materially while preserving warn-level pressure on the most verbose descriptions. That is a good sign that the heuristic is moving in the right direction, though Cloudflare and Figma still produce enough warnings to justify at least one more tuning pass later.
 
 ## Tuning Recommendations
 
@@ -108,3 +118,4 @@ That consistency is useful. It means the validator is not spraying unrelated noi
 - [ ] review the flagged skill descriptions manually for Figma curated package
 - [ ] convert the heuristic tuning decision into an implementation slice
 - [ ] add a long-but-acceptable skill description fixture
+- [x] run the first heuristic tuning pass and measure warning reduction

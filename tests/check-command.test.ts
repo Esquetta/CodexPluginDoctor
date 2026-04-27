@@ -170,4 +170,30 @@ describe("runCheck", () => {
       ])
     );
   });
+
+  it("passes when a long skill description is specific and operationally dense", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-long-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("still warns when a long skill description is vague despite its length", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-vague-long-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.heuristic.skill_description.too_long",
+          severity: "warn"
+        })
+      ])
+    );
+  });
 });

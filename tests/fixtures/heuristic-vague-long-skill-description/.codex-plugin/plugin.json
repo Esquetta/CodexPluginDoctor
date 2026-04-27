@@ -1,0 +1,7 @@
+{
+  "name": "heuristic-vague-long-skill-description",
+  "version": "1.0.0",
+  "description": "Fixture with a long but low-signal skill description.",
+  "skills": "./skills/"
+}
+
