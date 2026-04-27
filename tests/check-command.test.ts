@@ -205,4 +205,49 @@ describe("runCheck", () => {
     expect(result.status).toBe("pass");
     expect(result.findings).toEqual([]);
   });
+
+  it("passes when a precise performance-audit skill description narrowly exceeds the soft length threshold", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-performance-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when a long workflow skill description uses concrete triggers and product signals", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-triggered-workflow-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when a frontend builder skill description is concrete but not protocol-heavy", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-frontend-builder-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when a payment integration skill description is product-dense", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-payment-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes when an enterprise workflow skill description uses structured triggers", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-enterprise-workflow-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
 });

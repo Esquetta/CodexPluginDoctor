@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-payment-description",
+  "version": "1.0.0",
+  "description": "Fixture with a concrete payment integration description.",
+  "skills": "./skills/"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-triggered-workflow-description",
+  "version": "1.0.0",
+  "description": "Fixture with a concrete triggered workflow skill description.",
+  "skills": "./skills/"
+}

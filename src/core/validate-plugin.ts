@@ -136,6 +136,15 @@ function isDescriptionLikelyVerbose(
       trimmed,
       /\b(MCP|SDK|CLI|API|JSON|schema|resource|resources|prompt|prompts|tool|tools|repo|repository|command|commands|connector|metadata|workflow|validation|inputs|outputs|GitHub|GraphQL|PR|review|Cloudflare|Workers|Wrangler|D1|R2|Vectorize|Queues|Workflows|Tunnel|Spectrum|WAF|DDoS|Terraform|Pulumi|Figma|FigJam|design system|component|components|variants|auto-layout|token|tokens|library|libraries|screen|screens|React|WebSocket)\b/gi
     );
+  const productSignals = countMatches(
+    trimmed,
+    /\b(frontend|dashboard|dashboards|website|websites|hero|UI|browser|testing|Stripe|Checkout|PaymentIntents|Connect|billing|subscriptions|payment|payments|marketplace|marketplaces|Jira|Confluence|bug|bugs|issue|issues|ticket|tickets|backlog|Epic|Epics|status|report|reports|project|tasks|meeting|notes|action items|assignees|knowledge|documentation|deployment|authentication|infrastructure|architecture|duplicates)\b/gi
+  );
+  const structuredSignals =
+    countMatches(trimmed, /\(\d+\)/g) +
+    countMatches(trimmed, /\b(Use when|When an agent needs to|Triggers:)\b/gi);
+  const concreteSignals =
+    technicalSignals + productSignals + structuredSignals;
   const vagueSignals = countMatches(
     trimmed,
     /\b(general|generally|many different|many|broad|various|different situations|possibilities|ideas|concepts|directions)\b/gi
@@ -149,8 +158,20 @@ function isDescriptionLikelyVerbose(
     return false;
   }
 
-  if (vagueSignals >= 2) {
+  if (vagueSignals >= 4) {
     return true;
+  }
+
+  if (vagueSignals >= 2 && concreteSignals < 8) {
+    return true;
+  }
+
+  if (concreteSignals >= 8 && vagueSignals <= 2 && length <= 650) {
+    return false;
+  }
+
+  if (technicalSignals >= 8 && vagueSignals <= 1 && length <= 760) {
+    return false;
   }
 
   if (length >= 700) {
@@ -165,7 +186,11 @@ function isDescriptionLikelyVerbose(
     return false;
   }
 
-  if (technicalSignals >= 2 && vagueSignals === 0 && length <= 420) {
+  if (concreteSignals >= 4 && vagueSignals <= 1 && length <= 520) {
+    return false;
+  }
+
+  if (technicalSignals >= 2 && vagueSignals === 0 && length <= 480) {
     return false;
   }
 

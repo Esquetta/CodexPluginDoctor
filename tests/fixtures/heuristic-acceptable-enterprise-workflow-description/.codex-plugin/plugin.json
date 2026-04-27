@@ -1,0 +1,6 @@
+{
+  "name": "heuristic-acceptable-enterprise-workflow-description",
+  "version": "1.0.0",
+  "description": "Fixture with a structured enterprise workflow description.",
+  "skills": "./skills/"
+}

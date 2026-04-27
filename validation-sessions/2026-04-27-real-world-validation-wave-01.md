@@ -81,6 +81,19 @@ Runtime was intentionally skipped in wave 01 because these curated packages may 
 - `cloudflare-curated`: 1 warning, 0 failures
 - `figma-curated`: 1 warning, 0 failures
 
+### After Manual Classification Tuning
+
+- `github-curated`: 0 warnings, 0 failures
+- `cloudflare-curated`: 0 warnings, 0 failures
+- `figma-curated`: 0 warnings, 0 failures
+
+## Manual Classification
+
+| Target | Skill | Classification | Decision |
+| --- | --- | --- | --- |
+| cloudflare-curated | `web-perf` | `false_positive` | The description is slightly over the soft threshold but precise, operational, and scoped to performance auditing. |
+| figma-curated | `figma-generate-design` | `false_positive` | The description is long, but it is dense with concrete triggers, Figma workflow boundaries, and design-system signals. |
+
 ## Early Interpretation
 
 All three curated plugin packages primarily trigger the same heuristic family:
@@ -96,6 +109,8 @@ After the second tuning pass, warning volume dropped materially:
 - Figma curated package: `7 -> 1`
 
 This is strong evidence that the heuristic is no longer broadly noisy on curated packages, while still preserving pressure on the longest remaining descriptions.
+
+After manual classification of the two remaining warnings, both were treated as false positives. The final tuning pass keeps the vague-description regression covered while allowing precise descriptions that narrowly exceed the previous length thresholds.
 
 ## Tuning Recommendations
 
@@ -120,9 +135,11 @@ This is strong evidence that the heuristic is no longer broadly noisy on curated
 
 ## Follow-Up Tasks
 
-- [ ] review the flagged skill descriptions manually for GitHub curated package
-- [ ] review the flagged skill descriptions manually for Cloudflare curated package
-- [ ] review the flagged skill descriptions manually for Figma curated package
-- [ ] convert the heuristic tuning decision into an implementation slice
-- [ ] add a long-but-acceptable skill description fixture
+- [x] review the flagged skill descriptions manually for GitHub curated package
+- [x] review the flagged skill descriptions manually for Cloudflare curated package
+- [x] review the flagged skill descriptions manually for Figma curated package
+- [x] convert the heuristic tuning decision into an implementation slice
+- [x] add a long-but-acceptable skill description fixture
 - [x] run the first heuristic tuning pass and measure warning reduction
+- [x] run the second heuristic tuning pass and measure curated package warning reduction
+- [x] run final manual-classification tuning pass for the two remaining false positives
