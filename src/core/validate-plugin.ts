@@ -132,7 +132,10 @@ function isDescriptionLikelyVerbose(
 
   const technicalSignals =
     countMatches(trimmed, /`[^`]+`/g) +
-    countMatches(trimmed, /\b(MCP|SDK|CLI|API|JSON|schema|resource|resources|prompt|prompts|tool|tools|repo|repository|command|commands|connector|metadata|workflow|validation|inputs|outputs)\b/gi);
+    countMatches(
+      trimmed,
+      /\b(MCP|SDK|CLI|API|JSON|schema|resource|resources|prompt|prompts|tool|tools|repo|repository|command|commands|connector|metadata|workflow|validation|inputs|outputs|GitHub|GraphQL|PR|review|Cloudflare|Workers|Wrangler|D1|R2|Vectorize|Queues|Workflows|Tunnel|Spectrum|WAF|DDoS|Terraform|Pulumi|Figma|FigJam|design system|component|components|variants|auto-layout|token|tokens|library|libraries|screen|screens|React|WebSocket)\b/gi
+    );
   const vagueSignals = countMatches(
     trimmed,
     /\b(general|generally|many different|many|broad|various|different situations|possibilities|ideas|concepts|directions)\b/gi
@@ -155,6 +158,10 @@ function isDescriptionLikelyVerbose(
   }
 
   if (technicalSignals >= 3 && vagueSignals === 0 && length <= 600) {
+    return false;
+  }
+
+  if (technicalSignals >= 8 && vagueSignals <= 1 && length <= 420) {
     return false;
   }
 

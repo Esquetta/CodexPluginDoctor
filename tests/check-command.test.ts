@@ -196,4 +196,13 @@ describe("runCheck", () => {
       ])
     );
   });
+
+  it("passes when a long description is dense with concrete product and feature terms", async () => {
+    const targetPath = path.resolve("tests/fixtures/heuristic-acceptable-product-dense-skill-description");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+  });
 });
