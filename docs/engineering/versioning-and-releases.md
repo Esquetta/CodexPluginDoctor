@@ -52,10 +52,10 @@ Confirmed:
 - release communication has final `v0.1.0` notes
 - `v0.1.0` is published as the current GitHub Release
 - obsolete `v0.1.0-rc.1` draft release has been removed; the tag remains for history
+- repository visibility is public
 
 Still manual:
 
-- changing repository visibility from private to public
 - deciding whether to publish `v0.1.0` to npm
 
 ## Release Notes Guidance

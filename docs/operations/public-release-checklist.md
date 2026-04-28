@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This checklist prepares `Codex Plugin Doctor` for a GitHub-first public release without requiring a website or immediate npm publication.
+This checklist records the GitHub-first public release state for `Codex Plugin Doctor` without requiring a website or immediate npm publication.
 
 ## Current Position
 
-- Repository: private
+- Repository: public
 - License: MIT
 - Distribution preference: GitHub repository and GitHub Releases first
 - GitHub Release: `v0.1.0` published
@@ -28,6 +28,8 @@ This checklist prepares `Codex Plugin Doctor` for a GitHub-first public release 
 - [x] Confirm GitHub repo description and topics.
 - [x] Decide whether to publish the existing draft prerelease or create a new final release.
 - [x] Remove obsolete `v0.1.0-rc.1` draft prerelease after final release.
+- [x] Make the repository public.
+- [x] Verify public clone, install, build, and CLI smoke checks.
 
 Decision: create a new final `v0.1.0` GitHub Release, remove the old RC draft release, retain the RC tag for history, and leave public npm publishing deferred.
 
@@ -64,15 +66,14 @@ node dist/cli.js check examples/codex-doctor-risky --ascii --no-animations
 
 ## Public Conversion Notes
 
-Do not make the repository public from automation unless the maintainer explicitly asks for it in that turn.
+Completed public conversion checks:
 
-Once public:
-
-- confirm README badge renders
-- confirm issue templates render
-- confirm funding link appears
-- confirm release notes are visible
-- confirm no generated local artifacts are exposed
+- public repository metadata verified
+- public `git ls-remote` verified
+- release asset download URL verified
+- clean public clone verified
+- `npm install` and `npm run build` verified from the clean clone
+- runtime PASS and risky-fixture expected FAIL smoke checks verified from the clean clone
 
 ## Notes
 
