@@ -24,6 +24,8 @@ As of `2026-04-28`, the project remains in GitHub-first release mode.
 - GitHub issue templates
 - GitHub Sponsors funding config
 - final `v0.1.0` release notes
+- final `v0.1.0` GitHub Release
+- obsolete `v0.1.0-rc.1` draft release removed, with the RC tag retained for history
 
 ## What Must Be Confirmed Before Public Publish
 

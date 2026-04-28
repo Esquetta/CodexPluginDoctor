@@ -9,6 +9,8 @@ This checklist prepares `Codex Plugin Doctor` for a GitHub-first public release 
 - Repository: private
 - License: MIT
 - Distribution preference: GitHub repository and GitHub Releases first
+- GitHub Release: `v0.1.0` published
+- Legacy RC draft release: removed; `v0.1.0-rc.1` tag retained for history
 - npm publish: deferred
 - Website: not needed for `v0.1.0`
 
@@ -25,8 +27,9 @@ This checklist prepares `Codex Plugin Doctor` for a GitHub-first public release 
 - [x] Confirm no private notes, secrets, or local-only paths are present in public-facing docs.
 - [x] Confirm GitHub repo description and topics.
 - [x] Decide whether to publish the existing draft prerelease or create a new final release.
+- [x] Remove obsolete `v0.1.0-rc.1` draft prerelease after final release.
 
-Decision: create a new final `v0.1.0` GitHub Release and leave public npm publishing deferred.
+Decision: create a new final `v0.1.0` GitHub Release, remove the old RC draft release, retain the RC tag for history, and leave public npm publishing deferred.
 
 ## GitHub Metadata
 

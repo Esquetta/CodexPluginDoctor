@@ -50,12 +50,13 @@ Confirmed:
 - license is MIT
 - package name remains `codex-plugin-doctor`
 - release communication has final `v0.1.0` notes
+- `v0.1.0` is published as the current GitHub Release
+- obsolete `v0.1.0-rc.1` draft release has been removed; the tag remains for history
 
 Still manual:
 
 - changing repository visibility from private to public
 - deciding whether to publish `v0.1.0` to npm
-- replacing or removing the older draft prerelease after final release review
 
 ## Release Notes Guidance
 
