@@ -181,7 +181,7 @@ Related docs:
 - [Changelog](./CHANGELOG.md)
 - [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
 - [Release Candidate Workflow](./docs/engineering/release-candidate-workflow.md)
-- [v0.1.0 Final Release Notes Draft](./docs/engineering/v0.1.0-final-release-notes.md)
+- [v0.1.0 Release Notes](./docs/engineering/v0.1.0-final-release-notes.md)
 
 ## Contributing
 

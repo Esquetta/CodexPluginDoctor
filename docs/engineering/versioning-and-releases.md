@@ -38,7 +38,7 @@ Use a major release when:
 2. Bump `package.json` version.
 3. Run `npm run prepare-release`.
 4. Create git tag `vX.Y.Z`.
-5. Draft GitHub release using `.github/release-template.md`.
+5. Create a GitHub release using `.github/release-template.md`.
 6. Publish only after license and package visibility decisions are confirmed.
 
 ## Current Publish Position
@@ -49,13 +49,13 @@ Confirmed:
 
 - license is MIT
 - package name remains `codex-plugin-doctor`
-- release communication has a `v0.1.0` draft
+- release communication has final `v0.1.0` notes
 
 Still manual:
 
 - changing repository visibility from private to public
 - deciding whether to publish `v0.1.0` to npm
-- replacing or publishing the current draft prerelease
+- replacing or removing the older draft prerelease after final release review
 
 ## Release Notes Guidance
 

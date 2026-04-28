@@ -21,7 +21,7 @@ The package now includes:
 2. Run `npm run build`.
 3. Run `npm run prepare-release`.
 4. Review the `npm pack --dry-run` file list.
-5. Confirm license choice for public distribution.
+5. Confirm MIT license for public distribution.
 6. Confirm package version bump.
 7. Publish with `npm publish --access public`.
 
@@ -34,4 +34,4 @@ The package now includes:
 
 ## Notes
 
-The repository currently uses `UNLICENSED`. If the package will be published publicly, choose an explicit public license before release.
+The repository uses the MIT license. Public npm publication is still a separate maintainer decision.

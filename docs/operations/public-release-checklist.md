@@ -20,11 +20,13 @@ This checklist prepares `Codex Plugin Doctor` for a GitHub-first public release 
 - [x] Add GitHub issue templates.
 - [x] Add GitHub Sponsors funding config.
 - [x] Polish README as the primary landing page.
-- [x] Add final `v0.1.0` release notes draft.
+- [x] Add final `v0.1.0` release notes.
 - [x] Verify `npm run prepare-release`.
 - [x] Confirm no private notes, secrets, or local-only paths are present in public-facing docs.
 - [x] Confirm GitHub repo description and topics.
-- [ ] Decide whether to publish the existing draft prerelease or create a new final release.
+- [x] Decide whether to publish the existing draft prerelease or create a new final release.
+
+Decision: create a new final `v0.1.0` GitHub Release and leave public npm publishing deferred.
 
 ## GitHub Metadata
 
@@ -50,8 +52,8 @@ node dist/cli.js check examples/codex-doctor-runtime --runtime --no-animations
 node dist/cli.js check examples/codex-doctor-risky --ascii --no-animations
 ```
 
-3. Update `CHANGELOG.md` from `Draft` to the final release date.
-4. Bump `package.json` from `0.1.0-rc.1` to `0.1.0` if creating the final tag.
+3. Update `CHANGELOG.md` to the final release date.
+4. Bump `package.json` to `0.1.0` if creating the final tag.
 5. Commit the final release prep.
 6. Tag `v0.1.0`.
 7. Create a GitHub release using `docs/engineering/v0.1.0-final-release-notes.md`.

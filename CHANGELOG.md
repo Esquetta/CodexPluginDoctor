@@ -4,9 +4,9 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
-## [0.1.0] - Draft
+## [0.1.0] - 2026-04-28
 
-Draft final release notes for the first open-source-ready local release. This version is not tagged yet.
+First open-source-ready local release. This version is tagged as `v0.1.0` and distributed through GitHub Releases; public npm publishing remains deferred.
 
 ### Added Since `0.1.0-rc.1`
 
@@ -122,4 +122,4 @@ Highlights:
 
 ## Notes
 
-This project is currently optimized for local testing and iterative hardening rather than public package publication. The package metadata and release-prep flow are in place. The repository now uses the MIT license; public npm publication remains a separate release decision.
+This project is currently optimized for local testing and iterative hardening rather than public package publication. The package metadata and release-prep flow are in place. The repository uses the MIT license; public npm publication remains a separate release decision.
