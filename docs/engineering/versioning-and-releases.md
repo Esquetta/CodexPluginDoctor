@@ -43,7 +43,7 @@ Use a major release when:
 
 ## Current Publish Position
 
-The project is technically ready for npm release dry runs. GitHub-first public release is preferred before npm publication.
+The project is publicly distributed through npm and GitHub Releases.
 
 Confirmed:
 
@@ -53,10 +53,12 @@ Confirmed:
 - `v0.1.0` is published as the current GitHub Release
 - obsolete `v0.1.0-rc.1` draft release has been removed; the tag remains for history
 - repository visibility is public
+- `codex-plugin-doctor@0.1.1` is published on npm
+- `v0.1.1` is the current GitHub Release
 
 Still manual:
 
-- deciding whether to publish `v0.1.0` to npm
+- deciding whether the next release is `0.1.2` patch hardening or `0.2.0` capability expansion
 
 ## Release Notes Guidance
 

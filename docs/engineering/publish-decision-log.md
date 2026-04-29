@@ -2,12 +2,12 @@
 
 ## Current Decision
 
-As of `2026-04-29`, the project is moving from GitHub-first release mode to public npm distribution.
+As of `2026-04-29`, the project is public on GitHub and npm.
 
 ## Why
 
 - the validator is still rapidly expanding its runtime surface
-- local testing and GitHub Releases are the immediate distribution path
+- local testing, GitHub Releases, and npm are the immediate distribution paths
 - `v0.1.0` validated the GitHub-first release surface
 - `0.1.1` carries the npm `bin` metadata normalization needed for safe registry publication
 
@@ -30,11 +30,15 @@ As of `2026-04-29`, the project is moving from GitHub-first release mode to publ
 - clean public clone, install, build, and CLI smoke validation
 - npm package name availability
 - npm authenticated maintainer session
+- `codex-plugin-doctor@0.1.1` published on npm
+- `v0.1.1` GitHub Release
+- post-publish registry install smoke validation
 
-## What Must Be Confirmed Before npm Publish
+## What Was Confirmed For npm Publish
 
-- final `0.1.1` release validation
-- post-publish install smoke from the npm registry
+- final `0.1.1` release validation passed
+- post-publish install smoke from the npm registry passed
+- npm `latest` points to `0.1.1`
 
 ## Next Publish Decision Point
 

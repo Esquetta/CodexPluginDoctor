@@ -15,6 +15,7 @@ The package now includes:
 - repository, bugs, and homepage metadata
 - `prepare-release` script for local release dry runs
 - normalized `bin` entrypoint for npm publication
+- public npm package `codex-plugin-doctor`
 
 ## Release Steps
 
@@ -38,4 +39,4 @@ The package now includes:
 
 ## Notes
 
-The repository uses the MIT license. First npm publication is targeted for `0.1.1` because `v0.1.0` was already published on GitHub before the npm `bin` metadata normalization.
+The repository uses the MIT license. First npm publication shipped as `0.1.1` because `v0.1.0` was already published on GitHub before the npm `bin` metadata normalization.

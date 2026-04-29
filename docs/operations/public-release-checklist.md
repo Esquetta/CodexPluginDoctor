@@ -2,17 +2,17 @@
 
 ## Purpose
 
-This checklist records the GitHub-first public release state for `Codex Plugin Doctor` without requiring a website or immediate npm publication.
+This checklist records the public release state for `Codex Plugin Doctor` without requiring a separate website.
 
 ## Current Position
 
 - Repository: public
 - License: MIT
-- Distribution preference: GitHub repository and GitHub Releases first
-- GitHub Release: `v0.1.0` published
+- Distribution preference: npm package plus GitHub repository and GitHub Releases
+- GitHub Release: `v0.1.1` published
 - Legacy RC draft release: removed; `v0.1.0-rc.1` tag retained for history
-- npm publish: deferred
-- Website: not needed for `v0.1.0`
+- npm publish: `codex-plugin-doctor@0.1.1`
+- Website: not needed for `v0.1.x`
 
 ## Before Making The Repository Public
 
@@ -30,8 +30,13 @@ This checklist records the GitHub-first public release state for `Codex Plugin D
 - [x] Remove obsolete `v0.1.0-rc.1` draft prerelease after final release.
 - [x] Make the repository public.
 - [x] Verify public clone, install, build, and CLI smoke checks.
+- [x] Publish `codex-plugin-doctor@0.1.1` to npm.
+- [x] Verify npm registry install and CLI smoke checks.
+- [x] Publish `v0.1.1` GitHub Release.
 
 Decision: create a new final `v0.1.0` GitHub Release, remove the old RC draft release, retain the RC tag for history, and leave public npm publishing deferred.
+
+Follow-up decision: publish `0.1.1` to npm after normalizing package `bin` metadata, then use npm install feedback to choose between `0.1.2` hardening and `0.2.0` capability work.
 
 ## GitHub Metadata
 
@@ -74,6 +79,12 @@ Completed public conversion checks:
 - clean public clone verified
 - `npm install` and `npm run build` verified from the clean clone
 - runtime PASS and risky-fixture expected FAIL smoke checks verified from the clean clone
+
+## NPM Publication Notes
+
+- `npm view codex-plugin-doctor version` verified `0.1.1`.
+- `npm install` from the registry created the CLI shim.
+- registry-installed CLI runtime smoke returned PASS against `examples/codex-doctor-runtime`.
 
 ## Notes
 

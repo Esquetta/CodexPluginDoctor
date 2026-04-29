@@ -136,4 +136,4 @@ Highlights:
 
 ## Notes
 
-This project is currently optimized for local testing and iterative hardening rather than public package publication. The package metadata and release-prep flow are in place. The repository uses the MIT license; public npm publication remains a separate release decision.
+This project is optimized for local testing, iterative hardening, GitHub Releases, and npm distribution. The repository uses the MIT license.
