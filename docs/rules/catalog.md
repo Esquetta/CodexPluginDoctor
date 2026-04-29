@@ -27,6 +27,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.skill.name.missing` | fail | Skill frontmatter is missing `name`. |
 | `plugin.skill.description.missing` | fail | Skill frontmatter is missing `description`. |
 | `plugin.heuristic.skill_description.too_long` | warn | Skill description is likely too verbose. |
+| `plugin.skill.asset_reference.missing` | warn | Skill references a missing local support asset such as `scripts/...`, `templates/...`, `assets/...`, or `examples/...`. |
 
 ## MCP Rules
 

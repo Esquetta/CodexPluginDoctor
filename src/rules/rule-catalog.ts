@@ -103,6 +103,15 @@ export const ruleCatalog: RuleDefinition[] = [
     example: "Good: `Use when creating GitHub Actions release workflows for Node CLIs.`"
   },
   {
+    id: "plugin.skill.asset_reference.missing",
+    category: "skill",
+    defaultSeverity: "warn",
+    summary: "A skill references a missing local support asset.",
+    why: "Skills that point to missing scripts, templates, assets, or examples can fail when an agent follows the instructions.",
+    fix: "Create the referenced support file or update the backticked reference in `SKILL.md`.",
+    example: "If `SKILL.md` says `scripts/setup.ps1`, make sure that file exists inside the skill directory."
+  },
+  {
     id: "plugin.mcp.path.missing",
     category: "mcp",
     defaultSeverity: "fail",

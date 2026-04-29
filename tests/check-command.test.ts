@@ -131,6 +131,33 @@ describe("runCheck", () => {
     );
   });
 
+  it("warns when a skill references a missing local support asset", async () => {
+    const targetPath = path.resolve("tests/fixtures/skill-missing-asset-reference");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.skill.asset_reference.missing",
+          severity: "warn"
+        })
+      ])
+    );
+  });
+
+  it("passes when a skill referenced support asset exists", async () => {
+    const targetPath = path.resolve("tests/fixtures/skill-valid-asset-reference");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("pass");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
   it("passes when the plugin includes a valid .mcp.json file and valid skills", async () => {
     const targetPath = path.resolve("tests/fixtures/valid-plugin-with-mcp");
 

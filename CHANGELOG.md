@@ -14,6 +14,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `.codex-doctor.json` policy support for `ignoreRules` and `failOnWarnings`
 - added SARIF output with `--sarif` for GitHub Code Scanning compatible reports
 - added a composite GitHub Action entrypoint for repository CI validation
+- added skill support asset integrity warnings for missing backticked `scripts/`, `templates/`, `assets/`, and `examples/` references
 
 ## [0.1.4] - 2026-04-29
 

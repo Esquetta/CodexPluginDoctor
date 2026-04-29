@@ -1,0 +1,6 @@
+{
+  "name": "skill-valid-asset-reference",
+  "version": "1.0.0",
+  "description": "Fixture for valid skill support asset references.",
+  "skills": "skills"
+}

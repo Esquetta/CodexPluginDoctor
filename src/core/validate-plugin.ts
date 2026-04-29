@@ -207,6 +207,14 @@ function countMatches(input: string, pattern: RegExp): number {
   return matches ? matches.length : 0;
 }
 
+function extractSupportAssetReferences(content: string): string[] {
+  const references = [...content.matchAll(/`((?:scripts|templates|assets|examples)\/[^`]+)`/g)]
+    .map((match) => match[1].trim())
+    .filter((reference) => reference.length > 0);
+
+  return [...new Set(references)];
+}
+
 function isDescriptionLikelyVerbose(
   description: string,
   mode: "plugin" | "skill"
@@ -458,6 +466,23 @@ async function validateSkillDefinitions(
           `Shorten the \`description\` field in \`${skillFilePath}\` to a tightly scoped summary.`
         )
       );
+    }
+
+    for (const supportReference of extractSupportAssetReferences(skillContent)) {
+      const supportPath = path.resolve(skillRoot, supportReference);
+      const supportFileExists = await fileExists(supportPath);
+      const supportDirectoryExists = await directoryExists(supportPath);
+
+      if (!supportFileExists && !supportDirectoryExists) {
+        findings.push(
+          buildWarning(
+            "plugin.skill.asset_reference.missing",
+            `The skill \`${skillDirectory.name}\` references missing support asset \`${supportReference}\`.`,
+            "Skills that point to missing scripts, templates, assets, or examples are harder to execute and can fail when an agent follows the instructions.",
+            `Create \`${supportPath}\` or update the reference in \`${skillFilePath}\`.`
+          )
+        );
+      }
     }
   }
 

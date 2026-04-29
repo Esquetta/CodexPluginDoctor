@@ -1,0 +1,6 @@
+{
+  "name": "skill-missing-asset-reference",
+  "version": "1.0.0",
+  "description": "Fixture for missing skill support asset references.",
+  "skills": "skills"
+}
