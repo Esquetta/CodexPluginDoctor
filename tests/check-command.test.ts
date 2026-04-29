@@ -21,6 +21,42 @@ describe("runCheck", () => {
     );
   });
 
+  it("explains when the Codex Plugin Doctor source repo is checked instead of a plugin package", async () => {
+    const targetPath = path.resolve(".");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.exitCode).toBe(1);
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "plugin.manifest.missing",
+        message: expect.stringContaining("Codex Plugin Doctor source repo"),
+        suggestedFix: expect.stringContaining(
+          "codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animations"
+        )
+      })
+    ]);
+  });
+
+  it("guides normal non-plugin projects to pass a Codex plugin package root", async () => {
+    const targetPath = path.resolve("tests/fixtures/node-project-missing-manifest");
+
+    const result = await runCheck(targetPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.exitCode).toBe(1);
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "plugin.manifest.missing",
+        message: expect.stringContaining("does not look like a Codex plugin package"),
+        suggestedFix: expect.stringContaining(
+          "Run from a Codex plugin package root"
+        )
+      })
+    ]);
+  });
+
   it("passes when the plugin manifest and referenced skills directory exist", async () => {
     const targetPath = path.resolve("tests/fixtures/valid-plugin");
 

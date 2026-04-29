@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Changed
+
+- improved the `plugin.manifest.missing` first-run guidance for users who accidentally run `check .` inside the Codex Plugin Doctor source repository
+- added clearer missing-manifest guidance for normal Node projects that are not Codex plugin package roots
+
 ## [0.1.2] - 2026-04-29
 
 Patch release for first-run npm onboarding clarity.

@@ -58,6 +58,49 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
+async function readPackageName(rootPath: string): Promise<string | null> {
+  const packageJsonPath = path.join(rootPath, "package.json");
+
+  try {
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+      name?: unknown;
+    };
+
+    return typeof packageJson.name === "string" ? packageJson.name : null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildMissingManifestFailure(rootPath: string): Promise<Finding> {
+  const packageName = await readPackageName(rootPath);
+
+  if (packageName === "codex-plugin-doctor") {
+    return buildFailure(
+      "plugin.manifest.missing",
+      "This looks like the Codex Plugin Doctor source repo, not a Codex plugin package.",
+      "Codex Plugin Doctor validates plugin package roots that contain `.codex-plugin/plugin.json`; the tool source repo intentionally does not expose that manifest.",
+      "For a local self-test, run `codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animations`. To check your own plugin, pass that plugin package root instead."
+    );
+  }
+
+  if (packageName) {
+    return buildFailure(
+      "plugin.manifest.missing",
+      "This directory has a `package.json`, but it does not look like a Codex plugin package.",
+      "Codex cannot treat a normal project directory as a plugin package without the required `.codex-plugin/plugin.json` entry point.",
+      "Run from a Codex plugin package root, or pass the path to a directory that contains `.codex-plugin/plugin.json`."
+    );
+  }
+
+  return buildFailure(
+    "plugin.manifest.missing",
+    "This directory does not look like a Codex plugin package.",
+    "Codex cannot treat this directory as a plugin package without the required `.codex-plugin/plugin.json` manifest entry point.",
+    "Create `.codex-plugin/plugin.json` with at least `name`, `version`, and `description`, or pass the path to an existing Codex plugin package."
+  );
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -555,18 +598,13 @@ export async function validatePlugin(
   const discoveredPackage = await discoverPackage(targetPath);
 
   if (!discoveredPackage) {
+    const rootPath = path.resolve(targetPath);
+
     return {
-      targetPath: path.resolve(targetPath),
+      targetPath: rootPath,
       status: "fail",
       exitCode: 1,
-      findings: [
-        buildFailure(
-          "plugin.manifest.missing",
-          "Missing required `.codex-plugin/plugin.json` manifest.",
-          "Codex cannot treat this directory as a plugin package without the required manifest entry point.",
-          "Create `.codex-plugin/plugin.json` with at least `name`, `version`, and `description`."
-        )
-      ]
+      findings: [await buildMissingManifestFailure(rootPath)]
     };
   }
 
