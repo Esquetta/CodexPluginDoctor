@@ -6,6 +6,7 @@ import {
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
+import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
@@ -113,6 +114,23 @@ export async function runCli(
     }
 
     io.writeStdout(renderRuleExplanation(rule));
+    return 0;
+  }
+
+  if (command === "init") {
+    const targetPath = maybePath && !maybePath.startsWith("--") ? maybePath : ".";
+    const result = await initPluginPackage(targetPath);
+
+    io.writeStdout(
+      [
+        "Initialized Codex plugin package",
+        `Root: ${result.rootPath}`,
+        `Manifest: ${result.manifestPath}`,
+        `Skill: ${result.skillPath}`,
+        "",
+        `Next: codex-plugin-doctor check ${result.rootPath}`
+      ].join("\n")
+    );
     return 0;
   }
 

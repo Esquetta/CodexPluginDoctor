@@ -193,6 +193,27 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("plugin.heuristic.description.too_long");
   });
 
+  it("initializes a minimal Codex plugin package", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init", targetPath], io);
+    const manifest = JSON.parse(
+      await readFile(path.join(targetPath, ".codex-plugin", "plugin.json"), "utf8")
+    );
+    const skill = await readFile(
+      path.join(targetPath, "skills", "hello", "SKILL.md"),
+      "utf8"
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Initialized Codex plugin package");
+    expect(manifest.name).toBe(path.basename(targetPath).toLowerCase());
+    expect(manifest.skills).toBe("skills");
+    expect(skill).toContain("name: hello");
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();

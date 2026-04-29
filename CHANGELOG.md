@@ -15,6 +15,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added SARIF output with `--sarif` for GitHub Code Scanning compatible reports
 - added a composite GitHub Action entrypoint for repository CI validation
 - added skill support asset integrity warnings for missing backticked `scripts/`, `templates/`, `assets/`, and `examples/` references
+- added `codex-plugin-doctor init [path]` to scaffold a minimal Codex plugin package
 
 ## [0.1.4] - 2026-04-29
 
