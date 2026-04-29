@@ -82,6 +82,7 @@ If you already have Codex installed locally and do not know plugin paths, discov
 ```bash
 codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
+codex-plugin-doctor check --installed --all-summary
 codex-plugin-doctor check --installed github
 codex-plugin-doctor explain plugin.manifest.missing
 ```
@@ -170,6 +171,7 @@ Run these when you want Codex Plugin Doctor to find plugins from the local Codex
 ```bash
 codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
+codex-plugin-doctor check --installed --all-summary
 codex-plugin-doctor check --installed github
 codex-plugin-doctor check --installed github --runtime --no-animations
 codex-plugin-doctor explain plugin.security.hard_coded_secret

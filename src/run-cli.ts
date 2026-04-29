@@ -6,6 +6,7 @@ import {
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
 import { runCheck } from "./index.js";
+import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
@@ -141,6 +142,7 @@ export async function runCli(
   const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
   const noAnimations = normalizedFlags.includes("--no-animations");
   const asciiMode = normalizedFlags.includes("--ascii");
+  const installedSummary = normalizedFlags.includes("--all-summary");
   const outputIndex = normalizedFlags.indexOf("--output");
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
 
@@ -177,27 +179,32 @@ export async function runCli(
       return 1;
     }
 
-    const results = [];
+    const checkedPlugins = [];
 
     for (const plugin of installedPlugins) {
-      results.push(await runCheckImpl(plugin.rootPath, {
-        runtime: runtimeProbeEnabled,
-        runtimeTranscript:
-          runtimeProbeEnabled && verboseRuntime
-            ? (line) => io.writeStderr(line)
-            : undefined
-      }));
+      checkedPlugins.push({
+        plugin,
+        result: await runCheckImpl(plugin.rootPath, {
+          runtime: runtimeProbeEnabled,
+          runtimeTranscript:
+            runtimeProbeEnabled && verboseRuntime
+              ? (line) => io.writeStderr(line)
+              : undefined
+        })
+      });
     }
 
-    const report = results
-      .map((result) =>
-        markdownOutput
-          ? buildMarkdownReport(result, { runtimeProbeEnabled })
-          : jsonOutput
-            ? renderJsonReport(result, { runtimeProbeEnabled })
-            : renderTextReport(result, { ascii: outputPolicy.style === "ascii" })
-      )
-      .join("\n\n");
+    const report = installedSummary
+      ? renderInstalledSummary(checkedPlugins)
+      : checkedPlugins
+        .map((item) =>
+          markdownOutput
+            ? buildMarkdownReport(item.result, { runtimeProbeEnabled })
+            : jsonOutput
+              ? renderJsonReport(item.result, { runtimeProbeEnabled })
+              : renderTextReport(item.result, { ascii: outputPolicy.style === "ascii" })
+        )
+        .join("\n\n");
 
     if (outputPath) {
       await writeFile(outputPath, report, "utf8");
@@ -205,7 +212,7 @@ export async function runCli(
 
     io.writeStdout(report);
 
-    return results.some((result) => result.exitCode === 1) ? 1 : 0;
+    return checkedPlugins.some((item) => item.result.exitCode === 1) ? 1 : 0;
   }
 
   const renderer = outputPolicy.interactive

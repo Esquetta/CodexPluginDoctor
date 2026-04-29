@@ -120,6 +120,52 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("Status: PASS");
   });
 
+  it("renders a compact summary for all installed Codex plugin checks", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(["check", "--installed", "--all-summary", "--no-animations"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          CODEX_HOME: codexHomeFixture
+        }
+      },
+      runCheckImpl: async (targetPath) => {
+        const isGithub = targetPath.includes("github");
+
+        return {
+          targetPath,
+          status: isGithub ? "warn" : "pass",
+          exitCode: 0,
+          findings: isGithub
+            ? [
+                {
+                  id: "plugin.heuristic.description.too_long",
+                  severity: "warn",
+                  message: "Description is long.",
+                  impact: "Noisy matching.",
+                  suggestedFix: "Shorten it."
+                }
+              ]
+            : []
+        };
+      }
+    });
+
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Installed Plugin Summary");
+    expect(output).toContain("Checked: 2");
+    expect(output).toContain("Pass: 1");
+    expect(output).toContain("Warn: 1");
+    expect(output).toContain("Fail: 0");
+    expect(output).toContain("github");
+    expect(output).toContain("plugin.heuristic.description.too_long");
+    expect(output).not.toContain("Codex Plugin Doctor\n===================");
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();
