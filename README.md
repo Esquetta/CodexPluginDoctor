@@ -8,11 +8,11 @@ It catches packaging, metadata, security, and runtime protocol problems before a
 
 ## Status
 
-Codex Plugin Doctor is currently pre-release and local-first.
+Codex Plugin Doctor is an early public CLI release.
 
-- Primary surface: GitHub repository
-- Distribution today: local source install, `npm link`, `npm pack`, GitHub Releases
-- Public npm publish: prepared, but not yet required
+- Primary surface: GitHub repository and npm package
+- Distribution today: `npm install -g`, local source install, `npm link`, `npm pack`, GitHub Releases
+- Public npm package: `codex-plugin-doctor`
 - License: [MIT](./LICENSE)
 
 ## Why This Exists
@@ -66,6 +66,15 @@ Output formats:
 - CI summary and artifact generation
 
 ## Quick Start
+
+Global install from npm:
+
+```bash
+npm install -g codex-plugin-doctor
+codex-plugin-doctor check .
+```
+
+Run from source:
 
 ```bash
 npm install

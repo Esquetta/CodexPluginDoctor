@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.1.1] - 2026-04-29
+
+Patch release for the first public npm publication.
+
+### Changed
+
+- normalized the package `bin` path to `dist/cli.js` so npm preserves the global `codex-plugin-doctor` executable during publish
+- updated README installation guidance for npm users
+
+### Distribution
+
+- published as a public npm package under `codex-plugin-doctor`
+- kept GitHub Releases as the canonical source release surface
+
 ## [0.1.0] - 2026-04-28
 
 First open-source-ready local release. This version is tagged as `v0.1.0` and distributed through GitHub Releases; public npm publishing remains deferred.

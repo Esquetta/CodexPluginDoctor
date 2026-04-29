@@ -2,14 +2,14 @@
 
 ## Current Decision
 
-As of `2026-04-28`, the project remains in GitHub-first release mode.
+As of `2026-04-29`, the project is moving from GitHub-first release mode to public npm distribution.
 
 ## Why
 
 - the validator is still rapidly expanding its runtime surface
 - local testing and GitHub Releases are the immediate distribution path
-- public npm publication should follow a short stabilization window
-- GitHub repository visibility is public before npm publication
+- `v0.1.0` validated the GitHub-first release surface
+- `0.1.1` carries the npm `bin` metadata normalization needed for safe registry publication
 
 ## What Is Already Ready
 
@@ -28,12 +28,14 @@ As of `2026-04-28`, the project remains in GitHub-first release mode.
 - obsolete `v0.1.0-rc.1` draft release removed, with the RC tag retained for history
 - public repository visibility
 - clean public clone, install, build, and CLI smoke validation
+- npm package name availability
+- npm authenticated maintainer session
 
 ## What Must Be Confirmed Before npm Publish
 
-- desired npm visibility and ownership
-- whether `v0.1.0` should stay GitHub-only or also publish to npm
+- final `0.1.1` release validation
+- post-publish install smoke from the npm registry
 
 ## Next Publish Decision Point
 
-Revisit public npm publish after the first GitHub-only `v0.1.0` release has been reviewed.
+After `0.1.1` is published, use npm install telemetry/issues and validation feedback to decide whether the next release should be `0.1.2` patch hardening or a larger `0.2.0` capability release.
