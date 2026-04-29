@@ -11,6 +11,7 @@ import { renderInstalledSummary } from "./reporting/render-installed-summary.js"
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
+import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
 import { findRuleDefinition } from "./rules/rule-catalog.js";
 import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
@@ -139,6 +140,7 @@ export async function runCli(
 
   const jsonOutput = normalizedFlags.includes("--json");
   const markdownOutput = normalizedFlags.includes("--markdown");
+  const sarifOutput = normalizedFlags.includes("--sarif");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
   const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
   const noAnimations = normalizedFlags.includes("--no-animations");
@@ -210,7 +212,9 @@ export async function runCli(
       ? renderInstalledSummary(checkedPlugins)
       : checkedPlugins
         .map((item) =>
-          markdownOutput
+          sarifOutput
+            ? renderSarifReport(item.result)
+            : markdownOutput
             ? buildMarkdownReport(item.result, { runtimeProbeEnabled })
             : jsonOutput
               ? renderJsonReport(item.result, { runtimeProbeEnabled })
@@ -256,6 +260,8 @@ export async function runCli(
 
   const report = markdownOutput
     ? buildMarkdownReport(result, { runtimeProbeEnabled })
+    : sarifOutput
+      ? renderSarifReport(result)
     : jsonOutput
       ? renderJsonReport(result, { runtimeProbeEnabled })
       : renderTextReport(result, { ascii: outputPolicy.style === "ascii" });

@@ -160,6 +160,7 @@ codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
+codex-plugin-doctor check . --sarif --output results.sarif
 codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime

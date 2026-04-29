@@ -285,6 +285,30 @@ describe("runCli", () => {
     expect(writtenReport).toContain("plugin.heuristic.description.too_long");
   });
 
+  it("writes a SARIF report when --sarif is requested", async () => {
+    const outputPath = await createTempFilePath("report.sarif");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/security-hardcoded-secret",
+        "--sarif",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(1);
+    expect(writtenReport.version).toBe("2.1.0");
+    expect(writtenReport.runs[0].tool.driver.name).toBe("Codex Plugin Doctor");
+    expect(writtenReport.runs[0].results[0].ruleId).toBe("plugin.security.hard_coded_secret");
+    expect(writtenReport.runs[0].results[0].level).toBe("error");
+  });
+
   it("writes live status updates to stderr for interactive TTY text runs", async () => {
     vi.useFakeTimers();
 
