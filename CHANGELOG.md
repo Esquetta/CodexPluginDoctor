@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `codex-plugin-doctor explain <finding-id>` for focused rule explanations
+- added a rule catalog document covering stable finding IDs, severity, and remediation intent
+
 ## [0.1.4] - 2026-04-29
 
 Patch release for installed Codex plugin discovery.

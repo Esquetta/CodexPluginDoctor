@@ -83,6 +83,7 @@ If you already have Codex installed locally and do not know plugin paths, discov
 codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
 codex-plugin-doctor check --installed github
+codex-plugin-doctor explain plugin.manifest.missing
 ```
 
 Run from source:
@@ -171,6 +172,7 @@ codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
 codex-plugin-doctor check --installed github
 codex-plugin-doctor check --installed github --runtime --no-animations
+codex-plugin-doctor explain plugin.security.hard_coded_secret
 ```
 
 To self-test this repository after cloning it:
@@ -196,6 +198,7 @@ The validator is tuned against local fixtures and real marketplace-style plugin 
 - [Real-World Validation Workflow](./docs/engineering/real-world-validation-workflow.md)
 - [Validation Sessions](./validation-sessions/README.md)
 - [Examples](./examples/README.md)
+- [Rule Catalog](./docs/rules/catalog.md)
 
 Recent validation waves covered:
 

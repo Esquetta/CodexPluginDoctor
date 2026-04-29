@@ -32,6 +32,30 @@ async function createTempFilePath(filename: string): Promise<string> {
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
+  it("explains a known finding id", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["explain", "plugin.manifest.missing"], io);
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("plugin.manifest.missing");
+    expect(output).toContain("Why it matters");
+    expect(output).toContain(".codex-plugin/plugin.json");
+    expect(output).toContain("docs/rules/catalog.md");
+  });
+
+  it("fails clearly when explaining an unknown finding id", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["explain", "plugin.unknown.rule"], io);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Unknown finding id: plugin.unknown.rule");
+  });
+
   it("prints the package version with --version", async () => {
     const { io, stdout, stderr } = createIo();
 

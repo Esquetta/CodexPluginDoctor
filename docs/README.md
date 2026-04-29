@@ -30,6 +30,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [Testing and Release](engineering/testing-and-release.md)
 - [Release Gating Workflow](engineering/release-gating-workflow.md)
 - [CLI Presentation Plan](engineering/cli-presentation-plan.md)
+- [Rule Catalog](rules/catalog.md)
 - [NPM Release Checklist](engineering/npm-release-checklist.md)
 - [Versioning and Releases](engineering/versioning-and-releases.md)
 - [Publish Decision Log](engineering/publish-decision-log.md)

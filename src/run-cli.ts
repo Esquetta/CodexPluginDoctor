@@ -8,7 +8,9 @@ import {
 import { runCheck } from "./index.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
+import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
+import { findRuleDefinition } from "./rules/rule-catalog.js";
 import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
 import { determineOutputPolicy } from "./terminal/output-policy.js";
 import { getSpinner } from "./terminal/spinner-registry.js";
@@ -41,7 +43,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -91,6 +93,23 @@ export async function runCli(
     });
 
     io.writeStdout(renderInstalledPlugins(installedPlugins));
+    return 0;
+  }
+
+  if (command === "explain") {
+    if (!maybePath || maybePath.startsWith("--")) {
+      io.writeStderr("Missing finding id. Usage: codex-plugin-doctor explain <finding-id>");
+      return 2;
+    }
+
+    const rule = findRuleDefinition(maybePath);
+
+    if (!rule) {
+      io.writeStderr(`Unknown finding id: ${maybePath}`);
+      return 1;
+    }
+
+    io.writeStdout(renderRuleExplanation(rule));
     return 0;
   }
 
