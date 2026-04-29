@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `--version` output for quick local/global CLI version checks
+- added installed Codex plugin discovery with `list --installed`
+- added `check --installed [filter]` so users can validate plugins from the local Codex plugin cache without knowing filesystem paths
+
 ## [0.1.3] - 2026-04-29
 
 Patch release for smarter first-run failure messages.

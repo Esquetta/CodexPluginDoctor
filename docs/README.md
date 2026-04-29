@@ -60,7 +60,7 @@ This documentation set defines the product, brand, technical architecture, secur
 | Product type | Developer tooling, CLI-first validation platform |
 | Primary audience | Plugin authors, MCP vendors, platform engineers, AI-native teams |
 | Core promise | Validate Codex plugin packages before they break trust in production |
-| Initial wedge | Local validation, runtime probing, and CI reporting for Codex plugin bundles |
+| Initial wedge | Local validation, installed plugin discovery, runtime probing, and CI reporting for Codex plugin bundles |
 | Expansion path | MCP Doctor, compatibility lab, hosted control plane |
 
 ## Strategic Positioning

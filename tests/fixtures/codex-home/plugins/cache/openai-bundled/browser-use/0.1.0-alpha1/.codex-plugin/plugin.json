@@ -1,0 +1,5 @@
+{
+  "name": "browser-use",
+  "version": "0.1.0-alpha1",
+  "description": "Browser Use plugin fixture for installed plugin discovery."
+}

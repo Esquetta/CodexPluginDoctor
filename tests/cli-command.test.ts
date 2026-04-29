@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import packageJson from "../package.json" with { type: "json" };
 
 import { runCli } from "../src/run-cli.js";
 
@@ -28,7 +29,73 @@ async function createTempFilePath(filename: string): Promise<string> {
   return path.join(directory, filename);
 }
 
+const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
+
 describe("runCli", () => {
+  it("prints the package version with --version", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["--version"], io);
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join("").trim()).toBe(packageJson.version);
+    expect(stderr).toEqual([]);
+  });
+
+  it("lists installed Codex plugins without requiring users to know plugin paths", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["list", "--installed"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          CODEX_HOME: codexHomeFixture
+        }
+      }
+    });
+
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Installed Codex Plugins");
+    expect(output).toContain("github");
+    expect(output).toContain("browser-use");
+    expect(output).toContain(path.join(codexHomeFixture, "plugins", "cache"));
+  });
+
+  it("checks installed Codex plugins selected by name", async () => {
+    const { io, stdout } = createIo();
+    const checkedTargets: string[] = [];
+
+    const exitCode = await runCli(["check", "--installed", "github", "--no-animations"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          CODEX_HOME: codexHomeFixture
+        }
+      },
+      runCheckImpl: async (targetPath) => {
+        checkedTargets.push(targetPath);
+
+        return {
+          targetPath,
+          status: "pass",
+          exitCode: 0,
+          findings: []
+        };
+      }
+    });
+
+    expect(exitCode).toBe(0);
+    expect(checkedTargets).toEqual([
+      path.join(codexHomeFixture, "plugins", "cache", "openai-curated", "github", "6807e4de")
+    ]);
+    expect(stdout.join("")).toContain("Status: PASS");
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();

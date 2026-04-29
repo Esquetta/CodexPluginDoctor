@@ -1,5 +1,10 @@
 import { writeFile } from "node:fs/promises";
 
+import {
+  discoverInstalledPlugins,
+  filterInstalledPlugins,
+  type InstalledPlugin
+} from "./core/discover-installed-plugins.js";
 import { runCheck } from "./index.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
@@ -7,6 +12,7 @@ import { renderTextReport } from "./reporting/render-text-report.js";
 import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
 import { determineOutputPolicy } from "./terminal/output-policy.js";
 import { getSpinner } from "./terminal/spinner-registry.js";
+import { packageVersion } from "./version.js";
 
 export interface CliIo {
   writeStdout(message: string): void;
@@ -35,8 +41,30 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path> [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor --version"
   );
+}
+
+function renderInstalledPlugins(plugins: InstalledPlugin[]): string {
+  const lines = [
+    "Installed Codex Plugins",
+    "======================="
+  ];
+
+  if (plugins.length === 0) {
+    lines.push("", "No installed Codex plugins found.");
+    return lines.join("\n");
+  }
+
+  for (const plugin of plugins) {
+    const version = plugin.version ? `@${plugin.version}` : "";
+
+    lines.push("", `- ${plugin.name}${version}`);
+    lines.push(`  Path: ${plugin.rootPath}`);
+    lines.push(`  Cache: ${plugin.relativePath}`);
+  }
+
+  return lines.join("\n");
 }
 
 export async function runCli(
@@ -46,15 +74,46 @@ export async function runCli(
 ): Promise<number> {
   const [command, maybePath, ...remainingArgs] = args;
 
+  if (command === "--version" || command === "-v" || command === "version") {
+    io.writeStdout(packageVersion);
+    return 0;
+  }
+
+  const terminalContext: CliTerminalContext = options.terminalContext ?? {
+    stdoutIsTTY: Boolean(process.stdout.isTTY),
+    stderrIsTTY: Boolean(process.stderr.isTTY),
+    env: process.env
+  };
+
+  if (command === "list" && maybePath === "--installed") {
+    const installedPlugins = await discoverInstalledPlugins({
+      env: terminalContext.env
+    });
+
+    io.writeStdout(renderInstalledPlugins(installedPlugins));
+    return 0;
+  }
+
   if (command !== "check") {
     printUsage(io);
     return 2;
   }
 
+  const checkInstalled = maybePath === "--installed";
+  const installedFilter =
+    checkInstalled && remainingArgs[0] && !remainingArgs[0].startsWith("--")
+      ? remainingArgs[0]
+      : null;
+  const flagsAfterInstalledFilter =
+    checkInstalled && installedFilter
+      ? remainingArgs.slice(1)
+      : remainingArgs;
   const targetPath = maybePath && !maybePath.startsWith("--") ? maybePath : ".";
   const normalizedFlags =
-    maybePath && maybePath.startsWith("--")
-      ? [maybePath, ...remainingArgs]
+    checkInstalled
+      ? [maybePath, ...flagsAfterInstalledFilter]
+      : maybePath && maybePath.startsWith("--")
+        ? [maybePath, ...remainingArgs]
       : remainingArgs;
 
   const jsonOutput = normalizedFlags.includes("--json");
@@ -71,12 +130,6 @@ export async function runCli(
     return 2;
   }
 
-  const terminalContext: CliTerminalContext = options.terminalContext ?? {
-    stdoutIsTTY: Boolean(process.stdout.isTTY),
-    stderrIsTTY: Boolean(process.stderr.isTTY),
-    env: process.env
-  };
-
   const outputPolicy = determineOutputPolicy({
     jsonOutput,
     markdownOutput,
@@ -89,6 +142,53 @@ export async function runCli(
   });
 
   const runCheckImpl = options.runCheckImpl ?? runCheck;
+
+  if (checkInstalled) {
+    const installedPlugins = filterInstalledPlugins(
+      await discoverInstalledPlugins({ env: terminalContext.env }),
+      installedFilter
+    );
+
+    if (installedPlugins.length === 0) {
+      io.writeStderr(
+        installedFilter
+          ? `No installed Codex plugins matched '${installedFilter}'.`
+          : "No installed Codex plugins found."
+      );
+      return 1;
+    }
+
+    const results = [];
+
+    for (const plugin of installedPlugins) {
+      results.push(await runCheckImpl(plugin.rootPath, {
+        runtime: runtimeProbeEnabled,
+        runtimeTranscript:
+          runtimeProbeEnabled && verboseRuntime
+            ? (line) => io.writeStderr(line)
+            : undefined
+      }));
+    }
+
+    const report = results
+      .map((result) =>
+        markdownOutput
+          ? buildMarkdownReport(result, { runtimeProbeEnabled })
+          : jsonOutput
+            ? renderJsonReport(result, { runtimeProbeEnabled })
+            : renderTextReport(result, { ascii: outputPolicy.style === "ascii" })
+      )
+      .join("\n\n");
+
+    if (outputPath) {
+      await writeFile(outputPath, report, "utf8");
+    }
+
+    io.writeStdout(report);
+
+    return results.some((result) => result.exitCode === 1) ? 1 : 0;
+  }
+
   const renderer = outputPolicy.interactive
     && !verboseRuntime
     ? createLiveStatusRenderer(

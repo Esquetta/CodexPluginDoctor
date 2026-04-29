@@ -71,10 +71,19 @@ Global install from npm:
 
 ```bash
 npm install -g codex-plugin-doctor
+codex-plugin-doctor --version
 codex-plugin-doctor check path/to/plugin-package
 ```
 
 Run `codex-plugin-doctor check .` from the root of a Codex plugin package that contains `.codex-plugin/plugin.json`. The Codex Plugin Doctor source repository is not itself a plugin package.
+
+If you already have Codex installed locally and do not know plugin paths, discover the installed plugin cache:
+
+```bash
+codex-plugin-doctor list --installed
+codex-plugin-doctor check --installed
+codex-plugin-doctor check --installed github
+```
 
 Run from source:
 
@@ -144,6 +153,7 @@ x plugin.security.hard_coded_secret
 Run these from a Codex plugin package root:
 
 ```bash
+codex-plugin-doctor --version
 codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
@@ -152,6 +162,15 @@ codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --json --runtime --verbose-runtime
+```
+
+Run these when you want Codex Plugin Doctor to find plugins from the local Codex installation:
+
+```bash
+codex-plugin-doctor list --installed
+codex-plugin-doctor check --installed
+codex-plugin-doctor check --installed github
+codex-plugin-doctor check --installed github --runtime --no-animations
 ```
 
 To self-test this repository after cloning it:
