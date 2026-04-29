@@ -71,8 +71,10 @@ Global install from npm:
 
 ```bash
 npm install -g codex-plugin-doctor
-codex-plugin-doctor check .
+codex-plugin-doctor check path/to/plugin-package
 ```
+
+Run `codex-plugin-doctor check .` from the root of a Codex plugin package that contains `.codex-plugin/plugin.json`. The Codex Plugin Doctor source repository is not itself a plugin package.
 
 Run from source:
 
@@ -139,6 +141,8 @@ x plugin.security.hard_coded_secret
 
 ## Useful Commands
 
+Run these from a Codex plugin package root:
+
 ```bash
 codex-plugin-doctor check .
 codex-plugin-doctor check . --json
@@ -148,6 +152,12 @@ codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --json --runtime --verbose-runtime
+```
+
+To self-test this repository after cloning it:
+
+```bash
+codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animations
 ```
 
 ## Repository Layout

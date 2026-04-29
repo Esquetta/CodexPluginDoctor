@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.1.2] - 2026-04-29
+
+Patch release for first-run npm onboarding clarity.
+
+### Changed
+
+- clarified that `codex-plugin-doctor check .` should be run from a Codex plugin package root, not from the Codex Plugin Doctor source repository
+- updated npm quick start examples to use `path/to/plugin-package`
+- documented the expected self-test command for this repository's bundled runtime example
+
 ## [0.1.1] - 2026-04-29
 
 Patch release for the first public npm publication.

@@ -1,6 +1,6 @@
 {
   "name": "codex-plugin-doctor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI-first validator for Codex plugins, skills, and MCP package surfaces with runtime MCP protocol validation.",
   "type": "module",
   "main": "./dist/index.js",
