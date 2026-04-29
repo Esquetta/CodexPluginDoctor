@@ -76,6 +76,46 @@ describe("runCli", () => {
     expect(output).toContain("Generic MCP: PASS");
   });
 
+  it("renders a machine-readable compatibility matrix when --json is requested", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "tests/fixtures/generic-mcp-only", "--json"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.schemaVersion).toBe("1.0.0");
+    expect(output.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ client: "Codex", status: "skipped" }),
+        expect.objectContaining({ client: "Generic MCP", status: "pass" })
+      ])
+    );
+  });
+
+  it("writes the JSON compatibility matrix to the requested output path", async () => {
+    const outputPath = await createTempFilePath("compatibility.json");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--json", "--output", outputPath],
+      io
+    );
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.join(""))).toEqual(writtenReport);
+    expect(writtenReport.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ client: "Codex", status: "pass" }),
+        expect.objectContaining({ client: "Generic MCP", status: "pass" })
+      ])
+    );
+  });
+
   it("explains a known finding id", async () => {
     const { io, stdout, stderr } = createIo();
 

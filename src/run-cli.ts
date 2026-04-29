@@ -52,7 +52,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--json] [--output <path>]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -141,9 +141,28 @@ export async function runCli(
 
   if (command === "compat") {
     const targetPath = maybePath && !maybePath.startsWith("--") ? maybePath : ".";
-    const matrix = await buildCompatibilityMatrix(targetPath);
+    const compatFlags = maybePath && maybePath.startsWith("--")
+      ? [maybePath, ...remainingArgs]
+      : remainingArgs;
+    const jsonOutput = compatFlags.includes("--json");
+    const outputIndex = compatFlags.indexOf("--output");
+    const outputPath = outputIndex === -1 ? null : compatFlags[outputIndex + 1];
 
-    io.writeStdout(renderCompatibilityReport(matrix));
+    if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+      io.writeStderr("Missing path after --output.");
+      return 2;
+    }
+
+    const matrix = await buildCompatibilityMatrix(targetPath);
+    const report = jsonOutput
+      ? JSON.stringify({ schemaVersion: "1.0.0", ...matrix }, null, 2)
+      : renderCompatibilityReport(matrix);
+
+    if (outputPath) {
+      await writeFile(outputPath, report, "utf8");
+    }
+
+    io.writeStdout(report);
     return matrixExitCode(matrix);
   }
 
