@@ -11,6 +11,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `codex-plugin-doctor compat <path>` as the first compatibility matrix command
 - added initial Codex and Generic MCP compatibility adapters, with Claude Desktop and Cursor marked as planned skipped adapters
 - added `compat --json --output <path>` for machine-readable compatibility reports
+- added `compat --client <client>` filtering for focused client checks
 - treated standalone `.mcp.json` packages as Generic MCP compatible without requiring a Codex plugin manifest
 
 ## [0.1.5] - 2026-04-29

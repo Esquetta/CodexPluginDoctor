@@ -158,6 +158,8 @@ Run these from a Codex plugin package root:
 codex-plugin-doctor --version
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor compat .
+codex-plugin-doctor compat . --client codex
+codex-plugin-doctor compat . --client generic-mcp
 codex-plugin-doctor compat . --json
 codex-plugin-doctor compat . --json --output compatibility.json
 codex-plugin-doctor check .

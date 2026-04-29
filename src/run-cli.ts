@@ -7,6 +7,7 @@ import {
 } from "./core/discover-installed-plugins.js";
 import {
   buildCompatibilityMatrix,
+  type CompatibilityMatrix,
   matrixExitCode
 } from "./compatibility/compatibility-matrix.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
@@ -78,6 +79,32 @@ function renderInstalledPlugins(plugins: InstalledPlugin[]): string {
   return lines.join("\n");
 }
 
+const compatibilityClientAliases: Record<string, string> = {
+  codex: "Codex",
+  "generic-mcp": "Generic MCP",
+  generic: "Generic MCP",
+  mcp: "Generic MCP",
+  "claude-desktop": "Claude Desktop",
+  claude: "Claude Desktop",
+  cursor: "Cursor"
+};
+
+function filterCompatibilityMatrix(
+  matrix: CompatibilityMatrix,
+  clientFilter: string
+): CompatibilityMatrix | null {
+  const client = compatibilityClientAliases[clientFilter.toLowerCase()];
+
+  if (!client) {
+    return null;
+  }
+
+  return {
+    ...matrix,
+    results: matrix.results.filter((result) => result.client === client)
+  };
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -145,15 +172,34 @@ export async function runCli(
       ? [maybePath, ...remainingArgs]
       : remainingArgs;
     const jsonOutput = compatFlags.includes("--json");
+    const clientIndex = compatFlags.indexOf("--client");
+    const clientFilter = clientIndex === -1 ? null : compatFlags[clientIndex + 1];
     const outputIndex = compatFlags.indexOf("--output");
     const outputPath = outputIndex === -1 ? null : compatFlags[outputIndex + 1];
+
+    if (clientIndex !== -1 && (!clientFilter || clientFilter.startsWith("--"))) {
+      io.writeStderr("Missing client after --client.");
+      return 2;
+    }
 
     if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
       io.writeStderr("Missing path after --output.");
       return 2;
     }
 
-    const matrix = await buildCompatibilityMatrix(targetPath);
+    let matrix = await buildCompatibilityMatrix(targetPath);
+
+    if (clientFilter) {
+      const filteredMatrix = filterCompatibilityMatrix(matrix, clientFilter);
+
+      if (!filteredMatrix) {
+        io.writeStderr(`Unknown compatibility client: ${clientFilter}`);
+        return 2;
+      }
+
+      matrix = filteredMatrix;
+    }
+
     const report = jsonOutput
       ? JSON.stringify({ schemaVersion: "1.0.0", ...matrix }, null, 2)
       : renderCompatibilityReport(matrix);

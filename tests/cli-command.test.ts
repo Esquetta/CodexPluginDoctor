@@ -116,6 +116,36 @@ describe("runCli", () => {
     );
   });
 
+  it("filters compatibility output to a requested client", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "generic-mcp"],
+      io
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).not.toContain("Codex:");
+    expect(output).toContain("Generic MCP: PASS");
+    expect(output).not.toContain("Claude Desktop:");
+    expect(output).not.toContain("Cursor:");
+  });
+
+  it("fails clearly for an unknown compatibility client", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", ".", "--client", "unknown-agent"],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Unknown compatibility client: unknown-agent");
+  });
+
   it("explains a known finding id", async () => {
     const { io, stdout, stderr } = createIo();
 
