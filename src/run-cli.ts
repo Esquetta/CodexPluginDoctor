@@ -5,10 +5,15 @@ import {
   filterInstalledPlugins,
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
+import {
+  buildCompatibilityMatrix,
+  matrixExitCode
+} from "./compatibility/compatibility-matrix.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
+import { renderCompatibilityReport } from "./reporting/render-compatibility-report.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
@@ -132,6 +137,14 @@ export async function runCli(
       ].join("\n")
     );
     return 0;
+  }
+
+  if (command === "compat") {
+    const targetPath = maybePath && !maybePath.startsWith("--") ? maybePath : ".";
+    const matrix = await buildCompatibilityMatrix(targetPath);
+
+    io.writeStdout(renderCompatibilityReport(matrix));
+    return matrixExitCode(matrix);
   }
 
   if (command !== "check") {

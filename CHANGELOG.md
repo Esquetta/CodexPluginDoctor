@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `codex-plugin-doctor compat <path>` as the first compatibility matrix command
+- added initial Codex and Generic MCP compatibility adapters, with Claude Desktop and Cursor marked as planned skipped adapters
+
 ## [0.1.5] - 2026-04-29
 
 Feature release for CI, policy configuration, rule explanations, SARIF reporting, and plugin scaffolding.

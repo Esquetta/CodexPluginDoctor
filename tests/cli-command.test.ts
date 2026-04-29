@@ -32,6 +32,36 @@ async function createTempFilePath(filename: string): Promise<string> {
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
+  it("renders a compatibility matrix for a Codex plugin with MCP config", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--no-animations"],
+      io
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Compatibility Matrix");
+    expect(output).toContain("Codex: PASS");
+    expect(output).toContain("Generic MCP: PASS");
+    expect(output).toContain("Claude Desktop: SKIPPED");
+    expect(output).toContain("Cursor: SKIPPED");
+  });
+
+  it("returns a failing compatibility matrix when Codex validation fails", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "tests/fixtures/missing-manifest", "--no-animations"],
+      io
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("Codex: FAIL");
+  });
+
   it("explains a known finding id", async () => {
     const { io, stdout, stderr } = createIo();
 
