@@ -62,6 +62,20 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("Codex: FAIL");
   });
 
+  it("treats standalone MCP packages as generic MCP compatible without requiring a Codex manifest", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "tests/fixtures/generic-mcp-only", "--no-animations"],
+      io
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Codex: SKIPPED");
+    expect(output).toContain("Generic MCP: PASS");
+  });
+
   it("explains a known finding id", async () => {
     const { io, stdout, stderr } = createIo();
 

@@ -66,6 +66,10 @@ async function readMcpConfigPath(targetPath: string): Promise<string | null> {
   }
 }
 
+async function hasCodexManifest(targetPath: string): Promise<boolean> {
+  return fileExists(path.join(path.resolve(targetPath), ".codex-plugin", "plugin.json"));
+}
+
 async function checkGenericMcp(targetPath: string): Promise<CompatibilityResult> {
   const mcpConfigPath = await readMcpConfigPath(targetPath);
 
@@ -118,19 +122,29 @@ export async function buildCompatibilityMatrix(
   targetPath: string
 ): Promise<CompatibilityMatrix> {
   const rootPath = path.resolve(targetPath);
+  const genericMcpResult = await checkGenericMcp(rootPath);
   const codexResult = await validatePlugin(rootPath);
   const codexStatus = statusFromCheckResult(codexResult);
+  const codexCompatibility = !await hasCodexManifest(rootPath)
+    && genericMcpResult.status === "pass"
+      ? {
+          client: "Codex",
+          status: "skipped" as const,
+          summary: "No Codex plugin manifest found; treating target as a standalone MCP package.",
+          details: ["Add `.codex-plugin/plugin.json` if this package should be installable as a Codex plugin."]
+        }
+      : {
+          client: "Codex",
+          status: codexStatus,
+          summary:
+            codexStatus === "pass"
+              ? "Codex plugin package validation passed."
+              : "Codex plugin package validation produced findings.",
+          details: codexResult.findings.map((finding) => finding.id)
+        };
   const results: CompatibilityResult[] = [
-    {
-      client: "Codex",
-      status: codexStatus,
-      summary:
-        codexStatus === "pass"
-          ? "Codex plugin package validation passed."
-          : "Codex plugin package validation produced findings.",
-      details: codexResult.findings.map((finding) => finding.id)
-    },
-    await checkGenericMcp(rootPath),
+    codexCompatibility,
+    genericMcpResult,
     {
       client: "Claude Desktop",
       status: "skipped",
