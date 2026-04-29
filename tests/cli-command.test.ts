@@ -166,6 +166,33 @@ describe("runCli", () => {
     expect(output).not.toContain("Codex Plugin Doctor\n===================");
   });
 
+  it("honors ignoreRules from .codex-doctor.json", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/config-ignore-warning", "--no-animations"],
+      io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join("")).toContain("Status: PASS");
+    expect(stdout.join("")).toContain("No findings.");
+    expect(stdout.join("")).not.toContain("plugin.heuristic.description.too_long");
+  });
+
+  it("turns warnings into a blocking result when failOnWarnings is enabled", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/config-fail-on-warnings", "--no-animations"],
+      io
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("Status: FAIL");
+    expect(stdout.join("")).toContain("plugin.heuristic.description.too_long");
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();

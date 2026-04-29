@@ -163,7 +163,17 @@ codex-plugin-doctor check . --markdown --output report.md
 codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
+codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor check . --json --runtime --verbose-runtime
+```
+
+Optional local policy file:
+
+```json
+{
+  "ignoreRules": ["plugin.heuristic.description.too_long"],
+  "failOnWarnings": true
+}
 ```
 
 Run these when you want Codex Plugin Doctor to find plugins from the local Codex installation:

@@ -5,6 +5,7 @@ import {
   filterInstalledPlugins,
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
+import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
@@ -145,9 +146,16 @@ export async function runCli(
   const installedSummary = normalizedFlags.includes("--all-summary");
   const outputIndex = normalizedFlags.indexOf("--output");
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
+  const configIndex = normalizedFlags.indexOf("--config");
+  const configPath = configIndex === -1 ? null : normalizedFlags[configIndex + 1];
 
   if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
     io.writeStderr("Missing path after --output.");
+    return 2;
+  }
+
+  if (configIndex !== -1 && (!configPath || configPath.startsWith("--"))) {
+    io.writeStderr("Missing path after --config.");
     return 2;
   }
 
@@ -182,15 +190,19 @@ export async function runCli(
     const checkedPlugins = [];
 
     for (const plugin of installedPlugins) {
+      const config = await loadDoctorConfig(plugin.rootPath, configPath);
       checkedPlugins.push({
         plugin,
-        result: await runCheckImpl(plugin.rootPath, {
-          runtime: runtimeProbeEnabled,
-          runtimeTranscript:
-            runtimeProbeEnabled && verboseRuntime
-              ? (line) => io.writeStderr(line)
-              : undefined
-        })
+        result: applyDoctorConfig(
+          await runCheckImpl(plugin.rootPath, {
+            runtime: runtimeProbeEnabled,
+            runtimeTranscript:
+              runtimeProbeEnabled && verboseRuntime
+                ? (line) => io.writeStderr(line)
+                : undefined
+          }),
+          config
+        )
       });
     }
 
@@ -224,13 +236,16 @@ export async function runCli(
     : null;
 
   renderer?.start("Validating package");
-  const result = await runCheckImpl(targetPath, {
-    runtime: runtimeProbeEnabled,
-    runtimeTranscript:
-      runtimeProbeEnabled && verboseRuntime
-        ? (line) => io.writeStderr(line)
-        : undefined
-  });
+  const result = applyDoctorConfig(
+    await runCheckImpl(targetPath, {
+      runtime: runtimeProbeEnabled,
+      runtimeTranscript:
+        runtimeProbeEnabled && verboseRuntime
+          ? (line) => io.writeStderr(line)
+          : undefined
+    }),
+    await loadDoctorConfig(targetPath, configPath)
+  );
   if (renderer) {
     if (result.status === "fail") {
       renderer.stopFailure("Validation failed");

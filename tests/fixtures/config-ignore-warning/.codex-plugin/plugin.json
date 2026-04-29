@@ -1,0 +1,5 @@
+{
+  "name": "config-ignore-warning",
+  "version": "1.0.0",
+  "description": "This plugin description is intentionally far too long for the manifest-level metadata heuristic because this fixture verifies that local policy configuration can suppress a known warning when the package owner has explicitly accepted that risk for a narrow validation scenario."
+}

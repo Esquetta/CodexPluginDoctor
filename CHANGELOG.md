@@ -11,6 +11,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `codex-plugin-doctor explain <finding-id>` for focused rule explanations
 - added a rule catalog document covering stable finding IDs, severity, and remediation intent
 - added `check --installed --all-summary` for compact installed plugin validation summaries
+- added `.codex-doctor.json` policy support for `ignoreRules` and `failOnWarnings`
 
 ## [0.1.4] - 2026-04-29
 

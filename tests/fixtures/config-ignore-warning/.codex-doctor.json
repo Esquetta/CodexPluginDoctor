@@ -1,0 +1,3 @@
+{
+  "ignoreRules": ["plugin.heuristic.description.too_long"]
+}
