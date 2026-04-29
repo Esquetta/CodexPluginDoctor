@@ -1,0 +1,65 @@
+name: Codex Plugin Doctor
+description: Validate Codex plugin packages in GitHub Actions.
+
+inputs:
+  path:
+    description: Path to the Codex plugin package root.
+    required: false
+    default: "."
+  runtime:
+    description: Run optional MCP runtime probing.
+    required: false
+    default: "false"
+  installed:
+    description: Validate plugins from the local Codex plugin cache.
+    required: false
+    default: "false"
+  filter:
+    description: Optional installed plugin name/path filter.
+    required: false
+    default: ""
+  config:
+    description: Optional path to .codex-doctor.json.
+    required: false
+    default: ""
+  sarif:
+    description: Write SARIF output to codex-plugin-doctor.sarif.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Codex Plugin Doctor
+      shell: bash
+      run: npm install -g codex-plugin-doctor@latest
+
+    - name: Run Codex Plugin Doctor
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        args=(check)
+
+        if [[ "${{ inputs.installed }}" == "true" ]]; then
+          args+=(--installed)
+          if [[ -n "${{ inputs.filter }}" ]]; then
+            args+=("${{ inputs.filter }}")
+          fi
+        else
+          args+=("${{ inputs.path }}")
+        fi
+
+        if [[ "${{ inputs.runtime }}" == "true" ]]; then
+          args+=(--runtime)
+        fi
+
+        if [[ -n "${{ inputs.config }}" ]]; then
+          args+=(--config "${{ inputs.config }}")
+        fi
+
+        if [[ "${{ inputs.sarif }}" == "true" ]]; then
+          args+=(--sarif --output codex-plugin-doctor.sarif)
+        fi
+
+        codex-plugin-doctor "${args[@]}"

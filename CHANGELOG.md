@@ -13,6 +13,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `check --installed --all-summary` for compact installed plugin validation summaries
 - added `.codex-doctor.json` policy support for `ignoreRules` and `failOnWarnings`
 - added SARIF output with `--sarif` for GitHub Code Scanning compatible reports
+- added a composite GitHub Action entrypoint for repository CI validation
 
 ## [0.1.4] - 2026-04-29
 

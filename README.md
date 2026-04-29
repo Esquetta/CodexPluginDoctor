@@ -188,6 +188,25 @@ codex-plugin-doctor check --installed github --runtime --no-animations
 codex-plugin-doctor explain plugin.security.hard_coded_secret
 ```
 
+## GitHub Action
+
+```yaml
+name: Validate Codex plugin
+
+on:
+  pull_request:
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Esquetta/CodexPluginDoctor@v0.1.4
+        with:
+          path: .
+          runtime: "false"
+```
+
 To self-test this repository after cloning it:
 
 ```bash
