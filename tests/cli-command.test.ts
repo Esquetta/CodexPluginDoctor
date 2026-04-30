@@ -158,6 +158,56 @@ describe("runCli", () => {
     );
   });
 
+  it("renders a compatibility scorecard when requested", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-scorecard-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--scorecard"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: directory, USERPROFILE: directory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Compatibility Scorecard");
+    expect(output).toContain("Codex: 100");
+    expect(output).toContain("Generic MCP: 100");
+    expect(output).toContain("Claude Desktop: 70");
+    expect(output).toContain("Cursor: 70");
+  });
+
+  it("renders a focused compatibility scorecard for one client", async () => {
+    const homeDirectory = await createCursorHomeFixture({ mcpServers: {} });
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor", "--scorecard"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Compatibility Scorecard");
+    expect(output).toContain("Cursor: 100");
+    expect(output).not.toContain("Codex:");
+    expect(output).not.toContain("Claude Desktop:");
+  });
+
   it("filters compatibility output to a requested client", async () => {
     const { io, stdout, stderr } = createIo();
 

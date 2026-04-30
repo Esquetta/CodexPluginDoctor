@@ -22,6 +22,7 @@ import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
+import { renderCompatibilityScorecard } from "./reporting/render-compatibility-scorecard.js";
 import { renderCompatibilityReport } from "./reporting/render-compatibility-report.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
@@ -61,7 +62,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--output <path>] [--install-preview]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -180,6 +181,7 @@ export async function runCli(
       ? [maybePath, ...remainingArgs]
       : remainingArgs;
     const jsonOutput = compatFlags.includes("--json");
+    const scorecardOutput = compatFlags.includes("--scorecard");
     const installPreview = compatFlags.includes("--install-preview");
     const clientIndex = compatFlags.indexOf("--client");
     const clientFilter = clientIndex === -1 ? null : compatFlags[clientIndex + 1];
@@ -249,6 +251,8 @@ export async function runCli(
 
     const report = jsonOutput
       ? JSON.stringify({ schemaVersion: "1.0.0", ...matrix }, null, 2)
+      : scorecardOutput
+        ? renderCompatibilityScorecard(matrix)
       : renderCompatibilityReport(matrix);
 
     if (outputPath) {
