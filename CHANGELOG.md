@@ -6,7 +6,10 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- added local Cursor compatibility detection for `compat --client cursor`
+- added `compat --client cursor --install-preview` for non-mutating Cursor MCP config snippets
 
 ## [0.2.1] - 2026-04-30
 
