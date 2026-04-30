@@ -6,6 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.2.1] - 2026-04-30
+
+Patch release for Claude Desktop local install readiness checks.
+
 ### Added
 
 - added local Claude Desktop compatibility detection for `compat --client claude-desktop`
