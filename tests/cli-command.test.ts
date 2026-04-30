@@ -226,6 +226,36 @@ describe("runCli", () => {
     expect(output).toContain("Claude Desktop config is not valid JSON.");
   });
 
+  it("warns when the Claude Desktop config already has a matching server name", async () => {
+    const appData = await createClaudeAppDataFixture({
+      mcpServers: {
+        doctorRuntime: {
+          command: "node",
+          args: ["existing-server.js"]
+        }
+      }
+    });
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "claude-desktop"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Claude Desktop: WARN");
+    expect(output).toContain("Claude Desktop already has MCP server names from this package.");
+    expect(output).toContain("doctorRuntime");
+  });
+
   it("fails clearly for an unknown compatibility client", async () => {
     const { io, stdout, stderr } = createIo();
 

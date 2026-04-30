@@ -134,6 +134,27 @@ async function checkGenericMcp(targetPath: string): Promise<CompatibilityResult>
   }
 }
 
+async function readMcpServerNames(targetPath: string): Promise<string[]> {
+  const mcpConfigPath = await readMcpConfigPath(targetPath);
+
+  if (!mcpConfigPath || !(await fileExists(mcpConfigPath))) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(mcpConfigPath, "utf8")) as {
+      mcpServers?: unknown;
+    };
+    const servers = parsed.mcpServers;
+
+    return typeof servers === "object" && servers !== null && !Array.isArray(servers)
+      ? Object.keys(servers)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function getClaudeDesktopConfigPath(environment: CompatibilityEnvironment = {}): string | null {
   const platform = environment.platform ?? process.platform;
   const env = environment.env ?? process.env;
@@ -214,6 +235,26 @@ async function checkClaudeDesktop(
         status: "fail",
         summary: "Claude Desktop config has an invalid `mcpServers` shape.",
         details: [configPath, "`mcpServers` must be an object before this package can be added safely."]
+      };
+    }
+
+    const packageServerNames = await readMcpServerNames(targetPath);
+    const existingServerNames = typeof servers === "object" && servers !== null
+      ? Object.keys(servers)
+      : [];
+    const duplicateServerNames = packageServerNames.filter((serverName) =>
+      existingServerNames.includes(serverName)
+    );
+
+    if (duplicateServerNames.length > 0) {
+      return {
+        client: "Claude Desktop",
+        status: "warn",
+        summary: "Claude Desktop already has MCP server names from this package.",
+        details: [
+          configPath,
+          ...duplicateServerNames.map((serverName) => `Duplicate server: ${serverName}`)
+        ]
       };
     }
 
