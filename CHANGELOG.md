@@ -9,6 +9,7 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added local Claude Desktop compatibility detection for `compat --client claude-desktop`
+- added Claude Desktop MCP server name conflict warnings before adding a package
 
 ## [0.2.0] - 2026-04-30
 
