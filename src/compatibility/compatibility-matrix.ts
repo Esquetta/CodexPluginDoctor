@@ -55,7 +55,7 @@ function statusFromCheckResult(result: CheckResult): CompatibilityStatus {
   return "pass";
 }
 
-async function readMcpConfigPath(targetPath: string): Promise<string | null> {
+export async function readMcpConfigPath(targetPath: string): Promise<string | null> {
   const rootPath = path.resolve(targetPath);
   const directMcpPath = path.join(rootPath, ".mcp.json");
 
@@ -155,7 +155,7 @@ async function readMcpServerNames(targetPath: string): Promise<string[]> {
   }
 }
 
-function getClaudeDesktopConfigPath(environment: CompatibilityEnvironment = {}): string | null {
+export function getClaudeDesktopConfigPath(environment: CompatibilityEnvironment = {}): string | null {
   const platform = environment.platform ?? process.platform;
   const env = environment.env ?? process.env;
   const homeDirectory = environment.homedir ?? os.homedir();

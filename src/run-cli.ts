@@ -10,6 +10,10 @@ import {
   type CompatibilityMatrix,
   matrixExitCode
 } from "./compatibility/compatibility-matrix.js";
+import {
+  buildClaudeDesktopInstallPreview,
+  renderClaudeDesktopInstallPreview
+} from "./compatibility/claude-desktop-install-preview.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
@@ -53,7 +57,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--json] [--output <path>]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--output <path>] [--install-preview]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -172,6 +176,7 @@ export async function runCli(
       ? [maybePath, ...remainingArgs]
       : remainingArgs;
     const jsonOutput = compatFlags.includes("--json");
+    const installPreview = compatFlags.includes("--install-preview");
     const clientIndex = compatFlags.indexOf("--client");
     const clientFilter = clientIndex === -1 ? null : compatFlags[clientIndex + 1];
     const outputIndex = compatFlags.indexOf("--output");
@@ -185,6 +190,31 @@ export async function runCli(
     if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
       io.writeStderr("Missing path after --output.");
       return 2;
+    }
+
+    if (installPreview && clientFilter?.toLowerCase() !== "claude-desktop") {
+      io.writeStderr("--install-preview requires --client claude-desktop.");
+      return 2;
+    }
+
+    if (installPreview) {
+      try {
+        const preview = await buildClaudeDesktopInstallPreview(targetPath, {
+          env: terminalContext.env
+        });
+        const report = renderClaudeDesktopInstallPreview(preview);
+
+        if (outputPath) {
+          await writeFile(outputPath, report, "utf8");
+        }
+
+        io.writeStdout(report);
+        return 0;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Unknown install preview error.";
+        io.writeStderr(message);
+        return 1;
+      }
     }
 
     let matrix = await buildCompatibilityMatrix(targetPath, {

@@ -256,6 +256,57 @@ describe("runCli", () => {
     expect(output).toContain("doctorRuntime");
   });
 
+  it("renders a Claude Desktop install preview without changing the local config", async () => {
+    const appData = await createClaudeAppDataFixture({ mcpServers: {} });
+    const configPath = path.join(appData, "Claude", "claude_desktop_config.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "compat",
+        "examples/codex-doctor-runtime",
+        "--client",
+        "claude-desktop",
+        "--install-preview"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const expectedServerPath = JSON.stringify(
+      path.resolve("examples/codex-doctor-runtime/mock-server.js")
+    ).slice(1, -1);
+    const unchangedConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Claude Desktop Install Preview");
+    expect(output).toContain(configPath);
+    expect(output).toContain('"doctorRuntime"');
+    expect(output).toContain('"command": "node"');
+    expect(output).toContain(expectedServerPath);
+    expect(unchangedConfig).toEqual({ mcpServers: {} });
+  });
+
+  it("rejects install preview without the Claude Desktop compatibility client", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--install-preview"],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("--install-preview requires --client claude-desktop");
+  });
+
   it("fails clearly for an unknown compatibility client", async () => {
     const { io, stdout, stderr } = createIo();
 
