@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.1.4
+      - uses: Esquetta/CodexPluginDoctor@v0.2.0
         with:
           path: .
           runtime: "false"

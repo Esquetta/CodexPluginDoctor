@@ -6,6 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.2.0] - 2026-04-30
+
+Feature release for cross-client compatibility checks and machine-readable compatibility reporting.
+
 ### Added
 
 - added `codex-plugin-doctor compat <path>` as the first compatibility matrix command
