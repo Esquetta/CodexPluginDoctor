@@ -10,6 +10,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 - added local Cursor compatibility detection for `compat --client cursor`
 - added `compat --client cursor --install-preview` for non-mutating Cursor MCP config snippets
+- added `compat --scorecard` for quick per-client compatibility scores
 
 ## [0.2.1] - 2026-04-30
 
