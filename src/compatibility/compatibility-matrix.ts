@@ -178,6 +178,26 @@ export function getClaudeDesktopConfigPath(environment: CompatibilityEnvironment
   return null;
 }
 
+function getHomeDirectory(environment: CompatibilityEnvironment = {}): string {
+  const env = environment.env ?? process.env;
+
+  return env.USERPROFILE ?? env.HOME ?? environment.homedir ?? os.homedir();
+}
+
+export async function getCursorMcpConfigPath(
+  targetPath: string,
+  environment: CompatibilityEnvironment = {}
+): Promise<string> {
+  const rootPath = path.resolve(targetPath);
+  const projectConfigPath = path.join(rootPath, ".cursor", "mcp.json");
+
+  if (await fileExists(projectConfigPath)) {
+    return projectConfigPath;
+  }
+
+  return path.join(getHomeDirectory(environment), ".cursor", "mcp.json");
+}
+
 async function checkClaudeDesktop(
   targetPath: string,
   genericMcpResult: CompatibilityResult,
@@ -277,6 +297,96 @@ async function checkClaudeDesktop(
   }
 }
 
+async function checkCursor(
+  targetPath: string,
+  genericMcpResult: CompatibilityResult,
+  environment: CompatibilityEnvironment = {}
+): Promise<CompatibilityResult> {
+  if (genericMcpResult.status !== "pass") {
+    return {
+      client: "Cursor",
+      status: "skipped",
+      summary: "No valid MCP package config is available for Cursor.",
+      details: ["Add a valid `.mcp.json` with a non-empty `mcpServers` object first."]
+    };
+  }
+
+  const configPath = await getCursorMcpConfigPath(targetPath, environment);
+
+  if (!(await fileExists(configPath))) {
+    const configDirectory = path.dirname(configPath);
+
+    return {
+      client: "Cursor",
+      status: await directoryExists(configDirectory) ? "pass" : "warn",
+      summary: await directoryExists(configDirectory)
+        ? "Cursor MCP config directory exists and a config file can be created."
+        : "Cursor was not detected on this machine.",
+      details: [
+        configPath,
+        "Cursor supports project `.cursor/mcp.json` and global `~/.cursor/mcp.json` MCP configs."
+      ]
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as {
+      mcpServers?: unknown;
+    };
+    const servers = parsed.mcpServers;
+
+    if (servers !== undefined && (
+      typeof servers !== "object" ||
+      servers === null ||
+      Array.isArray(servers)
+    )) {
+      return {
+        client: "Cursor",
+        status: "fail",
+        summary: "Cursor MCP config has an invalid `mcpServers` shape.",
+        details: [configPath, "`mcpServers` must be an object before this package can be added safely."]
+      };
+    }
+
+    const packageServerNames = await readMcpServerNames(targetPath);
+    const existingServerNames = typeof servers === "object" && servers !== null
+      ? Object.keys(servers)
+      : [];
+    const duplicateServerNames = packageServerNames.filter((serverName) =>
+      existingServerNames.includes(serverName)
+    );
+
+    if (duplicateServerNames.length > 0) {
+      return {
+        client: "Cursor",
+        status: "warn",
+        summary: "Cursor already has MCP server names from this package.",
+        details: [
+          configPath,
+          ...duplicateServerNames.map((serverName) => `Duplicate server: ${serverName}`)
+        ]
+      };
+    }
+
+    return {
+      client: "Cursor",
+      status: "pass",
+      summary: "Cursor global MCP config is valid and this package can be added.",
+      details: [
+        configPath,
+        `Source package: ${path.resolve(targetPath)}`
+      ]
+    };
+  } catch {
+    return {
+      client: "Cursor",
+      status: "fail",
+      summary: "Cursor MCP config is not valid JSON.",
+      details: [configPath, "Repair the local Cursor MCP config before adding new MCP servers."]
+    };
+  }
+}
+
 export async function buildCompatibilityMatrix(
   targetPath: string,
   environment: CompatibilityEnvironment = {}
@@ -284,6 +394,7 @@ export async function buildCompatibilityMatrix(
   const rootPath = path.resolve(targetPath);
   const genericMcpResult = await checkGenericMcp(rootPath);
   const claudeDesktopResult = await checkClaudeDesktop(rootPath, genericMcpResult, environment);
+  const cursorResult = await checkCursor(rootPath, genericMcpResult, environment);
   const codexResult = await validatePlugin(rootPath);
   const codexStatus = statusFromCheckResult(codexResult);
   const codexCompatibility = !await hasCodexManifest(rootPath)
@@ -307,12 +418,7 @@ export async function buildCompatibilityMatrix(
     codexCompatibility,
     genericMcpResult,
     claudeDesktopResult,
-    {
-      client: "Cursor",
-      status: "skipped",
-      summary: "Client-specific package adapter is not implemented yet.",
-      details: ["Planned adapter after generic MCP compatibility is stable."]
-    }
+    cursorResult
   ];
 
   return {

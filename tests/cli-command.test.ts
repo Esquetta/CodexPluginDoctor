@@ -46,6 +46,23 @@ async function createClaudeAppDataFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createCursorHomeFixture(config?: unknown): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-cursor-"));
+  const cursorDirectory = path.join(directory, ".cursor");
+
+  await mkdir(cursorDirectory, { recursive: true });
+
+  if (config !== undefined) {
+    await writeFile(
+      path.join(cursorDirectory, "mcp.json"),
+      typeof config === "string" ? config : JSON.stringify(config, null, 2),
+      "utf8"
+    );
+  }
+
+  return directory;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
@@ -60,7 +77,7 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: directory }
+          env: { APPDATA: directory, USERPROFILE: directory }
         }
       }
     );
@@ -72,7 +89,7 @@ describe("runCli", () => {
     expect(output).toContain("Codex: PASS");
     expect(output).toContain("Generic MCP: PASS");
     expect(output).toContain("Claude Desktop: WARN");
-    expect(output).toContain("Cursor: SKIPPED");
+    expect(output).toContain("Cursor: WARN");
   });
 
   it("returns a failing compatibility matrix when Codex validation fails", async () => {
@@ -304,7 +321,137 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
-    expect(stderr.join("")).toContain("--install-preview requires --client claude-desktop");
+    expect(stderr.join("")).toContain("--install-preview requires --client claude-desktop or --client cursor");
+  });
+
+  it("detects an addable Cursor global MCP config on this machine", async () => {
+    const homeDirectory = await createCursorHomeFixture({ mcpServers: {} });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Cursor: PASS");
+    expect(output).toContain("Cursor global MCP config is valid and this package can be added.");
+    expect(output).toContain(path.join(homeDirectory, ".cursor", "mcp.json"));
+  });
+
+  it("warns when Cursor is not detected locally but the package is portable", async () => {
+    const homeDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-no-cursor-"));
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Cursor: WARN");
+    expect(output).toContain("Cursor was not detected on this machine.");
+  });
+
+  it("fails Cursor compatibility when the local config cannot be parsed safely", async () => {
+    const homeDirectory = await createCursorHomeFixture("{ invalid json");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(output).toContain("Cursor: FAIL");
+    expect(output).toContain("Cursor MCP config is not valid JSON.");
+  });
+
+  it("warns when the Cursor config already has a matching server name", async () => {
+    const homeDirectory = await createCursorHomeFixture({
+      mcpServers: {
+        doctorRuntime: {
+          command: "node",
+          args: ["existing-server.js"]
+        }
+      }
+    });
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Cursor: WARN");
+    expect(output).toContain("Cursor already has MCP server names from this package.");
+    expect(output).toContain("doctorRuntime");
+  });
+
+  it("renders a Cursor install preview without changing the local config", async () => {
+    const homeDirectory = await createCursorHomeFixture({ mcpServers: {} });
+    const configPath = path.join(homeDirectory, ".cursor", "mcp.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor", "--install-preview"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const expectedServerPath = JSON.stringify(
+      path.resolve("examples/codex-doctor-runtime/mock-server.js")
+    ).slice(1, -1);
+    const unchangedConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Cursor Install Preview");
+    expect(output).toContain(configPath);
+    expect(output).toContain('"doctorRuntime"');
+    expect(output).toContain('"command": "node"');
+    expect(output).toContain(expectedServerPath);
+    expect(unchangedConfig).toEqual({ mcpServers: {} });
   });
 
   it("fails clearly for an unknown compatibility client", async () => {

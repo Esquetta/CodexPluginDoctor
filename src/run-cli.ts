@@ -14,6 +14,10 @@ import {
   buildClaudeDesktopInstallPreview,
   renderClaudeDesktopInstallPreview
 } from "./compatibility/claude-desktop-install-preview.js";
+import {
+  buildCursorInstallPreview,
+  renderCursorInstallPreview
+} from "./compatibility/cursor-install-preview.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
@@ -192,17 +196,28 @@ export async function runCli(
       return 2;
     }
 
-    if (installPreview && clientFilter?.toLowerCase() !== "claude-desktop") {
-      io.writeStderr("--install-preview requires --client claude-desktop.");
+    if (
+      installPreview &&
+      clientFilter?.toLowerCase() !== "claude-desktop" &&
+      clientFilter?.toLowerCase() !== "cursor"
+    ) {
+      io.writeStderr("--install-preview requires --client claude-desktop or --client cursor.");
       return 2;
     }
 
     if (installPreview) {
       try {
-        const preview = await buildClaudeDesktopInstallPreview(targetPath, {
-          env: terminalContext.env
-        });
-        const report = renderClaudeDesktopInstallPreview(preview);
+        const report = clientFilter?.toLowerCase() === "cursor"
+          ? renderCursorInstallPreview(
+              await buildCursorInstallPreview(targetPath, {
+                env: terminalContext.env
+              })
+            )
+          : renderClaudeDesktopInstallPreview(
+              await buildClaudeDesktopInstallPreview(targetPath, {
+                env: terminalContext.env
+              })
+            );
 
         if (outputPath) {
           await writeFile(outputPath, report, "utf8");
