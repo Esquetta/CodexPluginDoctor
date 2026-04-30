@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -29,15 +29,40 @@ async function createTempFilePath(filename: string): Promise<string> {
   return path.join(directory, filename);
 }
 
+async function createClaudeAppDataFixture(config?: unknown): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-claude-"));
+  const claudeDirectory = path.join(directory, "Claude");
+
+  await mkdir(claudeDirectory, { recursive: true });
+
+  if (config !== undefined) {
+    await writeFile(
+      path.join(claudeDirectory, "claude_desktop_config.json"),
+      typeof config === "string" ? config : JSON.stringify(config, null, 2),
+      "utf8"
+    );
+  }
+
+  return directory;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
   it("renders a compatibility matrix for a Codex plugin with MCP config", async () => {
     const { io, stdout, stderr } = createIo();
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-no-claude-"));
 
     const exitCode = await runCli(
       ["compat", "examples/codex-doctor-runtime", "--no-animations"],
-      io
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: directory }
+        }
+      }
     );
     const output = stdout.join("");
 
@@ -46,7 +71,7 @@ describe("runCli", () => {
     expect(output).toContain("Compatibility Matrix");
     expect(output).toContain("Codex: PASS");
     expect(output).toContain("Generic MCP: PASS");
-    expect(output).toContain("Claude Desktop: SKIPPED");
+    expect(output).toContain("Claude Desktop: WARN");
     expect(output).toContain("Cursor: SKIPPED");
   });
 
@@ -131,6 +156,74 @@ describe("runCli", () => {
     expect(output).toContain("Generic MCP: PASS");
     expect(output).not.toContain("Claude Desktop:");
     expect(output).not.toContain("Cursor:");
+  });
+
+  it("detects an addable Claude Desktop config on this machine", async () => {
+    const appData = await createClaudeAppDataFixture({ mcpServers: {} });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "claude-desktop"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Claude Desktop: PASS");
+    expect(output).toContain("Claude Desktop config is valid and this MCP package can be added.");
+    expect(output).toContain(path.join(appData, "Claude", "claude_desktop_config.json"));
+  });
+
+  it("warns when Claude Desktop is not detected locally but the package is portable", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-no-claude-"));
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "claude-desktop"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: directory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Claude Desktop: WARN");
+    expect(output).toContain("Claude Desktop was not detected on this machine.");
+  });
+
+  it("fails Claude Desktop compatibility when the local config cannot be parsed safely", async () => {
+    const appData = await createClaudeAppDataFixture("{ invalid json");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "claude-desktop"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(output).toContain("Claude Desktop: FAIL");
+    expect(output).toContain("Claude Desktop config is not valid JSON.");
   });
 
   it("fails clearly for an unknown compatibility client", async () => {

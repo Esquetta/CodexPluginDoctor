@@ -187,7 +187,9 @@ export async function runCli(
       return 2;
     }
 
-    let matrix = await buildCompatibilityMatrix(targetPath);
+    let matrix = await buildCompatibilityMatrix(targetPath, {
+      env: terminalContext.env
+    });
 
     if (clientFilter) {
       const filteredMatrix = filterCompatibilityMatrix(matrix, clientFilter);
