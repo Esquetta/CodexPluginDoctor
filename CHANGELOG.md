@@ -6,6 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.3.0] - 2026-04-30
+
+Feature release for Cursor compatibility and scorecard reporting.
+
 ### Added
 
 - added local Cursor compatibility detection for `compat --client cursor`
