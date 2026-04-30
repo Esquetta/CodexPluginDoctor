@@ -160,6 +160,7 @@ codex-plugin-doctor init my-plugin
 codex-plugin-doctor compat .
 codex-plugin-doctor compat . --client codex
 codex-plugin-doctor compat . --client generic-mcp
+codex-plugin-doctor compat . --client claude-desktop
 codex-plugin-doctor compat . --json
 codex-plugin-doctor compat . --json --output compatibility.json
 codex-plugin-doctor check .
@@ -173,6 +174,8 @@ codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
+
+`compat --client claude-desktop` checks whether the MCP package can be added to the local Claude Desktop setup. On Windows it looks for `%APPDATA%\Claude\claude_desktop_config.json`; on macOS it looks for `~/Library/Application Support/Claude/claude_desktop_config.json`. A valid existing config returns `PASS`, a missing Claude Desktop install returns `WARN`, and a malformed local config returns `FAIL` so you do not add new servers into a broken config file.
 
 Optional local policy file:
 
