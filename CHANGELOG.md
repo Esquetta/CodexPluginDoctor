@@ -6,6 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.4.0] - 2026-05-01
+
+Feature release for safe MCP config apply and post-install self-test.
+
 ### Added
 
 - added safe `compat --client claude-desktop --apply --backup` and `compat --client cursor --apply --backup` install flows with timestamped backups
