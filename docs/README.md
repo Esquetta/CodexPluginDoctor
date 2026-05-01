@@ -44,6 +44,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [v0.2.0 Release Notes](engineering/v0.2.0-release-notes.md)
 - [v0.2.1 Release Notes](engineering/v0.2.1-release-notes.md)
 - [v0.3.0 Release Notes](engineering/v0.3.0-release-notes.md)
+- [v0.4.0 Release Notes](engineering/v0.4.0-release-notes.md)
 
 ### Security
 
@@ -66,7 +67,7 @@ This documentation set defines the product, brand, technical architecture, secur
 | Product type | Developer tooling, CLI-first validation platform |
 | Primary audience | Plugin authors, MCP vendors, platform engineers, AI-native teams |
 | Core promise | Validate Codex plugin packages before they break trust in production |
-| Initial wedge | Local validation, installed plugin discovery, runtime probing, and CI reporting for Codex plugin bundles |
+| Initial wedge | Local validation, installed plugin discovery, self-test, safe MCP config apply, runtime probing, and CI reporting for Codex plugin bundles |
 | Expansion path | MCP Doctor, compatibility lab, hosted control plane |
 
 ## Strategic Positioning

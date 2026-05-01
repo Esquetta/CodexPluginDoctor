@@ -6,7 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- added safe `compat --client claude-desktop --apply --backup` and `compat --client cursor --apply --backup` install flows with timestamped backups
+- added `codex-plugin-doctor self-test` as a bundled post-install demo and runtime health check
+- added BOM-tolerant JSON config parsing for local MCP config files written by Windows tooling
+- included the bundled runtime example in the npm package so self-test works after global install
 
 ## [0.3.0] - 2026-04-30
 

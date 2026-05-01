@@ -75,6 +75,7 @@ Global install from npm:
 ```bash
 npm install -g codex-plugin-doctor
 codex-plugin-doctor --version
+codex-plugin-doctor self-test
 codex-plugin-doctor check path/to/plugin-package
 ```
 
@@ -159,14 +160,17 @@ Run these from a Codex plugin package root:
 
 ```bash
 codex-plugin-doctor --version
+codex-plugin-doctor self-test
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor compat .
 codex-plugin-doctor compat . --client codex
 codex-plugin-doctor compat . --client generic-mcp
 codex-plugin-doctor compat . --client claude-desktop
 codex-plugin-doctor compat . --client claude-desktop --install-preview
+codex-plugin-doctor compat . --client claude-desktop --apply --backup
 codex-plugin-doctor compat . --client cursor
 codex-plugin-doctor compat . --client cursor --install-preview
+codex-plugin-doctor compat . --client cursor --apply --backup
 codex-plugin-doctor compat . --scorecard
 codex-plugin-doctor compat . --json
 codex-plugin-doctor compat . --json --output compatibility.json
@@ -182,9 +186,11 @@ codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
-`compat --client claude-desktop` checks whether the MCP package can be added to the local Claude Desktop setup. On Windows it looks for `%APPDATA%\Claude\claude_desktop_config.json`; on macOS it looks for `~/Library/Application Support/Claude/claude_desktop_config.json`. A valid existing config returns `PASS`, a missing Claude Desktop install returns `WARN`, and a malformed local config returns `FAIL` so you do not add new servers into a broken config file. If the package server name already exists in Claude Desktop, the command returns `WARN` with the duplicate server name. Add `--install-preview` to print the JSON snippet that should be merged into `claude_desktop_config.json`; it does not modify files.
+`self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
-`compat --client cursor` checks whether the MCP package can be added to Cursor. It prefers a project-level `.cursor/mcp.json` when one already exists in the target package, then falls back to the global `~/.cursor/mcp.json` path. A valid existing config returns `PASS`, a missing Cursor config returns `WARN`, malformed JSON returns `FAIL`, and duplicate MCP server names return `WARN`. Add `--install-preview` to print the JSON snippet that should be merged into Cursor's `mcp.json`; it does not modify files.
+`compat --client claude-desktop` checks whether the MCP package can be added to the local Claude Desktop setup. On Windows it looks for `%APPDATA%\Claude\claude_desktop_config.json`; on macOS it looks for `~/Library/Application Support/Claude/claude_desktop_config.json`. A valid existing config returns `PASS`, a missing Claude Desktop install returns `WARN`, and a malformed local config returns `FAIL` so you do not add new servers into a broken config file. If the package server name already exists in Claude Desktop, the command returns `WARN` with the duplicate server name. Add `--install-preview` to print the JSON snippet that should be merged into `claude_desktop_config.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
+
+`compat --client cursor` checks whether the MCP package can be added to Cursor. It prefers a project-level `.cursor/mcp.json` when one already exists in the target package, then falls back to the global `~/.cursor/mcp.json` path. A valid existing config returns `PASS`, a missing Cursor config returns `WARN`, malformed JSON returns `FAIL`, and duplicate MCP server names return `WARN`. Add `--install-preview` to print the JSON snippet that should be merged into Cursor's `mcp.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
 
 `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
 
