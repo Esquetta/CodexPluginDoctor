@@ -1,6 +1,9 @@
 # Codex Plugin Doctor
 
 [![CI](https://github.com/Esquetta/CodexPluginDoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/Esquetta/CodexPluginDoctor/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/codex-plugin-doctor.svg)](https://www.npmjs.com/package/codex-plugin-doctor)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/Esquetta/CodexPluginDoctor)](https://github.com/Esquetta/CodexPluginDoctor/releases)
 
 Codex Plugin Doctor is a local CLI validator for Codex plugin packages, skills, and MCP server bundles.
 
@@ -269,6 +272,9 @@ This runs tests, builds the TypeScript output, and performs `npm pack --dry-run`
 Related docs:
 
 - [Changelog](./CHANGELOG.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Security Policy](./SECURITY.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
 - [Release Candidate Workflow](./docs/engineering/release-candidate-workflow.md)
 - [v0.1.0 Release Notes](./docs/engineering/v0.1.0-final-release-notes.md)

@@ -1,6 +1,8 @@
-# Contributing
+# Contributing to Codex Plugin Doctor
 
-Codex Plugin Doctor is still pre-release. Contributions should keep the CLI reliable, deterministic, and easy to verify locally.
+Thank you for helping improve Codex Plugin Doctor.
+
+This project is a CLI-first validator for Codex plugin packages, skills, and MCP server bundles. Contributions should keep the tool deterministic, local-first, and safe by default.
 
 ## Development Setup
 
@@ -10,30 +12,34 @@ npm test
 npm run build
 ```
 
-## Before Opening a PR
-
-Run the release preparation command:
+For local CLI testing:
 
 ```bash
-npm run prepare-release
+codex-plugin-doctor compat examples/codex-doctor-runtime --scorecard
+node dist/cli.js check examples/codex-doctor-runtime --runtime --no-animations
+node dist/cli.js compat examples/codex-doctor-runtime --scorecard
+node dist/cli.js compat examples/codex-doctor-runtime --client claude-desktop --install-preview
+node dist/cli.js compat examples/codex-doctor-runtime --client cursor --install-preview
 ```
-
-This runs tests, builds the TypeScript output, and checks the npm package contents with a dry run.
 
 ## Contribution Guidelines
 
-- Keep machine-readable output deterministic.
-- Keep interactive terminal rendering on `stderr`.
-- Add fixture coverage for new validator behavior.
-- Prefer narrow rules with clear finding IDs over broad heuristics.
-- Document real-world validation decisions under `validation-sessions/` when tuning heuristics.
+- Use fixture-based tests for new validation behavior.
+- Keep install and apply flows non-mutating unless the command explicitly says it writes files.
+- Prefer clear findings with stable IDs, impact, and suggested fixes.
+- Do not add network calls to validation paths unless the command explicitly opts into them.
+- Do not commit generated `dist/`, local npm tarballs, local config files, or secret-bearing fixtures.
 
-## Commit Style
+## Pull Request Checklist
 
-Use short conventional-style commit prefixes where practical:
+- Run `npm test`.
+- Run `npm run build`.
+- Add or update docs when user-facing behavior changes.
+- Add release-note or changelog entries for shipped features.
+- Include smoke command output for new CLI surfaces.
 
-- `feat:`
-- `fix:`
-- `docs:`
-- `chore:`
-- `test:`
+## Release Notes
+
+Release notes live under `docs/engineering/`. Changelog entries live in `CHANGELOG.md`.
+
+Publishing to npm is a human-gated step because the registry may require one-time password or browser authentication.

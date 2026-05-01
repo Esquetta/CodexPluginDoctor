@@ -2,35 +2,31 @@
 
 ## Supported Versions
 
-Codex Plugin Doctor is currently pre-release. Security reports should target the latest `main` branch or the latest GitHub prerelease.
+Security fixes target the latest published minor version of `codex-plugin-doctor`.
+
+| Version | Supported |
+| --- | --- |
+| Latest npm release | Yes |
+| Older releases | Best effort |
 
 ## Reporting a Vulnerability
 
-Please report security issues privately instead of opening a public issue.
+Please do not open a public issue for suspected vulnerabilities.
 
-Preferred path:
+Report security concerns through GitHub Security Advisories for this repository when available, or contact the maintainer through the GitHub profile linked from the repository owner.
 
-1. Open a private GitHub security advisory if available.
-2. If advisory reporting is unavailable, contact the maintainer through the GitHub profile linked from the repository.
-
-Please include:
+Useful report details:
 
 - affected version or commit
-- reproduction steps
-- expected impact
-- whether secrets, filesystem access, or command execution are involved
+- command that triggered the issue
+- target package shape or minimal reproduction
+- whether credentials, local paths, or generated transcripts were exposed
+- expected safe behavior
 
-## Security Scope
+## Security Principles
 
-In scope:
-
-- unsafe filesystem path handling
-- secret leakage in reports or verbose runtime transcripts
-- command execution behavior in runtime probing
-- CI or release artifact leaks
-
-Out of scope:
-
-- issues in third-party MCP servers being validated
-- expected warnings or failures emitted for intentionally broken fixtures
-- public metadata already present in plugin packages
+- Validation should be local-first and deterministic.
+- Runtime probes should redact generated prompt argument values and avoid leaking secrets.
+- Install previews must not modify local agent configuration files.
+- Future apply/write flows must create backups before mutation.
+- Findings should explain impact and remediation clearly.
