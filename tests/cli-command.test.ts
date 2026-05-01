@@ -259,7 +259,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: appData }
+          env: { APPDATA: appData },
+          platform: "win32"
         }
       }
     );
@@ -283,7 +284,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: directory }
+          env: { APPDATA: directory },
+          platform: "win32"
         }
       }
     );
@@ -305,7 +307,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: appData }
+          env: { APPDATA: appData },
+          platform: "win32"
         }
       }
     );
@@ -334,7 +337,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: appData }
+          env: { APPDATA: appData },
+          platform: "win32"
         }
       }
     );
@@ -364,7 +368,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: appData }
+          env: { APPDATA: appData },
+          platform: "win32"
         }
       }
     );
@@ -608,7 +613,8 @@ describe("runCli", () => {
         terminalContext: {
           stdoutIsTTY: false,
           stderrIsTTY: false,
-          env: { APPDATA: appData }
+          env: { APPDATA: appData },
+          platform: "win32"
         }
       }
     );

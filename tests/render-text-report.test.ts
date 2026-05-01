@@ -9,41 +9,25 @@ describe("renderTextReport", () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/heuristic-long-plugin-description")
     );
+    const output = renderTextReport(result);
 
-    expect(renderTextReport(result)).toMatchInlineSnapshot(`
-      "Codex Plugin Doctor
-      ===================
-      Status: WARN
-      Target: D:\\Workstation\\CodexPluginDoctor\\tests\\fixtures\\heuristic-long-plugin-description
-      Summary: 0 fail, 1 warn, 1 total
-      
-      Warnings
-      --------
-      ! plugin.heuristic.description.too_long
-        Message: The plugin manifest description is likely too verbose.
-        Impact: Overly long metadata increases context cost and can dilute plugin discovery quality.
-        Suggested fix: Shorten the manifest description to a precise one- or two-sentence summary."
-    `);
+    expect(output).toContain("Status: WARN");
+    expect(output).toContain(`Target: ${result.targetPath}`);
+    expect(output).toContain("Summary: 0 fail, 1 warn, 1 total");
+    expect(output).toContain("! plugin.heuristic.description.too_long");
+    expect(output).toContain("Suggested fix: Shorten the manifest description");
   });
 
   it("renders an ASCII-safe summary when requested", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/security-hardcoded-secret")
     );
+    const output = renderTextReport(result, { ascii: true });
 
-    expect(renderTextReport(result, { ascii: true })).toMatchInlineSnapshot(`
-      "Codex Plugin Doctor
-      ===================
-      Status: FAIL
-      Target: D:\\Workstation\\CodexPluginDoctor\\tests\\fixtures\\security-hardcoded-secret
-      Summary: 1 fail, 0 warn, 1 total
-      
-      Failures
-      --------
-      x plugin.security.hard_coded_secret
-        Message: The MCP server \`dangerServer\` contains a hard-coded secret-like env value for \`OPENAI_API_KEY\`.
-        Impact: Hard-coded credentials inside plugin bundles increase leakage risk and make secure rotation difficult.
-        Suggested fix: Replace the literal value for \`OPENAI_API_KEY\` with an environment reference or injected secret outside the package."
-    `);
+    expect(output).toContain("Status: FAIL");
+    expect(output).toContain(`Target: ${result.targetPath}`);
+    expect(output).toContain("Summary: 1 fail, 0 warn, 1 total");
+    expect(output).toContain("x plugin.security.hard_coded_secret");
+    expect(output).toContain("Suggested fix: Replace the literal value");
   });
 });

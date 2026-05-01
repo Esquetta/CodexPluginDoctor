@@ -50,6 +50,7 @@ export interface CliTerminalContext {
   stdoutIsTTY: boolean;
   stderrIsTTY: boolean;
   env: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
 }
 
 export interface RunCliOptions {
@@ -163,7 +164,8 @@ export async function runCli(
   const terminalContext: CliTerminalContext = options.terminalContext ?? {
     stdoutIsTTY: Boolean(process.stdout.isTTY),
     stderrIsTTY: Boolean(process.stderr.isTTY),
-    env: process.env
+    env: process.env,
+    platform: process.platform
   };
 
   if (command === "list" && maybePath === "--installed") {
@@ -200,7 +202,8 @@ export async function runCli(
       await loadDoctorConfig(targetPath)
     );
     const compatibilityMatrix = await buildCompatibilityMatrix(targetPath, {
-      env: terminalContext.env
+      env: terminalContext.env,
+      platform: terminalContext.platform
     });
 
     io.writeStdout(
@@ -280,10 +283,12 @@ export async function runCli(
       try {
         const preview = clientFilter?.toLowerCase() === "cursor"
           ? await buildCursorInstallPreview(targetPath, {
-              env: terminalContext.env
+              env: terminalContext.env,
+              platform: terminalContext.platform
             })
           : await buildClaudeDesktopInstallPreview(targetPath, {
-              env: terminalContext.env
+              env: terminalContext.env,
+              platform: terminalContext.platform
             });
         const report = applyInstall
           ? renderApplyInstallResult(
@@ -310,7 +315,8 @@ export async function runCli(
     }
 
     let matrix = await buildCompatibilityMatrix(targetPath, {
-      env: terminalContext.env
+      env: terminalContext.env,
+      platform: terminalContext.platform
     });
 
     if (clientFilter) {
