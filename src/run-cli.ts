@@ -1,4 +1,6 @@
 import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   discoverInstalledPlugins,
@@ -66,7 +68,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -118,6 +120,34 @@ function filterCompatibilityMatrix(
   };
 }
 
+function resolveBundledSelfTestTarget(): string {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "examples",
+    "codex-doctor-runtime"
+  );
+}
+
+function renderSelfTestReport(
+  targetPath: string,
+  validationStatus: string,
+  findingsCount: number,
+  compatibilityMatrix: CompatibilityMatrix
+): string {
+  return [
+    "Codex Plugin Doctor Self-Test",
+    "=============================",
+    `Version: ${packageVersion}`,
+    `Sample: ${targetPath}`,
+    `Validation: ${validationStatus.toUpperCase()}`,
+    "Runtime probes: enabled",
+    `Findings: ${findingsCount}`,
+    "",
+    renderCompatibilityScorecard(compatibilityMatrix)
+  ].join("\n");
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -160,6 +190,29 @@ export async function runCli(
 
     io.writeStdout(renderRuleExplanation(rule));
     return 0;
+  }
+
+  if (command === "self-test" || command === "demo") {
+    const targetPath = resolveBundledSelfTestTarget();
+    const runCheckImpl = options.runCheckImpl ?? runCheck;
+    const result = applyDoctorConfig(
+      await runCheckImpl(targetPath, { runtime: true }),
+      await loadDoctorConfig(targetPath)
+    );
+    const compatibilityMatrix = await buildCompatibilityMatrix(targetPath, {
+      env: terminalContext.env
+    });
+
+    io.writeStdout(
+      renderSelfTestReport(
+        targetPath,
+        result.status,
+        result.findings.length,
+        compatibilityMatrix
+      )
+    );
+
+    return result.exitCode === 1 || matrixExitCode(compatibilityMatrix) === 1 ? 1 : 0;
   }
 
   if (command === "init") {

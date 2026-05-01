@@ -1,5 +1,7 @@
-import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { readJsonFile } from "../core/read-json-file.js";
 
 export interface McpInstallPreviewLike {
   targetPath: string;
@@ -42,7 +44,7 @@ export async function applyInstallPreview(
 
   const configExists = await fileExists(preview.configPath);
   const currentConfig = configExists
-    ? JSON.parse(await readFile(preview.configPath, "utf8")) as Record<string, unknown>
+    ? await readJsonFile<Record<string, unknown>>(preview.configPath)
     : {};
 
   if (!isRecord(currentConfig)) {

@@ -66,6 +66,29 @@ async function createCursorHomeFixture(config?: unknown): Promise<string> {
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
+  it("runs a bundled self-test against the doctor runtime sample", async () => {
+    const { io, stdout, stderr } = createIo();
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-self-test-"));
+
+    const exitCode = await runCli(["self-test", "--no-animations"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: { APPDATA: directory, USERPROFILE: directory }
+      }
+    });
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Codex Plugin Doctor Self-Test");
+    expect(output).toContain("Validation: PASS");
+    expect(output).toContain("Runtime probes: enabled");
+    expect(output).toContain("Compatibility Scorecard");
+    expect(output).toContain("Codex: 100 (PASS)");
+    expect(output).toContain("Generic MCP: 100 (PASS)");
+  });
+
   it("renders a compatibility matrix for a Codex plugin with MCP config", async () => {
     const { io, stdout, stderr } = createIo();
     const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-no-claude-"));
@@ -398,6 +421,27 @@ describe("runCli", () => {
     expect(output).toContain("Cursor: PASS");
     expect(output).toContain("Cursor global MCP config is valid and this package can be added.");
     expect(output).toContain(path.join(homeDirectory, ".cursor", "mcp.json"));
+  });
+
+  it("accepts a BOM-encoded Cursor MCP config", async () => {
+    const homeDirectory = await createCursorHomeFixture("\uFEFF{\"mcpServers\":{}}");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Cursor: PASS");
   });
 
   it("warns when Cursor is not detected locally but the package is portable", async () => {

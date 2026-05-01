@@ -1,9 +1,10 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import type { CheckResult } from "../domain/types.js";
 import { validatePlugin } from "../core/validate-plugin.js";
+import { readJsonFile } from "../core/read-json-file.js";
 
 export type CompatibilityStatus = "pass" | "warn" | "fail" | "skipped";
 
@@ -70,9 +71,9 @@ export async function readMcpConfigPath(targetPath: string): Promise<string | nu
   }
 
   try {
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    const manifest = await readJsonFile<{
       mcpServers?: unknown;
-    };
+    }>(manifestPath);
 
     return typeof manifest.mcpServers === "string"
       ? path.resolve(rootPath, manifest.mcpServers)
@@ -99,9 +100,9 @@ async function checkGenericMcp(targetPath: string): Promise<CompatibilityResult>
   }
 
   try {
-    const parsed = JSON.parse(await readFile(mcpConfigPath, "utf8")) as {
+    const parsed = await readJsonFile<{
       mcpServers?: unknown;
-    };
+    }>(mcpConfigPath);
     const servers = parsed.mcpServers;
 
     if (
@@ -142,9 +143,9 @@ async function readMcpServerNames(targetPath: string): Promise<string[]> {
   }
 
   try {
-    const parsed = JSON.parse(await readFile(mcpConfigPath, "utf8")) as {
+    const parsed = await readJsonFile<{
       mcpServers?: unknown;
-    };
+    }>(mcpConfigPath);
     const servers = parsed.mcpServers;
 
     return typeof servers === "object" && servers !== null && !Array.isArray(servers)
@@ -240,9 +241,9 @@ async function checkClaudeDesktop(
   }
 
   try {
-    const parsed = JSON.parse(await readFile(configPath, "utf8")) as {
+    const parsed = await readJsonFile<{
       mcpServers?: unknown;
-    };
+    }>(configPath);
     const servers = parsed.mcpServers;
 
     if (servers !== undefined && (
@@ -330,9 +331,9 @@ async function checkCursor(
   }
 
   try {
-    const parsed = JSON.parse(await readFile(configPath, "utf8")) as {
+    const parsed = await readJsonFile<{
       mcpServers?: unknown;
-    };
+    }>(configPath);
     const servers = parsed.mcpServers;
 
     if (servers !== undefined && (
