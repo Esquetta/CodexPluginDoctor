@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -371,7 +371,9 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
-    expect(stderr.join("")).toContain("--install-preview requires --client claude-desktop or --client cursor");
+    expect(stderr.join("")).toContain(
+      "--install-preview and --apply require --client claude-desktop or --client cursor"
+    );
   });
 
   it("detects an addable Cursor global MCP config on this machine", async () => {
@@ -502,6 +504,138 @@ describe("runCli", () => {
     expect(output).toContain('"command": "node"');
     expect(output).toContain(expectedServerPath);
     expect(unchangedConfig).toEqual({ mcpServers: {} });
+  });
+
+  it("applies a Cursor install with a backup when explicitly requested", async () => {
+    const homeDirectory = await createCursorHomeFixture({ mcpServers: {} });
+    const configPath = path.join(homeDirectory, ".cursor", "mcp.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "compat",
+        "examples/codex-doctor-runtime",
+        "--client",
+        "cursor",
+        "--apply",
+        "--backup"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+    const backups = (await readdir(path.dirname(configPath)))
+      .filter((name) => name.startsWith("mcp.json.") && name.endsWith(".bak"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Applied Cursor MCP config");
+    expect(output).toContain("Backup:");
+    expect(writtenConfig.mcpServers.doctorRuntime.command).toBe("node");
+    expect(writtenConfig.mcpServers.doctorRuntime.args[0]).toBe(
+      path.resolve("examples/codex-doctor-runtime/mock-server.js")
+    );
+    expect(backups).toHaveLength(1);
+  });
+
+  it("applies a Claude Desktop install with a backup when explicitly requested", async () => {
+    const appData = await createClaudeAppDataFixture({ mcpServers: {} });
+    const configPath = path.join(appData, "Claude", "claude_desktop_config.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "compat",
+        "examples/codex-doctor-runtime",
+        "--client",
+        "claude-desktop",
+        "--apply",
+        "--backup"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Applied Claude Desktop MCP config");
+    expect(writtenConfig.mcpServers.doctorRuntime.command).toBe("node");
+  });
+
+  it("rejects apply without an explicit backup flag", async () => {
+    const homeDirectory = await createCursorHomeFixture({ mcpServers: {} });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cursor", "--apply"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("--apply requires --backup");
+  });
+
+  it("refuses to apply when server names would be overwritten", async () => {
+    const homeDirectory = await createCursorHomeFixture({
+      mcpServers: {
+        doctorRuntime: {
+          command: "node",
+          args: ["existing-server.js"]
+        }
+      }
+    });
+    const configPath = path.join(homeDirectory, ".cursor", "mcp.json");
+    const before = await readFile(configPath, "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "compat",
+        "examples/codex-doctor-runtime",
+        "--client",
+        "cursor",
+        "--apply",
+        "--backup"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const after = await readFile(configPath, "utf8");
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Refusing to overwrite existing MCP server names");
+    expect(stderr.join("")).toContain("doctorRuntime");
+    expect(after).toBe(before);
   });
 
   it("fails clearly for an unknown compatibility client", async () => {

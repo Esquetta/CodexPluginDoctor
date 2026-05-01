@@ -11,6 +11,10 @@ import {
   matrixExitCode
 } from "./compatibility/compatibility-matrix.js";
 import {
+  applyInstallPreview,
+  renderApplyInstallResult
+} from "./compatibility/apply-install-preview.js";
+import {
   buildClaudeDesktopInstallPreview,
   renderClaudeDesktopInstallPreview
 } from "./compatibility/claude-desktop-install-preview.js";
@@ -62,7 +66,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -183,6 +187,8 @@ export async function runCli(
     const jsonOutput = compatFlags.includes("--json");
     const scorecardOutput = compatFlags.includes("--scorecard");
     const installPreview = compatFlags.includes("--install-preview");
+    const applyInstall = compatFlags.includes("--apply");
+    const backupInstall = compatFlags.includes("--backup");
     const clientIndex = compatFlags.indexOf("--client");
     const clientFilter = clientIndex === -1 ? null : compatFlags[clientIndex + 1];
     const outputIndex = compatFlags.indexOf("--output");
@@ -199,27 +205,43 @@ export async function runCli(
     }
 
     if (
-      installPreview &&
+      (installPreview || applyInstall) &&
       clientFilter?.toLowerCase() !== "claude-desktop" &&
       clientFilter?.toLowerCase() !== "cursor"
     ) {
-      io.writeStderr("--install-preview requires --client claude-desktop or --client cursor.");
+      io.writeStderr("--install-preview and --apply require --client claude-desktop or --client cursor.");
       return 2;
     }
 
-    if (installPreview) {
+    if (installPreview && applyInstall) {
+      io.writeStderr("Use either --install-preview or --apply, not both.");
+      return 2;
+    }
+
+    if (applyInstall && !backupInstall) {
+      io.writeStderr("--apply requires --backup.");
+      return 2;
+    }
+
+    if (installPreview || applyInstall) {
       try {
-        const report = clientFilter?.toLowerCase() === "cursor"
-          ? renderCursorInstallPreview(
-              await buildCursorInstallPreview(targetPath, {
-                env: terminalContext.env
-              })
+        const preview = clientFilter?.toLowerCase() === "cursor"
+          ? await buildCursorInstallPreview(targetPath, {
+              env: terminalContext.env
+            })
+          : await buildClaudeDesktopInstallPreview(targetPath, {
+              env: terminalContext.env
+            });
+        const report = applyInstall
+          ? renderApplyInstallResult(
+              await applyInstallPreview(
+                clientFilter?.toLowerCase() === "cursor" ? "Cursor" : "Claude Desktop",
+                preview
+              )
             )
-          : renderClaudeDesktopInstallPreview(
-              await buildClaudeDesktopInstallPreview(targetPath, {
-                env: terminalContext.env
-              })
-            );
+          : clientFilter?.toLowerCase() === "cursor"
+            ? renderCursorInstallPreview(preview)
+            : renderClaudeDesktopInstallPreview(preview);
 
         if (outputPath) {
           await writeFile(outputPath, report, "utf8");
