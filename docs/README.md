@@ -46,6 +46,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [v0.2.1 Release Notes](engineering/v0.2.1-release-notes.md)
 - [v0.3.0 Release Notes](engineering/v0.3.0-release-notes.md)
 - [v0.4.0 Release Notes](engineering/v0.4.0-release-notes.md)
+- [v0.5.0 Release Notes](engineering/v0.5.0-release-notes.md)
 
 ### Security
 

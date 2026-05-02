@@ -6,10 +6,16 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.5.0] - 2026-05-02
+
+Feature release for validation badge outputs and GitHub Action consumer guidance.
+
 ### Added
 
 - added `check --badge-json` and `check --badge-markdown` for Shields-compatible validation badges
-- added GitHub Action consumer documentation with pinned `v0.4.0` examples for runtime, SARIF, and installed-cache workflows
+- added GitHub Action consumer documentation with pinned `v0.5.0` examples for runtime, SARIF, and installed-cache workflows
 - added a `version` input to the composite action so consuming repositories can pin the npm CLI version independently from the action ref
 
 ## [0.4.0] - 2026-05-01

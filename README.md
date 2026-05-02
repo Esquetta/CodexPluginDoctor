@@ -232,9 +232,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.4.0
+      - uses: Esquetta/CodexPluginDoctor@v0.5.0
         with:
-          version: "0.4.0"
+          version: "0.5.0"
           path: .
           runtime: "false"
 ```
