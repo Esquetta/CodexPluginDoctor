@@ -1072,6 +1072,99 @@ describe("runCli", () => {
     expect(stderr.join("")).toContain("Badge output requires a single package target.");
   });
 
+  it("appends check results to a validation history file", async () => {
+    const historyPath = await createTempFilePath("history.jsonl");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/heuristic-long-plugin-description",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    const historyLines = (await readFile(historyPath, "utf8")).trim().split("\n");
+    const entry = JSON.parse(historyLines[0]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Status: WARN");
+    expect(historyLines).toHaveLength(1);
+    expect(entry.schemaVersion).toBe("1.0.0");
+    expect(entry.status).toBe("warn");
+    expect(entry.findingCounts).toEqual({ fail: 0, warn: 1, total: 1 });
+    expect(entry.runtimeProbeEnabled).toBe(false);
+  });
+
+  it("renders a validation history trend summary", async () => {
+    const historyPath = await createTempFilePath("history.jsonl");
+    const { io, stdout, stderr } = createIo();
+
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/security-hardcoded-secret",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/valid-plugin-with-mcp",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const exitCode = await runCli(["history", historyPath], io);
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Validation History");
+    expect(output).toContain("Runs: 2");
+    expect(output).toContain("Latest: PASS");
+    expect(output).toContain("Previous: FAIL");
+    expect(output).toContain("Fail findings: -1");
+    expect(output).toContain("Warn findings: 0");
+  });
+
+  it("fails clearly when history has no readable runs", async () => {
+    const historyPath = await createTempFilePath("empty-history.jsonl");
+    await writeFile(historyPath, "", "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["history", historyPath], io);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("No validation history entries found.");
+  });
+
+  it("rejects history output for installed plugin checks", async () => {
+    const historyPath = await createTempFilePath("installed-history.jsonl");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["check", "--installed", "--history", historyPath], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: { CODEX_HOME: codexHomeFixture }
+      }
+    });
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("History output requires a single package target.");
+  });
+
   it("writes live status updates to stderr for interactive TTY text runs", async () => {
     vi.useFakeTimers();
 

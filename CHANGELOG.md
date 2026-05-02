@@ -6,7 +6,9 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- added `check --history <path>` JSONL snapshots and `history <path>` trend summaries for local validation history
 
 ## [0.5.0] - 2026-05-02
 

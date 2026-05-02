@@ -66,6 +66,7 @@ Output formats:
 - JSON reports
 - Markdown reports
 - Shields-compatible badge JSON and static badge Markdown
+- validation history JSONL and trend summaries
 - `--output` file writing
 - CI summary and artifact generation
 
@@ -186,6 +187,8 @@ codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --config .codex-doctor.json
+codex-plugin-doctor check . --history validation-history.jsonl
+codex-plugin-doctor history validation-history.jsonl
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
@@ -198,6 +201,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
 
 `check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
+
+`check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status and finding-count deltas.
 
 Optional local policy file:
 

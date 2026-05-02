@@ -57,6 +57,20 @@ The CLI can produce badge output for release notes, README automation, or a stat
 
 `--badge-json` follows the Shields endpoint schema with `schemaVersion`, `label`, `message`, and `color`. `--badge-markdown` emits a static shields.io Markdown image link.
 
+## History Artifacts
+
+Use history output when a workflow should preserve validation trend data between runs.
+
+```yaml
+- name: Append Doctor history
+  run: codex-plugin-doctor check . --history validation-history.jsonl
+
+- name: Summarize Doctor history
+  run: codex-plugin-doctor history validation-history.jsonl
+```
+
+The history file is newline-delimited JSON. Store it as an artifact, cache, or repository-managed file depending on the consuming workflow's retention model.
+
 ## Installed Plugin Cache Checks
 
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.

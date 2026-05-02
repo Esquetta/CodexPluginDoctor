@@ -8,6 +8,10 @@ import {
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
 import {
+  appendValidationHistoryEntry,
+  readValidationHistory
+} from "./core/validation-history.js";
+import {
   buildCompatibilityMatrix,
   type CompatibilityMatrix,
   matrixExitCode
@@ -31,6 +35,7 @@ import { renderInstalledSummary } from "./reporting/render-installed-summary.js"
 import { renderBadgeJson, renderBadgeMarkdown } from "./reporting/render-badge-report.js";
 import { renderCompatibilityScorecard } from "./reporting/render-compatibility-scorecard.js";
 import { renderCompatibilityReport } from "./reporting/render-compatibility-report.js";
+import { renderHistorySummary } from "./reporting/render-history-summary.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
@@ -70,7 +75,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor history <history.jsonl>\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -193,6 +198,23 @@ export async function runCli(
 
     io.writeStdout(renderRuleExplanation(rule));
     return 0;
+  }
+
+  if (command === "history") {
+    if (!maybePath || maybePath.startsWith("--")) {
+      io.writeStderr("Missing history path. Usage: codex-plugin-doctor history <history.jsonl>");
+      return 2;
+    }
+
+    try {
+      const entries = await readValidationHistory(maybePath);
+      io.writeStdout(renderHistorySummary(entries));
+      return 0;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unable to read validation history.";
+      io.writeStderr(message);
+      return 1;
+    }
   }
 
   if (command === "self-test" || command === "demo") {
@@ -381,6 +403,8 @@ export async function runCli(
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
   const configIndex = normalizedFlags.indexOf("--config");
   const configPath = configIndex === -1 ? null : normalizedFlags[configIndex + 1];
+  const historyIndex = normalizedFlags.indexOf("--history");
+  const historyPath = historyIndex === -1 ? null : normalizedFlags[historyIndex + 1];
 
   if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
     io.writeStderr("Missing path after --output.");
@@ -392,8 +416,18 @@ export async function runCli(
     return 2;
   }
 
+  if (historyIndex !== -1 && (!historyPath || historyPath.startsWith("--"))) {
+    io.writeStderr("Missing path after --history.");
+    return 2;
+  }
+
   if (checkInstalled && (badgeJsonOutput || badgeMarkdownOutput)) {
     io.writeStderr("Badge output requires a single package target.");
+    return 2;
+  }
+
+  if (checkInstalled && historyPath) {
+    io.writeStderr("History output requires a single package target.");
     return 2;
   }
 
@@ -508,6 +542,10 @@ export async function runCli(
 
   if (outputPath) {
     await writeFile(outputPath, report, "utf8");
+  }
+
+  if (historyPath) {
+    await appendValidationHistoryEntry(historyPath, result, { runtimeProbeEnabled });
   }
 
   io.writeStdout(report);
