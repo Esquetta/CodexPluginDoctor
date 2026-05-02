@@ -22,9 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.5.0
+      - uses: Esquetta/CodexPluginDoctor@v0.6.0
         with:
-          version: "0.5.0"
+          version: "0.6.0"
           path: .
           runtime: "true"
 ```
@@ -34,9 +34,9 @@ jobs:
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.5.0
+- uses: Esquetta/CodexPluginDoctor@v0.6.0
   with:
-    version: "0.5.0"
+    version: "0.6.0"
     path: .
     sarif: "true"
 ```
@@ -67,18 +67,32 @@ Use history output when a workflow should preserve validation trend data between
 
 - name: Summarize Doctor history
   run: codex-plugin-doctor history validation-history.jsonl
+
+- name: Fail on Doctor regression
+  run: codex-plugin-doctor history validation-history.jsonl --fail-on-regression
 ```
 
-The history file is newline-delimited JSON. Store it as an artifact, cache, or repository-managed file depending on the consuming workflow's retention model.
+The history file is newline-delimited JSON. Store it as an artifact, cache, or repository-managed file depending on the consuming workflow's retention model. Use `codex-plugin-doctor history validation-history.jsonl --json` when another CI step needs machine-readable latest, previous, delta, and regression fields.
+
+The composite action can also append history directly:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v0.6.0
+  with:
+    version: "0.6.0"
+    path: .
+    runtime: "true"
+    history: validation-history.jsonl
+```
 
 ## Installed Plugin Cache Checks
 
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.5.0
+- uses: Esquetta/CodexPluginDoctor@v0.6.0
   with:
-    version: "0.5.0"
+    version: "0.6.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -89,9 +103,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.5.0
+- uses: Esquetta/CodexPluginDoctor@v0.6.0
   with:
-    version: "0.5.0"
+    version: "0.6.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

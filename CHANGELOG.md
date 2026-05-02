@@ -6,9 +6,18 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.6.0] - 2026-05-02
+
+Feature release for validation history, trend summaries, and CI regression gates.
+
 ### Added
 
 - added `check --history <path>` JSONL snapshots and `history <path>` trend summaries for local validation history
+- added `history --json` for automation-friendly validation history summaries
+- added `history --fail-on-regression` so CI can fail when the latest validation run gets worse
+- added a GitHub Action `history` input for writing validation history from consuming workflows
 
 ## [0.5.0] - 2026-05-02
 

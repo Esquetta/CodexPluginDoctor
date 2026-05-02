@@ -189,6 +189,8 @@ codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor check . --history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl
+codex-plugin-doctor history validation-history.jsonl --json
+codex-plugin-doctor history validation-history.jsonl --fail-on-regression
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
@@ -202,7 +204,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
 
-`check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status and finding-count deltas.
+`check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status, finding-count deltas, and whether the latest run regressed. Add `history --json` for automation output or `history --fail-on-regression` when CI should fail after a worse latest run.
 
 Optional local policy file:
 
@@ -237,9 +239,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.5.0
+      - uses: Esquetta/CodexPluginDoctor@v0.6.0
         with:
-          version: "0.5.0"
+          version: "0.6.0"
           path: .
           runtime: "false"
 ```
