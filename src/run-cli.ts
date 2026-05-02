@@ -9,7 +9,8 @@ import {
 } from "./core/discover-installed-plugins.js";
 import {
   appendValidationHistoryEntry,
-  readValidationHistory
+  readValidationHistory,
+  summarizeValidationHistory
 } from "./core/validation-history.js";
 import {
   buildCompatibilityMatrix,
@@ -75,7 +76,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor history <history.jsonl>\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -202,13 +203,29 @@ export async function runCli(
 
   if (command === "history") {
     if (!maybePath || maybePath.startsWith("--")) {
-      io.writeStderr("Missing history path. Usage: codex-plugin-doctor history <history.jsonl>");
+      io.writeStderr(
+        "Missing history path. Usage: codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]"
+      );
       return 2;
     }
 
     try {
       const entries = await readValidationHistory(maybePath);
-      io.writeStdout(renderHistorySummary(entries));
+      const summary = summarizeValidationHistory(entries);
+      const jsonOutput = remainingArgs.includes("--json");
+      const failOnRegression = remainingArgs.includes("--fail-on-regression");
+
+      io.writeStdout(
+        jsonOutput
+          ? JSON.stringify(summary, null, 2)
+          : renderHistorySummary(entries)
+      );
+
+      if (failOnRegression && summary.regression) {
+        io.writeStderr("Validation history regression detected.");
+        return 1;
+      }
+
       return 0;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unable to read validation history.";

@@ -26,6 +26,10 @@ inputs:
     description: Optional path to .codex-doctor.json.
     required: false
     default: ""
+  history:
+    description: Optional JSONL path for validation history output.
+    required: false
+    default: ""
   sarif:
     description: Write SARIF output to codex-plugin-doctor.sarif.
     required: false
@@ -60,6 +64,10 @@ runs:
 
         if [[ -n "${{ inputs.config }}" ]]; then
           args+=(--config "${{ inputs.config }}")
+        fi
+
+        if [[ -n "${{ inputs.history }}" ]]; then
+          args+=(--history "${{ inputs.history }}")
         fi
 
         if [[ "${{ inputs.sarif }}" == "true" ]]; then

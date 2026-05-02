@@ -14,16 +14,20 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("version:");
     expect(actionMetadata).toContain("path:");
     expect(actionMetadata).toContain("runtime:");
+    expect(actionMetadata).toContain("history:");
+    expect(actionMetadata).toContain('args+=(--history "${{ inputs.history }}")');
   });
 
   it("documents the public GitHub Action consumer workflow", async () => {
     const readme = await readFile("README.md", "utf8");
     const actionUsage = await readFile("docs/engineering/github-action-usage.md", "utf8");
 
-    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.5.0");
+    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.6.0");
     expect(readme).toContain("docs/engineering/github-action-usage.md");
-    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.5.0");
+    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.6.0");
     expect(actionUsage).toContain('runtime: "true"');
     expect(actionUsage).toContain('sarif: "true"');
+    expect(actionUsage).toContain("history: validation-history.jsonl");
+    expect(actionUsage).toContain("--fail-on-regression");
   });
 });

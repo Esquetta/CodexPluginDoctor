@@ -1136,6 +1136,88 @@ describe("runCli", () => {
     expect(output).toContain("Warn findings: 0");
   });
 
+  it("renders validation history as JSON for automation consumers", async () => {
+    const historyPath = await createTempFilePath("history.jsonl");
+    const { io, stdout, stderr } = createIo();
+
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/security-hardcoded-secret",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/valid-plugin-with-mcp",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const exitCode = await runCli(["history", historyPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      schemaVersion: "1.0.0",
+      runs: 2,
+      regression: false,
+      latest: {
+        status: "pass",
+        findingCounts: { fail: 0, warn: 0, total: 0 }
+      },
+      previous: {
+        status: "fail",
+        findingCounts: { fail: 1, warn: 0, total: 1 }
+      },
+      delta: {
+        fail: -1,
+        warn: 0,
+        total: -1
+      }
+    });
+  });
+
+  it("fails history regression gates when the latest run is worse", async () => {
+    const historyPath = await createTempFilePath("history.jsonl");
+    const { io, stdout, stderr } = createIo();
+
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/valid-plugin-with-mcp",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    await runCli(
+      [
+        "check",
+        "tests/fixtures/security-hardcoded-secret",
+        "--history",
+        historyPath
+      ],
+      io
+    );
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const exitCode = await runCli(["history", historyPath, "--fail-on-regression"], io);
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("Regression: YES");
+    expect(stderr.join("")).toContain("Validation history regression detected.");
+  });
+
   it("fails clearly when history has no readable runs", async () => {
     const historyPath = await createTempFilePath("empty-history.jsonl");
     await writeFile(historyPath, "", "utf8");
