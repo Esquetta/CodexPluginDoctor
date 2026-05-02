@@ -28,6 +28,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [Technical Architecture](engineering/technical-architecture.md)
 - [CLI and Rule Engine Specification](engineering/cli-and-rule-engine-spec.md)
 - [Testing and Release](engineering/testing-and-release.md)
+- [GitHub Action Usage](engineering/github-action-usage.md)
 - [Release Gating Workflow](engineering/release-gating-workflow.md)
 - [CLI Presentation Plan](engineering/cli-presentation-plan.md)
 - [Rule Catalog](rules/catalog.md)

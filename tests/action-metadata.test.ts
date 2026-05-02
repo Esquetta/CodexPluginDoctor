@@ -7,11 +7,23 @@ describe("GitHub Action metadata", () => {
 
     expect(actionMetadata).toContain("name: Codex Plugin Doctor");
     expect(actionMetadata).toContain("using: composite");
-    expect(actionMetadata).toContain("npm install -g codex-plugin-doctor@latest");
+    expect(actionMetadata).toContain("npm install -g codex-plugin-doctor@${{ inputs.version }}");
     expect(actionMetadata).toContain("args=(check)");
     expect(actionMetadata).toContain('codex-plugin-doctor "${args[@]}"');
     expect(actionMetadata).toContain("inputs:");
+    expect(actionMetadata).toContain("version:");
     expect(actionMetadata).toContain("path:");
     expect(actionMetadata).toContain("runtime:");
+  });
+
+  it("documents the public GitHub Action consumer workflow", async () => {
+    const readme = await readFile("README.md", "utf8");
+    const actionUsage = await readFile("docs/engineering/github-action-usage.md", "utf8");
+
+    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.4.0");
+    expect(readme).toContain("docs/engineering/github-action-usage.md");
+    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.4.0");
+    expect(actionUsage).toContain('runtime: "true"');
+    expect(actionUsage).toContain('sarif: "true"');
   });
 });

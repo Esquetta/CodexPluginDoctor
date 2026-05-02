@@ -2,6 +2,10 @@ name: Codex Plugin Doctor
 description: Validate Codex plugin packages in GitHub Actions.
 
 inputs:
+  version:
+    description: codex-plugin-doctor npm version to install.
+    required: false
+    default: "latest"
   path:
     description: Path to the Codex plugin package root.
     required: false
@@ -32,7 +36,7 @@ runs:
   steps:
     - name: Install Codex Plugin Doctor
       shell: bash
-      run: npm install -g codex-plugin-doctor@latest
+      run: npm install -g codex-plugin-doctor@${{ inputs.version }}
 
     - name: Run Codex Plugin Doctor
       shell: bash

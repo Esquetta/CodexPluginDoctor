@@ -227,11 +227,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.2.0
+      - uses: Esquetta/CodexPluginDoctor@v0.4.0
         with:
+          version: "0.4.0"
           path: .
           runtime: "false"
 ```
+
+For runtime probing, SARIF output, installed plugin cache checks, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
 
 To self-test this repository after cloning it:
 
