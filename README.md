@@ -65,6 +65,7 @@ Output formats:
 - human text output
 - JSON reports
 - Markdown reports
+- Shields-compatible badge JSON and static badge Markdown
 - `--output` file writing
 - CI summary and artifact generation
 
@@ -178,6 +179,8 @@ codex-plugin-doctor check .
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
+codex-plugin-doctor check . --badge-json --output doctor-badge.json
+codex-plugin-doctor check . --badge-markdown
 codex-plugin-doctor check . --sarif --output results.sarif
 codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
@@ -193,6 +196,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `compat --client cursor` checks whether the MCP package can be added to Cursor. It prefers a project-level `.cursor/mcp.json` when one already exists in the target package, then falls back to the global `~/.cursor/mcp.json` path. A valid existing config returns `PASS`, a missing Cursor config returns `WARN`, malformed JSON returns `FAIL`, and duplicate MCP server names return `WARN`. Add `--install-preview` to print the JSON snippet that should be merged into Cursor's `mcp.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
 
 `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
+
+`check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
 
 Optional local policy file:
 

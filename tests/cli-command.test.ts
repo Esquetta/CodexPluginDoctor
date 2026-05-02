@@ -999,6 +999,79 @@ describe("runCli", () => {
     expect(writtenReport.runs[0].results[0].level).toBe("error");
   });
 
+  it("renders Shields-compatible badge JSON for a passing package", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/valid-plugin-with-mcp", "--badge-json"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toEqual({
+      schemaVersion: 1,
+      label: "doctor",
+      message: "PASS",
+      color: "brightgreen"
+    });
+  });
+
+  it("renders badge markdown for a warning package", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/heuristic-long-plugin-description", "--badge-markdown"],
+      io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toBe(
+      "![Codex Plugin Doctor](https://img.shields.io/badge/doctor-WARN-yellow)"
+    );
+  });
+
+  it("writes badge output to the requested path", async () => {
+    const outputPath = await createTempFilePath("doctor-badge.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/security-hardcoded-secret",
+        "--badge-json",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(JSON.parse(stdout.join(""))).toEqual(writtenReport);
+    expect(writtenReport.message).toBe("FAIL");
+    expect(writtenReport.color).toBe("red");
+  });
+
+  it("rejects badge output for installed plugin checks", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["check", "--installed", "--badge-json"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: { CODEX_HOME: codexHomeFixture }
+      }
+    });
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Badge output requires a single package target.");
+  });
+
   it("writes live status updates to stderr for interactive TTY text runs", async () => {
     vi.useFakeTimers();
 

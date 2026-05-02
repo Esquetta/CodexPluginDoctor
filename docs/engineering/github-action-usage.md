@@ -43,6 +43,20 @@ Use SARIF when repository security tooling should ingest validation findings.
 
 The action writes `codex-plugin-doctor.sarif`. Uploading it to GitHub Code Scanning should be handled by the consuming workflow after the action runs.
 
+## Badge Artifacts
+
+The CLI can produce badge output for release notes, README automation, or a static artifact served by the consuming repository.
+
+```yaml
+- name: Generate Doctor badge JSON
+  run: codex-plugin-doctor check . --badge-json --output doctor-badge.json
+
+- name: Generate Doctor badge Markdown
+  run: codex-plugin-doctor check . --badge-markdown --output doctor-badge.md
+```
+
+`--badge-json` follows the Shields endpoint schema with `schemaVersion`, `label`, `message`, and `color`. `--badge-markdown` emits a static shields.io Markdown image link.
+
 ## Installed Plugin Cache Checks
 
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.

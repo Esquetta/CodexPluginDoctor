@@ -28,6 +28,7 @@ import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
+import { renderBadgeJson, renderBadgeMarkdown } from "./reporting/render-badge-report.js";
 import { renderCompatibilityScorecard } from "./reporting/render-compatibility-scorecard.js";
 import { renderCompatibilityReport } from "./reporting/render-compatibility-report.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
@@ -69,7 +70,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -368,6 +369,8 @@ export async function runCli(
 
   const jsonOutput = normalizedFlags.includes("--json");
   const markdownOutput = normalizedFlags.includes("--markdown");
+  const badgeJsonOutput = normalizedFlags.includes("--badge-json");
+  const badgeMarkdownOutput = normalizedFlags.includes("--badge-markdown");
   const sarifOutput = normalizedFlags.includes("--sarif");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
   const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
@@ -389,9 +392,14 @@ export async function runCli(
     return 2;
   }
 
+  if (checkInstalled && (badgeJsonOutput || badgeMarkdownOutput)) {
+    io.writeStderr("Badge output requires a single package target.");
+    return 2;
+  }
+
   const outputPolicy = determineOutputPolicy({
-    jsonOutput,
-    markdownOutput,
+    jsonOutput: jsonOutput || badgeJsonOutput,
+    markdownOutput: markdownOutput || badgeMarkdownOutput,
     outputPath,
     noAnimations,
     asciiMode,
@@ -492,6 +500,10 @@ export async function runCli(
       ? renderSarifReport(result)
     : jsonOutput
       ? renderJsonReport(result, { runtimeProbeEnabled })
+    : badgeJsonOutput
+      ? renderBadgeJson(result)
+    : badgeMarkdownOutput
+      ? renderBadgeMarkdown(result)
       : renderTextReport(result, { ascii: outputPolicy.style === "ascii" });
 
   if (outputPath) {

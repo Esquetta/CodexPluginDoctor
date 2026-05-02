@@ -8,6 +8,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Added
 
+- added `check --badge-json` and `check --badge-markdown` for Shields-compatible validation badges
 - added GitHub Action consumer documentation with pinned `v0.4.0` examples for runtime, SARIF, and installed-cache workflows
 - added a `version` input to the composite action so consuming repositories can pin the npm CLI version independently from the action ref
 
