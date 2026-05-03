@@ -22,12 +22,13 @@ describe("GitHub Action metadata", () => {
     const readme = await readFile("README.md", "utf8");
     const actionUsage = await readFile("docs/engineering/github-action-usage.md", "utf8");
 
-    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.6.0");
+    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.7.0");
     expect(readme).toContain("docs/engineering/github-action-usage.md");
-    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.6.0");
+    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.7.0");
     expect(actionUsage).toContain('runtime: "true"');
     expect(actionUsage).toContain('sarif: "true"');
     expect(actionUsage).toContain("history: validation-history.jsonl");
     expect(actionUsage).toContain("--fail-on-regression");
+    expect(actionUsage).toContain("--profile publish");
   });
 });

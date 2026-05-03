@@ -8,6 +8,19 @@ This changelog groups the shipped work into product-level release blocks instead
 
 No unreleased changes yet.
 
+## [0.7.0] - 2026-05-03
+
+Feature release for safe fix automation, named validation profiles, environment diagnostics, and Cline compatibility.
+
+### Added
+
+- added `fix <path> --dry-run` for safe automatic fix planning without file changes
+- added `fix <path> --apply --backup` for applying supported safe fixes with backups
+- added `check --profile ci|strict|publish` for named CI and publish validation policies
+- added `doctor` for local package, Node, npm, Codex home, and plugin cache diagnostics
+- added `compat --client cline` for Cline MCP config detection
+- added `compat --client cline --install-preview` for non-mutating Cline MCP config snippets
+
 ## [0.6.0] - 2026-05-02
 
 Feature release for validation history, trend summaries, and CI regression gates.

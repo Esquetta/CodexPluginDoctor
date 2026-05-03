@@ -163,6 +163,7 @@ Run these from a Codex plugin package root:
 ```bash
 codex-plugin-doctor --version
 codex-plugin-doctor self-test
+codex-plugin-doctor doctor
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor compat .
 codex-plugin-doctor compat . --client codex
@@ -173,10 +174,15 @@ codex-plugin-doctor compat . --client claude-desktop --apply --backup
 codex-plugin-doctor compat . --client cursor
 codex-plugin-doctor compat . --client cursor --install-preview
 codex-plugin-doctor compat . --client cursor --apply --backup
+codex-plugin-doctor compat . --client cline
+codex-plugin-doctor compat . --client cline --install-preview
 codex-plugin-doctor compat . --scorecard
 codex-plugin-doctor compat . --json
 codex-plugin-doctor compat . --json --output compatibility.json
 codex-plugin-doctor check .
+codex-plugin-doctor check . --profile ci
+codex-plugin-doctor check . --profile strict
+codex-plugin-doctor check . --profile publish
 codex-plugin-doctor check . --json
 codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
@@ -191,20 +197,30 @@ codex-plugin-doctor check . --history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl --json
 codex-plugin-doctor history validation-history.jsonl --fail-on-regression
+codex-plugin-doctor fix . --dry-run
+codex-plugin-doctor fix . --apply --backup
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
+`doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility.
+
 `compat --client claude-desktop` checks whether the MCP package can be added to the local Claude Desktop setup. On Windows it looks for `%APPDATA%\Claude\claude_desktop_config.json`; on macOS it looks for `~/Library/Application Support/Claude/claude_desktop_config.json`. A valid existing config returns `PASS`, a missing Claude Desktop install returns `WARN`, and a malformed local config returns `FAIL` so you do not add new servers into a broken config file. If the package server name already exists in Claude Desktop, the command returns `WARN` with the duplicate server name. Add `--install-preview` to print the JSON snippet that should be merged into `claude_desktop_config.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
 
 `compat --client cursor` checks whether the MCP package can be added to Cursor. It prefers a project-level `.cursor/mcp.json` when one already exists in the target package, then falls back to the global `~/.cursor/mcp.json` path. A valid existing config returns `PASS`, a missing Cursor config returns `WARN`, malformed JSON returns `FAIL`, and duplicate MCP server names return `WARN`. Add `--install-preview` to print the JSON snippet that should be merged into Cursor's `mcp.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
 
+`compat --client cline` checks whether the MCP package can be added to Cline. It uses `CLINE_DIR/data/settings/cline_mcp_settings.json` when `CLINE_DIR` is set, otherwise `~/.cline/data/settings/cline_mcp_settings.json`. Add `--install-preview` to print the JSON snippet that should be merged into `cline_mcp_settings.json`.
+
 `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
+
+`check --profile ci|strict|publish` applies named validation policies. `ci` keeps default behavior, `strict` fails on warnings, and `publish` fails on warnings while enabling runtime probing by default.
 
 `check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
 
 `check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status, finding-count deltas, and whether the latest run regressed. Add `history --json` for automation output or `history --fail-on-regression` when CI should fail after a worse latest run.
+
+`fix --dry-run` renders safe automatic fix plans without changing files. `fix --apply --backup` applies only supported safe fixes, such as manifest defaults and missing skills directories, after creating backups.
 
 Optional local policy file:
 
@@ -239,9 +255,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.6.0
+      - uses: Esquetta/CodexPluginDoctor@v0.7.0
         with:
-          version: "0.6.0"
+          version: "0.7.0"
           path: .
           runtime: "false"
 ```
