@@ -862,6 +862,39 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("plugin.heuristic.description.too_long");
   });
 
+  it("supports check profiles for stricter CI and publish gates", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const strictExitCode = await runCli(
+      ["check", "tests/fixtures/heuristic-long-plugin-description", "--profile", "strict"],
+      io
+    );
+
+    expect(strictExitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Status: FAIL");
+
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const publishExitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/heuristic-long-plugin-description",
+        "--profile",
+        "publish",
+        "--json"
+      ],
+      io
+    );
+    const report = JSON.parse(stdout.join(""));
+
+    expect(publishExitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(report.summary.status).toBe("fail");
+    expect(report.summary.runtimeProbeEnabled).toBe(true);
+  });
+
   it("initializes a minimal Codex plugin package", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-"));
     const { io, stdout, stderr } = createIo();

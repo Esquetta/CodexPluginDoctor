@@ -29,7 +29,11 @@ import {
   buildCursorInstallPreview,
   renderCursorInstallPreview
 } from "./compatibility/cursor-install-preview.js";
-import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
+import {
+  applyDoctorConfig,
+  loadDoctorConfig,
+  type DoctorConfig
+} from "./core/doctor-config.js";
 import {
   applyFixPlan,
   buildFixPlan,
@@ -117,6 +121,30 @@ const compatibilityClientAliases: Record<string, string> = {
   claude: "Claude Desktop",
   cursor: "Cursor"
 };
+
+const checkProfiles = ["ci", "strict", "publish"] as const;
+type CheckProfile = (typeof checkProfiles)[number];
+
+function parseCheckProfile(value: string | null): CheckProfile | null {
+  if (!value) {
+    return null;
+  }
+
+  return checkProfiles.includes(value as CheckProfile)
+    ? value as CheckProfile
+    : null;
+}
+
+function applyCheckProfile(config: DoctorConfig, profile: CheckProfile | null): DoctorConfig {
+  if (profile === "strict" || profile === "publish") {
+    return {
+      ...config,
+      failOnWarnings: true
+    };
+  }
+
+  return config;
+}
 
 function filterCompatibilityMatrix(
   matrix: CompatibilityMatrix,
@@ -456,6 +484,9 @@ export async function runCli(
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
   const configIndex = normalizedFlags.indexOf("--config");
   const configPath = configIndex === -1 ? null : normalizedFlags[configIndex + 1];
+  const profileIndex = normalizedFlags.indexOf("--profile");
+  const profileName = profileIndex === -1 ? null : normalizedFlags[profileIndex + 1];
+  const checkProfile = parseCheckProfile(profileName);
   const historyIndex = normalizedFlags.indexOf("--history");
   const historyPath = historyIndex === -1 ? null : normalizedFlags[historyIndex + 1];
 
@@ -466,6 +497,16 @@ export async function runCli(
 
   if (configIndex !== -1 && (!configPath || configPath.startsWith("--"))) {
     io.writeStderr("Missing path after --config.");
+    return 2;
+  }
+
+  if (profileIndex !== -1 && (!profileName || profileName.startsWith("--"))) {
+    io.writeStderr("Missing profile after --profile.");
+    return 2;
+  }
+
+  if (profileIndex !== -1 && !checkProfile) {
+    io.writeStderr("Unknown profile. Supported profiles: ci, strict, publish.");
     return 2;
   }
 
@@ -483,6 +524,8 @@ export async function runCli(
     io.writeStderr("History output requires a single package target.");
     return 2;
   }
+
+  const effectiveRuntimeProbeEnabled = runtimeProbeEnabled || checkProfile === "publish";
 
   const outputPolicy = determineOutputPolicy({
     jsonOutput: jsonOutput || badgeJsonOutput,
@@ -520,13 +563,13 @@ export async function runCli(
         plugin,
         result: applyDoctorConfig(
           await runCheckImpl(plugin.rootPath, {
-            runtime: runtimeProbeEnabled,
+            runtime: effectiveRuntimeProbeEnabled,
             runtimeTranscript:
-              runtimeProbeEnabled && verboseRuntime
+              effectiveRuntimeProbeEnabled && verboseRuntime
                 ? (line) => io.writeStderr(line)
                 : undefined
           }),
-          config
+          applyCheckProfile(config, checkProfile)
         )
       });
     }
@@ -538,9 +581,9 @@ export async function runCli(
           sarifOutput
             ? renderSarifReport(item.result)
             : markdownOutput
-            ? buildMarkdownReport(item.result, { runtimeProbeEnabled })
+            ? buildMarkdownReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
             : jsonOutput
-              ? renderJsonReport(item.result, { runtimeProbeEnabled })
+              ? renderJsonReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
               : renderTextReport(item.result, { ascii: outputPolicy.style === "ascii" })
         )
         .join("\n\n");
@@ -565,13 +608,13 @@ export async function runCli(
   renderer?.start("Validating package");
   const result = applyDoctorConfig(
     await runCheckImpl(targetPath, {
-      runtime: runtimeProbeEnabled,
+      runtime: effectiveRuntimeProbeEnabled,
       runtimeTranscript:
-        runtimeProbeEnabled && verboseRuntime
+        effectiveRuntimeProbeEnabled && verboseRuntime
           ? (line) => io.writeStderr(line)
           : undefined
     }),
-    await loadDoctorConfig(targetPath, configPath)
+    applyCheckProfile(await loadDoctorConfig(targetPath, configPath), checkProfile)
   );
   if (renderer) {
     if (result.status === "fail") {
@@ -582,11 +625,11 @@ export async function runCli(
   }
 
   const report = markdownOutput
-    ? buildMarkdownReport(result, { runtimeProbeEnabled })
+    ? buildMarkdownReport(result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
     : sarifOutput
       ? renderSarifReport(result)
     : jsonOutput
-      ? renderJsonReport(result, { runtimeProbeEnabled })
+      ? renderJsonReport(result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
     : badgeJsonOutput
       ? renderBadgeJson(result)
     : badgeMarkdownOutput
@@ -598,7 +641,9 @@ export async function runCli(
   }
 
   if (historyPath) {
-    await appendValidationHistoryEntry(historyPath, result, { runtimeProbeEnabled });
+    await appendValidationHistoryEntry(historyPath, result, {
+      runtimeProbeEnabled: effectiveRuntimeProbeEnabled
+    });
   }
 
   io.writeStdout(report);
