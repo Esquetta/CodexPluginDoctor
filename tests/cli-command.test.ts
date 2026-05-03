@@ -883,6 +883,32 @@ describe("runCli", () => {
     expect(skill).toContain("name: hello");
   });
 
+  it("renders a dry-run fix plan without changing files", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const manifestPath = path.join(manifestDirectory, "plugin.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--dry-run"], io);
+    const output = stdout.join("");
+    const manifestAfter = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Fix Plan");
+    expect(output).toContain("Mode: dry-run");
+    expect(output).toContain("No files changed.");
+    expect(output).toContain(".codex-plugin/plugin.json");
+    expect(output).toContain("skills");
+    expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "skills" });
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();
