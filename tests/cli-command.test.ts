@@ -735,6 +735,28 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
   });
 
+  it("renders a local doctor environment healthcheck", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: { CODEX_HOME: codexHomeFixture, npm_config_prefix: "C:\\npm-global" },
+        platform: "win32"
+      }
+    });
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Codex Plugin Doctor Environment");
+    expect(output).toContain(`Version: ${packageJson.version}`);
+    expect(output).toContain("Platform: win32");
+    expect(output).toContain("Codex home: PASS");
+    expect(output).toContain("npm global prefix: C:\\npm-global");
+  });
+
   it("lists installed Codex plugins without requiring users to know plugin paths", async () => {
     const { io, stdout, stderr } = createIo();
 
