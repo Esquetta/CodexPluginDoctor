@@ -909,6 +909,42 @@ describe("runCli", () => {
     expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "skills" });
   });
 
+  it("applies safe fixes only when backup is requested", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-apply-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const manifestPath = path.join(manifestDirectory, "plugin.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const rejectedExitCode = await runCli(["fix", targetPath, "--apply"], io);
+    expect(rejectedExitCode).toBe(2);
+    expect(stderr.join("")).toContain("requires --backup");
+
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const exitCode = await runCli(["fix", targetPath, "--apply", "--backup"], io);
+    const manifestAfter = JSON.parse(await readFile(manifestPath, "utf8"));
+    const backupRootEntries = await readdir(path.join(targetPath, ".codex-doctor-backups"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Mode: apply");
+    expect(stdout.join("")).toContain("Files changed: 2");
+    expect(manifestAfter).toMatchObject({
+      name: "broken-plugin",
+      version: "0.1.0",
+      description: "Codex plugin package."
+    });
+    expect(await readdir(path.join(targetPath, "skills"))).toEqual([]);
+    expect(backupRootEntries).toHaveLength(1);
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();

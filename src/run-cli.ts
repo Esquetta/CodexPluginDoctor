@@ -30,7 +30,12 @@ import {
   renderCursorInstallPreview
 } from "./compatibility/cursor-install-preview.js";
 import { applyDoctorConfig, loadDoctorConfig } from "./core/doctor-config.js";
-import { buildFixPlan, renderFixPlan } from "./core/fix-plan.js";
+import {
+  applyFixPlan,
+  buildFixPlan,
+  renderApplyFixResult,
+  renderFixPlan
+} from "./core/fix-plan.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
@@ -77,7 +82,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> --dry-run\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -278,16 +283,31 @@ export async function runCli(
 
   if (command === "fix") {
     if (!maybePath || maybePath.startsWith("--")) {
-      io.writeStderr("Missing target path. Usage: codex-plugin-doctor fix <path> --dry-run");
+      io.writeStderr(
+        "Missing target path. Usage: codex-plugin-doctor fix <path> (--dry-run|--apply --backup)"
+      );
       return 2;
     }
 
-    if (!remainingArgs.includes("--dry-run")) {
-      io.writeStderr("Fix currently requires --dry-run.");
+    const dryRun = remainingArgs.includes("--dry-run");
+    const apply = remainingArgs.includes("--apply");
+    const backup = remainingArgs.includes("--backup");
+
+    if (apply && !backup) {
+      io.writeStderr("Fix apply requires --backup.");
       return 2;
     }
 
-    io.writeStdout(renderFixPlan(await buildFixPlan(maybePath), "dry-run"));
+    if (dryRun === apply) {
+      io.writeStderr("Choose exactly one fix mode: --dry-run or --apply --backup.");
+      return 2;
+    }
+
+    io.writeStdout(
+      dryRun
+        ? renderFixPlan(await buildFixPlan(maybePath), "dry-run")
+        : renderApplyFixResult(await applyFixPlan(maybePath))
+    );
     return 0;
   }
 
