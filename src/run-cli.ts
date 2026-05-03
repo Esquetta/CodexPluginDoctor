@@ -30,6 +30,10 @@ import {
   renderCursorInstallPreview
 } from "./compatibility/cursor-install-preview.js";
 import {
+  buildClineInstallPreview,
+  renderClineInstallPreview
+} from "./compatibility/cline-install-preview.js";
+import {
   applyDoctorConfig,
   loadDoctorConfig,
   type DoctorConfig
@@ -120,7 +124,8 @@ const compatibilityClientAliases: Record<string, string> = {
   mcp: "Generic MCP",
   "claude-desktop": "Claude Desktop",
   claude: "Claude Desktop",
-  cursor: "Cursor"
+  cursor: "Cursor",
+  cline: "Cline"
 };
 
 const checkProfiles = ["ci", "strict", "publish"] as const;
@@ -373,9 +378,10 @@ export async function runCli(
     if (
       (installPreview || applyInstall) &&
       clientFilter?.toLowerCase() !== "claude-desktop" &&
-      clientFilter?.toLowerCase() !== "cursor"
+      clientFilter?.toLowerCase() !== "cursor" &&
+      clientFilter?.toLowerCase() !== "cline"
     ) {
-      io.writeStderr("--install-preview and --apply require --client claude-desktop or --client cursor.");
+      io.writeStderr("--install-preview and --apply require --client claude-desktop, cursor, or cline.");
       return 2;
     }
 
@@ -391,25 +397,37 @@ export async function runCli(
 
     if (installPreview || applyInstall) {
       try {
-        const preview = clientFilter?.toLowerCase() === "cursor"
+        const normalizedClient = clientFilter?.toLowerCase();
+        const preview = normalizedClient === "cursor"
           ? await buildCursorInstallPreview(targetPath, {
               env: terminalContext.env,
               platform: terminalContext.platform
             })
-          : await buildClaudeDesktopInstallPreview(targetPath, {
-              env: terminalContext.env,
-              platform: terminalContext.platform
-            });
+          : normalizedClient === "cline"
+            ? await buildClineInstallPreview(targetPath, {
+                env: terminalContext.env,
+                platform: terminalContext.platform
+              })
+            : await buildClaudeDesktopInstallPreview(targetPath, {
+                env: terminalContext.env,
+                platform: terminalContext.platform
+              });
         const report = applyInstall
           ? renderApplyInstallResult(
               await applyInstallPreview(
-                clientFilter?.toLowerCase() === "cursor" ? "Cursor" : "Claude Desktop",
+                normalizedClient === "cursor"
+                  ? "Cursor"
+                  : normalizedClient === "cline"
+                    ? "Cline"
+                    : "Claude Desktop",
                 preview
               )
             )
-          : clientFilter?.toLowerCase() === "cursor"
+          : normalizedClient === "cursor"
             ? renderCursorInstallPreview(preview)
-            : renderClaudeDesktopInstallPreview(preview);
+            : normalizedClient === "cline"
+              ? renderClineInstallPreview(preview)
+              : renderClaudeDesktopInstallPreview(preview);
 
         if (outputPath) {
           await writeFile(outputPath, report, "utf8");

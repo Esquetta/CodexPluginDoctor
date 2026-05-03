@@ -199,6 +199,17 @@ export async function getCursorMcpConfigPath(
   return path.join(getHomeDirectory(environment), ".cursor", "mcp.json");
 }
 
+export function getClineMcpConfigPath(
+  environment: CompatibilityEnvironment = {}
+): string {
+  const env = environment.env ?? process.env;
+  const clineDirectory = env.CLINE_DIR
+    ? path.resolve(env.CLINE_DIR)
+    : path.join(getHomeDirectory(environment), ".cline");
+
+  return path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json");
+}
+
 async function checkClaudeDesktop(
   targetPath: string,
   genericMcpResult: CompatibilityResult,
@@ -388,6 +399,96 @@ async function checkCursor(
   }
 }
 
+async function checkCline(
+  targetPath: string,
+  genericMcpResult: CompatibilityResult,
+  environment: CompatibilityEnvironment = {}
+): Promise<CompatibilityResult> {
+  if (genericMcpResult.status !== "pass") {
+    return {
+      client: "Cline",
+      status: "skipped",
+      summary: "No valid MCP package config is available for Cline.",
+      details: ["Add a valid `.mcp.json` with a non-empty `mcpServers` object first."]
+    };
+  }
+
+  const configPath = getClineMcpConfigPath(environment);
+
+  if (!(await fileExists(configPath))) {
+    const configDirectory = path.dirname(configPath);
+
+    return {
+      client: "Cline",
+      status: await directoryExists(configDirectory) ? "pass" : "warn",
+      summary: await directoryExists(configDirectory)
+        ? "Cline MCP settings directory exists and a config file can be created."
+        : "Cline was not detected on this machine.",
+      details: [
+        configPath,
+        "Cline stores MCP servers in `cline_mcp_settings.json` under its settings directory."
+      ]
+    };
+  }
+
+  try {
+    const parsed = await readJsonFile<{
+      mcpServers?: unknown;
+    }>(configPath);
+    const servers = parsed.mcpServers;
+
+    if (servers !== undefined && (
+      typeof servers !== "object" ||
+      servers === null ||
+      Array.isArray(servers)
+    )) {
+      return {
+        client: "Cline",
+        status: "fail",
+        summary: "Cline MCP config has an invalid `mcpServers` shape.",
+        details: [configPath, "`mcpServers` must be an object before this package can be added safely."]
+      };
+    }
+
+    const packageServerNames = await readMcpServerNames(targetPath);
+    const existingServerNames = typeof servers === "object" && servers !== null
+      ? Object.keys(servers)
+      : [];
+    const duplicateServerNames = packageServerNames.filter((serverName) =>
+      existingServerNames.includes(serverName)
+    );
+
+    if (duplicateServerNames.length > 0) {
+      return {
+        client: "Cline",
+        status: "warn",
+        summary: "Cline already has MCP server names from this package.",
+        details: [
+          configPath,
+          ...duplicateServerNames.map((serverName) => `Duplicate server: ${serverName}`)
+        ]
+      };
+    }
+
+    return {
+      client: "Cline",
+      status: "pass",
+      summary: "Cline MCP config is valid and this package can be added.",
+      details: [
+        configPath,
+        `Source package: ${path.resolve(targetPath)}`
+      ]
+    };
+  } catch {
+    return {
+      client: "Cline",
+      status: "fail",
+      summary: "Cline MCP config is not valid JSON.",
+      details: [configPath, "Repair the local Cline MCP config before adding new MCP servers."]
+    };
+  }
+}
+
 export async function buildCompatibilityMatrix(
   targetPath: string,
   environment: CompatibilityEnvironment = {}
@@ -396,6 +497,7 @@ export async function buildCompatibilityMatrix(
   const genericMcpResult = await checkGenericMcp(rootPath);
   const claudeDesktopResult = await checkClaudeDesktop(rootPath, genericMcpResult, environment);
   const cursorResult = await checkCursor(rootPath, genericMcpResult, environment);
+  const clineResult = await checkCline(rootPath, genericMcpResult, environment);
   const codexResult = await validatePlugin(rootPath);
   const codexStatus = statusFromCheckResult(codexResult);
   const codexCompatibility = !await hasCodexManifest(rootPath)
@@ -419,7 +521,8 @@ export async function buildCompatibilityMatrix(
     codexCompatibility,
     genericMcpResult,
     claudeDesktopResult,
-    cursorResult
+    cursorResult,
+    clineResult
   ];
 
   return {

@@ -63,6 +63,23 @@ async function createCursorHomeFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createClineDirFixture(config?: unknown): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-cline-"));
+  const settingsDirectory = path.join(directory, "data", "settings");
+
+  await mkdir(settingsDirectory, { recursive: true });
+
+  if (config !== undefined) {
+    await writeFile(
+      path.join(settingsDirectory, "cline_mcp_settings.json"),
+      typeof config === "string" ? config : JSON.stringify(config, null, 2),
+      "utf8"
+    );
+  }
+
+  return directory;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
@@ -400,7 +417,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain(
-      "--install-preview and --apply require --client claude-desktop or --client cursor"
+      "--install-preview and --apply require --client claude-desktop, cursor, or cline"
     );
   });
 
@@ -552,6 +569,59 @@ describe("runCli", () => {
     expect(output).toContain('"doctorRuntime"');
     expect(output).toContain('"command": "node"');
     expect(output).toContain(expectedServerPath);
+    expect(unchangedConfig).toEqual({ mcpServers: {} });
+  });
+
+  it("detects an addable Cline MCP config on this machine", async () => {
+    const clineDirectory = await createClineDirFixture({ mcpServers: {} });
+    const configPath = path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cline"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { CLINE_DIR: clineDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Cline: PASS");
+    expect(output).toContain("Cline MCP config is valid and this package can be added.");
+    expect(output).toContain(configPath);
+  });
+
+  it("renders a Cline install preview without changing the local config", async () => {
+    const clineDirectory = await createClineDirFixture({ mcpServers: {} });
+    const configPath = path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "cline", "--install-preview"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { CLINE_DIR: clineDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const unchangedConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Cline Install Preview");
+    expect(output).toContain(configPath);
+    expect(output).toContain('"doctorRuntime"');
+    expect(output).toContain("cline_mcp_settings.json");
     expect(unchangedConfig).toEqual({ mcpServers: {} });
   });
 
