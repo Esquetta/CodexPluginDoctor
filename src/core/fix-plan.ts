@@ -22,6 +22,17 @@ export interface ApplyFixPlanResult {
   backupDirectory: string;
 }
 
+export interface FixPlanJsonReport {
+  schemaVersion: "1.0.0";
+  mode: "dry-run" | "apply";
+  targetPath: string;
+  filesChanged: number;
+  backupDirectory: string | null;
+  actions: Array<FixPlanAction & {
+    relativePath: string;
+  }>;
+}
+
 function relativeToTarget(targetPath: string, candidatePath: string): string {
   return path.relative(targetPath, candidatePath).replace(/\\/g, "/");
 }
@@ -162,4 +173,27 @@ export function renderApplyFixResult(result: ApplyFixPlanResult): string {
     `Files changed: ${result.filesChanged}`,
     `Backup: ${relativeToTarget(result.plan.targetPath, result.backupDirectory)}`
   ].join("\n");
+}
+
+export function renderFixPlanJsonReport(
+  plan: FixPlan,
+  options: {
+    mode: "dry-run" | "apply";
+    filesChanged?: number;
+    backupDirectory?: string | null;
+  }
+): string {
+  const report: FixPlanJsonReport = {
+    schemaVersion: "1.0.0",
+    mode: options.mode,
+    targetPath: plan.targetPath,
+    filesChanged: options.filesChanged ?? 0,
+    backupDirectory: options.backupDirectory ?? null,
+    actions: plan.actions.map((action) => ({
+      ...action,
+      relativePath: relativeToTarget(plan.targetPath, action.targetPath)
+    }))
+  };
+
+  return JSON.stringify(report, null, 2);
 }

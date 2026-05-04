@@ -1034,6 +1034,44 @@ describe("runCli", () => {
     expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "skills" });
   });
 
+  it("renders a dry-run fix plan as JSON", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-json-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "plugin.json"),
+      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--dry-run", "--json"], io);
+    const report = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(report).toMatchObject({
+      schemaVersion: "1.0.0",
+      mode: "dry-run",
+      targetPath,
+      filesChanged: 0
+    });
+    expect(report.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "manifest.safe_defaults",
+          operation: "update-json",
+          relativePath: ".codex-plugin/plugin.json"
+        }),
+        expect.objectContaining({
+          id: "skills.create_directory",
+          operation: "mkdir",
+          relativePath: "skills"
+        })
+      ])
+    );
+  });
+
   it("applies safe fixes only when backup is requested", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-apply-"));
     const manifestDirectory = path.join(targetPath, ".codex-plugin");

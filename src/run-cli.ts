@@ -42,6 +42,7 @@ import {
   applyFixPlan,
   buildFixPlan,
   renderApplyFixResult,
+  renderFixPlanJsonReport,
   renderFixPlan
 } from "./core/fix-plan.js";
 import { renderEnvironmentDoctor } from "./core/environment-doctor.js";
@@ -331,6 +332,7 @@ export async function runCli(
     const dryRun = remainingArgs.includes("--dry-run");
     const apply = remainingArgs.includes("--apply");
     const backup = remainingArgs.includes("--backup");
+    const jsonOutput = remainingArgs.includes("--json");
 
     if (apply && !backup) {
       io.writeStderr("Fix apply requires --backup.");
@@ -342,10 +344,25 @@ export async function runCli(
       return 2;
     }
 
+    if (dryRun) {
+      const plan = await buildFixPlan(maybePath);
+      io.writeStdout(
+        jsonOutput
+          ? renderFixPlanJsonReport(plan, { mode: "dry-run" })
+          : renderFixPlan(plan, "dry-run")
+      );
+      return 0;
+    }
+
+    const result = await applyFixPlan(maybePath);
     io.writeStdout(
-      dryRun
-        ? renderFixPlan(await buildFixPlan(maybePath), "dry-run")
-        : renderApplyFixResult(await applyFixPlan(maybePath))
+      jsonOutput
+        ? renderFixPlanJsonReport(result.plan, {
+            mode: "apply",
+            filesChanged: result.filesChanged,
+            backupDirectory: result.backupDirectory
+          })
+        : renderApplyFixResult(result)
     );
     return 0;
   }
