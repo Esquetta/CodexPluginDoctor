@@ -1110,6 +1110,24 @@ describe("runCli", () => {
     expect(skill).toContain("name: hello");
   });
 
+  it("initializes a GitHub Actions workflow for Codex Plugin Doctor", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init-ci", targetPath], io);
+    const workflowPath = path.join(targetPath, ".github", "workflows", "codex-plugin-doctor.yml");
+    const workflow = await readFile(workflowPath, "utf8");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Initialized Codex Plugin Doctor workflow");
+    expect(stdout.join("")).toContain(workflowPath);
+    expect(workflow).toContain("Esquetta/CodexPluginDoctor@v");
+    expect(workflow).toContain("version:");
+    expect(workflow).toContain("path: .");
+    expect(workflow).toContain('runtime: "true"');
+  });
+
   it("renders a dry-run fix plan without changing files", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-"));
     const manifestDirectory = path.join(targetPath, ".codex-plugin");
