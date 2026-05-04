@@ -80,6 +80,23 @@ async function createClineDirFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createWindsurfHomeFixture(config?: unknown): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-windsurf-"));
+  const settingsDirectory = path.join(directory, ".codeium", "windsurf");
+
+  await mkdir(settingsDirectory, { recursive: true });
+
+  if (config !== undefined) {
+    await writeFile(
+      path.join(settingsDirectory, "mcp_config.json"),
+      typeof config === "string" ? config : JSON.stringify(config, null, 2),
+      "utf8"
+    );
+  }
+
+  return directory;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
@@ -417,7 +434,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain(
-      "--install-preview and --apply require --client claude-desktop, cursor, or cline"
+      "--install-preview and --apply require --client claude-desktop, cursor, cline, or windsurf"
     );
   });
 
@@ -622,6 +639,59 @@ describe("runCli", () => {
     expect(output).toContain(configPath);
     expect(output).toContain('"doctorRuntime"');
     expect(output).toContain("cline_mcp_settings.json");
+    expect(unchangedConfig).toEqual({ mcpServers: {} });
+  });
+
+  it("detects an addable Windsurf MCP config on this machine", async () => {
+    const homeDirectory = await createWindsurfHomeFixture({ mcpServers: {} });
+    const configPath = path.join(homeDirectory, ".codeium", "windsurf", "mcp_config.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "windsurf"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Windsurf: PASS");
+    expect(output).toContain("Windsurf MCP config is valid and this package can be added.");
+    expect(output).toContain(configPath);
+  });
+
+  it("renders a Windsurf install preview without changing the local config", async () => {
+    const homeDirectory = await createWindsurfHomeFixture({ mcpServers: {} });
+    const configPath = path.join(homeDirectory, ".codeium", "windsurf", "mcp_config.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--client", "windsurf", "--install-preview"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: homeDirectory }
+        }
+      }
+    );
+    const output = stdout.join("");
+    const unchangedConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Windsurf Install Preview");
+    expect(output).toContain(configPath);
+    expect(output).toContain('"doctorRuntime"');
+    expect(output).toContain("mcp_config.json");
     expect(unchangedConfig).toEqual({ mcpServers: {} });
   });
 

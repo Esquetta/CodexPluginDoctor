@@ -210,6 +210,12 @@ export function getClineMcpConfigPath(
   return path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json");
 }
 
+export function getWindsurfMcpConfigPath(
+  environment: CompatibilityEnvironment = {}
+): string {
+  return path.join(getHomeDirectory(environment), ".codeium", "windsurf", "mcp_config.json");
+}
+
 async function checkClaudeDesktop(
   targetPath: string,
   genericMcpResult: CompatibilityResult,
@@ -489,6 +495,96 @@ async function checkCline(
   }
 }
 
+async function checkWindsurf(
+  targetPath: string,
+  genericMcpResult: CompatibilityResult,
+  environment: CompatibilityEnvironment = {}
+): Promise<CompatibilityResult> {
+  if (genericMcpResult.status !== "pass") {
+    return {
+      client: "Windsurf",
+      status: "skipped",
+      summary: "No valid MCP package config is available for Windsurf.",
+      details: ["Add a valid `.mcp.json` with a non-empty `mcpServers` object first."]
+    };
+  }
+
+  const configPath = getWindsurfMcpConfigPath(environment);
+
+  if (!(await fileExists(configPath))) {
+    const configDirectory = path.dirname(configPath);
+
+    return {
+      client: "Windsurf",
+      status: await directoryExists(configDirectory) ? "pass" : "warn",
+      summary: await directoryExists(configDirectory)
+        ? "Windsurf MCP config directory exists and a config file can be created."
+        : "Windsurf was not detected on this machine.",
+      details: [
+        configPath,
+        "Windsurf stores Cascade MCP servers in `mcp_config.json` under `~/.codeium/windsurf`."
+      ]
+    };
+  }
+
+  try {
+    const parsed = await readJsonFile<{
+      mcpServers?: unknown;
+    }>(configPath);
+    const servers = parsed.mcpServers;
+
+    if (servers !== undefined && (
+      typeof servers !== "object" ||
+      servers === null ||
+      Array.isArray(servers)
+    )) {
+      return {
+        client: "Windsurf",
+        status: "fail",
+        summary: "Windsurf MCP config has an invalid `mcpServers` shape.",
+        details: [configPath, "`mcpServers` must be an object before this package can be added safely."]
+      };
+    }
+
+    const packageServerNames = await readMcpServerNames(targetPath);
+    const existingServerNames = typeof servers === "object" && servers !== null
+      ? Object.keys(servers)
+      : [];
+    const duplicateServerNames = packageServerNames.filter((serverName) =>
+      existingServerNames.includes(serverName)
+    );
+
+    if (duplicateServerNames.length > 0) {
+      return {
+        client: "Windsurf",
+        status: "warn",
+        summary: "Windsurf already has MCP server names from this package.",
+        details: [
+          configPath,
+          ...duplicateServerNames.map((serverName) => `Duplicate server: ${serverName}`)
+        ]
+      };
+    }
+
+    return {
+      client: "Windsurf",
+      status: "pass",
+      summary: "Windsurf MCP config is valid and this package can be added.",
+      details: [
+        configPath,
+        `Source package: ${path.resolve(targetPath)}`
+      ]
+    };
+  } catch {
+    return {
+      client: "Windsurf",
+      status: "fail",
+      summary: "Windsurf MCP config is not valid JSON.",
+      details: [configPath, "Repair the local Windsurf MCP config before adding new MCP servers."]
+    };
+  }
+}
+
 export async function buildCompatibilityMatrix(
   targetPath: string,
   environment: CompatibilityEnvironment = {}
@@ -498,6 +594,7 @@ export async function buildCompatibilityMatrix(
   const claudeDesktopResult = await checkClaudeDesktop(rootPath, genericMcpResult, environment);
   const cursorResult = await checkCursor(rootPath, genericMcpResult, environment);
   const clineResult = await checkCline(rootPath, genericMcpResult, environment);
+  const windsurfResult = await checkWindsurf(rootPath, genericMcpResult, environment);
   const codexResult = await validatePlugin(rootPath);
   const codexStatus = statusFromCheckResult(codexResult);
   const codexCompatibility = !await hasCodexManifest(rootPath)
@@ -522,7 +619,8 @@ export async function buildCompatibilityMatrix(
     genericMcpResult,
     claudeDesktopResult,
     cursorResult,
-    clineResult
+    clineResult,
+    windsurfResult
   ];
 
   return {

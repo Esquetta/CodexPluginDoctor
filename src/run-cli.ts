@@ -34,6 +34,10 @@ import {
   renderClineInstallPreview
 } from "./compatibility/cline-install-preview.js";
 import {
+  buildWindsurfInstallPreview,
+  renderWindsurfInstallPreview
+} from "./compatibility/windsurf-install-preview.js";
+import {
   applyDoctorConfig,
   loadDoctorConfig,
   type DoctorConfig
@@ -126,7 +130,8 @@ const compatibilityClientAliases: Record<string, string> = {
   "claude-desktop": "Claude Desktop",
   claude: "Claude Desktop",
   cursor: "Cursor",
-  cline: "Cline"
+  cline: "Cline",
+  windsurf: "Windsurf"
 };
 
 const checkProfiles = ["ci", "strict", "publish"] as const;
@@ -396,9 +401,10 @@ export async function runCli(
       (installPreview || applyInstall) &&
       clientFilter?.toLowerCase() !== "claude-desktop" &&
       clientFilter?.toLowerCase() !== "cursor" &&
-      clientFilter?.toLowerCase() !== "cline"
+      clientFilter?.toLowerCase() !== "cline" &&
+      clientFilter?.toLowerCase() !== "windsurf"
     ) {
-      io.writeStderr("--install-preview and --apply require --client claude-desktop, cursor, or cline.");
+      io.writeStderr("--install-preview and --apply require --client claude-desktop, cursor, cline, or windsurf.");
       return 2;
     }
 
@@ -425,6 +431,11 @@ export async function runCli(
                 env: terminalContext.env,
                 platform: terminalContext.platform
               })
+            : normalizedClient === "windsurf"
+              ? await buildWindsurfInstallPreview(targetPath, {
+                  env: terminalContext.env,
+                  platform: terminalContext.platform
+                })
             : await buildClaudeDesktopInstallPreview(targetPath, {
                 env: terminalContext.env,
                 platform: terminalContext.platform
@@ -436,6 +447,8 @@ export async function runCli(
                   ? "Cursor"
                   : normalizedClient === "cline"
                     ? "Cline"
+                    : normalizedClient === "windsurf"
+                      ? "Windsurf"
                     : "Claude Desktop",
                 preview
               )
@@ -444,6 +457,8 @@ export async function runCli(
             ? renderCursorInstallPreview(preview)
             : normalizedClient === "cline"
               ? renderClineInstallPreview(preview)
+              : normalizedClient === "windsurf"
+                ? renderWindsurfInstallPreview(preview)
               : renderClaudeDesktopInstallPreview(preview);
 
         if (outputPath) {
