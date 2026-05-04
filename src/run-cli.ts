@@ -100,7 +100,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -404,6 +404,7 @@ export async function runCli(
     const installPreview = compatFlags.includes("--install-preview");
     const applyInstall = compatFlags.includes("--apply");
     const backupInstall = compatFlags.includes("--backup");
+    const allClients = compatFlags.includes("--all");
     const clientIndex = compatFlags.indexOf("--client");
     const clientFilter = clientIndex === -1 ? null : compatFlags[clientIndex + 1];
     const outputIndex = compatFlags.indexOf("--output");
@@ -411,6 +412,11 @@ export async function runCli(
 
     if (clientIndex !== -1 && (!clientFilter || clientFilter.startsWith("--"))) {
       io.writeStderr("Missing client after --client.");
+      return 2;
+    }
+
+    if (allClients && clientFilter) {
+      io.writeStderr("Use either --all or --client, not both.");
       return 2;
     }
 

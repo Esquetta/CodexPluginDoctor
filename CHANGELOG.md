@@ -6,7 +6,9 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- added explicit `compat <path> --all` for discoverable all-client compatibility and scorecard checks
 
 ## [0.8.0] - 2026-05-04
 

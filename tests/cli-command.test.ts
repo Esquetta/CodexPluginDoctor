@@ -149,6 +149,46 @@ describe("runCli", () => {
     expect(output).toContain("Cursor: WARN");
   });
 
+  it("renders every compatibility client when --all is explicit", async () => {
+    const { io, stdout, stderr } = createIo();
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-compat-all-"));
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--all", "--scorecard"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: directory, USERPROFILE: directory }
+        }
+      }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Compatibility Scorecard");
+    expect(output).toContain("Codex:");
+    expect(output).toContain("Generic MCP:");
+    expect(output).toContain("Claude Desktop:");
+    expect(output).toContain("Cursor:");
+    expect(output).toContain("Cline:");
+    expect(output).toContain("Windsurf:");
+  });
+
+  it("rejects --all when a single compatibility client is requested", async () => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", "examples/codex-doctor-runtime", "--all", "--client", "cursor"],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("Use either --all or --client, not both.");
+  });
+
   it("returns a failing compatibility matrix when Codex validation fails", async () => {
     const { io, stdout } = createIo();
 

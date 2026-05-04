@@ -166,6 +166,7 @@ codex-plugin-doctor self-test
 codex-plugin-doctor doctor
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor compat .
+codex-plugin-doctor compat . --all --scorecard
 codex-plugin-doctor compat . --client codex
 codex-plugin-doctor compat . --client generic-mcp
 codex-plugin-doctor compat . --client claude-desktop
@@ -212,7 +213,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `compat --client cline` checks whether the MCP package can be added to Cline. It uses `CLINE_DIR/data/settings/cline_mcp_settings.json` when `CLINE_DIR` is set, otherwise `~/.cline/data/settings/cline_mcp_settings.json`. Add `--install-preview` to print the JSON snippet that should be merged into `cline_mcp_settings.json`.
 
-`compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
+`compat --all` makes the all-client matrix explicit when you want Codex, Generic MCP, Claude Desktop, Cursor, Cline, and Windsurf in one run. `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
 
 `check --profile ci|strict|publish` applies named validation policies. `ci` keeps default behavior, `strict` fails on warnings, and `publish` fails on warnings while enabling runtime probing by default.
 
