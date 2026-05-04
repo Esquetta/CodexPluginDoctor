@@ -58,7 +58,15 @@ export async function renderEnvironmentDoctor(
     `Node: ${report.node}`,
     `npm global prefix: ${report.npmGlobalPrefix}`,
     `Codex home: ${report.codexHome.status.toUpperCase()}${report.codexHome.path ? ` (${report.codexHome.path})` : ""}`,
-    `Codex plugin cache: ${report.codexPluginCache.status.toUpperCase()}${report.codexPluginCache.path ? ` (${report.codexPluginCache.path})` : ""}`
+    `Codex plugin cache: ${report.codexPluginCache.status.toUpperCase()}${report.codexPluginCache.path ? ` (${report.codexPluginCache.path})` : ""}`,
+    "",
+    "Recommended next commands",
+    "-------------------------",
+    "codex-plugin-doctor self-test",
+    "codex-plugin-doctor list --installed",
+    "codex-plugin-doctor check . --runtime --explain",
+    "codex-plugin-doctor compat . --all --scorecard",
+    "codex-plugin-doctor init-ci ."
   ].join("\n");
 }
 

@@ -915,6 +915,20 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
   });
 
+  it("prints first-run guidance when no command is provided", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli([], io);
+    const output = stderr.join("");
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(output).toContain("First run:");
+    expect(output).toContain("codex-plugin-doctor doctor");
+    expect(output).toContain("codex-plugin-doctor init my-plugin");
+    expect(output).toContain("codex-plugin-doctor check . --runtime --explain");
+  });
+
   it("renders a local doctor environment healthcheck", async () => {
     const { io, stdout, stderr } = createIo();
 
@@ -935,6 +949,9 @@ describe("runCli", () => {
     expect(output).toContain("Platform: win32");
     expect(output).toContain("Codex home: PASS");
     expect(output).toContain("npm global prefix: C:\\npm-global");
+    expect(output).toContain("Recommended next commands");
+    expect(output).toContain("codex-plugin-doctor list --installed");
+    expect(output).toContain("codex-plugin-doctor check . --runtime --explain");
   });
 
   it("renders a local doctor environment healthcheck as JSON", async () => {
