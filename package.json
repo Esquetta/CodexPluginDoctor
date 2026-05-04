@@ -26,6 +26,7 @@
     "generate-validation-artifacts": "node scripts/generate-validation-artifacts.mjs",
     "prepare-rc": "tsx scripts/prepare-release-candidate.ts",
     "prepare-release": "npm test && npm run build && npm pack --dry-run",
+    "release-check": "node scripts/release-check.mjs",
     "prepublishOnly": "npm test && npm run build",
     "test": "vitest run",
     "test:watch": "vitest"

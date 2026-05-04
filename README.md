@@ -306,9 +306,10 @@ Release preparation is reproducible from the repository:
 
 ```bash
 npm run prepare-release
+npm run release-check
 ```
 
-This runs tests, builds the TypeScript output, and performs `npm pack --dry-run`.
+`prepare-release` runs tests, builds the TypeScript output, and performs `npm pack --dry-run`. `release-check` adds release preflight checks for a clean git tree, existing npm versions, existing version tags, tests, build, and pack dry-run.
 
 Related docs:
 

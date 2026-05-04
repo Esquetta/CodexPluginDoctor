@@ -30,4 +30,17 @@ describe("public repository readiness", () => {
     expect(readme).toContain("SECURITY.md");
     expect(readme).toContain("CODE_OF_CONDUCT.md");
   });
+
+  it("documents and exposes the release preflight automation", async () => {
+    const packageJson = JSON.parse(await readText("package.json")) as {
+      scripts?: Record<string, string>;
+    };
+    const releaseCheck = await readText("scripts/release-check.mjs");
+    const readme = await readText("README.md");
+
+    expect(packageJson.scripts?.["release-check"]).toBe("node scripts/release-check.mjs");
+    expect(releaseCheck).toContain("npm view codex-plugin-doctor version");
+    expect(releaseCheck).toContain("npm pack --dry-run");
+    expect(readme).toContain("npm run release-check");
+  });
 });
