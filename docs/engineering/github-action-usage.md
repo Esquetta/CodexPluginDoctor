@@ -22,9 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.7.0
+      - uses: Esquetta/CodexPluginDoctor@v0.8.0
         with:
-          version: "0.7.0"
+          version: "0.8.0"
           path: .
           runtime: "true"
 ```
@@ -34,9 +34,9 @@ jobs:
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.7.0
+- uses: Esquetta/CodexPluginDoctor@v0.8.0
   with:
-    version: "0.7.0"
+    version: "0.8.0"
     path: .
     sarif: "true"
 ```
@@ -77,9 +77,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.7.0
+- uses: Esquetta/CodexPluginDoctor@v0.8.0
   with:
-    version: "0.7.0"
+    version: "0.8.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -101,9 +101,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.7.0
+- uses: Esquetta/CodexPluginDoctor@v0.8.0
   with:
-    version: "0.7.0"
+    version: "0.8.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -114,9 +114,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.7.0
+- uses: Esquetta/CodexPluginDoctor@v0.8.0
   with:
-    version: "0.7.0"
+    version: "0.8.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

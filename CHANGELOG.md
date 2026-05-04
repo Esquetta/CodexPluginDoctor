@@ -8,6 +8,19 @@ This changelog groups the shipped work into product-level release blocks instead
 
 No unreleased changes yet.
 
+## [0.8.0] - 2026-05-04
+
+Feature release for machine-readable doctor/fix outputs, broader safe scaffolding, Windsurf compatibility, and CI bootstrap.
+
+### Added
+
+- added `fix <path> --dry-run --json` for automation-friendly safe fix plans
+- added `doctor --json` for machine-readable local environment diagnostics
+- added `compat --client windsurf` for Windsurf MCP config readiness checks
+- added `compat --client windsurf --install-preview` for non-mutating Windsurf MCP config snippets
+- added `init-ci [path]` to scaffold a pinned GitHub Actions validation workflow
+- expanded safe fix scaffolding for missing `SKILL.md`, missing skill frontmatter, and missing `.mcp.json` defaults
+
 ## [0.7.0] - 2026-05-03
 
 Feature release for safe fix automation, named validation profiles, environment diagnostics, and Cline compatibility.
