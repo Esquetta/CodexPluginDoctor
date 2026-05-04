@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { validatePlugin } from "./validate-plugin.js";
@@ -72,6 +72,62 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
     });
   }
 
+  const manifest: { skills?: unknown; mcpServers?: unknown } = await readFile(manifestPath, "utf8")
+    .then((content) => JSON.parse(content) as { skills?: unknown; mcpServers?: unknown })
+    .catch(() => ({}));
+
+  if (typeof manifest.skills === "string") {
+    const skillsPath = path.resolve(rootPath, manifest.skills);
+
+    if (await directoryExists(skillsPath)) {
+      for (const entry of await readdir(skillsPath, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        const skillFilePath = path.join(skillsPath, entry.name, "SKILL.md");
+
+        if (!(await fileExists(skillFilePath))) {
+          actions.push({
+            id: "skill.scaffold_skill_md",
+            title: `Create missing SKILL.md for ${entry.name}`,
+            targetPath: skillFilePath,
+            operation: "update-json",
+            details: `Create ${relativeToTarget(rootPath, skillFilePath)} with safe frontmatter.`
+          });
+          continue;
+        }
+
+        const skillContent = await readFile(skillFilePath, "utf8");
+        const frontmatter = skillContent.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+
+        if (!/^name\s*:/im.test(frontmatter) || !/^description\s*:/im.test(frontmatter)) {
+          actions.push({
+            id: "skill.safe_frontmatter_defaults",
+            title: `Add missing skill frontmatter defaults for ${entry.name}`,
+            targetPath: skillFilePath,
+            operation: "update-json",
+            details: `Set missing name/description fields in ${relativeToTarget(rootPath, skillFilePath)}.`
+          });
+        }
+      }
+    }
+  }
+
+  if (typeof manifest.mcpServers === "string") {
+    const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+    if (!(await fileExists(mcpConfigPath))) {
+      actions.push({
+        id: "mcp.scaffold_config",
+        title: "Create missing MCP config",
+        targetPath: mcpConfigPath,
+        operation: "update-json",
+        details: `Create ${relativeToTarget(rootPath, mcpConfigPath)} with an empty mcpServers object.`
+      });
+    }
+  }
+
   return {
     targetPath: rootPath,
     actions
@@ -114,6 +170,58 @@ function defaultManifestDescription(): string {
   return "Codex plugin package.";
 }
 
+async function fileExists(targetPath: string): Promise<boolean> {
+  try {
+    const details = await stat(targetPath);
+    return details.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function directoryExists(targetPath: string): Promise<boolean> {
+  try {
+    const details = await stat(targetPath);
+    return details.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function skillDescription(skillName: string): string {
+  return `Use when running the ${skillName} skill.`;
+}
+
+function renderSkillScaffold(skillName: string, body = ""): string {
+  return [
+    "---",
+    `name: ${skillName}`,
+    `description: ${skillDescription(skillName)}`,
+    "---",
+    "",
+    body.trim() || `# ${skillName}`
+  ].join("\n") + "\n";
+}
+
+function replaceFrontmatter(content: string, skillName: string): string {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  const frontmatter = frontmatterMatch?.[1] ?? "";
+  const body = frontmatterMatch ? content.slice(frontmatterMatch[0].length) : content;
+  const lines = frontmatter.split(/\r?\n/).filter((line) => line.trim());
+  const hasName = lines.some((line) => /^name\s*:/i.test(line));
+  const hasDescription = lines.some((line) => /^description\s*:/i.test(line));
+
+  return [
+    "---",
+    ...(hasName ? [] : [`name: ${skillName}`]),
+    ...(hasDescription ? [] : [`description: ${skillDescription(skillName)}`]),
+    ...lines,
+    "---",
+    "",
+    body.trim() || `# ${skillName}`
+  ].join("\n") + "\n";
+}
+
 async function backupFile(rootPath: string, backupDirectory: string, filePath: string): Promise<void> {
   const relativePath = path.relative(rootPath, filePath);
   const backupPath = path.join(backupDirectory, relativePath);
@@ -153,6 +261,42 @@ export async function applyFixPlan(targetPath: string): Promise<ApplyFixPlanResu
 
     if (action.operation === "mkdir" && action.id === "skills.create_directory") {
       await mkdir(action.targetPath, { recursive: true });
+      filesChanged += 1;
+      continue;
+    }
+
+    if (action.operation === "update-json" && action.id === "skill.scaffold_skill_md") {
+      await mkdir(path.dirname(action.targetPath), { recursive: true });
+      await writeFile(
+        action.targetPath,
+        renderSkillScaffold(path.basename(path.dirname(action.targetPath))),
+        "utf8"
+      );
+      filesChanged += 1;
+      continue;
+    }
+
+    if (action.operation === "update-json" && action.id === "skill.safe_frontmatter_defaults") {
+      await backupFile(plan.targetPath, backupDirectory, action.targetPath);
+      await writeFile(
+        action.targetPath,
+        replaceFrontmatter(
+          await readFile(action.targetPath, "utf8"),
+          path.basename(path.dirname(action.targetPath))
+        ),
+        "utf8"
+      );
+      filesChanged += 1;
+      continue;
+    }
+
+    if (action.operation === "update-json" && action.id === "mcp.scaffold_config") {
+      await mkdir(path.dirname(action.targetPath), { recursive: true });
+      await writeFile(
+        action.targetPath,
+        `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`,
+        "utf8"
+      );
       filesChanged += 1;
     }
   }

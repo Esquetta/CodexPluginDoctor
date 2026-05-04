@@ -1108,6 +1108,50 @@ describe("runCli", () => {
     expect(backupRootEntries).toHaveLength(1);
   });
 
+  it("applies safe skill and MCP scaffolds", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-v2-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const skillsDirectory = path.join(targetPath, "skills");
+    const emptySkillDirectory = path.join(skillsDirectory, "empty-skill");
+    const partialSkillDirectory = path.join(skillsDirectory, "partial-skill");
+    await mkdir(manifestDirectory, { recursive: true });
+    await mkdir(emptySkillDirectory, { recursive: true });
+    await mkdir(partialSkillDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "plugin.json"),
+      JSON.stringify({
+        name: "fix-v2-plugin",
+        version: "0.1.0",
+        description: "A plugin for fix v2 tests.",
+        skills: "skills",
+        mcpServers: ".mcp.json"
+      }, null, 2),
+      "utf8"
+    );
+    await writeFile(
+      path.join(partialSkillDirectory, "SKILL.md"),
+      "---\n---\n\nExisting body.\n",
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--apply", "--backup", "--json"], io);
+    const report = JSON.parse(stdout.join(""));
+    const emptySkill = await readFile(path.join(emptySkillDirectory, "SKILL.md"), "utf8");
+    const partialSkill = await readFile(path.join(partialSkillDirectory, "SKILL.md"), "utf8");
+    const mcpConfig = JSON.parse(await readFile(path.join(targetPath, ".mcp.json"), "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(report.filesChanged).toBe(3);
+    expect(emptySkill).toContain("name: empty-skill");
+    expect(emptySkill).toContain("description:");
+    expect(partialSkill).toContain("name: partial-skill");
+    expect(partialSkill).toContain("description:");
+    expect(partialSkill).toContain("Existing body.");
+    expect(mcpConfig).toEqual({ mcpServers: {} });
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();
