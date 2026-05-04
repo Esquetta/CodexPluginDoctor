@@ -1302,6 +1302,66 @@ describe("runCli", () => {
     expect(backupRootEntries).toHaveLength(1);
   });
 
+  it("prompts before applying interactive fixes", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-interactive-fix-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const manifestPath = path.join(manifestDirectory, "plugin.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "interactive-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { stdout, stderr, io } = createIo();
+
+    const exitCode = await runCli(
+      ["fix", targetPath, "--interactive", "--backup"],
+      {
+        ...io,
+        async readStdin() {
+          return "yes\n";
+        }
+      }
+    );
+    const manifestAfter = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Mode: interactive");
+    expect(stdout.join("")).toContain("Type yes to apply these fixes");
+    expect(stdout.join("")).toContain("Mode: apply");
+    expect(manifestAfter.version).toBe("0.1.0");
+  });
+
+  it("cancels interactive fixes unless yes is entered", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-cancel-fix-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const manifestPath = path.join(manifestDirectory, "plugin.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "cancel-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { stdout, stderr, io } = createIo();
+
+    const exitCode = await runCli(
+      ["fix", targetPath, "--interactive", "--backup"],
+      {
+        ...io,
+        async readStdin() {
+          return "no\n";
+        }
+      }
+    );
+    const manifestAfter = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Fix cancelled. No files changed.");
+    expect(manifestAfter).toEqual({ name: "cancel-plugin", skills: "skills" });
+  });
+
   it("applies safe skill and MCP scaffolds", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-v2-"));
     const manifestDirectory = path.join(targetPath, ".codex-plugin");

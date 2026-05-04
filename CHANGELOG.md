@@ -12,6 +12,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `check <path> --explain` for inline rule explanations in text reports
 - added first-run guidance to empty CLI usage and `doctor` text output
 - added `npm run release-check` for release preflight automation before version tags and npm publish
+- added `fix <path> --interactive --backup` for prompted safe-fix apply flows
 
 ## [0.8.0] - 2026-05-04
 

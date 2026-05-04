@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -75,6 +76,7 @@ import { packageVersion } from "./version.js";
 export interface CliIo {
   writeStdout(message: string): void;
   writeStderr(message: string): void;
+  readStdin?(prompt: string): Promise<string>;
 }
 
 export interface CliTerminalContext {
@@ -95,12 +97,24 @@ const defaultIo: CliIo = {
   },
   writeStderr(message: string) {
     process.stderr.write(`${message}\n`);
+  },
+  async readStdin(prompt: string) {
+    const readline = createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    try {
+      return await readline.question(prompt);
+    } finally {
+      readline.close();
+    }
   }
 };
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -351,23 +365,29 @@ export async function runCli(
   if (command === "fix") {
     if (!maybePath || maybePath.startsWith("--")) {
       io.writeStderr(
-        "Missing target path. Usage: codex-plugin-doctor fix <path> (--dry-run|--apply --backup)"
+        "Missing target path. Usage: codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)"
       );
       return 2;
     }
 
     const dryRun = remainingArgs.includes("--dry-run");
     const apply = remainingArgs.includes("--apply");
+    const interactive = remainingArgs.includes("--interactive");
     const backup = remainingArgs.includes("--backup");
     const jsonOutput = remainingArgs.includes("--json");
 
-    if (apply && !backup) {
-      io.writeStderr("Fix apply requires --backup.");
+    if ((apply || interactive) && !backup) {
+      io.writeStderr("Fix mode requires --backup.");
       return 2;
     }
 
-    if (dryRun === apply) {
-      io.writeStderr("Choose exactly one fix mode: --dry-run or --apply --backup.");
+    if ([dryRun, apply, interactive].filter(Boolean).length !== 1) {
+      io.writeStderr("Choose exactly one fix mode: --dry-run, --interactive --backup, or --apply --backup.");
+      return 2;
+    }
+
+    if (interactive && jsonOutput) {
+      io.writeStderr("Interactive fix mode does not support --json.");
       return 2;
     }
 
@@ -378,6 +398,28 @@ export async function runCli(
           ? renderFixPlanJsonReport(plan, { mode: "dry-run" })
           : renderFixPlan(plan, "dry-run")
       );
+      return 0;
+    }
+
+    if (interactive) {
+      const plan = await buildFixPlan(maybePath);
+
+      io.writeStdout(
+        [
+          renderFixPlan(plan, "interactive"),
+          "",
+          "Type yes to apply these fixes with a backup. Anything else cancels."
+        ].join("\n")
+      );
+
+      const answer = (await io.readStdin?.("Apply fixes? ") ?? "").trim().toLowerCase();
+
+      if (answer !== "yes") {
+        io.writeStdout("Fix cancelled. No files changed.");
+        return 0;
+      }
+
+      io.writeStdout(renderApplyFixResult(await applyFixPlan(maybePath)));
       return 0;
     }
 

@@ -134,7 +134,7 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
   };
 }
 
-export function renderFixPlan(plan: FixPlan, mode: "dry-run"): string {
+export function renderFixPlan(plan: FixPlan, mode: "dry-run" | "interactive"): string {
   const lines = [
     "Fix Plan",
     "========",

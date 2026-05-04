@@ -200,6 +200,7 @@ codex-plugin-doctor history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl --json
 codex-plugin-doctor history validation-history.jsonl --fail-on-regression
 codex-plugin-doctor fix . --dry-run
+codex-plugin-doctor fix . --interactive --backup
 codex-plugin-doctor fix . --apply --backup
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
@@ -224,7 +225,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status, finding-count deltas, and whether the latest run regressed. Add `history --json` for automation output or `history --fail-on-regression` when CI should fail after a worse latest run.
 
-`fix --dry-run` renders safe automatic fix plans without changing files. `fix --apply --backup` applies only supported safe fixes, such as manifest defaults and missing skills directories, after creating backups.
+`fix --dry-run` renders safe automatic fix plans without changing files. `fix --interactive --backup` shows the same plan, then applies only after you type `yes`. `fix --apply --backup` applies supported safe fixes, such as manifest defaults and missing skills directories, after creating backups.
 
 Optional local policy file:
 
