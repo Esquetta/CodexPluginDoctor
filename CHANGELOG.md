@@ -6,6 +6,12 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.9.0] - 2026-05-04
+
+Feature release for clearer first-run guidance, all-client compatibility checks, inline explanations, interactive safe fixes, and release preflight automation.
+
 ### Added
 
 - added explicit `compat <path> --all` for discoverable all-client compatibility and scorecard checks
