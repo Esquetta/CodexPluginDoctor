@@ -897,6 +897,38 @@ describe("runCli", () => {
     expect(output).toContain("npm global prefix: C:\\npm-global");
   });
 
+  it("renders a local doctor environment healthcheck as JSON", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "--json"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: { CODEX_HOME: codexHomeFixture, npm_config_prefix: "C:\\npm-global" },
+        platform: "win32"
+      }
+    });
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      schemaVersion: "1.0.0",
+      version: packageJson.version,
+      platform: "win32",
+      npmGlobalPrefix: "C:\\npm-global",
+      codexHome: {
+        status: "pass",
+        path: codexHomeFixture
+      },
+      codexPluginCache: {
+        status: "pass",
+        path: path.join(codexHomeFixture, "plugins", "cache")
+      }
+    });
+    expect(output.node).toMatch(/^v\d+\./);
+  });
+
   it("lists installed Codex plugins without requiring users to know plugin paths", async () => {
     const { io, stdout, stderr } = createIo();
 

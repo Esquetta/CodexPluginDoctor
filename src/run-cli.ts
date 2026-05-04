@@ -49,7 +49,10 @@ import {
   renderFixPlanJsonReport,
   renderFixPlan
 } from "./core/fix-plan.js";
-import { renderEnvironmentDoctor } from "./core/environment-doctor.js";
+import {
+  renderEnvironmentDoctor,
+  renderEnvironmentDoctorJson
+} from "./core/environment-doctor.js";
 import { initPluginPackage } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
@@ -231,7 +234,11 @@ export async function runCli(
   }
 
   if (command === "doctor") {
-    io.writeStdout(await renderEnvironmentDoctor(terminalContext));
+    io.writeStdout(
+      maybePath === "--json"
+        ? await renderEnvironmentDoctorJson(terminalContext)
+        : await renderEnvironmentDoctor(terminalContext)
+    );
     return 0;
   }
 
