@@ -1,4 +1,5 @@
 import type { CheckResult } from "../domain/types.js";
+import { findRuleDefinition } from "../rules/rule-catalog.js";
 
 function getCounts(result: CheckResult) {
   const failCount = result.findings.filter(
@@ -31,9 +32,10 @@ function getGlyphs(ascii: boolean) {
 
 export function renderTextReport(
   result: CheckResult,
-  options: { ascii?: boolean } = {}
+  options: { ascii?: boolean; explain?: boolean } = {}
 ): string {
   const ascii = options.ascii ?? false;
+  const explain = options.explain ?? false;
   const glyphs = getGlyphs(ascii);
   const { failCount, warnCount, totalCount } = getCounts(result);
   const lines = [
@@ -80,6 +82,16 @@ export function renderTextReport(
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      if (explain) {
+        const rule = findRuleDefinition(finding.id);
+
+        if (rule) {
+          lines.push(`  Why: ${rule.why}`);
+          lines.push(`  Fix detail: ${rule.fix}`);
+          lines.push(`  Example: ${rule.example}`);
+        }
+      }
     }
   };
 

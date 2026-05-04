@@ -185,6 +185,7 @@ codex-plugin-doctor check . --profile ci
 codex-plugin-doctor check . --profile strict
 codex-plugin-doctor check . --profile publish
 codex-plugin-doctor check . --json
+codex-plugin-doctor check . --explain
 codex-plugin-doctor check . --json --output report.json
 codex-plugin-doctor check . --markdown --output report.md
 codex-plugin-doctor check . --badge-json --output doctor-badge.json
@@ -216,6 +217,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `compat --all` makes the all-client matrix explicit when you want Codex, Generic MCP, Claude Desktop, Cursor, Cline, and Windsurf in one run. `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
 
 `check --profile ci|strict|publish` applies named validation policies. `ci` keeps default behavior, `strict` fails on warnings, and `publish` fails on warnings while enabling runtime probing by default.
+
+`check --explain` adds inline rule catalog context to text reports, including why a finding matters, a more detailed fix path, and a compact example.
 
 `check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
 

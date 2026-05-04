@@ -1083,6 +1083,23 @@ describe("runCli", () => {
     expect(stdout.join("")).not.toContain("plugin.heuristic.description.too_long");
   });
 
+  it("adds inline rule explanations to check output when requested", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/missing-manifest", "--explain", "--no-animations"],
+      io
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("plugin.manifest.missing");
+    expect(output).toContain("Why: Codex needs the plugin manifest as the package entry point.");
+    expect(output).toContain("Fix detail: Run the doctor against a plugin package root");
+    expect(output).toContain('Example: { "name": "my-plugin"');
+  });
+
   it("turns warnings into a blocking result when failOnWarnings is enabled", async () => {
     const { io, stdout } = createIo();
 

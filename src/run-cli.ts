@@ -100,7 +100,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version"
   );
 }
 
@@ -561,6 +561,7 @@ export async function runCli(
   const sarifOutput = normalizedFlags.includes("--sarif");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
   const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
+  const explainFindings = normalizedFlags.includes("--explain");
   const noAnimations = normalizedFlags.includes("--no-animations");
   const asciiMode = normalizedFlags.includes("--ascii");
   const installedSummary = normalizedFlags.includes("--all-summary");
@@ -668,7 +669,10 @@ export async function runCli(
             ? buildMarkdownReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
             : jsonOutput
               ? renderJsonReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
-              : renderTextReport(item.result, { ascii: outputPolicy.style === "ascii" })
+              : renderTextReport(item.result, {
+                  ascii: outputPolicy.style === "ascii",
+                  explain: explainFindings
+                })
         )
         .join("\n\n");
 
@@ -718,7 +722,10 @@ export async function runCli(
       ? renderBadgeJson(result)
     : badgeMarkdownOutput
       ? renderBadgeMarkdown(result)
-      : renderTextReport(result, { ascii: outputPolicy.style === "ascii" });
+      : renderTextReport(result, {
+          ascii: outputPolicy.style === "ascii",
+          explain: explainFindings
+        });
 
   if (outputPath) {
     await writeFile(outputPath, report, "utf8");

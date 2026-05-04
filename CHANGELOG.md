@@ -9,6 +9,7 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added explicit `compat <path> --all` for discoverable all-client compatibility and scorecard checks
+- added `check <path> --explain` for inline rule explanations in text reports
 
 ## [0.8.0] - 2026-05-04
 
