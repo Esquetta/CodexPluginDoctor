@@ -1281,6 +1281,81 @@ describe("runCli", () => {
     expect(skill).toContain("name: hello");
   });
 
+  it("initializes an MCP stdio template", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-stdio-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init", targetPath, "--template", "mcp-stdio"], io);
+    const manifest = JSON.parse(
+      await readFile(path.join(targetPath, ".codex-plugin", "plugin.json"), "utf8")
+    );
+    const mcpConfig = JSON.parse(await readFile(path.join(targetPath, ".mcp.json"), "utf8"));
+    const server = await readFile(path.join(targetPath, "mock-server.js"), "utf8");
+    const serverConfig = mcpConfig.mcpServers[manifest.name];
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Template: mcp-stdio");
+    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(serverConfig.command).toBe("node");
+    expect(serverConfig.args).toEqual(["./mock-server.js"]);
+    expect(server).toContain("method === \"initialize\"");
+  });
+
+  it("initializes an MCP HTTP template", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-http-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init", targetPath, "--template", "mcp-http"], io);
+    const manifest = JSON.parse(
+      await readFile(path.join(targetPath, ".codex-plugin", "plugin.json"), "utf8")
+    );
+    const mcpConfig = JSON.parse(await readFile(path.join(targetPath, ".mcp.json"), "utf8"));
+    const serverConfig = mcpConfig.mcpServers[manifest.name];
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Template: mcp-http");
+    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(serverConfig.url).toBe("http://localhost:8787/mcp");
+  });
+
+  it("initializes a full runtime template that passes runtime validation", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-full-"));
+    const { io, stdout, stderr } = createIo();
+
+    const initExitCode = await runCli(["init", targetPath, "--template", "full-runtime"], io);
+
+    expect(initExitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Template: full-runtime");
+
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const checkExitCode = await runCli(["check", targetPath, "--runtime", "--no-animations"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {}
+      }
+    });
+
+    expect(checkExitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("prompts/get: pass");
+  });
+
+  it("rejects unknown init templates", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-unknown-"));
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(["init", targetPath, "--template", "unknown"], io);
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("Unknown init template: unknown");
+  });
+
   it("initializes a GitHub Actions workflow for Codex Plugin Doctor", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-"));
     const { io, stdout, stderr } = createIo();

@@ -57,7 +57,11 @@ import {
   renderEnvironmentDoctorJson
 } from "./core/environment-doctor.js";
 import { initCiWorkflow } from "./core/init-ci.js";
-import { initPluginPackage } from "./core/init-plugin.js";
+import {
+  initPluginPackage,
+  initPluginTemplates,
+  isInitPluginTemplate
+} from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
 import { renderBadgeJson, renderBadgeMarkdown } from "./reporting/render-badge-report.js";
@@ -117,7 +121,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -386,16 +390,46 @@ export async function runCli(
 
   if (command === "init") {
     const targetPath = maybePath && !maybePath.startsWith("--") ? maybePath : ".";
-    const result = await initPluginPackage(targetPath);
+    const initFlags = maybePath && maybePath.startsWith("--")
+      ? [maybePath, ...remainingArgs]
+      : remainingArgs;
+    const templateIndex = initFlags.indexOf("--template");
+    const templateName = templateIndex === -1 ? "skill-only" : initFlags[templateIndex + 1];
+
+    if (templateIndex !== -1 && (!templateName || templateName.startsWith("--"))) {
+      io.writeStderr("Missing template after --template.");
+      return 2;
+    }
+
+    if (!isInitPluginTemplate(templateName)) {
+      io.writeStderr(
+        `Unknown init template: ${templateName}. Supported templates: ${initPluginTemplates.join(", ")}.`
+      );
+      return 2;
+    }
+
+    const result = await initPluginPackage(targetPath, { template: templateName });
+    const lines = [
+      "Initialized Codex plugin package",
+      `Template: ${result.template}`,
+      `Root: ${result.rootPath}`,
+      `Manifest: ${result.manifestPath}`,
+      `Skill: ${result.skillPath}`
+    ];
+
+    if (result.mcpConfigPath) {
+      lines.push(`MCP config: ${result.mcpConfigPath}`);
+    }
+
+    if (result.serverPath) {
+      lines.push(`Server: ${result.serverPath}`);
+    }
 
     io.writeStdout(
       [
-        "Initialized Codex plugin package",
-        `Root: ${result.rootPath}`,
-        `Manifest: ${result.manifestPath}`,
-        `Skill: ${result.skillPath}`,
+        ...lines,
         "",
-        `Next: codex-plugin-doctor check ${result.rootPath}`
+        `Next: codex-plugin-doctor check ${result.rootPath}${result.template === "full-runtime" ? " --runtime" : ""}`
       ].join("\n")
     );
     return 0;

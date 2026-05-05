@@ -11,6 +11,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `doctor --update-check` to compare the installed CLI version with the npm latest version
 - added `doctor clients` to report local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness
 - added `check --installed --compat --all-summary` for installed plugin validation plus cross-client compatibility summaries
+- added `init [path] --template skill-only|mcp-stdio|mcp-http|full-runtime` for targeted plugin package scaffolds
 
 ## [0.9.0] - 2026-05-04
 

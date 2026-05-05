@@ -168,6 +168,9 @@ codex-plugin-doctor doctor
 codex-plugin-doctor doctor clients
 codex-plugin-doctor doctor --update-check
 codex-plugin-doctor init my-plugin
+codex-plugin-doctor init my-mcp --template mcp-stdio
+codex-plugin-doctor init remote-mcp --template mcp-http
+codex-plugin-doctor init runtime-demo --template full-runtime
 codex-plugin-doctor compat .
 codex-plugin-doctor compat . --all --scorecard
 codex-plugin-doctor compat . --client codex
@@ -211,6 +214,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
 `doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility. The text output also includes recommended next commands for self-test, installed plugin discovery, runtime checks, compatibility scoring, and CI setup. `doctor clients` reports local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness. `doctor --update-check` compares the installed CLI version with the latest npm version and prints the upgrade command when a newer release is available.
+
+`init [path] --template ...` creates targeted starter packages. `skill-only` is the default minimal skill package, `mcp-stdio` adds a local stdio MCP config and mock server, `mcp-http` scaffolds a streamable HTTP MCP config, and `full-runtime` generates a stdio sample that passes the runtime protocol probes.
 
 `compat --client claude-desktop` checks whether the MCP package can be added to the local Claude Desktop setup. On Windows it looks for `%APPDATA%\Claude\claude_desktop_config.json`; on macOS it looks for `~/Library/Application Support/Claude/claude_desktop_config.json`. A valid existing config returns `PASS`, a missing Claude Desktop install returns `WARN`, and a malformed local config returns `FAIL` so you do not add new servers into a broken config file. If the package server name already exists in Claude Desktop, the command returns `WARN` with the duplicate server name. Add `--install-preview` to print the JSON snippet that should be merged into `claude_desktop_config.json`; it does not modify files. Use `--apply --backup` only when you want the CLI to create a timestamped backup and merge the server config. Apply mode refuses to overwrite duplicate server names.
 
