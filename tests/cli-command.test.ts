@@ -1149,6 +1149,40 @@ describe("runCli", () => {
     expect(output).not.toContain("Codex Plugin Doctor\n===================");
   });
 
+  it("adds compatibility status to the installed plugin summary when requested", async () => {
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["check", "--installed", "--compat", "--all-summary", "--no-animations"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: {
+            CODEX_HOME: codexHomeFixture
+          }
+        },
+        runCheckImpl: async (targetPath) => ({
+          targetPath,
+          status: "pass",
+          exitCode: 0,
+          findings: []
+        })
+      }
+    );
+
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Installed Plugin Summary");
+    expect(output).toContain("Installed Compatibility Summary");
+    expect(output).toContain("browser-use");
+    expect(output).toContain("github");
+    expect(output).toContain("Codex: PASS");
+    expect(output).toContain("Generic MCP: SKIPPED");
+  });
+
   it("honors ignoreRules from .codex-doctor.json", async () => {
     const { io, stdout } = createIo();
 

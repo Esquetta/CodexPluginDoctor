@@ -117,7 +117,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -660,6 +660,7 @@ export async function runCli(
   const noAnimations = normalizedFlags.includes("--no-animations");
   const asciiMode = normalizedFlags.includes("--ascii");
   const installedSummary = normalizedFlags.includes("--all-summary");
+  const installedCompatibility = normalizedFlags.includes("--compat");
   const outputIndex = normalizedFlags.indexOf("--output");
   const outputPath = outputIndex === -1 ? null : normalizedFlags[outputIndex + 1];
   const configIndex = normalizedFlags.indexOf("--config");
@@ -739,6 +740,13 @@ export async function runCli(
 
     for (const plugin of installedPlugins) {
       const config = await loadDoctorConfig(plugin.rootPath, configPath);
+      const compatibilityMatrix = installedCompatibility
+        ? await buildCompatibilityMatrix(plugin.rootPath, {
+            env: terminalContext.env,
+            platform: terminalContext.platform
+          })
+        : undefined;
+
       checkedPlugins.push({
         plugin,
         result: applyDoctorConfig(
@@ -750,7 +758,8 @@ export async function runCli(
                 : undefined
           }),
           applyCheckProfile(config, checkProfile)
-        )
+        ),
+        compatibilityMatrix
       });
     }
 
@@ -777,7 +786,12 @@ export async function runCli(
 
     io.writeStdout(report);
 
-    return checkedPlugins.some((item) => item.result.exitCode === 1) ? 1 : 0;
+    return checkedPlugins.some((item) =>
+      item.result.exitCode === 1 ||
+      (item.compatibilityMatrix && matrixExitCode(item.compatibilityMatrix) === 1)
+    )
+      ? 1
+      : 0;
   }
 
   const renderer = outputPolicy.interactive

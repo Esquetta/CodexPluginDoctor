@@ -89,6 +89,7 @@ If you already have Codex installed locally and do not know plugin paths, discov
 codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
 codex-plugin-doctor check --installed --all-summary
+codex-plugin-doctor check --installed --compat --all-summary
 codex-plugin-doctor check --installed github
 codex-plugin-doctor explain plugin.manifest.missing
 ```
@@ -219,6 +220,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `compat --all` makes the all-client matrix explicit when you want Codex, Generic MCP, Claude Desktop, Cursor, Cline, and Windsurf in one run. `compat --scorecard` turns the compatibility matrix into a compact score summary. `PASS` maps to `100`, `WARN` maps to `70`, and `FAIL` or `SKIPPED` maps to `0`.
 
+`check --installed --compat --all-summary` validates every discovered Codex plugin from the local plugin cache and appends a compact compatibility summary for Codex, Generic MCP, Claude Desktop, Cursor, Cline, and Windsurf. This is the fastest repo-free audit when a user does not know individual plugin paths.
+
 `check --profile ci|strict|publish` applies named validation policies. `ci` keeps default behavior, `strict` fails on warnings, and `publish` fails on warnings while enabling runtime probing by default.
 
 `check --explain` adds inline rule catalog context to text reports, including why a finding matters, a more detailed fix path, and a compact example.
@@ -244,6 +247,7 @@ Run these when you want Codex Plugin Doctor to find plugins from the local Codex
 codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
 codex-plugin-doctor check --installed --all-summary
+codex-plugin-doctor check --installed --compat --all-summary
 codex-plugin-doctor check --installed github
 codex-plugin-doctor check --installed github --runtime --no-animations
 codex-plugin-doctor explain plugin.security.hard_coded_secret
