@@ -41,6 +41,15 @@ function relativeToTarget(targetPath: string, candidatePath: string): string {
   return path.relative(targetPath, candidatePath).replace(/\\/g, "/");
 }
 
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(rootPath, candidatePath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
 export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
   const result = await validatePlugin(targetPath);
   const rootPath = result.targetPath;
@@ -83,6 +92,13 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
   if (typeof manifest.skills === "string") {
     const skillsPath = path.resolve(rootPath, manifest.skills);
 
+    if (!isPathWithinRoot(rootPath, skillsPath)) {
+      return {
+        targetPath: rootPath,
+        actions
+      };
+    }
+
     if (await directoryExists(skillsPath)) {
       for (const entry of await readdir(skillsPath, { withFileTypes: true })) {
         if (!entry.isDirectory()) {
@@ -120,6 +136,13 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
 
   if (typeof manifest.mcpServers === "string") {
     const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+    if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+      return {
+        targetPath: rootPath,
+        actions
+      };
+    }
 
     if (!(await fileExists(mcpConfigPath))) {
       actions.push({

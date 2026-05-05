@@ -1611,6 +1611,62 @@ describe("runCli", () => {
     expect(mcpConfig).toEqual({ mcpServers: {} });
   });
 
+  it("does not apply fixes outside the plugin root when mcp path traversal is detected", async () => {
+    const workspacePath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-traversal-"));
+    const targetPath = path.join(workspacePath, "plugin");
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const outsideMcpPath = path.join(workspacePath, "outside", ".mcp.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "plugin.json"),
+      JSON.stringify({
+        name: "traversal-plugin",
+        version: "0.1.0",
+        description: "A plugin with a traversal mcp path.",
+        mcpServers: "../outside/.mcp.json"
+      }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--apply", "--backup"], io);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Files changed: 0");
+    await expect(readFile(outsideMcpPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
+  it("does not plan skill fixes from outside the plugin root", async () => {
+    const workspacePath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-skill-traversal-"));
+    const targetPath = path.join(workspacePath, "plugin");
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const outsideSkillDirectory = path.join(workspacePath, "outside-skills", "external-skill");
+    await mkdir(manifestDirectory, { recursive: true });
+    await mkdir(outsideSkillDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "plugin.json"),
+      JSON.stringify({
+        name: "skill-traversal-plugin",
+        version: "0.1.0",
+        description: "A plugin with a traversal skills path.",
+        skills: "../outside-skills"
+      }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--dry-run"], io);
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("No safe automatic fixes available.");
+    expect(output).not.toContain("external-skill");
+  });
+
   it("writes the JSON report to the requested output path", async () => {
     const outputPath = await createTempFilePath("report.json");
     const { io } = createIo();

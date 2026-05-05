@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.10.1] - 2026-05-05
+
+Patch release for safe-fix path hardening.
+
+### Fixed
+
+- prevented `fix --apply` and `fix --interactive` from creating or modifying files outside the plugin root when manifest paths contain traversal attempts
+
 ## [0.10.0] - 2026-05-05
 
 Feature release for version awareness, local client readiness checks, installed plugin compatibility summaries, targeted starter templates, and selective safe fixes.
