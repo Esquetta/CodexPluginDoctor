@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
 
@@ -20,9 +21,27 @@ export interface EnvironmentDoctorReport {
   };
 }
 
+export interface ClientDoctorResult {
+  client: string;
+  status: "pass" | "warn";
+  configPath: string | null;
+  configExists: boolean;
+  directoryWritable: boolean;
+  summary: string;
+}
+
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
     await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pathWritable(targetPath: string): Promise<boolean> {
+  try {
+    await access(targetPath, constants.W_OK);
     return true;
   } catch {
     return false;
@@ -43,6 +62,113 @@ function resolveCodexHome(env: Record<string, string | undefined>): string | nul
   }
 
   return null;
+}
+
+function resolveHomeDirectory(env: Record<string, string | undefined>): string | null {
+  return env.USERPROFILE ?? env.HOME ?? null;
+}
+
+function resolveClaudeConfigPath(terminalContext: CliTerminalContext): string | null {
+  const platform = terminalContext.platform ?? process.platform;
+  const homeDirectory = resolveHomeDirectory(terminalContext.env);
+
+  if (platform === "win32") {
+    return terminalContext.env.APPDATA
+      ? path.join(terminalContext.env.APPDATA, "Claude", "claude_desktop_config.json")
+      : null;
+  }
+
+  if (platform === "darwin" && homeDirectory) {
+    return path.join(
+      homeDirectory,
+      "Library",
+      "Application Support",
+      "Claude",
+      "claude_desktop_config.json"
+    );
+  }
+
+  return null;
+}
+
+function resolveClineConfigPath(env: Record<string, string | undefined>): string | null {
+  const homeDirectory = resolveHomeDirectory(env);
+  const clineDirectory = env.CLINE_DIR
+    ? path.resolve(env.CLINE_DIR)
+    : homeDirectory
+      ? path.join(homeDirectory, ".cline")
+      : null;
+
+  return clineDirectory
+    ? path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json")
+    : null;
+}
+
+function resolveClientConfigPaths(terminalContext: CliTerminalContext): Array<{
+  client: string;
+  configPath: string | null;
+}> {
+  const env = terminalContext.env;
+  const homeDirectory = resolveHomeDirectory(env);
+
+  return [
+    {
+      client: "Codex",
+      configPath: resolveCodexHome(env)
+    },
+    {
+      client: "Claude Desktop",
+      configPath: resolveClaudeConfigPath(terminalContext)
+    },
+    {
+      client: "Cursor",
+      configPath: homeDirectory ? path.join(homeDirectory, ".cursor", "mcp.json") : null
+    },
+    {
+      client: "Cline",
+      configPath: resolveClineConfigPath(env)
+    },
+    {
+      client: "Windsurf",
+      configPath: homeDirectory
+        ? path.join(homeDirectory, ".codeium", "windsurf", "mcp_config.json")
+        : null
+    }
+  ];
+}
+
+async function inspectClientConfig(
+  client: string,
+  configPath: string | null
+): Promise<ClientDoctorResult> {
+  if (!configPath) {
+    return {
+      client,
+      status: "warn",
+      configPath,
+      configExists: false,
+      directoryWritable: false,
+      summary: "Config path could not be resolved."
+    };
+  }
+
+  const configExists = await pathExists(configPath);
+  const directory = client === "Codex" ? configPath : path.dirname(configPath);
+  const directoryExists = await pathExists(directory);
+  const directoryWritable = directoryExists ? await pathWritable(directory) : false;
+
+  return {
+    client,
+    status: configExists || directoryWritable ? "pass" : "warn",
+    configPath,
+    configExists,
+    directoryWritable,
+    summary: configExists
+      ? "Config path exists."
+      : directoryWritable
+        ? "Config directory exists and is writable."
+        : "Config path was not detected on this machine."
+  };
 }
 
 export async function renderEnvironmentDoctor(
@@ -68,6 +194,36 @@ export async function renderEnvironmentDoctor(
     "codex-plugin-doctor compat . --all --scorecard",
     "codex-plugin-doctor init-ci ."
   ].join("\n");
+}
+
+export async function buildClientDoctorReport(
+  terminalContext: CliTerminalContext
+): Promise<ClientDoctorResult[]> {
+  return Promise.all(
+    resolveClientConfigPaths(terminalContext).map((item) =>
+      inspectClientConfig(item.client, item.configPath)
+    )
+  );
+}
+
+export async function renderClientDoctor(
+  terminalContext: CliTerminalContext
+): Promise<string> {
+  const results = await buildClientDoctorReport(terminalContext);
+  const lines = [
+    "Codex Plugin Doctor Clients",
+    "===========================",
+    ""
+  ];
+
+  for (const result of results) {
+    lines.push(`${result.client}: ${result.status.toUpperCase()} - ${result.summary}`);
+    lines.push(`  Config: ${result.configPath ?? "(unknown)"}`);
+    lines.push(`  Exists: ${result.configExists ? "yes" : "no"}`);
+    lines.push(`  Writable: ${result.directoryWritable ? "yes" : "no"}`);
+  }
+
+  return lines.join("\n");
 }
 
 export async function buildEnvironmentDoctorReport(

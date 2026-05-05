@@ -1003,6 +1003,52 @@ describe("runCli", () => {
     expect(output).toContain("npm install -g codex-plugin-doctor@latest");
   });
 
+  it("renders local client install and config readiness", async () => {
+    const appData = await createClaudeAppDataFixture({ mcpServers: {} });
+    const homeDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-clients-"));
+    const clineDirectory = path.join(homeDirectory, ".cline");
+    await mkdir(path.join(homeDirectory, ".cursor"), { recursive: true });
+    await mkdir(path.join(homeDirectory, ".codeium", "windsurf"), { recursive: true });
+    await mkdir(path.join(clineDirectory, "data", "settings"), { recursive: true });
+    await writeFile(path.join(homeDirectory, ".cursor", "mcp.json"), "{\"mcpServers\":{}}", "utf8");
+    await writeFile(
+      path.join(homeDirectory, ".codeium", "windsurf", "mcp_config.json"),
+      "{\"mcpServers\":{}}",
+      "utf8"
+    );
+    await writeFile(
+      path.join(clineDirectory, "data", "settings", "cline_mcp_settings.json"),
+      "{\"mcpServers\":{}}",
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "clients"], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          APPDATA: appData,
+          CODEX_HOME: codexHomeFixture,
+          CLINE_DIR: clineDirectory,
+          USERPROFILE: homeDirectory
+        },
+        platform: "win32"
+      }
+    });
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Codex Plugin Doctor Clients");
+    expect(output).toContain("Codex: PASS");
+    expect(output).toContain("Claude Desktop: PASS");
+    expect(output).toContain("Cursor: PASS");
+    expect(output).toContain("Cline: PASS");
+    expect(output).toContain("Windsurf: PASS");
+    expect(output).toContain(path.join(homeDirectory, ".cursor", "mcp.json"));
+  });
+
   it("lists installed Codex plugins without requiring users to know plugin paths", async () => {
     const { io, stdout, stderr } = createIo();
 
