@@ -1505,6 +1505,39 @@ describe("runCli", () => {
     expect(manifestAfter.version).toBe("0.1.0");
   });
 
+  it("applies selected interactive fix numbers only", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-selective-fix-"));
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    const manifestPath = path.join(manifestDirectory, "plugin.json");
+    await mkdir(manifestDirectory, { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "selective-plugin", skills: "skills" }, null, 2),
+      "utf8"
+    );
+    const { stdout, stderr, io } = createIo();
+
+    const exitCode = await runCli(
+      ["fix", targetPath, "--interactive", "--backup"],
+      {
+        ...io,
+        async readStdin() {
+          return "1\n";
+        }
+      }
+    );
+    const manifestAfter = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("or enter action numbers like 1,3");
+    expect(stdout.join("")).toContain("Files changed: 1");
+    expect(manifestAfter.version).toBe("0.1.0");
+    await expect(readdir(path.join(targetPath, "skills"))).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
   it("cancels interactive fixes unless yes is entered", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-cancel-fix-"));
     const manifestDirectory = path.join(targetPath, ".codex-plugin");

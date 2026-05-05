@@ -261,6 +261,25 @@ function renderUpdateCheck(latestVersion: string): string {
   ].join("\n");
 }
 
+function parseSelectedFixActionIndexes(
+  answer: string,
+  actionCount: number
+): number[] | null {
+  if (!/^\d+(\s*,\s*\d+)*$/.test(answer)) {
+    return null;
+  }
+
+  const actionIndexes = [...new Set(answer.split(",").map((item) => Number(item.trim())))];
+
+  return actionIndexes.every((index) =>
+    Number.isInteger(index) &&
+    index >= 1 &&
+    index <= actionCount
+  )
+    ? actionIndexes
+    : null;
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -495,18 +514,28 @@ export async function runCli(
         [
           renderFixPlan(plan, "interactive"),
           "",
-          "Type yes to apply these fixes with a backup. Anything else cancels."
+          "Type yes to apply these fixes with a backup, or enter action numbers like 1,3. Anything else cancels."
         ].join("\n")
       );
 
       const answer = (await io.readStdin?.("Apply fixes? ") ?? "").trim().toLowerCase();
+      const selectedActionIndexes = answer === "yes"
+        ? null
+        : parseSelectedFixActionIndexes(answer, plan.actions.length);
 
-      if (answer !== "yes") {
+      if (answer !== "yes" && !selectedActionIndexes) {
         io.writeStdout("Fix cancelled. No files changed.");
         return 0;
       }
 
-      io.writeStdout(renderApplyFixResult(await applyFixPlan(maybePath)));
+      io.writeStdout(
+        renderApplyFixResult(
+          await applyFixPlan(
+            maybePath,
+            selectedActionIndexes ? { actionIndexes: selectedActionIndexes } : {}
+          )
+        )
+      );
       return 0;
     }
 

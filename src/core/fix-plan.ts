@@ -22,6 +22,10 @@ export interface ApplyFixPlanResult {
   backupDirectory: string;
 }
 
+export interface ApplyFixPlanOptions {
+  actionIndexes?: number[];
+}
+
 export interface FixPlanJsonReport {
   schemaVersion: "1.0.0";
   mode: "dry-run" | "apply";
@@ -230,12 +234,23 @@ async function backupFile(rootPath: string, backupDirectory: string, filePath: s
   await copyFile(filePath, backupPath);
 }
 
-export async function applyFixPlan(targetPath: string): Promise<ApplyFixPlanResult> {
+export async function applyFixPlan(
+  targetPath: string,
+  options: ApplyFixPlanOptions = {}
+): Promise<ApplyFixPlanResult> {
   const plan = await buildFixPlan(targetPath);
+  const selectedIndexes = new Set(options.actionIndexes ?? []);
+  const actions = selectedIndexes.size === 0
+    ? plan.actions
+    : plan.actions.filter((_, index) => selectedIndexes.has(index + 1));
+  const appliedPlan = {
+    ...plan,
+    actions
+  };
   const backupDirectory = path.join(plan.targetPath, ".codex-doctor-backups", timestampForPath());
   let filesChanged = 0;
 
-  for (const action of plan.actions) {
+  for (const action of appliedPlan.actions) {
     if (action.operation === "update-json" && action.id === "manifest.safe_defaults") {
       await backupFile(plan.targetPath, backupDirectory, action.targetPath);
       const manifest = JSON.parse(await readFile(action.targetPath, "utf8")) as {
@@ -302,7 +317,7 @@ export async function applyFixPlan(targetPath: string): Promise<ApplyFixPlanResu
   }
 
   return {
-    plan,
+    plan: appliedPlan,
     filesChanged,
     backupDirectory
   };

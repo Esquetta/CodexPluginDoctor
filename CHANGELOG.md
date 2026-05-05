@@ -12,6 +12,7 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `doctor clients` to report local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness
 - added `check --installed --compat --all-summary` for installed plugin validation plus cross-client compatibility summaries
 - added `init [path] --template skill-only|mcp-stdio|mcp-http|full-runtime` for targeted plugin package scaffolds
+- added selective `fix --interactive --backup` action numbers so users can apply only chosen safe fixes
 
 ## [0.9.0] - 2026-05-04
 
