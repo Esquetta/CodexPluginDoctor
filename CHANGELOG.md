@@ -6,7 +6,9 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- added `doctor --update-check` to compare the installed CLI version with the npm latest version
 
 ## [0.9.0] - 2026-05-04
 

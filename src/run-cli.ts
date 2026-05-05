@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -89,6 +90,7 @@ export interface CliTerminalContext {
 export interface RunCliOptions {
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
+  resolveLatestVersion?: () => Promise<string>;
 }
 
 const defaultIo: CliIo = {
@@ -114,7 +116,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [--json|--update-check]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -220,6 +222,40 @@ function renderSelfTestReport(
   ].join("\n");
 }
 
+async function resolveLatestNpmVersion(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "npm",
+      ["view", "codex-plugin-doctor", "version"],
+      { shell: process.platform === "win32" },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr.trim() || error.message));
+          return;
+        }
+
+        resolve(stdout.trim());
+      }
+    );
+  });
+}
+
+function renderUpdateCheck(latestVersion: string): string {
+  const updateAvailable = latestVersion !== packageVersion;
+
+  return [
+    "Codex Plugin Doctor Update Check",
+    "================================",
+    `Installed: ${packageVersion}`,
+    `Latest: ${latestVersion}`,
+    `Status: ${updateAvailable ? "UPDATE AVAILABLE" : "UP TO DATE"}`,
+    "",
+    updateAvailable
+      ? "Next: npm install -g codex-plugin-doctor@latest"
+      : "Next: no update needed"
+  ].join("\n");
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -249,6 +285,17 @@ export async function runCli(
   }
 
   if (command === "doctor") {
+    const doctorFlags = maybePath?.startsWith("--")
+      ? [maybePath, ...remainingArgs]
+      : remainingArgs;
+
+    if (doctorFlags.includes("--update-check")) {
+      const latestVersion = await (options.resolveLatestVersion ?? resolveLatestNpmVersion)();
+
+      io.writeStdout(renderUpdateCheck(latestVersion));
+      return 0;
+    }
+
     io.writeStdout(
       maybePath === "--json"
         ? await renderEnvironmentDoctorJson(terminalContext)

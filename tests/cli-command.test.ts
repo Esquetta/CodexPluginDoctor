@@ -986,6 +986,23 @@ describe("runCli", () => {
     expect(output.node).toMatch(/^v\d+\./);
   });
 
+  it("checks whether the installed CLI version is behind npm latest", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "--update-check"], io, {
+      resolveLatestVersion: async () => "99.0.0"
+    });
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Codex Plugin Doctor Update Check");
+    expect(output).toContain(`Installed: ${packageJson.version}`);
+    expect(output).toContain("Latest: 99.0.0");
+    expect(output).toContain("Status: UPDATE AVAILABLE");
+    expect(output).toContain("npm install -g codex-plugin-doctor@latest");
+  });
+
   it("lists installed Codex plugins without requiring users to know plugin paths", async () => {
     const { io, stdout, stderr } = createIo();
 
