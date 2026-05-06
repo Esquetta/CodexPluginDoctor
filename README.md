@@ -100,6 +100,7 @@ codex-plugin-doctor check --installed --all-summary
 codex-plugin-doctor check --installed --compat --all-summary
 codex-plugin-doctor audit --installed --security --compat
 codex-plugin-doctor audit --installed --security --compat --policy security
+codex-plugin-doctor mcp path/to/mcp-package
 codex-plugin-doctor check --installed github
 codex-plugin-doctor explain plugin.manifest.missing
 ```
@@ -183,6 +184,9 @@ codex-plugin-doctor doctor --update-check
 codex-plugin-doctor audit --installed
 codex-plugin-doctor audit --installed --security --compat
 codex-plugin-doctor audit --installed --security --compat --json --output local-audit.json
+codex-plugin-doctor mcp .
+codex-plugin-doctor mcp . --json
+codex-plugin-doctor mcp . --json --output mcp-doctor.json
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor init my-mcp --template mcp-stdio
 codex-plugin-doctor init remote-mcp --template mcp-http
@@ -241,6 +245,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report.
 
 `--policy codex-publish|mcp-strict|security` applies opinionated gates without requiring a local `.codex-doctor.json`. `codex-publish` fails warnings and enables runtime probes for release checks, `mcp-strict` does the same for MCP-heavy packages, and `security` fails warning-level security findings so advisory risks can block a local audit or CI gate.
+
+`mcp <path>` diagnoses generic MCP packages that may not have a Codex plugin manifest. It looks for `.mcp.json` or a manifest `mcpServers` reference, validates the top-level `mcpServers` object and server transports, adds MCP command-surface security findings, and includes the all-client compatibility matrix in the same report.
 
 `init [path] --template ...` creates targeted starter packages. `skill-only` is the default minimal skill package, `mcp-stdio` adds a local stdio MCP config and mock server, `mcp-http` scaffolds a streamable HTTP MCP config, and `full-runtime` generates a stdio sample that passes the runtime protocol probes.
 

@@ -79,37 +79,7 @@ function containsPipeInstaller(args: unknown): boolean {
   );
 }
 
-async function auditMcpCommandSurface(
-  discoveredPackage: DiscoveredPackage
-): Promise<Finding[]> {
-  const { manifest, rootPath } = discoveredPackage;
-
-  if (!manifest.mcpServers) {
-    return [];
-  }
-
-  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
-
-  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
-    return [];
-  }
-
-  let parsedConfig: unknown;
-
-  try {
-    parsedConfig = await readJsonFile<unknown>(mcpConfigPath);
-  } catch {
-    return [
-      buildFinding(
-        "fail",
-        "plugin.security.audit_unavailable",
-        "The MCP security audit could not parse the referenced MCP config.",
-        "Unreadable MCP configuration prevents review of server commands, URLs, and working directories before install.",
-        "Fix the `.mcp.json` syntax, then rerun `codex-plugin-doctor security <path>`."
-      )
-    ];
-  }
-
+export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): Finding[] {
   if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
     return [
       buildFinding(
@@ -202,6 +172,40 @@ async function auditMcpCommandSurface(
   return findings;
 }
 
+async function auditMcpCommandSurface(
+  discoveredPackage: DiscoveredPackage
+): Promise<Finding[]> {
+  const { manifest, rootPath } = discoveredPackage;
+
+  if (!manifest.mcpServers) {
+    return [];
+  }
+
+  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+    return [];
+  }
+
+  let parsedConfig: unknown;
+
+  try {
+    parsedConfig = await readJsonFile<unknown>(mcpConfigPath);
+  } catch {
+    return [
+      buildFinding(
+        "fail",
+        "plugin.security.audit_unavailable",
+        "The MCP security audit could not parse the referenced MCP config.",
+        "Unreadable MCP configuration prevents review of server commands, URLs, and working directories before install.",
+        "Fix the `.mcp.json` syntax, then rerun `codex-plugin-doctor security <path>`."
+      )
+    ];
+  }
+
+  return auditMcpServerConfig(rootPath, parsedConfig);
+}
+
 function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
 
@@ -232,6 +236,27 @@ function scoreSecurityAudit(findingCounts: SecurityAudit["findingCounts"]): numb
   return Math.max(0, 100 - (findingCounts.fail * 35) - (findingCounts.warn * 10));
 }
 
+export function buildSecurityAuditFromFindings(
+  targetPath: string,
+  findings: Finding[]
+): SecurityAudit {
+  const dedupedFindings = dedupeFindings(findings);
+  const findingCounts = buildFindingCounts(dedupedFindings);
+  const status = findingCounts.fail > 0
+    ? "fail"
+    : findingCounts.warn > 0
+      ? "warn"
+      : "pass";
+
+  return {
+    targetPath: path.resolve(targetPath),
+    status,
+    score: scoreSecurityAudit(findingCounts),
+    findingCounts,
+    findings: dedupedFindings
+  };
+}
+
 export async function buildSecurityAudit(targetPath: string): Promise<SecurityAudit> {
   const discoveredPackage = await discoverPackage(targetPath);
 
@@ -260,24 +285,12 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
   const validationSecurityFindings = validationResult.findings.filter((finding) =>
     finding.id.startsWith("plugin.security.")
   );
-  const findings = dedupeFindings([
+  const findings = [
     ...validationSecurityFindings,
     ...(await auditMcpCommandSurface(discoveredPackage))
-  ]);
-  const findingCounts = buildFindingCounts(findings);
-  const status = findingCounts.fail > 0
-    ? "fail"
-    : findingCounts.warn > 0
-      ? "warn"
-      : "pass";
+  ];
 
-  return {
-    targetPath: discoveredPackage.rootPath,
-    status,
-    score: scoreSecurityAudit(findingCounts),
-    findingCounts,
-    findings
-  };
+  return buildSecurityAuditFromFindings(discoveredPackage.rootPath, findings);
 }
 
 export function renderSecurityAuditJson(audit: SecurityAudit): string {

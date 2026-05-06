@@ -27,6 +27,12 @@ export {
   policyPackNames,
   type PolicyPackName
 } from "./policy/policy-packs.js";
+export {
+  buildGenericMcpDoctor,
+  renderGenericMcpDoctor,
+  renderGenericMcpDoctorJson,
+  type GenericMcpDoctorReport
+} from "./mcp/generic-mcp-doctor.js";
 
 export async function runCheck(
   targetPath: string,

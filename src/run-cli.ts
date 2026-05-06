@@ -73,6 +73,11 @@ import {
   isInitPluginTemplate
 } from "./core/init-plugin.js";
 import { runCheck } from "./index.js";
+import {
+  buildGenericMcpDoctor,
+  renderGenericMcpDoctor,
+  renderGenericMcpDoctorJson
+} from "./mcp/generic-mcp-doctor.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
 import { renderBadgeJson, renderBadgeMarkdown } from "./reporting/render-badge-report.js";
 import { renderCompatibilityScorecard } from "./reporting/render-compatibility-scorecard.js";
@@ -144,7 +149,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -636,6 +641,37 @@ export async function runCli(
     );
 
     return audit.status === "fail" ? 1 : 0;
+  }
+
+  if (command === "mcp") {
+    if (!maybePath || maybePath.startsWith("--")) {
+      io.writeStderr("Missing target path. Usage: codex-plugin-doctor mcp <path> [--json] [--output <path>]");
+      return 2;
+    }
+
+    const jsonOutput = remainingArgs.includes("--json");
+    const outputIndex = remainingArgs.indexOf("--output");
+    const outputPath = outputIndex === -1 ? null : remainingArgs[outputIndex + 1];
+
+    if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+      io.writeStderr("Missing path after --output.");
+      return 2;
+    }
+
+    const report = await buildGenericMcpDoctor(maybePath, {
+      env: terminalContext.env,
+      platform: terminalContext.platform
+    });
+    const renderedReport = jsonOutput
+      ? renderGenericMcpDoctorJson(report)
+      : renderGenericMcpDoctor(report);
+
+    if (outputPath) {
+      await writeFile(outputPath, renderedReport, "utf8");
+    }
+
+    io.writeStdout(renderedReport);
+    return report.exitCode;
   }
 
   if (command === "audit") {
