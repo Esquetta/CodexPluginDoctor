@@ -6,6 +6,12 @@ export {
   renderSecurityScorecard,
   type SecurityAudit
 } from "./security/security-audit.js";
+export {
+  buildDoctorSnapshot,
+  renderDoctorSnapshot,
+  renderDoctorSnapshotJson,
+  type DoctorSnapshot
+} from "./core/doctor-snapshot.js";
 
 export async function runCheck(
   targetPath: string,

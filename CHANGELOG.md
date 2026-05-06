@@ -10,6 +10,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 - added `security <path> [--json|--scorecard]` for a focused MCP command-surface security scorecard
 - added `npm run verify-release-sync` to confirm npm, git tags, GitHub Releases, and the latest release pointer after publishing
+- added `doctor snapshot [--json|--output <path>]` for redacted local diagnostics bundles
 
 ### Changed
 
