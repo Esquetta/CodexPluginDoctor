@@ -10,6 +10,11 @@ import {
   type InstalledPlugin
 } from "./core/discover-installed-plugins.js";
 import {
+  buildEcosystemAudit,
+  renderEcosystemAudit,
+  renderEcosystemAuditJson
+} from "./audit/ecosystem-audit.js";
+import {
   appendValidationHistoryEntry,
   readValidationHistory,
   summarizeValidationHistory
@@ -131,7 +136,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor security <path> [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -610,6 +615,63 @@ export async function runCli(
     );
 
     return audit.status === "fail" ? 1 : 0;
+  }
+
+  if (command === "audit") {
+    const auditFlags = maybePath ? [maybePath, ...remainingArgs] : remainingArgs;
+    const installed = auditFlags.includes("--installed");
+
+    if (!installed) {
+      io.writeStderr(
+        "Usage: codex-plugin-doctor audit --installed [filter] [--security] [--compat] [--json] [--output <path>]"
+      );
+      return 2;
+    }
+
+    const installedIndex = auditFlags.indexOf("--installed");
+    const installedFilter =
+      auditFlags[installedIndex + 1] && !auditFlags[installedIndex + 1].startsWith("--")
+        ? auditFlags[installedIndex + 1]
+        : null;
+    const jsonOutput = auditFlags.includes("--json");
+    const includeSecurity = auditFlags.includes("--security");
+    const includeCompatibility = auditFlags.includes("--compat");
+    const outputIndex = auditFlags.indexOf("--output");
+    const outputPath = outputIndex === -1 ? null : auditFlags[outputIndex + 1];
+
+    if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+      io.writeStderr("Missing path after --output.");
+      return 2;
+    }
+
+    const report = await buildEcosystemAudit({
+      env: terminalContext.env,
+      platform: terminalContext.platform,
+      filter: installedFilter,
+      includeSecurity,
+      includeCompatibility,
+      validatePlugin: options.runCheckImpl ?? runCheck
+    });
+
+    if (report.summary.totalPlugins === 0) {
+      io.writeStderr(
+        installedFilter
+          ? `No installed Codex plugins matched '${installedFilter}'.`
+          : "No installed Codex plugins found."
+      );
+      return 1;
+    }
+
+    const renderedReport = jsonOutput
+      ? renderEcosystemAuditJson(report)
+      : renderEcosystemAudit(report);
+
+    if (outputPath) {
+      await writeFile(outputPath, renderedReport, "utf8");
+    }
+
+    io.writeStdout(renderedReport);
+    return report.status === "fail" ? 1 : 0;
   }
 
   if (command === "compat") {

@@ -98,6 +98,7 @@ codex-plugin-doctor list --installed
 codex-plugin-doctor check --installed
 codex-plugin-doctor check --installed --all-summary
 codex-plugin-doctor check --installed --compat --all-summary
+codex-plugin-doctor audit --installed --security --compat
 codex-plugin-doctor check --installed github
 codex-plugin-doctor explain plugin.manifest.missing
 ```
@@ -178,6 +179,9 @@ codex-plugin-doctor doctor snapshot --json
 codex-plugin-doctor doctor snapshot --output doctor-snapshot.json
 codex-plugin-doctor doctor clients
 codex-plugin-doctor doctor --update-check
+codex-plugin-doctor audit --installed
+codex-plugin-doctor audit --installed --security --compat
+codex-plugin-doctor audit --installed --security --compat --json --output local-audit.json
 codex-plugin-doctor init my-plugin
 codex-plugin-doctor init my-mcp --template mcp-stdio
 codex-plugin-doctor init remote-mcp --template mcp-http
@@ -228,6 +232,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
 `doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility. The text output also includes recommended next commands for self-test, installed plugin discovery, runtime checks, compatibility scoring, and CI setup. `doctor snapshot` creates a redacted diagnostics bundle with environment health, client config readiness, installed plugin metadata, and next commands. Add `--json` for machine-readable output or `--output doctor-snapshot.json` to write the bundle to disk. `doctor clients` reports local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness. `doctor --update-check` compares the installed CLI version with the latest npm version and prints the upgrade command when a newer release is available.
+
+`audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report.
 
 `init [path] --template ...` creates targeted starter packages. `skill-only` is the default minimal skill package, `mcp-stdio` adds a local stdio MCP config and mock server, `mcp-http` scaffolds a streamable HTTP MCP config, and `full-runtime` generates a stdio sample that passes the runtime protocol probes.
 

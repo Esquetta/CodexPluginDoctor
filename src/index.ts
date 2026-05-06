@@ -12,6 +12,12 @@ export {
   renderDoctorSnapshotJson,
   type DoctorSnapshot
 } from "./core/doctor-snapshot.js";
+export {
+  buildEcosystemAudit,
+  renderEcosystemAudit,
+  renderEcosystemAuditJson,
+  type EcosystemAuditReport
+} from "./audit/ecosystem-audit.js";
 
 export async function runCheck(
   targetPath: string,
