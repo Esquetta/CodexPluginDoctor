@@ -14,6 +14,7 @@ The package now includes:
 - `prepublishOnly` validation guard
 - repository, bugs, and homepage metadata
 - `prepare-release` script for local release dry runs
+- `verify-release-sync` script for post-publish npm/tag/GitHub Release checks
 - normalized `bin` entrypoint for npm publication
 - public npm package `codex-plugin-doctor`
 
@@ -26,8 +27,9 @@ The package now includes:
 5. Confirm MIT license for public distribution.
 6. Confirm package version bump.
 7. Publish with `npm publish --access public`.
-8. Verify `npm view codex-plugin-doctor version`.
-9. Verify a global-style install from npm.
+8. Create or confirm the matching GitHub release.
+9. Run `npm run verify-release-sync`.
+10. Verify a global-style install from npm.
 
 ## Pre-Publish Checks
 
@@ -36,6 +38,16 @@ The package now includes:
 - verify CLI smoke checks on built files
 - verify package name availability on npm for first publication
 - verify `npm publish --dry-run --access public` has no package metadata corrections
+
+## Post-Publish Sync Gate
+
+Run this after `npm publish` and GitHub release creation:
+
+```bash
+npm run verify-release-sync
+```
+
+The sync gate fails if the npm latest version, remote git tag, GitHub release tag, or GitHub latest release pointer do not match `package.json`.
 
 ## Notes
 

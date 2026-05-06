@@ -40,6 +40,7 @@ Use a major release when:
 4. Create git tag `vX.Y.Z`.
 5. Create a GitHub release using `.github/release-template.md`.
 6. Publish only after license and package visibility decisions are confirmed.
+7. Run `npm run verify-release-sync` after npm publish and GitHub release creation.
 
 ## Current Publish Position
 
@@ -55,6 +56,7 @@ Confirmed:
 - repository visibility is public
 - `codex-plugin-doctor@0.1.1` is published on npm
 - `v0.1.1` is the current GitHub Release
+- post-publish release sync can be verified with `npm run verify-release-sync`
 
 Still manual:
 

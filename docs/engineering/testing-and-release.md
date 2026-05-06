@@ -55,6 +55,7 @@ Every change should run:
 3. Build distributable CLI artifacts.
 4. Publish package version.
 5. Publish release notes with rule changes and breaking behavior.
+6. Run `npm run verify-release-sync` to confirm npm, git tag, GitHub release, and latest release alignment.
 
 ## Versioning Policy
 
@@ -69,4 +70,3 @@ Use semantic versioning.
 - every rule has a documented identifier
 - every CLI flag has at least one example
 - every release notes document highlights new blocking rules
-

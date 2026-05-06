@@ -9,6 +9,11 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added `security <path> [--json|--scorecard]` for a focused MCP command-surface security scorecard
+- added `npm run verify-release-sync` to confirm npm, git tags, GitHub Releases, and the latest release pointer after publishing
+
+### Changed
+
+- updated GitHub Actions workflows to `actions/checkout@v5`, `actions/setup-node@v5`, and `actions/upload-artifact@v5`
 
 ## [0.10.1] - 2026-05-05
 
