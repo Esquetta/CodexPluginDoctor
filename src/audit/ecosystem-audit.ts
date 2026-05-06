@@ -12,6 +12,7 @@ export interface EcosystemAuditOptions {
   filter?: string | null;
   includeSecurity?: boolean;
   includeCompatibility?: boolean;
+  failOnWarnings?: boolean;
   validatePlugin: (targetPath: string) => Promise<CheckResult>;
 }
 
@@ -123,11 +124,14 @@ export async function buildEcosystemAudit(
     const compatibility = options.includeCompatibility
       ? await buildCompatibilityMatrix(plugin.rootPath, environment)
       : undefined;
-    const status = mergeStatus([
+    const rawStatus = mergeStatus([
       validation.status,
       security?.status ?? "pass",
       compatibilityStatus(compatibility)
     ]);
+    const status = options.failOnWarnings && rawStatus === "warn"
+      ? "fail"
+      : rawStatus;
 
     plugins.push({
       plugin,

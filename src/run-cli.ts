@@ -83,6 +83,14 @@ import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
+import {
+  applyPolicyToDoctorConfig,
+  applyPolicyToSecurityAudit,
+  parsePolicyPack,
+  policyEnablesRuntime,
+  policyFailsOnWarnings,
+  policyPackNames
+} from "./policy/policy-packs.js";
 import { findRuleDefinition } from "./rules/rule-catalog.js";
 import {
   buildSecurityAudit,
@@ -136,7 +144,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -600,13 +608,26 @@ export async function runCli(
 
     const jsonOutput = remainingArgs.includes("--json");
     const scorecardOutput = remainingArgs.includes("--scorecard");
+    const policyIndex = remainingArgs.indexOf("--policy");
+    const policyName = policyIndex === -1 ? null : remainingArgs[policyIndex + 1];
+    const policy = parsePolicyPack(policyName);
 
     if (jsonOutput && scorecardOutput) {
       io.writeStderr("Use either --json or --scorecard, not both.");
       return 2;
     }
 
-    const audit = await buildSecurityAudit(maybePath);
+    if (policyIndex !== -1 && (!policyName || policyName.startsWith("--"))) {
+      io.writeStderr("Missing policy after --policy.");
+      return 2;
+    }
+
+    if (policyIndex !== -1 && !policy) {
+      io.writeStderr(`Unknown policy: ${policyName}. Supported policies: ${policyPackNames.join(", ")}.`);
+      return 2;
+    }
+
+    const audit = applyPolicyToSecurityAudit(await buildSecurityAudit(maybePath), policy);
 
     io.writeStdout(
       jsonOutput
@@ -638,9 +659,22 @@ export async function runCli(
     const includeCompatibility = auditFlags.includes("--compat");
     const outputIndex = auditFlags.indexOf("--output");
     const outputPath = outputIndex === -1 ? null : auditFlags[outputIndex + 1];
+    const policyIndex = auditFlags.indexOf("--policy");
+    const policyName = policyIndex === -1 ? null : auditFlags[policyIndex + 1];
+    const policy = parsePolicyPack(policyName);
 
     if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
       io.writeStderr("Missing path after --output.");
+      return 2;
+    }
+
+    if (policyIndex !== -1 && (!policyName || policyName.startsWith("--"))) {
+      io.writeStderr("Missing policy after --policy.");
+      return 2;
+    }
+
+    if (policyIndex !== -1 && !policy) {
+      io.writeStderr(`Unknown policy: ${policyName}. Supported policies: ${policyPackNames.join(", ")}.`);
       return 2;
     }
 
@@ -650,6 +684,7 @@ export async function runCli(
       filter: installedFilter,
       includeSecurity,
       includeCompatibility,
+      failOnWarnings: policyFailsOnWarnings(policy),
       validatePlugin: options.runCheckImpl ?? runCheck
     });
 
@@ -853,6 +888,9 @@ export async function runCli(
   const profileIndex = normalizedFlags.indexOf("--profile");
   const profileName = profileIndex === -1 ? null : normalizedFlags[profileIndex + 1];
   const checkProfile = parseCheckProfile(profileName);
+  const policyIndex = normalizedFlags.indexOf("--policy");
+  const policyName = policyIndex === -1 ? null : normalizedFlags[policyIndex + 1];
+  const policy = parsePolicyPack(policyName);
   const historyIndex = normalizedFlags.indexOf("--history");
   const historyPath = historyIndex === -1 ? null : normalizedFlags[historyIndex + 1];
 
@@ -876,6 +914,16 @@ export async function runCli(
     return 2;
   }
 
+  if (policyIndex !== -1 && (!policyName || policyName.startsWith("--"))) {
+    io.writeStderr("Missing policy after --policy.");
+    return 2;
+  }
+
+  if (policyIndex !== -1 && !policy) {
+    io.writeStderr(`Unknown policy: ${policyName}. Supported policies: ${policyPackNames.join(", ")}.`);
+    return 2;
+  }
+
   if (historyIndex !== -1 && (!historyPath || historyPath.startsWith("--"))) {
     io.writeStderr("Missing path after --history.");
     return 2;
@@ -891,7 +939,10 @@ export async function runCli(
     return 2;
   }
 
-  const effectiveRuntimeProbeEnabled = runtimeProbeEnabled || checkProfile === "publish";
+  const effectiveRuntimeProbeEnabled =
+    runtimeProbeEnabled ||
+    checkProfile === "publish" ||
+    policyEnablesRuntime(policy);
 
   const outputPolicy = determineOutputPolicy({
     jsonOutput: jsonOutput || badgeJsonOutput,
@@ -942,7 +993,7 @@ export async function runCli(
                 ? (line) => io.writeStderr(line)
                 : undefined
           }),
-          applyCheckProfile(config, checkProfile)
+          applyPolicyToDoctorConfig(applyCheckProfile(config, checkProfile), policy)
         ),
         compatibilityMatrix
       });
@@ -996,7 +1047,10 @@ export async function runCli(
           ? (line) => io.writeStderr(line)
           : undefined
     }),
-    applyCheckProfile(await loadDoctorConfig(targetPath, configPath), checkProfile)
+    applyPolicyToDoctorConfig(
+      applyCheckProfile(await loadDoctorConfig(targetPath, configPath), checkProfile),
+      policy
+    )
   );
   if (renderer) {
     if (result.status === "fail") {

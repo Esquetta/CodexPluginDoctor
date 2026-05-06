@@ -18,6 +18,15 @@ export {
   renderEcosystemAuditJson,
   type EcosystemAuditReport
 } from "./audit/ecosystem-audit.js";
+export {
+  applyPolicyToDoctorConfig,
+  applyPolicyToSecurityAudit,
+  parsePolicyPack,
+  policyEnablesRuntime,
+  policyFailsOnWarnings,
+  policyPackNames,
+  type PolicyPackName
+} from "./policy/policy-packs.js";
 
 export async function runCheck(
   targetPath: string,

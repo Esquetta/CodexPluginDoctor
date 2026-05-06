@@ -9,6 +9,7 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added `audit --installed [--security] [--compat]` for local ecosystem audits across installed Codex plugins
+- added `--policy codex-publish|mcp-strict|security` for opinionated release, MCP, and security gates
 
 ## [0.11.0] - 2026-05-06
 
