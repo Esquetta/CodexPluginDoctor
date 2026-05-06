@@ -45,6 +45,12 @@ codex-plugin-doctor explain plugin.manifest.missing
 | --- | --- | --- |
 | `plugin.security.path_traversal` | fail | Manifest path escapes the plugin package root. |
 | `plugin.security.hard_coded_secret` | fail | MCP server env config contains a literal secret-like value. |
+| `plugin.security.audit_unavailable` | fail | Security audit cannot inspect the package or MCP config surface. |
+| `plugin.security.command_shell_wrapper` | warn | MCP server starts through a shell wrapper such as `powershell`, `cmd`, `bash`, or `sh`. |
+| `plugin.security.encoded_command` | fail | MCP server uses an encoded shell command payload. |
+| `plugin.security.remote_pipe_install` | fail | MCP server appears to pipe remote content into a shell. |
+| `plugin.security.cwd_outside_root` | fail | MCP server `cwd` resolves outside the plugin package root. |
+| `plugin.security.insecure_http_url` | warn | MCP server uses a plain HTTP URL. |
 
 ## Runtime Rules
 

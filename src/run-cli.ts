@@ -74,6 +74,11 @@ import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
 import { findRuleDefinition } from "./rules/rule-catalog.js";
+import {
+  buildSecurityAudit,
+  renderSecurityAuditJson,
+  renderSecurityScorecard
+} from "./security/security-audit.js";
 import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
 import { determineOutputPolicy } from "./terminal/output-policy.js";
 import { getSpinner } from "./terminal/spinner-registry.js";
@@ -121,7 +126,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor security <path> [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -550,6 +555,31 @@ export async function runCli(
         : renderApplyFixResult(result)
     );
     return 0;
+  }
+
+  if (command === "security") {
+    if (!maybePath || maybePath.startsWith("--")) {
+      io.writeStderr("Missing target path. Usage: codex-plugin-doctor security <path> [--json|--scorecard]");
+      return 2;
+    }
+
+    const jsonOutput = remainingArgs.includes("--json");
+    const scorecardOutput = remainingArgs.includes("--scorecard");
+
+    if (jsonOutput && scorecardOutput) {
+      io.writeStderr("Use either --json or --scorecard, not both.");
+      return 2;
+    }
+
+    const audit = await buildSecurityAudit(maybePath);
+
+    io.writeStdout(
+      jsonOutput
+        ? renderSecurityAuditJson(audit)
+        : renderSecurityScorecard(audit, { includeFindings: !scorecardOutput })
+    );
+
+    return audit.status === "fail" ? 1 : 0;
   }
 
   if (command === "compat") {

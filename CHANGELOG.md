@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `security <path> [--json|--scorecard]` for a focused MCP command-surface security scorecard
+
 ## [0.10.1] - 2026-05-05
 
 Patch release for safe-fix path hardening.

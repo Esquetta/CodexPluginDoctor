@@ -175,6 +175,60 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "env": { "OPENAI_API_KEY": "${OPENAI_API_KEY}" } }'
   },
   {
+    id: "plugin.security.audit_unavailable",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "The security audit could not inspect the package surface.",
+    why: "A missing manifest or unreadable MCP configuration prevents the tool from evaluating package-local execution risks.",
+    fix: "Run against a valid Codex plugin root and fix `.mcp.json` syntax or shape errors before auditing.",
+    example: "codex-plugin-doctor security examples/codex-doctor-runtime"
+  },
+  {
+    id: "plugin.security.command_shell_wrapper",
+    category: "security",
+    defaultSeverity: "warn",
+    summary: "An MCP server starts through a shell wrapper.",
+    why: "Shell wrappers can hide quoting, pipes, aliases, and platform-specific execution behavior from reviewers.",
+    fix: "Launch the concrete executable directly with explicit args.",
+    example: '{ "command": "node", "args": ["server.js"] }'
+  },
+  {
+    id: "plugin.security.encoded_command",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server uses an encoded shell command.",
+    why: "Encoded payloads hide the executed script and make supply-chain review unreliable.",
+    fix: "Replace encoded command payloads with a checked-in script or direct executable plus readable args.",
+    example: '{ "command": "node", "args": ["scripts/server.js"] }'
+  },
+  {
+    id: "plugin.security.remote_pipe_install",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server pipes remote content into a shell.",
+    why: "Download-and-execute startup patterns can run unreviewed remote code as soon as a client starts the server.",
+    fix: "Pin dependencies through a package manager or check in a reviewed setup script.",
+    example: '{ "command": "npx", "args": ["-y", "@scope/server"] }'
+  },
+  {
+    id: "plugin.security.cwd_outside_root",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server sets `cwd` outside the plugin root.",
+    why: "External working directories make startup depend on local files that are not part of the reviewed package.",
+    fix: "Keep `cwd` inside the plugin root or remove it.",
+    example: '{ "cwd": "." }'
+  },
+  {
+    id: "plugin.security.insecure_http_url",
+    category: "security",
+    defaultSeverity: "warn",
+    summary: "An MCP server uses a plain HTTP URL.",
+    why: "Plain HTTP can expose MCP traffic and does not verify endpoint identity on non-local networks.",
+    fix: "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
     id: "plugin.runtime.exited_early",
     category: "runtime",
     defaultSeverity: "fail",
