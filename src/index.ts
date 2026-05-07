@@ -37,8 +37,19 @@ export {
   buildDoctorRecommendationsFromAnalysis,
   buildPackageAnalysis,
   type PackageAnalysis,
-  type PackageAnalysisOptions
+  type PackageAnalysisOptions,
+  type PackageAnalysisStage,
+  type PackageAnalysisTiming
 } from "./core/package-analysis.js";
+export {
+  buildDoctorPerformanceReport,
+  renderDoctorPerformanceReport,
+  renderDoctorPerformanceReportJson,
+  type BuildDoctorPerformanceReportOptions,
+  type DoctorPerformanceReport,
+  type DoctorPerformanceStage,
+  type DoctorPerformanceStageName
+} from "./core/performance-report.js";
 export {
   buildEcosystemAudit,
   renderEcosystemAudit,

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 
 import {
   buildCompatibilityMatrix,
@@ -46,8 +47,21 @@ export interface PackageAnalysis {
   trust: TrustScoreReport;
 }
 
+export type PackageAnalysisStage =
+  | "validation"
+  | "doctorConfig"
+  | "security"
+  | "compatibility"
+  | "trust";
+
+export interface PackageAnalysisTiming {
+  stage: PackageAnalysisStage;
+  durationMs: number;
+}
+
 export interface PackageAnalysisOptions {
   environment?: CompatibilityEnvironment;
+  recordTiming?: (timing: PackageAnalysisTiming) => void;
   runCheck?: (targetPath: string) => Promise<CheckResult>;
 }
 
@@ -152,6 +166,23 @@ function sortActions(actions: DoctorRecommendationAction[]): DoctorRecommendatio
   });
 }
 
+async function measureStage<T>(
+  stage: PackageAnalysisStage,
+  operation: () => Promise<T>,
+  recordTiming?: (timing: PackageAnalysisTiming) => void
+): Promise<T> {
+  const startedAt = performance.now();
+
+  try {
+    return await operation();
+  } finally {
+    recordTiming?.({
+      stage,
+      durationMs: performance.now() - startedAt
+    });
+  }
+}
+
 export async function buildPackageAnalysis(
   targetPath: string,
   options: PackageAnalysisOptions = {}
@@ -159,13 +190,17 @@ export async function buildPackageAnalysis(
   const rootPath = path.resolve(targetPath);
   const runCheck = options.runCheck ?? validatePlugin;
   const [rawValidation, doctorConfig, security, compatibility] = await Promise.all([
-    runCheck(rootPath),
-    loadDoctorConfig(rootPath),
-    buildSecurityAudit(rootPath),
-    buildCompatibilityMatrix(rootPath, options.environment ?? {})
+    measureStage("validation", () => runCheck(rootPath), options.recordTiming),
+    measureStage("doctorConfig", () => loadDoctorConfig(rootPath), options.recordTiming),
+    measureStage("security", () => buildSecurityAudit(rootPath), options.recordTiming),
+    measureStage("compatibility", () => buildCompatibilityMatrix(rootPath, options.environment ?? {}), options.recordTiming)
   ]);
   const validation = applyDoctorConfig(rawValidation, doctorConfig);
-  const trust = await buildTrustScore(rootPath, { securityAudit: security });
+  const trust = await measureStage(
+    "trust",
+    () => buildTrustScore(rootPath, { securityAudit: security }),
+    options.recordTiming
+  );
 
   return {
     generatedAt: new Date().toISOString(),
