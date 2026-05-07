@@ -1,32 +1,16 @@
-import path from "node:path";
-
-import {
-  buildCompatibilityMatrix,
-  type CompatibilityEnvironment,
-  type CompatibilityMatrix
+import type {
+  CompatibilityEnvironment,
+  CompatibilityMatrix
 } from "../compatibility/compatibility-matrix.js";
-import {
-  applyDoctorConfig,
-  loadDoctorConfig
-} from "./doctor-config.js";
-import {
-  buildJsonReport
-} from "../reporting/render-json-report.js";
 import type { JsonReport } from "../domain/types.js";
+import type { DoctorRecommendationsReport } from "./doctor-recommendations.js";
+import type { SecurityAudit } from "../security/security-audit.js";
+import type { TrustScoreReport } from "../security/trust-score.js";
 import {
-  buildDoctorRecommendations,
-  type DoctorRecommendationsReport
-} from "./doctor-recommendations.js";
-import {
-  buildSecurityAudit,
-  type SecurityAudit
-} from "../security/security-audit.js";
-import {
-  buildTrustScore,
-  type TrustScoreReport
-} from "../security/trust-score.js";
-import { validatePlugin } from "./validate-plugin.js";
-import { packageVersion } from "../version.js";
+  buildDoctorExportBundleFromAnalysis,
+  buildDoctorRecommendationsFromAnalysis,
+  buildPackageAnalysis
+} from "./package-analysis.js";
 
 export interface DoctorExportBundle {
   schemaVersion: "1.0.0";
@@ -74,28 +58,12 @@ export async function buildDoctorExportBundle(
   targetPath: string,
   environment: CompatibilityEnvironment = {}
 ): Promise<DoctorExportBundle> {
-  const rootPath = path.resolve(targetPath);
-  const [rawValidation, security, compatibility, recommendations, trust] = await Promise.all([
-    validatePlugin(rootPath),
-    buildSecurityAudit(rootPath),
-    buildCompatibilityMatrix(rootPath, environment),
-    buildDoctorRecommendations(rootPath, { environment }),
-    buildTrustScore(rootPath)
-  ]);
-  const validation = applyDoctorConfig(rawValidation, await loadDoctorConfig(rootPath));
+  const analysis = await buildPackageAnalysis(targetPath, { environment });
 
-  return {
-    schemaVersion: "1.0.0",
-    generatedAt: new Date().toISOString(),
-    kind: "doctor.export.bundle",
-    version: packageVersion,
-    targetPath: rootPath,
-    validation: buildJsonReport(validation, { runtimeProbeEnabled: false }),
-    security,
-    compatibility,
-    recommendations,
-    trust
-  };
+  return buildDoctorExportBundleFromAnalysis(
+    analysis,
+    buildDoctorRecommendationsFromAnalysis(analysis)
+  );
 }
 
 export function renderDoctorExportBundleJson(bundle: DoctorExportBundle): string {

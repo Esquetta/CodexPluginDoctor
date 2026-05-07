@@ -10,6 +10,7 @@ export {
   buildTrustScore,
   renderTrustScore,
   renderTrustScoreJson,
+  type BuildTrustScoreOptions,
   type TrustScoreReport
 } from "./security/trust-score.js";
 export {
@@ -31,6 +32,13 @@ export {
   renderDoctorExportBundleJson,
   type DoctorExportBundle
 } from "./core/doctor-export-bundle.js";
+export {
+  buildDoctorExportBundleFromAnalysis,
+  buildDoctorRecommendationsFromAnalysis,
+  buildPackageAnalysis,
+  type PackageAnalysis,
+  type PackageAnalysisOptions
+} from "./core/package-analysis.js";
 export {
   buildEcosystemAudit,
   renderEcosystemAudit,

@@ -4,7 +4,10 @@ import path from "node:path";
 import { discoverPackage } from "../core/discover-package.js";
 import { parseJsonText } from "../core/read-json-file.js";
 import type { Finding } from "../domain/types.js";
-import { buildSecurityAudit } from "./security-audit.js";
+import {
+  buildSecurityAudit,
+  type SecurityAudit
+} from "./security-audit.js";
 
 export interface TrustScoreReport {
   schemaVersion: "1.0.0";
@@ -24,6 +27,10 @@ export interface TrustScoreReport {
     dependenciesChecked: number;
   };
   findings: Finding[];
+}
+
+export interface BuildTrustScoreOptions {
+  securityAudit?: SecurityAudit | null;
 }
 
 const lifecycleScripts = new Set([
@@ -212,7 +219,10 @@ function scoreFindings(findings: Finding[]): number {
   return Math.max(0, 100 - (failCount * 35) - (warnCount * 10));
 }
 
-export async function buildTrustScore(targetPath: string): Promise<TrustScoreReport> {
+export async function buildTrustScore(
+  targetPath: string,
+  options: BuildTrustScoreOptions = {}
+): Promise<TrustScoreReport> {
   const rootPath = path.resolve(targetPath);
   const packageJson = await readPackageJson(rootPath);
   const scriptAudit = packageJson
@@ -221,10 +231,11 @@ export async function buildTrustScore(targetPath: string): Promise<TrustScoreRep
   const dependencyAudit = packageJson
     ? auditDependencies(packageJson)
     : { findings: [], dependenciesChecked: 0 };
-  const discoveredPackage = await discoverPackage(rootPath);
-  const securityAudit = discoveredPackage
-    ? await buildSecurityAudit(rootPath)
-    : null;
+  const securityAudit = options.securityAudit !== undefined
+    ? options.securityAudit
+    : await discoverPackage(rootPath)
+      ? await buildSecurityAudit(rootPath)
+      : null;
   const findings = dedupeFindings([
     ...scriptAudit.findings,
     ...dependencyAudit.findings,
