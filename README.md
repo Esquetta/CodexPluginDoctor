@@ -192,6 +192,8 @@ codex-plugin-doctor doctor --update-check
 codex-plugin-doctor audit --installed
 codex-plugin-doctor audit --installed --security --compat
 codex-plugin-doctor audit --installed --security --compat --json --output local-audit.json
+codex-plugin-doctor audit --installed --security --compat --cache
+codex-plugin-doctor audit --installed --changed --cache
 codex-plugin-doctor mcp .
 codex-plugin-doctor mcp . --json
 codex-plugin-doctor mcp . --json --output mcp-doctor.json
@@ -250,7 +252,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility. The text output also includes recommended next commands for self-test, installed plugin discovery, runtime checks, compatibility scoring, and CI setup. `doctor recommend <path>` turns validation, security, and compatibility signals into a prioritized action plan with blocker, high, medium, and info actions. Add `--json` for automation or `--output recommendations.json` to write the report to disk. `doctor trust <path>` creates a local trust score from package lifecycle scripts, dependency specs, and MCP security findings. Use it before release when you want supply-chain risks summarized as one score. `doctor perf <path>` profiles the shared package analysis pipeline and reports per-stage durations for validation, config, security, compatibility, trust, recommendations, and total runtime. `doctor export --bundle <path>` creates a redacted operator handoff bundle that includes validation JSON, security scorecard data, compatibility matrix, recommendations, and trust score in one file. `doctor snapshot` creates a redacted diagnostics bundle with environment health, client config readiness, installed plugin metadata, and next commands. Add `--json` for machine-readable output or `--output doctor-snapshot.json` to write the bundle to disk. `doctor clients` reports local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness. `doctor --update-check` compares the installed CLI version with the latest npm version and prints the upgrade command when a newer release is available.
 
-`audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report.
+`audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report. Add `--cache` to reuse unchanged plugin results between runs; add `--changed` to only report plugins whose fingerprint changed since the last cached audit. Use `--cache-file path/to/audit-cache.json` when CI or scripted runs need an explicit cache location.
 
 `--policy codex-publish|mcp-strict|security` applies opinionated gates without requiring a local `.codex-doctor.json`. `codex-publish` fails warnings and enables runtime probes for release checks, `mcp-strict` does the same for MCP-heavy packages, and `security` fails warning-level security findings so advisory risks can block a local audit or CI gate.
 

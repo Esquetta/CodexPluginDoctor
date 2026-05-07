@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { CompatibilityEnvironment, CompatibilityMatrix } from "../compatibility/compatibility-matrix.js";
 import { buildCompatibilityMatrix, matrixExitCode } from "../compatibility/compatibility-matrix.js";
 import type { InstalledPlugin } from "../core/discover-installed-plugins.js";
@@ -5,6 +7,14 @@ import { discoverInstalledPlugins, filterInstalledPlugins } from "../core/discov
 import type { CheckResult } from "../domain/types.js";
 import type { SecurityAudit } from "../security/security-audit.js";
 import { buildSecurityAudit } from "../security/security-audit.js";
+import { packageVersion } from "../version.js";
+import {
+  fingerprintInstalledPlugin,
+  loadEcosystemAuditCache,
+  resolveEcosystemAuditCachePath,
+  writeEcosystemAuditCache,
+  type EcosystemAuditCacheFile
+} from "./ecosystem-audit-cache.js";
 
 export interface EcosystemAuditOptions {
   env?: Record<string, string | undefined>;
@@ -13,6 +23,11 @@ export interface EcosystemAuditOptions {
   includeSecurity?: boolean;
   includeCompatibility?: boolean;
   failOnWarnings?: boolean;
+  cache?: {
+    enabled?: boolean;
+    changedOnly?: boolean;
+    cachePath?: string | null;
+  };
   validatePlugin: (targetPath: string) => Promise<CheckResult>;
 }
 
@@ -20,6 +35,7 @@ export interface EcosystemAuditPluginResult {
   plugin: InstalledPlugin;
   status: "pass" | "warn" | "fail";
   validation: CheckResult;
+  cached?: boolean;
   security?: SecurityAudit;
   compatibility?: CompatibilityMatrix;
 }
@@ -33,6 +49,8 @@ export interface EcosystemAuditReport {
     pass: number;
     warn: number;
     fail: number;
+    cached: number;
+    skippedUnchanged: number;
   };
   plugins: EcosystemAuditPluginResult[];
   priorityActions: string[];
@@ -62,12 +80,27 @@ function compatibilityStatus(matrix: CompatibilityMatrix | undefined): "pass" | 
   return matrix.results.some((result) => result.status === "warn") ? "warn" : "pass";
 }
 
-function summarizePlugins(plugins: EcosystemAuditPluginResult[]): EcosystemAuditReport["summary"] {
+function cacheKeyForPlugin(plugin: InstalledPlugin, options: EcosystemAuditOptions): string {
+  return [
+    path.resolve(plugin.rootPath).toLowerCase(),
+    `version=${packageVersion}`,
+    `security=${Boolean(options.includeSecurity)}`,
+    `compatibility=${Boolean(options.includeCompatibility)}`,
+    `failOnWarnings=${Boolean(options.failOnWarnings)}`
+  ].join("\n");
+}
+
+function summarizePlugins(
+  plugins: EcosystemAuditPluginResult[],
+  skippedUnchanged: number
+): EcosystemAuditReport["summary"] {
   return {
     totalPlugins: plugins.length,
     pass: plugins.filter((plugin) => plugin.status === "pass").length,
     warn: plugins.filter((plugin) => plugin.status === "warn").length,
-    fail: plugins.filter((plugin) => plugin.status === "fail").length
+    fail: plugins.filter((plugin) => plugin.status === "fail").length,
+    cached: plugins.filter((plugin) => plugin.cached).length,
+    skippedUnchanged
   };
 }
 
@@ -115,8 +148,39 @@ export async function buildEcosystemAudit(
     platform: options.platform
   };
   const plugins: EcosystemAuditPluginResult[] = [];
+  const cacheEnabled = Boolean(options.cache?.enabled);
+  const changedOnly = Boolean(options.cache?.changedOnly);
+  const cachePath = cacheEnabled
+    ? resolveEcosystemAuditCachePath(options.env, options.cache?.cachePath)
+    : null;
+  const cache: EcosystemAuditCacheFile | null = cachePath
+    ? await loadEcosystemAuditCache(cachePath)
+    : null;
+  let skippedUnchanged = 0;
 
   for (const plugin of installedPlugins) {
+    const cacheKey = cacheKeyForPlugin(plugin, options);
+    const fingerprint = cache
+      ? await fingerprintInstalledPlugin(plugin)
+      : null;
+    const cachedEntry = cache && fingerprint
+      ? cache.entries[cacheKey]
+      : undefined;
+
+    if (cachedEntry && cachedEntry.fingerprint === fingerprint) {
+      if (changedOnly) {
+        skippedUnchanged += 1;
+        continue;
+      }
+
+      plugins.push({
+        ...cachedEntry.result,
+        plugin,
+        cached: true
+      });
+      continue;
+    }
+
     const validation = await options.validatePlugin(plugin.rootPath);
     const security = options.includeSecurity
       ? await buildSecurityAudit(plugin.rootPath)
@@ -133,16 +197,30 @@ export async function buildEcosystemAudit(
       ? "fail"
       : rawStatus;
 
-    plugins.push({
+    const result: EcosystemAuditPluginResult = {
       plugin,
       status,
       validation,
       ...(security ? { security } : {}),
       ...(compatibility ? { compatibility } : {})
-    });
+    };
+
+    plugins.push(result);
+
+    if (cache && fingerprint) {
+      cache.entries[cacheKey] = {
+        fingerprint,
+        cachedAt: new Date().toISOString(),
+        result
+      };
+    }
   }
 
-  const summary = summarizePlugins(plugins);
+  if (cache && cachePath) {
+    await writeEcosystemAuditCache(cachePath, cache);
+  }
+
+  const summary = summarizePlugins(plugins, skippedUnchanged);
   const status = summary.fail > 0
     ? "fail"
     : summary.warn > 0
@@ -169,7 +247,8 @@ export function renderEcosystemAudit(report: EcosystemAuditReport): string {
     "=====================",
     `Status: ${report.status.toUpperCase()}`,
     `Installed plugins: ${report.summary.totalPlugins}`,
-    `Summary: ${report.summary.fail} fail, ${report.summary.warn} warn, ${report.summary.pass} pass`
+    `Summary: ${report.summary.fail} fail, ${report.summary.warn} warn, ${report.summary.pass} pass`,
+    `Cache: ${report.summary.cached} reused, ${report.summary.skippedUnchanged} skipped unchanged`
   ];
 
   if (report.plugins.length === 0) {
@@ -193,7 +272,11 @@ export function renderEcosystemAudit(report: EcosystemAuditReport): string {
       const compatibilitySummary = item.compatibility.results
         .map((result) => `${result.client}=${result.status}`)
         .join(", ");
-      lines.push(`  Compatibility: ${compatibilitySummary}`);
+    lines.push(`  Compatibility: ${compatibilitySummary}`);
+    }
+
+    if (item.cached) {
+      lines.push("  Cache: reused");
     }
   }
 

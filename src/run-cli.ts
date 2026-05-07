@@ -169,7 +169,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [recommend <path>|trust <path>|perf <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [recommend <path>|trust <path>|perf <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -843,7 +843,7 @@ export async function runCli(
 
     if (!installed) {
       io.writeStderr(
-        "Usage: codex-plugin-doctor audit --installed [filter] [--security] [--compat] [--json] [--output <path>]"
+        "Usage: codex-plugin-doctor audit --installed [filter] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]"
       );
       return 2;
     }
@@ -861,6 +861,10 @@ export async function runCli(
     const policyIndex = auditFlags.indexOf("--policy");
     const policyName = policyIndex === -1 ? null : auditFlags[policyIndex + 1];
     const policy = parsePolicyPack(policyName);
+    const cacheEnabled = auditFlags.includes("--cache") || auditFlags.includes("--changed");
+    const changedOnly = auditFlags.includes("--changed");
+    const cacheFileIndex = auditFlags.indexOf("--cache-file");
+    const cachePath = cacheFileIndex === -1 ? null : auditFlags[cacheFileIndex + 1];
 
     if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
       io.writeStderr("Missing path after --output.");
@@ -869,6 +873,11 @@ export async function runCli(
 
     if (policyIndex !== -1 && (!policyName || policyName.startsWith("--"))) {
       io.writeStderr("Missing policy after --policy.");
+      return 2;
+    }
+
+    if (cacheFileIndex !== -1 && (!cachePath || cachePath.startsWith("--"))) {
+      io.writeStderr("Missing path after --cache-file.");
       return 2;
     }
 
@@ -884,10 +893,15 @@ export async function runCli(
       includeSecurity,
       includeCompatibility,
       failOnWarnings: policyFailsOnWarnings(policy),
+      cache: {
+        enabled: cacheEnabled,
+        changedOnly,
+        cachePath
+      },
       validatePlugin: options.runCheckImpl ?? runCheck
     });
 
-    if (report.summary.totalPlugins === 0) {
+    if (report.summary.totalPlugins === 0 && !changedOnly) {
       io.writeStderr(
         installedFilter
           ? `No installed Codex plugins matched '${installedFilter}'.`
