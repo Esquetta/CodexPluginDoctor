@@ -7,6 +7,12 @@ export {
   type SecurityAudit
 } from "./security/security-audit.js";
 export {
+  buildTrustScore,
+  renderTrustScore,
+  renderTrustScoreJson,
+  type TrustScoreReport
+} from "./security/trust-score.js";
+export {
   buildDoctorSnapshot,
   renderDoctorSnapshot,
   renderDoctorSnapshotJson,

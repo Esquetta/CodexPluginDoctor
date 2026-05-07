@@ -9,6 +9,7 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added `doctor recommend <path> [--json|--output]` for prioritized validation, security, and compatibility action plans
+- added `doctor trust <path> [--json|--output]` for local supply-chain and MCP security trust scoring
 
 ## [0.12.0] - 2026-05-06
 
