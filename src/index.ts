@@ -13,6 +13,13 @@ export {
   type DoctorSnapshot
 } from "./core/doctor-snapshot.js";
 export {
+  buildDoctorRecommendations,
+  renderDoctorRecommendations,
+  renderDoctorRecommendationsJson,
+  type DoctorRecommendationAction,
+  type DoctorRecommendationsReport
+} from "./core/doctor-recommendations.js";
+export {
   buildEcosystemAudit,
   renderEcosystemAudit,
   renderEcosystemAuditJson,

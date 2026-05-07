@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `doctor recommend <path> [--json|--output]` for prioritized validation, security, and compatibility action plans
+
 ## [0.12.0] - 2026-05-06
 
 ### Added

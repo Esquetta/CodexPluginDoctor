@@ -176,6 +176,8 @@ Run these from a Codex plugin package root:
 codex-plugin-doctor --version
 codex-plugin-doctor self-test
 codex-plugin-doctor doctor
+codex-plugin-doctor doctor recommend .
+codex-plugin-doctor doctor recommend . --json --output recommendations.json
 codex-plugin-doctor doctor snapshot
 codex-plugin-doctor doctor snapshot --json
 codex-plugin-doctor doctor snapshot --output doctor-snapshot.json
@@ -240,7 +242,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
-`doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility. The text output also includes recommended next commands for self-test, installed plugin discovery, runtime checks, compatibility scoring, and CI setup. `doctor snapshot` creates a redacted diagnostics bundle with environment health, client config readiness, installed plugin metadata, and next commands. Add `--json` for machine-readable output or `--output doctor-snapshot.json` to write the bundle to disk. `doctor clients` reports local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness. `doctor --update-check` compares the installed CLI version with the latest npm version and prints the upgrade command when a newer release is available.
+`doctor` checks the local environment, including package version, platform, Node version, npm global prefix, Codex home, and Codex plugin cache visibility. The text output also includes recommended next commands for self-test, installed plugin discovery, runtime checks, compatibility scoring, and CI setup. `doctor recommend <path>` turns validation, security, and compatibility signals into a prioritized action plan with blocker, high, medium, and info actions. Add `--json` for automation or `--output recommendations.json` to write the report to disk. `doctor snapshot` creates a redacted diagnostics bundle with environment health, client config readiness, installed plugin metadata, and next commands. Add `--json` for machine-readable output or `--output doctor-snapshot.json` to write the bundle to disk. `doctor clients` reports local Codex, Claude Desktop, Cursor, Cline, and Windsurf config readiness. `doctor --update-check` compares the installed CLI version with the latest npm version and prints the upgrade command when a newer release is available.
 
 `audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report.
 
