@@ -60,6 +60,11 @@ import {
   renderDoctorRecommendationsJson
 } from "./core/doctor-recommendations.js";
 import {
+  buildDoctorExportBundle,
+  renderDoctorExportBundle,
+  renderDoctorExportBundleJson
+} from "./core/doctor-export-bundle.js";
+import {
   applyFixPlan,
   buildFixPlan,
   renderApplyFixResult,
@@ -159,7 +164,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [recommend <path>|trust <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [recommend <path>|trust <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -415,6 +420,46 @@ export async function runCli(
 
       io.writeStdout(renderedReport);
       return report.exitCode;
+    }
+
+    if (maybePath === "export") {
+      const bundleIndex = remainingArgs.indexOf("--bundle");
+
+      if (bundleIndex === -1) {
+        io.writeStderr(
+          "Usage: codex-plugin-doctor doctor export --bundle <path> [--json] [--output <path>]"
+        );
+        return 2;
+      }
+
+      const targetPath = remainingArgs[bundleIndex + 1] && !remainingArgs[bundleIndex + 1].startsWith("--")
+        ? remainingArgs[bundleIndex + 1]
+        : ".";
+      const jsonOutput = remainingArgs.includes("--json");
+      const outputIndex = remainingArgs.indexOf("--output");
+      const outputPath = outputIndex === -1 ? null : remainingArgs[outputIndex + 1];
+
+      if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+        io.writeStderr("Missing path after --output.");
+        return 2;
+      }
+
+      const bundle = await buildDoctorExportBundle(targetPath, {
+        env: terminalContext.env,
+        platform: terminalContext.platform
+      });
+      const bundleJson = renderDoctorExportBundleJson(bundle);
+
+      if (outputPath) {
+        await writeFile(outputPath, bundleJson, "utf8");
+      }
+
+      io.writeStdout(
+        jsonOutput
+          ? bundleJson
+          : renderDoctorExportBundle(bundle, { outputPath })
+      );
+      return 0;
     }
 
     if (maybePath === "snapshot") {

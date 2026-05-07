@@ -26,6 +26,12 @@ export {
   type DoctorRecommendationsReport
 } from "./core/doctor-recommendations.js";
 export {
+  buildDoctorExportBundle,
+  renderDoctorExportBundle,
+  renderDoctorExportBundleJson,
+  type DoctorExportBundle
+} from "./core/doctor-export-bundle.js";
+export {
   buildEcosystemAudit,
   renderEcosystemAudit,
   renderEcosystemAuditJson,
