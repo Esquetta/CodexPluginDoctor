@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.14.0] - 2026-05-07
+
+### Added
+
+- added shared package analysis so recommendations, trust, export bundles, and future diagnostics can reuse validation, security, compatibility, and trust signals without redundant work
+- added `doctor perf <path> [--json|--output]` to profile validation, config, security, compatibility, trust, recommendations, and total analysis runtime
+- added `audit --installed --cache`, `--cache-file <path>`, and `--changed` to reuse unchanged installed-plugin audit results and report only changed plugin fingerprints
+
 ## [0.13.0] - 2026-05-07
 
 ### Added
