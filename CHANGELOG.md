@@ -4,7 +4,7 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
-## Unreleased
+## [0.13.0] - 2026-05-07
 
 ### Added
 
