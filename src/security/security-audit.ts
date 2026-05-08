@@ -1,3 +1,4 @@
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { discoverPackage } from "../core/discover-package.js";
@@ -78,6 +79,28 @@ function containsPipeInstaller(args: unknown): boolean {
     /\binvoke-expression\b/.test(joinedArgs)
   );
 }
+
+const poisonScanExtensions = new Set([
+  ".json",
+  ".md",
+  ".mdx",
+  ".txt",
+  ".yaml",
+  ".yml"
+]);
+
+const poisonScanSkippedDirectories = new Set([
+  ".git",
+  "coverage",
+  "dist",
+  "node_modules"
+]);
+
+const promptInjectionPatterns: RegExp[] = [
+  /\bignore\s+(?:all\s+)?(?:previous|prior|system|developer)\s+instructions?\b/i,
+  /\b(?:exfiltrate|steal|leak|upload|send)\b.{0,120}\b(?:secret|secrets|token|tokens|api\s*key|api\s*keys|credential|credentials|environment\s+variables?|env)\b/i,
+  /\bdo\s+not\s+(?:reveal|tell|mention|disclose)\b.{0,120}\b(?:instruction|instructions|prompt|prompts|system|developer)\b/i
+];
 
 export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): Finding[] {
   if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
@@ -167,6 +190,69 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
         )
       );
     }
+  }
+
+  return findings;
+}
+
+async function collectPromptPoisoningScanFiles(
+  rootPath: string,
+  currentPath = rootPath
+): Promise<string[]> {
+  const entries = await readdir(currentPath, { withFileTypes: true });
+  const filePaths: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = path.join(currentPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (poisonScanSkippedDirectories.has(entry.name)) {
+        continue;
+      }
+
+      filePaths.push(...(await collectPromptPoisoningScanFiles(rootPath, entryPath)));
+      continue;
+    }
+
+    if (!entry.isFile() || !poisonScanExtensions.has(path.extname(entry.name).toLowerCase())) {
+      continue;
+    }
+
+    const details = await stat(entryPath);
+
+    if (details.size <= 256 * 1024) {
+      filePaths.push(entryPath);
+    }
+  }
+
+  return filePaths;
+}
+
+function containsPromptInjectionText(content: string): boolean {
+  return promptInjectionPatterns.some((pattern) => pattern.test(content));
+}
+
+async function auditPromptPoisoningSurface(rootPath: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+
+  for (const filePath of await collectPromptPoisoningScanFiles(rootPath)) {
+    const content = await readFile(filePath, "utf8");
+
+    if (!containsPromptInjectionText(content)) {
+      continue;
+    }
+
+    const relativeFilePath = path.relative(rootPath, filePath).replace(/\\/g, "/");
+
+    findings.push(
+      buildFinding(
+        "fail",
+        "plugin.security.prompt_injection_text",
+        `The packaged text file \`${relativeFilePath}\` contains prompt-injection or secret-exfiltration style instructions.`,
+        "Malicious or poisoned tool, prompt, resource, or skill text can instruct an agent to ignore higher-priority instructions or leak secrets when loaded into context.",
+        "Remove hidden override or exfiltration instructions, then keep tool/prompt/resource descriptions scoped to the legitimate user-facing behavior."
+      )
+    );
   }
 
   return findings;
@@ -287,7 +373,8 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
   );
   const findings = [
     ...validationSecurityFindings,
-    ...(await auditMcpCommandSurface(discoveredPackage))
+    ...(await auditMcpCommandSurface(discoveredPackage)),
+    ...(await auditPromptPoisoningSurface(discoveredPackage.rootPath))
   ];
 
   return buildSecurityAuditFromFindings(discoveredPackage.rootPath, findings);

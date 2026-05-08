@@ -51,6 +51,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.security.remote_pipe_install` | fail | MCP server appears to pipe remote content into a shell. |
 | `plugin.security.cwd_outside_root` | fail | MCP server `cwd` resolves outside the plugin package root. |
 | `plugin.security.insecure_http_url` | warn | MCP server uses a plain HTTP URL. |
+| `plugin.security.prompt_injection_text` | fail | Packaged text contains prompt-injection or secret-exfiltration instructions. |
 
 ## Runtime Rules
 

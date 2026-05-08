@@ -229,6 +229,15 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "url": "https://example.com/mcp" }'
   },
   {
+    id: "plugin.security.prompt_injection_text",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "Packaged text contains prompt-injection or secret-exfiltration instructions.",
+    why: "Poisoned tool, prompt, resource, or skill text can instruct an agent to ignore higher-priority instructions or leak secrets when loaded into context.",
+    fix: "Remove hidden override or exfiltration instructions and keep descriptions scoped to legitimate behavior.",
+    example: "Keep SKILL.md, prompt, resource, and tool descriptions direct and user-facing."
+  },
+  {
     id: "plugin.runtime.exited_early",
     category: "runtime",
     defaultSeverity: "fail",
