@@ -51,6 +51,13 @@ export {
   type DoctorPerformanceStageName
 } from "./core/performance-report.js";
 export {
+  buildDoctorNpmPackageReport,
+  renderDoctorNpmPackageReport,
+  renderDoctorNpmPackageReportJson,
+  type BuildDoctorNpmPackageReportOptions,
+  type DoctorNpmPackageReport
+} from "./core/npm-package-doctor.js";
+export {
   buildEcosystemAudit,
   renderEcosystemAudit,
   renderEcosystemAuditJson,
