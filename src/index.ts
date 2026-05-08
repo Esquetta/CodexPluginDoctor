@@ -67,6 +67,13 @@ export {
   type RiskFindingCategory
 } from "./core/risk-diff.js";
 export {
+  buildDoctorInspectorReport,
+  renderDoctorInspectorReport,
+  renderDoctorInspectorReportJson,
+  type BuildDoctorInspectorReportOptions,
+  type DoctorInspectorReport
+} from "./core/inspector-bridge.js";
+export {
   buildEcosystemAudit,
   renderEcosystemAudit,
   renderEcosystemAuditJson,

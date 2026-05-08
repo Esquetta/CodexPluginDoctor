@@ -80,6 +80,11 @@ import {
   renderDoctorRiskDiffReportJson
 } from "./core/risk-diff.js";
 import {
+  buildDoctorInspectorReport,
+  renderDoctorInspectorReport,
+  renderDoctorInspectorReportJson
+} from "./core/inspector-bridge.js";
+import {
   applyFixPlan,
   buildFixPlan,
   renderApplyFixResult,
@@ -179,7 +184,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -475,6 +480,42 @@ export async function runCli(
       const renderedReport = jsonOutput
         ? renderDoctorRiskDiffReportJson(report)
         : renderDoctorRiskDiffReport(report, { outputPath });
+
+      if (outputPath) {
+        await writeFile(outputPath, renderedReport, "utf8");
+      }
+
+      io.writeStdout(renderedReport);
+      return report.exitCode;
+    }
+
+    if (maybePath === "inspector") {
+      const targetPath = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs[0]
+        : ".";
+      const inspectorFlags = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs.slice(1)
+        : remainingArgs;
+      const jsonOutput = inspectorFlags.includes("--json");
+      const outputIndex = inspectorFlags.indexOf("--output");
+      const outputPath = outputIndex === -1 ? null : inspectorFlags[outputIndex + 1];
+      const serverIndex = inspectorFlags.indexOf("--server");
+      const serverName = serverIndex === -1 ? null : inspectorFlags[serverIndex + 1];
+
+      if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+        io.writeStderr("Missing path after --output.");
+        return 2;
+      }
+
+      if (serverIndex !== -1 && (!serverName || serverName.startsWith("--"))) {
+        io.writeStderr("Missing server name after --server.");
+        return 2;
+      }
+
+      const report = await buildDoctorInspectorReport(targetPath, { serverName });
+      const renderedReport = jsonOutput
+        ? renderDoctorInspectorReportJson(report)
+        : renderDoctorInspectorReport(report, { outputPath });
 
       if (outputPath) {
         await writeFile(outputPath, renderedReport, "utf8");
