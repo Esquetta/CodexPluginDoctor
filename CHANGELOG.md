@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.15.0] - 2026-05-08
+
+### Added
+
+- added `doctor npm <package> [--json|--output]` for preinstall npm package scans against the publish tarball with package scripts disabled
+- added static prompt-injection and secret-exfiltration text detection across packaged skill, prompt, resource, JSON, and markdown surfaces
+- added `doctor diff --before <path> --after <path> [--json|--output]` for risk delta reports with new findings, resolved findings, and trust score changes
+
 ## [0.14.0] - 2026-05-07
 
 ### Added
