@@ -58,6 +58,15 @@ export {
   type DoctorNpmPackageReport
 } from "./core/npm-package-doctor.js";
 export {
+  buildDoctorRiskDiffReport,
+  renderDoctorRiskDiffReport,
+  renderDoctorRiskDiffReportJson,
+  type BuildDoctorRiskDiffReportOptions,
+  type DoctorRiskDiffReport,
+  type RiskDiffFinding,
+  type RiskFindingCategory
+} from "./core/risk-diff.js";
+export {
   buildEcosystemAudit,
   renderEcosystemAudit,
   renderEcosystemAuditJson,
