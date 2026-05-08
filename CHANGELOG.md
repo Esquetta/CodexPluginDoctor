@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.16.0] - 2026-05-08
+
+### Added
+
+- added `doctor inspector <path> [--server <name>] [--json|--output]` to generate a safe MCP Inspector launch command from packaged `.mcp.json` server entries without starting the Inspector proxy automatically
+
 ## [0.15.0] - 2026-05-08
 
 ### Added
