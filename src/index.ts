@@ -33,6 +33,14 @@ export {
   type DoctorExportBundle
 } from "./core/doctor-export-bundle.js";
 export {
+  buildDoctorAttestation,
+  renderDoctorAttestation,
+  renderDoctorAttestationJson,
+  type DoctorAttestation,
+  type Digest,
+  type PackageFingerprint
+} from "./core/attestation.js";
+export {
   buildDoctorExportBundleFromAnalysis,
   buildDoctorRecommendationsFromAnalysis,
   buildPackageAnalysis,
