@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.17.0] - 2026-05-09
+
+### Added
+
+- added `doctor attest <path> [--json|--output]` for deterministic local attestation artifacts with package fingerprints, report digests, validation/security/compatibility/trust summaries, and unsigned verification metadata
+
 ## [0.16.0] - 2026-05-08
 
 ### Added
