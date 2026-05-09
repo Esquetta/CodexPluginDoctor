@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.18.0] - 2026-05-09
+
+### Added
+
+- added `doctor contract [--json|--output]` for a machine-readable output contract with public JSON schema surfaces, stable-through-1.0 metadata, and a frozen rule catalog digest
+
 ## [0.17.0] - 2026-05-09
 
 ### Added
