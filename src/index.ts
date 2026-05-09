@@ -49,6 +49,15 @@ export {
   type OutputContractSchema
 } from "./core/output-contract.js";
 export {
+  buildDoctorValidationCorpusReport,
+  renderDoctorValidationCorpusJson,
+  renderDoctorValidationCorpusReport,
+  type BuildDoctorValidationCorpusOptions,
+  type DoctorValidationCorpusReport,
+  type ValidationCorpusCaseDefinition,
+  type ValidationCorpusCaseResult
+} from "./core/validation-corpus.js";
+export {
   buildDoctorExportBundleFromAnalysis,
   buildDoctorRecommendationsFromAnalysis,
   buildPackageAnalysis,
