@@ -41,6 +41,14 @@ export {
   type PackageFingerprint
 } from "./core/attestation.js";
 export {
+  buildDoctorOutputContract,
+  renderDoctorOutputContract,
+  renderDoctorOutputContractJson,
+  type DoctorOutputContract,
+  type OutputContractRule,
+  type OutputContractSchema
+} from "./core/output-contract.js";
+export {
   buildDoctorExportBundleFromAnalysis,
   buildDoctorRecommendationsFromAnalysis,
   buildPackageAnalysis,
