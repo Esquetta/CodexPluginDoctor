@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.19.0] - 2026-05-09
+
+### Added
+
+- added `doctor corpus [--json|--output]` for a bundled real-world-style validation corpus that checks healthy runtime, risky security, and starter skill packages against expected outcomes
+
 ## [0.18.0] - 2026-05-09
 
 ### Added
