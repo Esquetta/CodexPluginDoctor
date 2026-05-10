@@ -220,6 +220,8 @@ runs:
     - name: Upload Codex Plugin Doctor reports
       if: ${{ always() && inputs['upload-artifact'] == 'true' }}
       uses: actions/upload-artifact@v5
+      env:
+        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       with:
         name: ${{ inputs['artifact-name'] }}
         path: ${{ inputs['output-dir'] }}

@@ -13,6 +13,7 @@ env:
   VALIDATION_TARGET: examples/codex-doctor-runtime
   VALIDATION_RUNTIME_TARGET: examples/codex-doctor-runtime
   VALIDATION_OUT_DIR: validation-artifacts
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   test-and-build:
