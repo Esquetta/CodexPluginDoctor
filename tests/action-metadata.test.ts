@@ -38,7 +38,7 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("codex-plugin-doctor-report.json");
     expect(actionMetadata).toContain("codex-plugin-doctor-summary.md");
     expect(actionMetadata).toContain("codex-plugin-doctor.sarif");
-    expect(actionMetadata).toContain("actions/upload-artifact@v5");
+    expect(actionMetadata).toContain("actions/upload-artifact@v7");
     expect(actionMetadata).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"");
     expect(actionMetadata).toContain('cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"');
     expect(actionMetadata).toContain('echo "status=$status"');
@@ -68,6 +68,7 @@ describe("GitHub Action metadata", () => {
     expect(actionUsage).toContain("--fail-on-regression");
     expect(actionUsage).toContain("--profile publish");
     expect(ciWorkflow).toContain("codex-plugin-doctor.sarif");
+    expect(ciWorkflow).toContain("actions/upload-artifact@v7");
     expect(ciWorkflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"");
     expect(artifactScript).toContain('"--sarif"');
     expect(artifactScript).toContain("codex-plugin-doctor.sarif");
