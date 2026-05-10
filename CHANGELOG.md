@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.20.0] - 2026-05-10
+
+### Added
+
+- added GitHub Action report artifacts for JSON, Markdown, and optional SARIF outputs with configurable output directory and artifact name
+- added GitHub Action step summary publishing and workflow outputs for report paths and validation status
+- added GitHub Action `policy` and `profile` inputs so CI can apply release gates such as `codex-publish`, `mcp-strict`, and `security`
+
 ## [0.19.0] - 2026-05-09
 
 ### Added
