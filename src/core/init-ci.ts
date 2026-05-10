@@ -28,6 +28,13 @@ function buildWorkflow(): string {
     `          version: \"${packageVersion}\"`,
     "          path: .",
     "          runtime: \"true\"",
+    "          policy: codex-publish",
+    "          json: \"true\"",
+    "          markdown: \"true\"",
+    "          sarif: \"true\"",
+    "          upload-artifact: \"true\"",
+    "          step-summary: \"true\"",
+    "          artifact-name: codex-plugin-doctor-reports",
     ""
   ].join("\n");
 }

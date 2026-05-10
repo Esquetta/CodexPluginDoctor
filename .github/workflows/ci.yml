@@ -58,3 +58,4 @@ jobs:
             ${{ env.VALIDATION_OUT_DIR }}/codex-plugin-doctor-summary.md
             ${{ env.VALIDATION_OUT_DIR }}/codex-plugin-doctor-report.json
             ${{ env.VALIDATION_OUT_DIR }}/codex-plugin-doctor-runtime-report.json
+            ${{ env.VALIDATION_OUT_DIR }}/codex-plugin-doctor.sarif

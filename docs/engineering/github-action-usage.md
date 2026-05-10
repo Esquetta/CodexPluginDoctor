@@ -22,26 +22,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.9.0
+      - uses: Esquetta/CodexPluginDoctor@v0.20.0
         with:
-          version: "0.9.0"
+          version: "0.20.0"
           path: .
           runtime: "true"
+          policy: codex-publish
+          upload-artifact: "true"
+          artifact-name: codex-plugin-doctor-reports
+          output-dir: codex-plugin-doctor-reports
 ```
+
+By default the action writes:
+
+- `codex-plugin-doctor-summary.md`
+- `codex-plugin-doctor-report.json`
+
+The Markdown report is appended to the GitHub Actions step summary, and the output directory is uploaded as a workflow artifact. The action preserves the real validation exit code after report generation, so failed checks still fail the job after artifacts are available.
 
 ## SARIF Output
 
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.9.0
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
   with:
-    version: "0.9.0"
+    version: "0.20.0"
     path: .
     sarif: "true"
 ```
 
-The action writes `codex-plugin-doctor.sarif`. Uploading it to GitHub Code Scanning should be handled by the consuming workflow after the action runs.
+The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to GitHub Code Scanning should be handled by the consuming workflow after the action runs.
+
+## Artifact And Summary Controls
+
+Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
+  with:
+    version: "0.20.0"
+    path: .
+    output-dir: doctor-ci-reports
+    artifact-name: codex-plugin-doctor-reports
+    upload-artifact: "true"
+    step-summary: "true"
+    json: "true"
+    markdown: "true"
+    sarif: "true"
+```
+
+Set `upload-artifact: "false"` when a consuming workflow wants to upload files itself. Set `step-summary: "false"` when the Markdown report should only be retained as an artifact.
+
+The action also exposes these workflow outputs for follow-up steps:
+
+- `status`
+- `report-dir`
+- `summary-path`
+- `json-path`
+- `sarif-path`
 
 ## Badge Artifacts
 
@@ -77,9 +116,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.9.0
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
   with:
-    version: "0.9.0"
+    version: "0.20.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -96,14 +135,38 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 
 `ci` keeps the default behavior, `strict` fails on warnings, and `publish` fails on warnings while enabling runtime probing by default.
 
+The composite action can pass profiles directly:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
+  with:
+    version: "0.20.0"
+    path: .
+    profile: publish
+```
+
+## CI Policy Presets
+
+Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
+  with:
+    version: "0.20.0"
+    path: .
+    policy: codex-publish
+```
+
+Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The CLI validates unsupported values and fails the workflow with a clear error.
+
 ## Installed Plugin Cache Checks
 
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.9.0
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
   with:
-    version: "0.9.0"
+    version: "0.20.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -114,9 +177,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v0.9.0
+- uses: Esquetta/CodexPluginDoctor@v0.20.0
   with:
-    version: "0.9.0"
+    version: "0.20.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

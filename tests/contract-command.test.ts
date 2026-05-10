@@ -65,6 +65,10 @@ describe("doctor contract command", () => {
           command: "codex-plugin-doctor check <path> --json"
         }),
         expect.objectContaining({
+          id: "doctor.installed.check.json",
+          command: "codex-plugin-doctor check --installed --json"
+        }),
+        expect.objectContaining({
           id: "doctor.security.json",
           command: "codex-plugin-doctor security <path> --json"
         }),

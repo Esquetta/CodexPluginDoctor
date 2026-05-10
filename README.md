@@ -331,14 +331,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.9.0
+      - uses: Esquetta/CodexPluginDoctor@v0.20.0
         with:
-          version: "0.9.0"
+          version: "0.20.0"
           path: .
-          runtime: "false"
+          runtime: "true"
+          policy: codex-publish
+          upload-artifact: "true"
+          artifact-name: codex-plugin-doctor-reports
 ```
 
-For runtime probing, SARIF output, installed plugin cache checks, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
+The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, and optional `codex-plugin-doctor.sarif` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. For runtime probing, SARIF output, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
 
 To self-test this repository after cloning it:
 

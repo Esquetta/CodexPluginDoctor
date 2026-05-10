@@ -124,6 +124,10 @@ import {
   renderGenericMcpDoctorJson
 } from "./mcp/generic-mcp-doctor.js";
 import { renderInstalledSummary } from "./reporting/render-installed-summary.js";
+import {
+  renderInstalledJsonReport,
+  renderInstalledSarifReport
+} from "./reporting/render-installed-machine-report.js";
 import { renderBadgeJson, renderBadgeMarkdown } from "./reporting/render-badge-report.js";
 import { renderCompatibilityScorecard } from "./reporting/render-compatibility-scorecard.js";
 import { renderCompatibilityReport } from "./reporting/render-compatibility-report.js";
@@ -1442,20 +1446,20 @@ export async function runCli(
 
     const report = installedSummary
       ? renderInstalledSummary(checkedPlugins)
-      : checkedPlugins
-        .map((item) =>
-          sarifOutput
-            ? renderSarifReport(item.result)
-            : markdownOutput
-            ? buildMarkdownReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
-            : jsonOutput
-              ? renderJsonReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
+      : sarifOutput
+      ? renderInstalledSarifReport(checkedPlugins)
+      : jsonOutput
+        ? renderInstalledJsonReport(checkedPlugins, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
+        : checkedPlugins
+          .map((item) =>
+            markdownOutput
+              ? buildMarkdownReport(item.result, { runtimeProbeEnabled: effectiveRuntimeProbeEnabled })
               : renderTextReport(item.result, {
                   ascii: outputPolicy.style === "ascii",
                   explain: explainFindings
                 })
-        )
-        .join("\n\n");
+          )
+          .join("\n\n");
 
     if (outputPath) {
       await writeFile(outputPath, report, "utf8");

@@ -30,10 +30,59 @@ inputs:
     description: Optional JSONL path for validation history output.
     required: false
     default: ""
+  policy:
+    description: Optional policy preset to apply. Supported values are codex-publish, mcp-strict, and security.
+    required: false
+    default: ""
+  profile:
+    description: Optional check profile to apply. Supported values are ci, strict, and publish.
+    required: false
+    default: ""
+  output-dir:
+    description: Directory where JSON, Markdown, and SARIF reports are written.
+    required: false
+    default: codex-plugin-doctor-reports
+  artifact-name:
+    description: GitHub Actions artifact name for uploaded report files.
+    required: false
+    default: codex-plugin-doctor-reports
+  upload-artifact:
+    description: Upload the generated report directory as a workflow artifact.
+    required: false
+    default: "true"
+  step-summary:
+    description: Append the Markdown report to the GitHub Actions step summary.
+    required: false
+    default: "true"
+  json:
+    description: Write a machine-readable JSON report into the output directory.
+    required: false
+    default: "true"
+  markdown:
+    description: Write a CI-friendly Markdown summary into the output directory.
+    required: false
+    default: "true"
   sarif:
-    description: Write SARIF output to codex-plugin-doctor.sarif.
+    description: Write SARIF output into the output directory.
     required: false
     default: "false"
+
+outputs:
+  status:
+    description: Exit status returned by the primary validation run.
+    value: ${{ steps.run-doctor.outputs.status }}
+  report-dir:
+    description: Directory containing generated Codex Plugin Doctor reports.
+    value: ${{ steps.run-doctor.outputs.report-dir }}
+  summary-path:
+    description: Path to the generated Markdown summary report.
+    value: ${{ steps.run-doctor.outputs.summary-path }}
+  json-path:
+    description: Path to the generated JSON report.
+    value: ${{ steps.run-doctor.outputs.json-path }}
+  sarif-path:
+    description: Path to the generated SARIF report when sarif is enabled.
+    value: ${{ steps.run-doctor.outputs.sarif-path }}
 
 runs:
   using: composite
@@ -43,11 +92,22 @@ runs:
       run: npm install -g codex-plugin-doctor@${{ inputs.version }}
 
     - name: Run Codex Plugin Doctor
+      id: run-doctor
       shell: bash
       run: |
         set -euo pipefail
 
+        report_dir="${{ inputs['output-dir'] }}"
+        summary_path="$report_dir/codex-plugin-doctor-summary.md"
+        json_path="$report_dir/codex-plugin-doctor-report.json"
+        sarif_path="$report_dir/codex-plugin-doctor.sarif"
+        status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
+        status=0
+
+        mkdir -p "$report_dir"
+
         args=(check)
+        history_args=()
 
         if [[ "${{ inputs.installed }}" == "true" ]]; then
           args+=(--installed)
@@ -67,11 +127,115 @@ runs:
         fi
 
         if [[ -n "${{ inputs.history }}" ]]; then
-          args+=(--history "${{ inputs.history }}")
+          history_args+=(--history "${{ inputs.history }}")
+        fi
+
+        if [[ -n "${{ inputs.policy }}" ]]; then
+          args+=(--policy "${{ inputs.policy }}")
+        fi
+
+        if [[ -n "${{ inputs.profile }}" ]]; then
+          args+=(--profile "${{ inputs.profile }}")
+        fi
+
+        record_status() {
+          local code="$1"
+
+          if [[ "$code" -ne 0 && "$status" -eq 0 ]]; then
+            status="$code"
+          fi
+        }
+
+        run_doctor() {
+          local label="$1"
+          shift
+
+          echo "::group::$label"
+          set +e
+          codex-plugin-doctor "$@"
+          local code="$?"
+          set -e
+
+          if [[ "$code" -ne 0 ]]; then
+            echo "Codex Plugin Doctor ${label} exited with status ${code}."
+          fi
+
+          echo "::endgroup::"
+          record_status "$code"
+        }
+
+        run_doctor "check" "${args[@]}" "${history_args[@]}" --no-animations
+
+        if [[ "${{ inputs.json }}" == "true" ]]; then
+          run_doctor "json report" "${args[@]}" --json --output "$json_path"
+        fi
+
+        if [[ "${{ inputs.markdown }}" == "true" ]]; then
+          run_doctor "markdown summary" "${args[@]}" --markdown --output "$summary_path"
         fi
 
         if [[ "${{ inputs.sarif }}" == "true" ]]; then
-          args+=(--sarif --output codex-plugin-doctor.sarif)
+          run_doctor "sarif report" "${args[@]}" --sarif --output "$sarif_path"
         fi
 
-        codex-plugin-doctor "${args[@]}"
+        printf "%s" "$status" > "$status_file"
+
+        {
+          echo "status=$status"
+          echo "report-dir=$report_dir"
+          echo "summary-path=$summary_path"
+          echo "json-path=$json_path"
+          echo "sarif-path=$sarif_path"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Publish Codex Plugin Doctor summary
+      if: ${{ always() && inputs['step-summary'] == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        report_dir="${{ inputs['output-dir'] }}"
+        summary_path="$report_dir/codex-plugin-doctor-summary.md"
+        status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
+        status="unknown"
+
+        if [[ -f "$status_file" ]]; then
+          status="$(cat "$status_file")"
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$summary_path" ]]; then
+          cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          {
+            echo "## Codex Plugin Doctor"
+            echo ""
+            echo "- Exit status: ${status}"
+            echo "- Report directory: \`${report_dir}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload Codex Plugin Doctor reports
+      if: ${{ always() && inputs['upload-artifact'] == 'true' }}
+      uses: actions/upload-artifact@v5
+      with:
+        name: ${{ inputs['artifact-name'] }}
+        path: ${{ inputs['output-dir'] }}
+        if-no-files-found: ignore
+
+    - name: Complete Codex Plugin Doctor
+      if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
+        status=1
+
+        if [[ -f "$status_file" ]]; then
+          status="$(cat "$status_file")"
+        fi
+
+        exit "$status"

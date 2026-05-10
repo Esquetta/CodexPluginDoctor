@@ -1149,6 +1149,92 @@ describe("runCli", () => {
     expect(output).not.toContain("Codex Plugin Doctor\n===================");
   });
 
+  it("writes a structured JSON artifact for installed plugin checks", async () => {
+    const outputPath = await createTempFilePath("installed-report.json");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(["check", "--installed", "--json", "--output", outputPath], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          CODEX_HOME: codexHomeFixture
+        }
+      },
+      runCheckImpl: async (targetPath) => ({
+        targetPath,
+        status: targetPath.includes("github") ? "warn" : "pass",
+        exitCode: 0,
+        findings: targetPath.includes("github")
+          ? [
+              {
+                id: "plugin.heuristic.description.too_long",
+                severity: "warn",
+                message: "Description is long.",
+                impact: "Noisy matching.",
+                suggestedFix: "Shorten it."
+              }
+            ]
+          : []
+      })
+    });
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+    const stdoutReport = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(writtenReport.kind).toBe("doctor.installed.check");
+    expect(writtenReport.summary.checked).toBe(2);
+    expect(writtenReport.summary.status).toBe("warn");
+    expect(writtenReport.plugins).toHaveLength(2);
+    expect(writtenReport.plugins.map((item: { plugin: { name: string } }) => item.plugin.name)).toEqual([
+      "browser-use",
+      "github"
+    ]);
+    expect(writtenReport.plugins[1].report.findings[0].id).toBe("plugin.heuristic.description.too_long");
+    expect(stdoutReport).toEqual(writtenReport);
+  });
+
+  it("writes a valid SARIF artifact for installed plugin checks", async () => {
+    const outputPath = await createTempFilePath("installed-report.sarif");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(["check", "--installed", "--sarif", "--output", outputPath], io, {
+      terminalContext: {
+        stdoutIsTTY: false,
+        stderrIsTTY: false,
+        env: {
+          CODEX_HOME: codexHomeFixture
+        }
+      },
+      runCheckImpl: async (targetPath) => ({
+        targetPath,
+        status: targetPath.includes("github") ? "fail" : "pass",
+        exitCode: targetPath.includes("github") ? 1 : 0,
+        findings: targetPath.includes("github")
+          ? [
+              {
+                id: "plugin.manifest.missing",
+                severity: "fail",
+                message: "Manifest missing.",
+                impact: "Codex cannot load it.",
+                suggestedFix: "Create the manifest."
+              }
+            ]
+          : []
+      })
+    });
+
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+    const stdoutReport = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(writtenReport.version).toBe("2.1.0");
+    expect(writtenReport.runs).toHaveLength(2);
+    expect(writtenReport.runs[1].results[0].ruleId).toBe("plugin.manifest.missing");
+    expect(stdoutReport).toEqual(writtenReport);
+  });
+
   it("adds compatibility status to the installed plugin summary when requested", async () => {
     const { io, stdout } = createIo();
 
@@ -1372,6 +1458,13 @@ describe("runCli", () => {
     expect(workflow).toContain("version:");
     expect(workflow).toContain("path: .");
     expect(workflow).toContain('runtime: "true"');
+    expect(workflow).toContain("policy: codex-publish");
+    expect(workflow).toContain('json: "true"');
+    expect(workflow).toContain('markdown: "true"');
+    expect(workflow).toContain('sarif: "true"');
+    expect(workflow).toContain('upload-artifact: "true"');
+    expect(workflow).toContain('step-summary: "true"');
+    expect(workflow).toContain("artifact-name: codex-plugin-doctor-reports");
   });
 
   it("renders a dry-run fix plan without changing files", async () => {

@@ -56,12 +56,7 @@ async function runCommand(command, args, cwd) {
 
     child.on("error", reject);
     child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}`));
+      resolve(code ?? 1);
     });
   });
 }
@@ -82,32 +77,31 @@ async function main() {
     resolvedOutDir,
     "codex-plugin-doctor-runtime-report.json"
   );
+  const sarifPath = path.join(resolvedOutDir, "codex-plugin-doctor.sarif");
+  let exitCode = 0;
 
-  await runCommand(
-    process.execPath,
-    ["dist/cli.js", "check", target, "--markdown", "--output", summaryPath],
-    repoRoot
-  );
+  async function collectReport(args) {
+    const code = await runCommand(process.execPath, args, repoRoot);
 
-  await runCommand(
-    process.execPath,
-    ["dist/cli.js", "check", target, "--json", "--output", jsonPath],
-    repoRoot
-  );
+    if (code !== 0 && exitCode === 0) {
+      exitCode = code;
+    }
+  }
 
-  await runCommand(
-    process.execPath,
-    [
-      "dist/cli.js",
-      "check",
-      runtimeTarget,
-      "--json",
-      "--runtime",
-      "--output",
-      runtimeJsonPath
-    ],
-    repoRoot
-  );
+  await collectReport(["dist/cli.js", "check", target, "--markdown", "--output", summaryPath]);
+  await collectReport(["dist/cli.js", "check", target, "--json", "--output", jsonPath]);
+  await collectReport([
+    "dist/cli.js",
+    "check",
+    runtimeTarget,
+    "--json",
+    "--runtime",
+    "--output",
+    runtimeJsonPath
+  ]);
+  await collectReport(["dist/cli.js", "check", target, "--sarif", "--output", sarifPath]);
+
+  process.exitCode = exitCode;
 }
 
 main().catch((error) => {

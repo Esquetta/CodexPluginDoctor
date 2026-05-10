@@ -57,6 +57,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "generatedAt", "summary", "findings"]
   },
   {
+    id: "doctor.installed.check.json",
+    command: "codex-plugin-doctor check --installed --json",
+    outputKind: "doctor.installed.check",
+    required: ["schemaVersion", "kind", "generatedAt", "summary", "plugins"]
+  },
+  {
     id: "doctor.security.json",
     command: "codex-plugin-doctor security <path> --json",
     required: ["schemaVersion", "generatedAt", "targetPath", "status", "score", "findings"]

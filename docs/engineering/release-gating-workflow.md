@@ -32,9 +32,10 @@ Recommended for:
 2. Run tests.
 3. Build the CLI.
 4. Run `codex-plugin-doctor check` against the target package.
-5. Write a Markdown summary to a file.
-6. Append the summary to `GITHUB_STEP_SUMMARY`.
-7. Let the CLI exit code determine whether the workflow should block the release.
+5. Write JSON, Markdown, and optional SARIF artifacts.
+6. Append the Markdown summary to `GITHUB_STEP_SUMMARY`.
+7. Upload the report directory as a workflow artifact.
+8. Let the CLI exit code determine whether the workflow should block the release.
 
 ## Example Commands
 
@@ -56,14 +57,34 @@ node dist/cli.js check ./path/to/plugin --markdown --output codex-plugin-doctor-
 node dist/cli.js check ./path/to/plugin --json --runtime --output codex-plugin-doctor-runtime-report.json
 ```
 
+### SARIF Artifact
+
+```bash
+node dist/cli.js check ./path/to/plugin --sarif --output codex-plugin-doctor.sarif
+```
+
+### Policy Presets
+
+```bash
+node dist/cli.js check ./path/to/plugin --policy codex-publish
+node dist/cli.js check ./path/to/plugin --policy mcp-strict
+node dist/cli.js security ./path/to/plugin --policy security
+```
+
+### Check Profiles
+
+```bash
+node dist/cli.js check ./path/to/plugin --profile publish
+```
+
 ## Rollout Advice
 
 - Start with structural validation on every pull request.
 - Enable runtime probing after command-based fixtures or local server behavior are stable.
 - Keep warn-level heuristics visible in PR summaries even when they do not block merges.
+- Preserve artifacts even on failed validations so maintainers can inspect JSON, Markdown, and SARIF evidence from the failing run.
 - Use one stable package path in CI so report history stays comparable over time.
 
 ## Current Repository Behavior
 
 The repository CI currently demonstrates the summary flow using fixture packages. Teams adopting the tool for real plugin bundles should replace the fixture path with the actual package path they want to gate.
-
