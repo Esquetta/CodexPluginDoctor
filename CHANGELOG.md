@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [0.21.0] - 2026-05-11
+
+### Added
+
+- added a 1.0 readiness checklist covering release-candidate smoke commands, contract checks, GitHub Action smoke expectations, known limitations, and stable-release exit criteria
+
+### Changed
+
+- refreshed public release, versioning, and publish decision docs to reflect the current npm/GitHub release state and the `1.0.0-rc.1` path
+- updated README status language from early-public wording to the 1.0 readiness track and linked the active readiness checklist
+
 ## [0.20.0] - 2026-05-10
 
 ### Added

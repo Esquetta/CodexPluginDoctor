@@ -11,12 +11,23 @@ It catches packaging, metadata, security, and runtime protocol problems before a
 
 ## Status
 
-Codex Plugin Doctor is an early public CLI release.
+Codex Plugin Doctor is a public CLI on the 1.0 readiness track.
 
 - Primary surface: GitHub repository and npm package
 - Distribution today: `npm install -g`, local source install, `npm link`, `npm pack`, GitHub Releases
 - Public npm package: `codex-plugin-doctor`
 - License: [MIT](./LICENSE)
+
+## 1.0 Readiness
+
+The 0.21.x line is reserved for release-candidate readiness work rather than new feature expansion.
+
+- Public JSON schema surfaces and existing rule IDs/default severities are treated as stable through 1.0.
+- Runtime probing remains opt-in because it executes package-local MCP servers.
+- The project remains Codex-first; broader MCP Doctor positioning stays a post-1.0 expansion path.
+- 1.0 release candidates should add no new feature work unless a blocker is discovered.
+
+See [v1.0 Readiness Checklist](./docs/engineering/v1.0-readiness-checklist.md) for the exact RC smoke plan.
 
 ## Why This Exists
 
@@ -331,9 +342,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v0.20.0
+      - uses: Esquetta/CodexPluginDoctor@v0.21.0
         with:
-          version: "0.20.0"
+          version: "0.21.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -394,7 +405,7 @@ Related docs:
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
 - [Release Candidate Workflow](./docs/engineering/release-candidate-workflow.md)
-- [v0.1.0 Release Notes](./docs/engineering/v0.1.0-final-release-notes.md)
+- [v1.0 Readiness Checklist](./docs/engineering/v1.0-readiness-checklist.md)
 
 ## Contributing
 

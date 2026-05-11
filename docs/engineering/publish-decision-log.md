@@ -2,44 +2,58 @@
 
 ## Current Decision
 
-As of `2026-04-29`, the project is public on GitHub and npm.
+As of `2026-05-11`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the 1.0 readiness cleanup release.
+
+The next publish decision is `1.0.0-rc.1`, not another feature-heavy `0.x` release.
 
 ## Why
 
-- the validator is still rapidly expanding its runtime surface
-- local testing, GitHub Releases, and npm are the immediate distribution paths
-- `v0.1.0` validated the GitHub-first release surface
-- `0.1.1` carries the npm `bin` metadata normalization needed for safe registry publication
+- the CLI now has the core validation, runtime, security, trust, compatibility, and CI reporting surfaces needed for a stable release
+- `doctor contract` exposes the machine-readable contract and rule catalog freeze metadata for the 1.0 path
+- GitHub Action artifacts, step summaries, and policy presets make the tool usable as a repository release gate
+- the remaining work before 1.0 is evidence quality, docs accuracy, and smoke verification rather than new product scope
 
 ## What Is Already Ready
 
 - clean build pipeline
-- pack dry run
-- package metadata
-- CLI entrypoint
-- changelog
-- release checklist
+- `npm run release-check`
+- `npm run verify-release-sync`
+- public npm package
+- matching GitHub Releases and tags
 - MIT license
 - open-source contribution and security docs
 - GitHub issue templates
 - GitHub Sponsors funding config
-- final `v0.1.0` release notes
-- final `v0.1.0` GitHub Release
-- obsolete `v0.1.0-rc.1` draft release removed, with the RC tag retained for history
-- public repository visibility
-- clean public clone, install, build, and CLI smoke validation
-- npm package name availability
-- npm authenticated maintainer session
-- `codex-plugin-doctor@0.1.1` published on npm
-- `v0.1.1` GitHub Release
-- post-publish registry install smoke validation
+- README as the primary landing page
+- local validation and runtime probe surfaces
+- security scorecard and trust score
+- compatibility matrix and install-preview flows
+- validation corpus
+- npm preinstall package scan
+- local attestation artifact
+- GitHub Action JSON, Markdown, and SARIF artifacts
+- output contract and stable-through-1.0 metadata
 
-## What Was Confirmed For npm Publish
+## What Was Confirmed For The Current Release Line
 
-- final `0.1.1` release validation passed
-- post-publish install smoke from the npm registry passed
-- npm `latest` points to `0.1.1`
+- repository visibility is public
+- npm latest points to `codex-plugin-doctor@0.21.0`
+- post-publish sync can be verified with `npm run verify-release-sync`
+- GitHub Actions runs on `main`
+- public-facing docs identify the 1.0 readiness lane
 
 ## Next Publish Decision Point
 
-After `0.1.1` is published, use npm install telemetry/issues and validation feedback to decide whether the next release should be `0.1.2` patch hardening or a larger `0.2.0` capability release.
+Publish `1.0.0-rc.1` with the npm `next` tag after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md) passes.
+
+Do not add new feature work during RC prep unless the checklist exposes a release blocker.
+
+## Stable Release Decision
+
+Publish `1.0.0` only after:
+
+- `1.0.0-rc.1` install smoke passes
+- GitHub Action artifact smoke passes
+- no contract corrections are needed
+- no blocker user feedback appears during the RC window
+- release notes explicitly state compatibility and known limitations

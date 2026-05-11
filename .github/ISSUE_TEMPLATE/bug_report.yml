@@ -13,7 +13,7 @@ body:
     attributes:
       label: Version
       description: Run `codex-plugin-doctor --version` if available, or provide the git commit.
-      placeholder: 0.1.0-rc.1
+      placeholder: 0.21.0
     validations:
       required: true
   - type: textarea

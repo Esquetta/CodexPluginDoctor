@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import packageJson from "../package.json" with { type: "json" };
 
 describe("GitHub Action metadata", () => {
   it("exposes a composite action that installs and runs codex-plugin-doctor", async () => {
@@ -53,9 +54,14 @@ describe("GitHub Action metadata", () => {
     const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
     const artifactScript = await readFile("scripts/generate-validation-artifacts.mjs", "utf8");
 
-    expect(readme).toContain("Esquetta/CodexPluginDoctor@v0.20.0");
+    const actionRef = `Esquetta/CodexPluginDoctor@v${packageJson.version}`;
+    const packageVersion = `version: "${packageJson.version}"`;
+
+    expect(readme).toContain(actionRef);
+    expect(readme).toContain(packageVersion);
     expect(readme).toContain("docs/engineering/github-action-usage.md");
-    expect(actionUsage).toContain("uses: Esquetta/CodexPluginDoctor@v0.20.0");
+    expect(actionUsage).toContain(`uses: ${actionRef}`);
+    expect(actionUsage).toContain(packageVersion);
     expect(actionUsage).toContain('runtime: "true"');
     expect(actionUsage).toContain('policy: codex-publish');
     expect(actionUsage).toContain('upload-artifact: "true"');

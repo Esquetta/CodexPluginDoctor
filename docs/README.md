@@ -36,6 +36,7 @@ This documentation set defines the product, brand, technical architecture, secur
 - [Versioning and Releases](engineering/versioning-and-releases.md)
 - [Publish Decision Log](engineering/publish-decision-log.md)
 - [Release Candidate Workflow](engineering/release-candidate-workflow.md)
+- [v1.0 Readiness Checklist](engineering/v1.0-readiness-checklist.md)
 - [v0.1.0 Release Notes](engineering/v0.1.0-final-release-notes.md)
 - [v0.1.1 Release Notes](engineering/v0.1.1-release-notes.md)
 - [v0.1.2 Release Notes](engineering/v0.1.2-release-notes.md)

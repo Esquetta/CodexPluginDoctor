@@ -43,4 +43,26 @@ describe("public repository readiness", () => {
     expect(releaseCheck).toContain("npm pack --dry-run");
     expect(readme).toContain("npm run release-check");
   });
+
+  it("documents the current 1.0 readiness state without stale pre-public wording", async () => {
+    const packageJson = JSON.parse(await readText("package.json")) as {
+      version: string;
+    };
+    const readme = await readText("README.md");
+    const docsReadme = await readText("docs/README.md");
+    const versioning = await readText("docs/engineering/versioning-and-releases.md");
+    const publicReleaseChecklist = await readText("docs/operations/public-release-checklist.md");
+    const readinessChecklist = await readText("docs/engineering/v1.0-readiness-checklist.md");
+
+    expect(readme).not.toContain("early public CLI release");
+    expect(readme).toContain("1.0 readiness");
+    expect(docsReadme).toContain("v1.0 Readiness Checklist");
+    expect(versioning).toContain(`codex-plugin-doctor@${packageJson.version}`);
+    expect(versioning).toContain("1.0.0-rc.1");
+    expect(publicReleaseChecklist).toContain(`npm latest: codex-plugin-doctor@${packageJson.version}`);
+    expect(publicReleaseChecklist).toContain("1.0 Readiness Checklist");
+    expect(readinessChecklist).toContain("1.0.0-rc.1");
+    expect(readinessChecklist).toContain("No new feature work");
+    expect(readinessChecklist).toContain("npm run release-check");
+  });
 });
