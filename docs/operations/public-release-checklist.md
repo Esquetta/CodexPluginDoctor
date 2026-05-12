@@ -10,10 +10,10 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
 - npm latest: codex-plugin-doctor@0.21.0
-- npm next: codex-plugin-doctor@1.0.0-rc.1
+- npm next: codex-plugin-doctor@1.0.0-rc.2
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
 - Website: not required before 1.0; the GitHub README remains the primary landing page
-- Current release lane: `1.0.0-rc.1` release-candidate verification
+- Current release lane: `1.0.0-rc.2` release-candidate verification
 
 ## Completed Public Baseline
 
@@ -36,7 +36,7 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 
 Use [v1.0 Readiness Checklist](../engineering/v1.0-readiness-checklist.md) as the active release-candidate gate.
 
-Before `1.0.0-rc.1`:
+Before the active `1.0.0` release candidate:
 
 - [ ] Confirm no stale pre-public release language remains in README or operations docs.
 - [ ] Confirm `doctor contract --json` exposes the expected stable-through-1.0 contract.

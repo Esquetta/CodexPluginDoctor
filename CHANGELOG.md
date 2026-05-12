@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.0-rc.2] - 2026-05-12
+
+### Fixed
+
+- fixed npm 11 argument handling for `prepare-rc` and release sync verification scripts so documented npm-run maintainer workflows work during the 1.0 release-candidate path
+
 ## [1.0.0-rc.1] - 2026-05-12
 
 ### Added

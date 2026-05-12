@@ -55,7 +55,7 @@ Confirmed:
 - repository visibility is public
 - package name remains `codex-plugin-doctor`
 - npm latest: `codex-plugin-doctor@0.21.0`
-- npm next: `codex-plugin-doctor@1.0.0-rc.1`
+- npm next: `codex-plugin-doctor@1.0.0-rc.2`
 - GitHub Release flow uses matching `vX.Y.Z` tags
 - post-publish release sync is verified with `npm run verify-release-sync`
 - public JSON schema surfaces and existing rule IDs/default severities are stable through `1.0.0`
@@ -63,7 +63,7 @@ Confirmed:
 Current release target:
 
 - `0.21.0` is the readiness cleanup release.
-- `1.0.0-rc.1` is the active release-candidate package version.
+- `1.0.0-rc.2` is the active release-candidate package version.
 - `1.0.0` should follow only after the RC smoke checklist passes without blocker changes.
 
 ## 1.0 Compatibility Position
@@ -80,7 +80,7 @@ For 1.0:
 
 ## Release Candidate Rules
 
-Use `1.0.0-rc.1` when:
+Use the active `1.0.0` release candidate when:
 
 - `npm run release-check` passes.
 - GitHub Actions passes on `main`.

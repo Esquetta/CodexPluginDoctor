@@ -342,9 +342,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Esquetta/CodexPluginDoctor@v1.0.0-rc.1
+      - uses: Esquetta/CodexPluginDoctor@v1.0.0-rc.2
         with:
-          version: "1.0.0-rc.1"
+          version: "1.0.0-rc.2"
           path: .
           runtime: "true"
           policy: codex-publish

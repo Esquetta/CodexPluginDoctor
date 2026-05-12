@@ -2,9 +2,9 @@
 
 ## Current Decision
 
-As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the latest stable release and `codex-plugin-doctor@1.0.0-rc.1` serving as the first 1.0 release candidate.
+As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the latest stable release and `codex-plugin-doctor@1.0.0-rc.2` serving as the active 1.0 release candidate.
 
-The current publish decision is to ship `1.0.0-rc.1` with the npm `next` tag, not to move npm `latest` until the stable `1.0.0` release.
+The current publish decision is to ship `1.0.0-rc.2` with the npm `next` tag, not to move npm `latest` until the stable `1.0.0` release.
 
 ## Why
 
@@ -52,7 +52,7 @@ Do not add new feature work during RC prep unless the checklist exposes a releas
 
 Publish `1.0.0` only after:
 
-- `1.0.0-rc.1` install smoke passes
+- `1.0.0-rc.2` install smoke passes
 - GitHub Action artifact smoke passes
 - no contract corrections are needed
 - no blocker user feedback appears during the RC window

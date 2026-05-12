@@ -59,12 +59,12 @@ describe("public repository readiness", () => {
     expect(readme).toContain("1.0 readiness");
     expect(docsReadme).toContain("v1.0 Readiness Checklist");
     expect(versioning).toContain(`codex-plugin-doctor@${packageJson.version}`);
-    expect(versioning).toContain("1.0.0-rc.1");
+    expect(versioning).toContain(packageJson.version);
     expect(publicReleaseChecklist).toContain(
       `npm ${packageDistTag}: codex-plugin-doctor@${packageJson.version}`
     );
     expect(publicReleaseChecklist).toContain("1.0 Readiness Checklist");
-    expect(readinessChecklist).toContain("1.0.0-rc.1");
+    expect(readinessChecklist).toContain(packageJson.version);
     expect(readinessChecklist).toContain("Expected result: non-zero status with `plugin.manifest.missing`");
     expect(readinessChecklist).toContain("No new feature work");
     expect(readinessChecklist).toContain("npm run release-check");
