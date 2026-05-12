@@ -28,7 +28,7 @@ The package now includes:
 6. Confirm package version bump.
 7. Publish with `npm publish --access public`.
 8. Create or confirm the matching GitHub release.
-9. Run `npm run verify-release-sync`.
+9. Run the matching sync gate for the release lane.
 10. Verify a global-style install from npm.
 
 ## Pre-Publish Checks
@@ -47,7 +47,13 @@ Run this after `npm publish` and GitHub release creation:
 npm run verify-release-sync
 ```
 
-The sync gate fails if the npm latest version, remote git tag, GitHub release tag, or GitHub latest release pointer do not match `package.json`.
+For prerelease lanes such as `next`, verify the tagged prerelease instead of the stable `latest` pointer:
+
+```bash
+npm run verify-release-sync -- --dist-tag next --prerelease
+```
+
+The stable sync gate fails if the npm `latest` version, remote git tag, GitHub release tag, or GitHub latest release pointer do not match `package.json`. The prerelease sync gate fails if the selected npm dist-tag, remote git tag, and GitHub prerelease tag do not match `package.json`; it intentionally does not require the GitHub latest release pointer to move.
 
 ## Notes
 

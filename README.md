@@ -341,7 +341,7 @@ jobs:
   doctor:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: Esquetta/CodexPluginDoctor@v1.0.0-rc.2
         with:
           version: "1.0.0-rc.2"

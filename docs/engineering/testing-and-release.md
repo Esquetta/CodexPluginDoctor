@@ -55,7 +55,7 @@ Every change should run:
 3. Build distributable CLI artifacts.
 4. Publish package version.
 5. Publish release notes with rule changes and breaking behavior.
-6. Run `npm run verify-release-sync` to confirm npm, git tag, GitHub release, and latest release alignment.
+6. Run the release sync gate for the lane: `npm run verify-release-sync` for stable releases, or `npm run verify-release-sync -- --dist-tag next --prerelease` for release candidates.
 
 ## Versioning Policy
 
