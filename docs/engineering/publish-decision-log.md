@@ -2,16 +2,16 @@
 
 ## Current Decision
 
-As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the latest stable release and `codex-plugin-doctor@1.0.0-rc.2` serving as the active 1.0 release candidate.
+As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@1.0.0` serving as the stable 1.0 release target and `codex-plugin-doctor@1.0.0-rc.2` retained as the final release candidate under the npm `next` tag.
 
-The current publish decision is to ship `1.0.0-rc.2` with the npm `next` tag, not to move npm `latest` until the stable `1.0.0` release.
+The current publish decision is to promote the validated release-candidate line to stable `1.0.0` and move npm `latest` after the stable release gates pass.
 
 ## Why
 
 - the CLI now has the core validation, runtime, security, trust, compatibility, and CI reporting surfaces needed for a stable release
 - `doctor contract` exposes the machine-readable contract and rule catalog freeze metadata for the 1.0 path
 - GitHub Action artifacts, step summaries, and policy presets make the tool usable as a repository release gate
-- the remaining work before 1.0 is evidence quality, docs accuracy, and smoke verification rather than new product scope
+- the remaining 1.0 release work is evidence quality, docs accuracy, and smoke verification rather than new product scope
 
 ## What Is Already Ready
 
@@ -37,23 +37,22 @@ The current publish decision is to ship `1.0.0-rc.2` with the npm `next` tag, no
 ## What Was Confirmed For The Current Release Line
 
 - repository visibility is public
-- npm latest points to `codex-plugin-doctor@0.21.0`
-- release-candidate sync can be verified with `npm run verify-release-sync -- --dist-tag next --prerelease`
+- npm latest is the stable publication target for `codex-plugin-doctor@1.0.0`
+- release sync is verified with `npm run verify-release-sync` after stable publication
 - GitHub Actions runs on `main`
-- public-facing docs identify the 1.0 readiness lane
+- public-facing docs identify the 1.0 stable compatibility baseline
 
 ## Next Publish Decision Point
 
-Publish stable `1.0.0` only after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md) and release-candidate smoke checks pass without blocker feedback.
+Publish stable `1.0.0` after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md), release-check, GitHub Actions, registry install smoke, and release sync gates pass.
 
-Do not add new feature work during RC prep unless the checklist exposes a release blocker.
+Do not add new feature work during stable release prep unless the checklist exposes a release blocker.
 
 ## Stable Release Decision
 
-Publish `1.0.0` only after:
+Publish `1.0.0` after:
 
 - `1.0.0-rc.2` install smoke passes
 - GitHub Action artifact smoke passes
 - no contract corrections are needed
-- no blocker user feedback appears during the RC window
 - release notes explicitly state compatibility and known limitations

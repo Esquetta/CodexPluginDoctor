@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.0] - 2026-05-12
+
+### Added
+
+- promoted Codex Plugin Doctor to the stable `1.0.0` baseline after the `1.0.0-rc.2` release-candidate smoke path
+- added stable 1.0 release notes covering compatibility, known limits, and validation evidence for npm and GitHub Release consumers
+
+### Changed
+
+- updated public README, GitHub Action examples, release checklists, and publish decision docs from the RC lane to the stable `1.0.0` lane
+
 ## [1.0.0-rc.2] - 2026-05-12
 
 ### Fixed

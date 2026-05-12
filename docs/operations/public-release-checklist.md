@@ -9,11 +9,11 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - Repository: public
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
-- npm latest: codex-plugin-doctor@0.21.0
+- npm latest: codex-plugin-doctor@1.0.0
 - npm next: codex-plugin-doctor@1.0.0-rc.2
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
-- Website: not required before 1.0; the GitHub README remains the primary landing page
-- Current release lane: `1.0.0-rc.2` release-candidate verification
+- Website: not required for the stable 1.0 release; the GitHub README remains the primary landing page
+- Current release lane: `1.0.0` stable release verification
 
 ## Completed Public Baseline
 
@@ -34,16 +34,16 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 
 ## 1.0 Readiness Checklist
 
-Use [v1.0 Readiness Checklist](../engineering/v1.0-readiness-checklist.md) as the active release-candidate gate.
+Use [v1.0 Readiness Checklist](../engineering/v1.0-readiness-checklist.md) as the stable release gate.
 
-Before the active `1.0.0` release candidate:
+Before stable `1.0.0` publication:
 
-- [ ] Confirm no stale pre-public release language remains in README or operations docs.
+- [ ] Confirm no stale pre-public or RC-only release language remains in README or operations docs.
 - [ ] Confirm `doctor contract --json` exposes the expected stable-through-1.0 contract.
 - [ ] Confirm `doctor corpus` passes locally.
 - [ ] Confirm registry install smoke checks pass.
 - [ ] Confirm GitHub Action artifact docs match `action.yml`.
-- [ ] Confirm no new feature work is bundled into the RC unless it fixes a blocker.
+- [ ] Confirm no new feature work is bundled into stable 1.0 unless it fixes a blocker.
 
 ## GitHub Metadata
 

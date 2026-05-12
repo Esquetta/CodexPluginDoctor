@@ -44,7 +44,7 @@ describe("public repository readiness", () => {
     expect(readme).toContain("npm run release-check");
   });
 
-  it("documents the current 1.0 readiness state without stale pre-public wording", async () => {
+  it("documents the current 1.0 stable state without stale pre-public wording", async () => {
     const packageJson = JSON.parse(await readText("package.json")) as {
       version: string;
     };
@@ -56,7 +56,7 @@ describe("public repository readiness", () => {
     const packageDistTag = packageJson.version.includes("-") ? "next" : "latest";
 
     expect(readme).not.toContain("early public CLI release");
-    expect(readme).toContain("1.0 readiness");
+    expect(readme).toContain("1.0 Stability");
     expect(docsReadme).toContain("v1.0 Readiness Checklist");
     expect(versioning).toContain(`codex-plugin-doctor@${packageJson.version}`);
     expect(versioning).toContain(packageJson.version);

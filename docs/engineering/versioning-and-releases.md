@@ -2,9 +2,9 @@
 
 ## Current Recommendation
 
-Use semantic versioning with conservative minor releases until the first stable `1.0.0` release is published.
+Use semantic versioning from the stable `1.0.0` baseline.
 
-The `0.21.x` line is the 1.0 readiness lane. It should focus on documentation accuracy, compatibility statements, release-candidate smoke checks, and packaging confidence rather than new feature expansion.
+The `1.x` line should focus on additive validation surfaces, clearer evidence, and compatibility-preserving report improvements. Breaking report or rule semantics should wait for a documented major-version decision.
 
 ## Versioning Rules
 
@@ -54,7 +54,7 @@ Confirmed:
 - license is MIT
 - repository visibility is public
 - package name remains `codex-plugin-doctor`
-- npm latest: `codex-plugin-doctor@0.21.0`
+- npm latest: `codex-plugin-doctor@1.0.0`
 - npm next: `codex-plugin-doctor@1.0.0-rc.2`
 - GitHub Release flow uses matching `vX.Y.Z` tags
 - post-publish release sync is verified with `npm run verify-release-sync`
@@ -62,9 +62,9 @@ Confirmed:
 
 Current release target:
 
-- `0.21.0` is the readiness cleanup release.
-- `1.0.0-rc.2` is the active release-candidate package version.
-- `1.0.0` should follow only after the RC smoke checklist passes without blocker changes.
+- `1.0.0` is the stable package version.
+- `1.0.0-rc.2` remains the final release-candidate package under the npm `next` tag.
+- Post-1.0 releases should stay additive unless the public contract requires a major-version decision.
 
 ## 1.0 Compatibility Position
 
@@ -78,19 +78,19 @@ For 1.0:
 - Keep runtime probing opt-in.
 - Keep `check`, `security`, `compat`, `audit`, `mcp`, and `doctor` command families backward-compatible.
 
-## Release Candidate Rules
+## Stable Release Rules
 
-Use the active `1.0.0` release candidate when:
+Use the stable release path when:
 
 - `npm run release-check` passes.
 - GitHub Actions passes on `main`.
 - registry install smoke checks pass from a fresh global install.
 - `doctor corpus` passes.
-- `doctor npm codex-plugin-doctor@next` returns the expected non-plugin package report without crashing or producing malformed JSON.
+- `doctor npm codex-plugin-doctor@latest` returns the expected non-plugin package report without crashing or producing malformed JSON.
 - GitHub Action artifact examples remain valid.
-- npm `next` points to the release candidate and npm `latest` remains on the current stable line.
+- npm `latest` points to the stable release.
 
-No new feature work should enter the release-candidate path unless it fixes a blocker discovered by the checklist.
+No new feature work should enter a stable release prep path unless it fixes a blocker discovered by the checklist.
 
 ## Release Notes Guidance
 
