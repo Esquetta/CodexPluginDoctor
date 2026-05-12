@@ -67,9 +67,10 @@ cli, codex, developer-tooling, mcp, mcp-server, openai, plugin, skills, typescri
 ```bash
 codex-plugin-doctor self-test
 codex-plugin-doctor doctor corpus
-codex-plugin-doctor doctor npm codex-plugin-doctor
 codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animations
 ```
+
+Run the package scanner against a real published Codex plugin package when one is available. If using `codex-plugin-doctor` itself as a smoke target, expect a non-plugin `plugin.manifest.missing` failure because the CLI package is not a plugin package.
 
 3. Update `CHANGELOG.md`.
 4. Bump `package.json` and `package-lock.json`.

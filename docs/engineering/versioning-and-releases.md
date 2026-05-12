@@ -86,7 +86,7 @@ Use `1.0.0-rc.1` when:
 - GitHub Actions passes on `main`.
 - registry install smoke checks pass from a fresh global install.
 - `doctor corpus` passes.
-- `doctor npm codex-plugin-doctor` passes against the published package.
+- `doctor npm codex-plugin-doctor@next` returns the expected non-plugin package report without crashing or producing malformed JSON.
 - GitHub Action artifact examples remain valid.
 - npm `next` points to the release candidate and npm `latest` remains on the current stable line.
 

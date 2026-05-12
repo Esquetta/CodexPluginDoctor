@@ -65,6 +65,7 @@ describe("public repository readiness", () => {
     );
     expect(publicReleaseChecklist).toContain("1.0 Readiness Checklist");
     expect(readinessChecklist).toContain("1.0.0-rc.1");
+    expect(readinessChecklist).toContain("Expected result: non-zero status with `plugin.manifest.missing`");
     expect(readinessChecklist).toContain("No new feature work");
     expect(readinessChecklist).toContain("npm run release-check");
   });
