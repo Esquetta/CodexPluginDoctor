@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.0-rc.1] - 2026-05-12
+
+### Added
+
+- added release sync verification support for npm prerelease dist-tags and GitHub prereleases so the `1.0.0-rc.1` path can be checked without moving npm `latest`
+
+### Changed
+
+- promoted the package version to the first `1.0.0` release candidate for smoke verification, contract validation, and registry install testing
+- updated release documentation and GitHub Action examples for the `1.0.0-rc.1` candidate path
+
 ## [0.21.0] - 2026-05-11
 
 ### Added

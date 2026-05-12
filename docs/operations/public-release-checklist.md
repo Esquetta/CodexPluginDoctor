@@ -10,9 +10,10 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
 - npm latest: codex-plugin-doctor@0.21.0
+- npm next: codex-plugin-doctor@1.0.0-rc.1
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
 - Website: not required before 1.0; the GitHub README remains the primary landing page
-- Current release lane: 1.0 readiness cleanup, followed by `1.0.0-rc.1`
+- Current release lane: `1.0.0-rc.1` release-candidate verification
 
 ## Completed Public Baseline
 
@@ -76,8 +77,8 @@ codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animation
 6. Verify GitHub Actions on `main`.
 7. Tag `vX.Y.Z`.
 8. Create the GitHub Release.
-9. Publish to npm.
-10. Run `npm run verify-release-sync`.
+9. Publish to npm with `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
+10. Run `npm run verify-release-sync` for stable releases or `npm run verify-release-sync -- --dist-tag next --prerelease` for release candidates.
 
 ## Public Conversion Notes
 

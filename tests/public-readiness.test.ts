@@ -53,13 +53,16 @@ describe("public repository readiness", () => {
     const versioning = await readText("docs/engineering/versioning-and-releases.md");
     const publicReleaseChecklist = await readText("docs/operations/public-release-checklist.md");
     const readinessChecklist = await readText("docs/engineering/v1.0-readiness-checklist.md");
+    const packageDistTag = packageJson.version.includes("-") ? "next" : "latest";
 
     expect(readme).not.toContain("early public CLI release");
     expect(readme).toContain("1.0 readiness");
     expect(docsReadme).toContain("v1.0 Readiness Checklist");
     expect(versioning).toContain(`codex-plugin-doctor@${packageJson.version}`);
     expect(versioning).toContain("1.0.0-rc.1");
-    expect(publicReleaseChecklist).toContain(`npm latest: codex-plugin-doctor@${packageJson.version}`);
+    expect(publicReleaseChecklist).toContain(
+      `npm ${packageDistTag}: codex-plugin-doctor@${packageJson.version}`
+    );
     expect(publicReleaseChecklist).toContain("1.0 Readiness Checklist");
     expect(readinessChecklist).toContain("1.0.0-rc.1");
     expect(readinessChecklist).toContain("No new feature work");

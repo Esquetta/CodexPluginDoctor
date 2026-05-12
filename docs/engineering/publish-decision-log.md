@@ -2,9 +2,9 @@
 
 ## Current Decision
 
-As of `2026-05-11`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the 1.0 readiness cleanup release.
+As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@0.21.0` serving as the latest stable release and `codex-plugin-doctor@1.0.0-rc.1` serving as the first 1.0 release candidate.
 
-The next publish decision is `1.0.0-rc.1`, not another feature-heavy `0.x` release.
+The current publish decision is to ship `1.0.0-rc.1` with the npm `next` tag, not to move npm `latest` until the stable `1.0.0` release.
 
 ## Why
 
@@ -38,13 +38,13 @@ The next publish decision is `1.0.0-rc.1`, not another feature-heavy `0.x` relea
 
 - repository visibility is public
 - npm latest points to `codex-plugin-doctor@0.21.0`
-- post-publish sync can be verified with `npm run verify-release-sync`
+- release-candidate sync can be verified with `npm run verify-release-sync -- --dist-tag next --prerelease`
 - GitHub Actions runs on `main`
 - public-facing docs identify the 1.0 readiness lane
 
 ## Next Publish Decision Point
 
-Publish `1.0.0-rc.1` with the npm `next` tag after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md) passes.
+Publish stable `1.0.0` only after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md) and release-candidate smoke checks pass without blocker feedback.
 
 Do not add new feature work during RC prep unless the checklist exposes a release blocker.
 

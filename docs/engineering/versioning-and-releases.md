@@ -42,8 +42,8 @@ Use a major release when:
 4. Push `main` and verify GitHub Actions.
 5. Create git tag `vX.Y.Z`.
 6. Create a GitHub Release using `.github/release-template.md`.
-7. Run `npm publish --access public`.
-8. Run `npm run verify-release-sync` after npm publish and GitHub Release creation.
+7. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
+8. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
 
 ## Current Publish Position
 
@@ -55,6 +55,7 @@ Confirmed:
 - repository visibility is public
 - package name remains `codex-plugin-doctor`
 - npm latest: `codex-plugin-doctor@0.21.0`
+- npm next: `codex-plugin-doctor@1.0.0-rc.1`
 - GitHub Release flow uses matching `vX.Y.Z` tags
 - post-publish release sync is verified with `npm run verify-release-sync`
 - public JSON schema surfaces and existing rule IDs/default severities are stable through `1.0.0`
@@ -62,7 +63,7 @@ Confirmed:
 Current release target:
 
 - `0.21.0` is the readiness cleanup release.
-- `1.0.0-rc.1` is the next release-candidate target.
+- `1.0.0-rc.1` is the active release-candidate package version.
 - `1.0.0` should follow only after the RC smoke checklist passes without blocker changes.
 
 ## 1.0 Compatibility Position
@@ -87,6 +88,7 @@ Use `1.0.0-rc.1` when:
 - `doctor corpus` passes.
 - `doctor npm codex-plugin-doctor` passes against the published package.
 - GitHub Action artifact examples remain valid.
+- npm `next` points to the release candidate and npm `latest` remains on the current stable line.
 
 No new feature work should enter the release-candidate path unless it fixes a blocker discovered by the checklist.
 

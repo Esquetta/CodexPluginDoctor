@@ -3,6 +3,7 @@
 ## Purpose
 
 Prepare a locally testable or CI-generated release candidate without publishing to npm.
+When the candidate is published, use the npm `next` tag so npm `latest` remains on the current stable release until `1.0.0`.
 
 ## Local Flow
 
@@ -41,4 +42,4 @@ Inputs:
 - use `examples/codex-doctor-runtime` as the default sanity target
 - switch to a real plugin package path when validating a real release candidate
 - inspect the generated tarball and release notes before any public publish decision
-
+- verify published candidates with `npm run verify-release-sync -- --dist-tag next --prerelease`
