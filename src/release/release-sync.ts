@@ -7,9 +7,12 @@ export interface GitHubReleaseSyncState {
 export interface ReleaseSyncEvaluationInput {
   version: string;
   npmVersion: string;
+  npmDistTag?: string;
   remoteTagOutput: string;
   githubRelease: GitHubReleaseSyncState | null;
   latestReleaseTag: string;
+  expectPrerelease?: boolean;
+  requireLatestRelease?: boolean;
 }
 
 export interface ReleaseSyncCheck {
@@ -36,15 +39,18 @@ export function evaluateReleaseSync(
   input: ReleaseSyncEvaluationInput
 ): ReleaseSyncReport {
   const expectedTag = `v${input.version}`;
+  const npmDistTag = input.npmDistTag ?? "latest";
+  const expectPrerelease = input.expectPrerelease ?? false;
+  const requireLatestRelease = input.requireLatestRelease ?? !expectPrerelease;
   const checks: ReleaseSyncCheck[] = [];
 
   checks.push(
     input.npmVersion === input.version
-      ? buildCheck("npm.version", "pass", `npm latest is ${input.version}.`)
+      ? buildCheck("npm.version", "pass", `npm ${npmDistTag} is ${input.version}.`)
       : buildCheck(
           "npm.version",
           "fail",
-          `npm latest is ${input.npmVersion || "missing"}, expected ${input.version}.`
+          `npm ${npmDistTag} is ${input.npmVersion || "missing"}, expected ${input.version}.`
         )
   );
 
@@ -57,22 +63,34 @@ export function evaluateReleaseSync(
   const releaseMatches =
     input.githubRelease?.tagName === expectedTag &&
     !input.githubRelease.isDraft &&
-    !input.githubRelease.isPrerelease;
+    input.githubRelease.isPrerelease === expectPrerelease;
 
   checks.push(
     releaseMatches
-      ? buildCheck("github.release", "pass", `GitHub release ${expectedTag} is published.`)
+      ? buildCheck(
+          "github.release",
+          "pass",
+          expectPrerelease
+            ? `GitHub prerelease ${expectedTag} is published.`
+            : `GitHub release ${expectedTag} is published.`
+        )
       : buildCheck(
           "github.release",
           "fail",
           input.githubRelease
-            ? `GitHub release state is tag=${input.githubRelease.tagName}, draft=${input.githubRelease.isDraft}, prerelease=${input.githubRelease.isPrerelease}; expected published ${expectedTag}.`
+            ? `GitHub release state is tag=${input.githubRelease.tagName}, draft=${input.githubRelease.isDraft}, prerelease=${input.githubRelease.isPrerelease}; expected ${expectPrerelease ? "published prerelease" : "published release"} ${expectedTag}.`
             : `GitHub release ${expectedTag} is missing.`
         )
   );
 
   checks.push(
-    input.latestReleaseTag === expectedTag
+    !requireLatestRelease
+      ? buildCheck(
+          "github.latest_release",
+          "pass",
+          `GitHub latest release does not need to be ${expectedTag} for this prerelease verification.`
+        )
+      : input.latestReleaseTag === expectedTag
       ? buildCheck("github.latest_release", "pass", `GitHub latest release is ${expectedTag}.`)
       : buildCheck(
           "github.latest_release",

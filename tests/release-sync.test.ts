@@ -7,6 +7,7 @@ describe("evaluateReleaseSync", () => {
     const report = evaluateReleaseSync({
       version: "0.10.1",
       npmVersion: "0.10.1",
+      npmDistTag: "latest",
       remoteTagOutput: "abc123\trefs/tags/v0.10.1",
       githubRelease: {
         tagName: "v0.10.1",
@@ -14,6 +15,33 @@ describe("evaluateReleaseSync", () => {
         isPrerelease: false
       },
       latestReleaseTag: "v0.10.1"
+    });
+
+    expect(report.status).toBe("pass");
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "npm.version", status: "pass" }),
+        expect.objectContaining({ id: "git.remote_tag", status: "pass" }),
+        expect.objectContaining({ id: "github.release", status: "pass" }),
+        expect.objectContaining({ id: "github.latest_release", status: "pass" })
+      ])
+    );
+  });
+
+  it("passes for a prerelease published under the next dist-tag", () => {
+    const report = evaluateReleaseSync({
+      version: "1.0.0-rc.1",
+      npmVersion: "1.0.0-rc.1",
+      npmDistTag: "next",
+      remoteTagOutput: "abc123\trefs/tags/v1.0.0-rc.1",
+      githubRelease: {
+        tagName: "v1.0.0-rc.1",
+        isDraft: false,
+        isPrerelease: true
+      },
+      expectPrerelease: true,
+      requireLatestRelease: false,
+      latestReleaseTag: "v0.21.0"
     });
 
     expect(report.status).toBe("pass");

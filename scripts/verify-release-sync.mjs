@@ -16,6 +16,20 @@ function parseVersionArg() {
   return process.argv[versionIndex + 1] ?? null;
 }
 
+function parseStringArg(name, fallback) {
+  const index = process.argv.indexOf(name);
+
+  if (index === -1) {
+    return fallback;
+  }
+
+  return process.argv[index + 1] ?? fallback;
+}
+
+function hasFlag(name) {
+  return process.argv.includes(name);
+}
+
 function run(command, commandArgs, options = {}) {
   const label = [command, ...commandArgs].join(" ");
   const result = spawnSync(command, commandArgs, {
@@ -61,6 +75,8 @@ function readGitHubRelease(expectedTag) {
 
 async function main() {
   const version = parseVersionArg() ?? getPackageVersion();
+  const npmDistTag = parseStringArg("--dist-tag", "latest");
+  const expectPrerelease = hasFlag("--prerelease");
 
   if (!version) {
     throw new Error("Missing version. Pass --version <semver> or set package.json version.");
@@ -75,9 +91,12 @@ async function main() {
   const expectedTag = `v${version}`;
   const report = evaluateReleaseSync({
     version,
-    npmVersion: run("npm", ["view", "codex-plugin-doctor", "version"]),
+    npmVersion: run("npm", ["view", "codex-plugin-doctor", `dist-tags.${npmDistTag}`]),
+    npmDistTag,
     remoteTagOutput: run("git", ["ls-remote", "--tags", "origin", `refs/tags/${expectedTag}`]),
     githubRelease: readGitHubRelease(expectedTag),
+    expectPrerelease,
+    requireLatestRelease: !expectPrerelease,
     latestReleaseTag: run("gh", ["api", `repos/${repoName}/releases/latest`, "--jq", ".tag_name"], {
       allowFailure: true
     })
