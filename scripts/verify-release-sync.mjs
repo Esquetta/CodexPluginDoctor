@@ -18,16 +18,52 @@ function parseVersionArg() {
 
 function parseStringArg(name, fallback) {
   const index = process.argv.indexOf(name);
+  const npmConfigValue = readNpmConfig(name);
 
-  if (index === -1) {
-    return fallback;
+  if (npmConfigValue && npmConfigValue !== "true") {
+    return npmConfigValue;
   }
 
-  return process.argv[index + 1] ?? fallback;
+  if (index !== -1) {
+    return process.argv[index + 1] ?? fallback;
+  }
+
+  if (npmConfigValue === "true") {
+    return readNpmConfigPositional(name) ?? fallback;
+  }
+
+  return fallback;
 }
 
 function hasFlag(name) {
-  return process.argv.includes(name);
+  const npmConfigValue = readNpmConfig(name);
+
+  return process.argv.includes(name) || npmConfigValue === "true";
+}
+
+function readNpmConfig(name) {
+  const configName = name.replace(/^--/, "");
+  const normalizedConfigName = configName.replaceAll("-", "_");
+
+  return (
+    process.env[`npm_config_${configName}`] ??
+    process.env[`npm_config_${normalizedConfigName}`] ??
+    null
+  );
+}
+
+function readNpmConfigPositional(name) {
+  const positionals = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
+
+  if (name === "--version" && readNpmConfig("--dist-tag") === "true") {
+    return positionals[0] ?? null;
+  }
+
+  if (name === "--dist-tag" && readNpmConfig("--version") === "true") {
+    return positionals[1] ?? null;
+  }
+
+  return positionals[0] ?? null;
 }
 
 function run(command, commandArgs, options = {}) {

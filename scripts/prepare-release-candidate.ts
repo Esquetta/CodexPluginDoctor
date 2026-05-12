@@ -13,6 +13,7 @@ function parseArgs(argv: string[]) {
   let target = "examples/codex-doctor-runtime";
   let runtimeTarget = target;
   let outDir = "";
+  const positionalArgs: string[] = [];
 
   while (args.length > 0) {
     const arg = args.shift();
@@ -31,9 +32,27 @@ function parseArgs(argv: string[]) {
       outDir = args.shift() ?? outDir;
       continue;
     }
+
+    if (arg) {
+      positionalArgs.push(arg);
+    }
   }
 
+  target = readNpmConfig("target") ?? positionalArgs[0] ?? target;
+  runtimeTarget = readNpmConfig("runtime-target") ?? positionalArgs[1] ?? runtimeTarget;
+  outDir = readNpmConfig("out-dir") ?? positionalArgs[2] ?? outDir;
+
   return { target, runtimeTarget, outDir };
+}
+
+function readNpmConfig(name: string): string | null {
+  const normalizedName = name.replaceAll("-", "_");
+  const value =
+    process.env[`npm_config_${name}`] ??
+    process.env[`npm_config_${normalizedName}`] ??
+    null;
+
+  return value && value !== "true" ? value : null;
 }
 
 async function runCommand(
