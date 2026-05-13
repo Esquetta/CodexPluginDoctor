@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   prepare-release-candidate:
     runs-on: ubuntu-latest
@@ -39,7 +42,7 @@ jobs:
           --runtime-target "${{ github.event.inputs.runtime_target }}"
 
       - name: Upload release candidate artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: codex-plugin-doctor-release-candidate
           path: release-candidate/**

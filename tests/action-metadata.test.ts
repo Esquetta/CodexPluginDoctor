@@ -79,4 +79,17 @@ describe("GitHub Action metadata", () => {
     expect(artifactScript).toContain('"--sarif"');
     expect(artifactScript).toContain("codex-plugin-doctor.sarif");
   });
+
+  it("keeps repository workflows aligned on current artifact upload runtime", async () => {
+    const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
+    const releaseCandidateWorkflow = await readFile(".github/workflows/release-candidate.yml", "utf8");
+
+    for (const workflow of [ciWorkflow, releaseCandidateWorkflow]) {
+      expect(workflow).toContain("actions/checkout@v5");
+      expect(workflow).toContain("actions/setup-node@v5");
+      expect(workflow).toContain("actions/upload-artifact@v7");
+      expect(workflow).toContain('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"');
+      expect(workflow).not.toContain("actions/upload-artifact@v5");
+    }
+  });
 });

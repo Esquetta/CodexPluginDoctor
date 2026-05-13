@@ -3,7 +3,7 @@
 ## Purpose
 
 Prepare a locally testable or CI-generated release candidate without publishing to npm.
-When the candidate is published, use the npm `next` tag so npm `latest` remains on the current stable release until `1.0.0`.
+When the candidate is published, use the npm `next` tag so npm `latest` remains on the current stable release until the candidate is promoted.
 
 ## Local Flow
 
