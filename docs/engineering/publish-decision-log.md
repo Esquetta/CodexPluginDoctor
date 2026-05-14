@@ -2,9 +2,9 @@
 
 ## Current Decision
 
-As of `2026-05-12`, the project is public on GitHub and npm, with `codex-plugin-doctor@1.0.0` serving as the stable 1.0 release target and `codex-plugin-doctor@1.0.0-rc.2` retained as the final release candidate under the npm `next` tag.
+As of `2026-05-14`, the project is public on GitHub and npm, with `codex-plugin-doctor@1.0.1` serving as the current stable 1.0 patch target and `codex-plugin-doctor@1.0.0-rc.2` retained as the final release candidate under the npm `next` tag.
 
-The current publish decision is to promote the validated release-candidate line to stable `1.0.0` and move npm `latest` after the stable release gates pass.
+The current publish decision is to ship additive post-1.0 improvements through stable `1.0.1` and move npm `latest` after the stable release gates pass.
 
 ## Why
 
@@ -31,28 +31,31 @@ The current publish decision is to promote the validated release-candidate line 
 - validation corpus
 - npm preinstall package scan
 - local attestation artifact
+- optional HMAC-SHA256 local attestation signing
+- performance threshold gates
+- static generic MCP doctor alias under `doctor mcp`
 - GitHub Action JSON, Markdown, and SARIF artifacts
 - output contract and stable-through-1.0 metadata
 
 ## What Was Confirmed For The Current Release Line
 
 - repository visibility is public
-- npm latest is the stable publication target for `codex-plugin-doctor@1.0.0`
+- npm latest is the stable publication target for `codex-plugin-doctor@1.0.1`
 - release sync is verified with `npm run verify-release-sync` after stable publication
 - GitHub Actions runs on `main`
 - public-facing docs identify the 1.0 stable compatibility baseline
 
 ## Next Publish Decision Point
 
-Publish stable `1.0.0` after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md), release-check, GitHub Actions, registry install smoke, and release sync gates pass.
+Publish stable `1.0.1` after the [v1.0 Readiness Checklist](v1.0-readiness-checklist.md), release-check, GitHub Actions, registry install smoke, and release sync gates pass.
 
 Do not add new feature work during stable release prep unless the checklist exposes a release blocker.
 
 ## Stable Release Decision
 
-Publish `1.0.0` after:
+Publish `1.0.1` after:
 
-- `1.0.0-rc.2` install smoke passes
+- the 1.0.1 local install smoke passes
 - GitHub Action artifact smoke passes
 - no contract corrections are needed
 - release notes explicitly state compatibility and known limitations

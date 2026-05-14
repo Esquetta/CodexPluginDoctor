@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.1] - 2026-05-14
+
+### Added
+
+- added HMAC-SHA256 local attestation signing with `doctor attest --sign-key-env` and secret-safe recompute hints
+- added performance budget gates with `doctor perf --max-total-ms` and `--max-stage-ms stage=ms`
+- added `doctor mcp <path>` as a doctor-family alias for the static generic MCP health report
+- expanded the bundled validation corpus with a generic MCP package case
+
+### Changed
+
+- documented the post-1.0 additive release path, signed attestation behavior, MCP static-health boundary, and performance gate usage
+
 ## [1.0.0] - 2026-05-12
 
 ### Added
