@@ -43,8 +43,8 @@ describe("doctor corpus command", () => {
     expect(output.kind).toBe("doctor.validation.corpus");
     expect(output.summary).toMatchObject({
       status: "pass",
-      caseCount: 3,
-      passedExpectations: 3,
+      caseCount: 4,
+      passedExpectations: 4,
       failedExpectations: 0
     });
     expect(output.cases).toEqual(
@@ -79,6 +79,18 @@ describe("doctor corpus command", () => {
           profile: "skill-only",
           expectationMatched: true,
           expected: expect.objectContaining({ validationStatus: "pass" })
+        }),
+        expect.objectContaining({
+          id: "bundled-generic-mcp",
+          profile: "generic-mcp",
+          sourceType: "bundled-example",
+          runtimeEnabled: false,
+          expectationMatched: true,
+          expected: expect.objectContaining({ validationStatus: "pass" }),
+          actual: expect.objectContaining({
+            validationStatus: "pass",
+            compatibilityFailedClients: []
+          })
         })
       ])
     );
@@ -103,6 +115,7 @@ describe("doctor corpus command", () => {
     expect(output).toContain("Status: PASS");
     expect(output).toContain("bundled-runtime-healthy: PASS");
     expect(output).toContain("bundled-risky-security: PASS");
+    expect(output).toContain("bundled-generic-mcp: PASS");
   });
 
   it("writes corpus JSON to an output path", async () => {

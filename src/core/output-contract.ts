@@ -75,7 +75,8 @@ const publicSchemaDefinitions: Array<{
   {
     id: "doctor.mcp.json",
     command: "codex-plugin-doctor mcp <path> --json",
-    required: ["schemaVersion", "targetPath", "status", "summary", "findings"]
+    outputKind: "doctor.mcp.healthcheck",
+    required: ["schemaVersion", "kind", "generatedAt", "targetPath", "status", "serverCount", "findings", "security", "compatibility"]
   },
   {
     id: "doctor.audit.json",
@@ -117,7 +118,7 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.performance.json",
     command: "codex-plugin-doctor doctor perf <path> --json",
     outputKind: "doctor.perf",
-    required: ["schemaVersion", "kind", "generatedAt", "targetPath", "summary", "stages"]
+    required: ["schemaVersion", "kind", "generatedAt", "targetPath", "status", "exitCode", "summary", "stages", "thresholds"]
   },
   {
     id: "doctor.export.bundle.json",

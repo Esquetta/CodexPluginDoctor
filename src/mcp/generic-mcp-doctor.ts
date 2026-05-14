@@ -231,6 +231,7 @@ export function renderGenericMcpDoctorJson(report: GenericMcpDoctorReport): stri
   return JSON.stringify(
     {
       schemaVersion: "1.0.0",
+      kind: "doctor.mcp.healthcheck",
       generatedAt: new Date().toISOString(),
       ...report
     },

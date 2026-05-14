@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -66,10 +66,26 @@ export interface DoctorAttestation {
     recomputeCommand: string;
     notes: string[];
   };
-  signature: {
+  signature: DoctorAttestationSignature;
+}
+
+export type DoctorAttestationSignature =
+  | {
     status: "unsigned";
     reason: string;
+  }
+  | {
+    status: "signed";
+    algorithm: "hmac-sha256";
+    digest: string;
+    payloadDigest: string;
+    keyHint: string;
   };
+
+export interface BuildDoctorAttestationOptions {
+  signingKey?: string;
+  signingKeyHint?: string;
+  recomputeKeyEnv?: string;
 }
 
 interface PackageJsonSubject {
@@ -293,7 +309,8 @@ function buildSummary(
 }
 
 export async function buildDoctorAttestation(
-  targetPath: string
+  targetPath: string,
+  options: BuildDoctorAttestationOptions = {}
 ): Promise<DoctorAttestation> {
   const analysis = await buildPackageAnalysis(targetPath);
   const [packageFingerprint, packageJson, manifest] = await Promise.all([
@@ -305,30 +322,59 @@ export async function buildDoctorAttestation(
     buildReportDigestPayload(analysis, packageFingerprint)
   ));
 
+  const subject = buildSubject(analysis, packageJson, manifest);
+  const summary = buildSummary(analysis);
+  const signingPayload = {
+    schemaVersion: "1.0.0",
+    kind: "doctor.attestation.signature.v1",
+    version: packageVersion,
+    subject,
+    packageFingerprint,
+    reportDigest,
+    summary
+  };
+  const signature: DoctorAttestationSignature = options.signingKey
+    ? {
+      status: "signed",
+      algorithm: "hmac-sha256",
+      digest: `sha256:${createHmac("sha256", options.signingKey)
+        .update(stableStringify(signingPayload))
+        .digest("hex")}`,
+      payloadDigest: sha256(stableStringify(signingPayload)),
+      keyHint: options.signingKeyHint ?? "inline"
+    }
+    : {
+      status: "unsigned",
+      reason: "No signing key was provided. Use --sign-key-env for reproducible local signing."
+    };
+  const recomputeCommand = signature.status === "signed"
+    ? `codex-plugin-doctor doctor attest ${analysis.targetPath} --json --sign-key-env ${options.recomputeKeyEnv ?? "CODEX_PLUGIN_DOCTOR_SIGNING_KEY"}`
+    : `codex-plugin-doctor doctor attest ${analysis.targetPath} --json`;
+
   return {
     schemaVersion: "1.0.0",
     kind: "doctor.attestation",
     generatedAt: analysis.generatedAt,
     version: packageVersion,
     targetPath: analysis.targetPath,
-    subject: buildSubject(analysis, packageJson, manifest),
+    subject,
     packageFingerprint,
     reportDigest: {
       algorithm: "sha256",
       digest: reportDigest
     },
-    summary: buildSummary(analysis),
+    summary,
     verification: {
-      recomputeCommand: `codex-plugin-doctor doctor attest ${analysis.targetPath} --json`,
+      recomputeCommand,
       notes: [
         "Compare packageFingerprint.digest to confirm the same local package contents.",
-        "Compare reportDigest.digest to confirm the same validation, security, compatibility, trust, and recommendation signals."
+        "Compare reportDigest.digest to confirm the same validation, security, compatibility, trust, and recommendation signals.",
+        signature.status === "signed"
+          ? "Recompute the signed attestation with the same HMAC key stored in an environment variable."
+          : "Signing is optional and local; unsigned attestations remain deterministic without key material."
       ]
     },
-    signature: {
-      status: "unsigned",
-      reason: "v0.17 creates deterministic local attestations without key management or hosted signing."
-    }
+    signature
   };
 }
 
@@ -348,7 +394,7 @@ export function renderDoctorAttestation(
     `Status: ${attestation.summary.status.toUpperCase()}`,
     `Package fingerprint: ${attestation.packageFingerprint.digest}`,
     `Report digest: ${attestation.reportDigest.digest}`,
-    `Signature: ${attestation.signature.status}`
+    `Signature: ${attestation.signature.status}${attestation.signature.status === "signed" ? ` (${attestation.signature.algorithm})` : ""}`
   ];
 
   if (options.outputPath) {

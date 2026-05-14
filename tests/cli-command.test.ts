@@ -235,6 +235,23 @@ describe("runCli", () => {
     );
   });
 
+  it("runs the generic MCP doctor through the doctor mcp alias", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "mcp", "tests/fixtures/generic-mcp-only", "--json"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.schemaVersion).toBe("1.0.0");
+    expect(output.kind).toBe("doctor.mcp.healthcheck");
+    expect(output.serverCount).toBe(1);
+    expect(output.status).toBe("pass");
+  });
+
   it("writes the JSON compatibility matrix to the requested output path", async () => {
     const outputPath = await createTempFilePath("compatibility.json");
     const { io, stdout } = createIo();

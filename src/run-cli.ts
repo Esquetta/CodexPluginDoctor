@@ -82,7 +82,9 @@ import {
 import {
   buildDoctorPerformanceReport,
   renderDoctorPerformanceReport,
-  renderDoctorPerformanceReportJson
+  renderDoctorPerformanceReportJson,
+  type DoctorPerformanceStageName,
+  type DoctorPerformanceThresholdOptions
 } from "./core/performance-report.js";
 import {
   buildDoctorNpmPackageReport,
@@ -203,8 +205,99 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path>|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
+}
+
+const performanceStageNames = new Set<DoctorPerformanceStageName>([
+  "validation",
+  "doctorConfig",
+  "security",
+  "compatibility",
+  "trust",
+  "recommendations",
+  "total"
+]);
+
+function parseNonNegativeNumber(value: string | undefined): number | null {
+  if (value === undefined || value.startsWith("--")) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]): {
+  targetPath: string;
+  jsonOutput: boolean;
+  outputPath: string | null;
+} | string {
+  if (!commandTarget || commandTarget.startsWith("--")) {
+    return "Missing target path. Usage: codex-plugin-doctor mcp <path> [--json] [--output <path>]";
+  }
+
+  const outputIndex = flags.indexOf("--output");
+  const outputPath = outputIndex === -1 ? null : flags[outputIndex + 1];
+
+  if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+    return "Missing path after --output.";
+  }
+
+  return {
+    targetPath: commandTarget,
+    jsonOutput: flags.includes("--json"),
+    outputPath
+  };
+}
+
+function parsePerformanceThresholds(flags: string[]): {
+  thresholds: DoctorPerformanceThresholdOptions;
+} | string {
+  const thresholds: DoctorPerformanceThresholdOptions = {};
+  const totalIndex = flags.indexOf("--max-total-ms");
+
+  if (totalIndex !== -1) {
+    const totalMs = parseNonNegativeNumber(flags[totalIndex + 1]);
+
+    if (totalMs === null) {
+      return "Missing or invalid number after --max-total-ms.";
+    }
+
+    thresholds.totalMs = totalMs;
+  }
+
+  for (let index = 0; index < flags.length; index += 1) {
+    if (flags[index] !== "--max-stage-ms") {
+      continue;
+    }
+
+    const value = flags[index + 1];
+
+    if (!value || value.startsWith("--") || !value.includes("=")) {
+      return "Missing or invalid stage threshold after --max-stage-ms. Use stage=milliseconds.";
+    }
+
+    const [stageName, rawLimit] = value.split("=", 2);
+
+    if (!performanceStageNames.has(stageName as DoctorPerformanceStageName)) {
+      return `Unknown performance stage: ${stageName}.`;
+    }
+
+    const limitMs = parseNonNegativeNumber(rawLimit);
+
+    if (limitMs === null) {
+      return "Missing or invalid number after --max-stage-ms.";
+    }
+
+    thresholds.stages = {
+      ...thresholds.stages,
+      [stageName]: limitMs
+    };
+  }
+
+  return { thresholds };
 }
 
 function renderInstalledPlugins(plugins: InstalledPlugin[]): string {
@@ -457,6 +550,34 @@ export async function runCli(
       return 0;
     }
 
+    if (maybePath === "mcp") {
+      const targetPath = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs[0]
+        : "";
+      const mcpFlags = targetPath ? remainingArgs.slice(1) : remainingArgs;
+      const parsedMcpArgs = buildGenericMcpDoctorCommandArgs(targetPath, mcpFlags);
+
+      if (typeof parsedMcpArgs === "string") {
+        io.writeStderr(parsedMcpArgs);
+        return 2;
+      }
+
+      const report = await buildGenericMcpDoctor(parsedMcpArgs.targetPath, {
+        env: terminalContext.env,
+        platform: terminalContext.platform
+      });
+      const renderedReport = parsedMcpArgs.jsonOutput
+        ? renderGenericMcpDoctorJson(report)
+        : renderGenericMcpDoctor(report);
+
+      if (parsedMcpArgs.outputPath) {
+        await writeFile(parsedMcpArgs.outputPath, renderedReport, "utf8");
+      }
+
+      io.writeStdout(renderedReport);
+      return report.exitCode;
+    }
+
     if (maybePath === "corpus") {
       const jsonOutput = remainingArgs.includes("--json");
       const outputIndex = remainingArgs.indexOf("--output");
@@ -497,13 +618,43 @@ export async function runCli(
       const jsonOutput = attestFlags.includes("--json");
       const outputIndex = attestFlags.indexOf("--output");
       const outputPath = outputIndex === -1 ? null : attestFlags[outputIndex + 1];
+      const signKeyIndex = attestFlags.indexOf("--sign-key");
+      const signKeyEnvIndex = attestFlags.indexOf("--sign-key-env");
+      const signKey = signKeyIndex === -1 ? null : attestFlags[signKeyIndex + 1];
+      const signKeyEnv = signKeyEnvIndex === -1 ? null : attestFlags[signKeyEnvIndex + 1];
 
       if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
         io.writeStderr("Missing path after --output.");
         return 2;
       }
 
-      const attestation = await buildDoctorAttestation(targetPath);
+      if (signKeyIndex !== -1 && (!signKey || signKey.startsWith("--"))) {
+        io.writeStderr("Missing key after --sign-key.");
+        return 2;
+      }
+
+      if (signKeyEnvIndex !== -1 && (!signKeyEnv || signKeyEnv.startsWith("--"))) {
+        io.writeStderr("Missing environment variable name after --sign-key-env.");
+        return 2;
+      }
+
+      if (signKeyIndex !== -1 && signKeyEnvIndex !== -1) {
+        io.writeStderr("Use either --sign-key or --sign-key-env, not both.");
+        return 2;
+      }
+
+      const envSigningKey = signKeyEnv ? terminalContext.env[signKeyEnv] : undefined;
+
+      if (signKeyEnv && !envSigningKey) {
+        io.writeStderr(`Environment variable ${signKeyEnv} is not set.`);
+        return 2;
+      }
+
+      const attestation = await buildDoctorAttestation(targetPath, {
+        signingKey: signKey ?? envSigningKey,
+        signingKeyHint: signKeyEnv ? `env:${signKeyEnv}` : signKey ? "inline" : undefined,
+        recomputeKeyEnv: signKeyEnv ?? undefined
+      });
       const attestationJson = renderDoctorAttestationJson(attestation);
 
       if (outputPath) {
@@ -675,6 +826,13 @@ export async function runCli(
         return 2;
       }
 
+      const parsedThresholds = parsePerformanceThresholds(perfFlags);
+
+      if (typeof parsedThresholds === "string") {
+        io.writeStderr(parsedThresholds);
+        return 2;
+      }
+
       const report = await buildDoctorPerformanceReport(targetPath, {
         environment: {
           env: terminalContext.env,
@@ -682,7 +840,8 @@ export async function runCli(
         },
         runCheck: options.runCheckImpl
           ? (pathToCheck) => options.runCheckImpl!(pathToCheck)
-          : undefined
+          : undefined,
+        thresholds: parsedThresholds.thresholds
       });
       const renderedReport = jsonOutput
         ? renderDoctorPerformanceReportJson(report)
@@ -1039,30 +1198,23 @@ export async function runCli(
   }
 
   if (command === "mcp") {
-    if (!maybePath || maybePath.startsWith("--")) {
-      io.writeStderr("Missing target path. Usage: codex-plugin-doctor mcp <path> [--json] [--output <path>]");
+    const parsedMcpArgs = buildGenericMcpDoctorCommandArgs(maybePath ?? "", remainingArgs);
+
+    if (typeof parsedMcpArgs === "string") {
+      io.writeStderr(parsedMcpArgs);
       return 2;
     }
 
-    const jsonOutput = remainingArgs.includes("--json");
-    const outputIndex = remainingArgs.indexOf("--output");
-    const outputPath = outputIndex === -1 ? null : remainingArgs[outputIndex + 1];
-
-    if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
-      io.writeStderr("Missing path after --output.");
-      return 2;
-    }
-
-    const report = await buildGenericMcpDoctor(maybePath, {
+    const report = await buildGenericMcpDoctor(parsedMcpArgs.targetPath, {
       env: terminalContext.env,
       platform: terminalContext.platform
     });
-    const renderedReport = jsonOutput
+    const renderedReport = parsedMcpArgs.jsonOutput
       ? renderGenericMcpDoctorJson(report)
       : renderGenericMcpDoctor(report);
 
-    if (outputPath) {
-      await writeFile(outputPath, renderedReport, "utf8");
+    if (parsedMcpArgs.outputPath) {
+      await writeFile(parsedMcpArgs.outputPath, renderedReport, "utf8");
     }
 
     io.writeStdout(renderedReport);

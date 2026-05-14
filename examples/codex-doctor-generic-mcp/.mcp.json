@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "genericRuntime": {
+      "command": "node",
+      "args": [
+        "server.js"
+      ]
+    }
+  }
+}

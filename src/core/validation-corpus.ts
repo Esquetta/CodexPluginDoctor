@@ -7,6 +7,7 @@ import {
 } from "./package-analysis.js";
 import { validatePlugin } from "./validate-plugin.js";
 import { matrixExitCode } from "../compatibility/compatibility-matrix.js";
+import { buildGenericMcpDoctor } from "../mcp/generic-mcp-doctor.js";
 import { packageVersion } from "../version.js";
 
 type ValidationStatus = "pass" | "warn" | "fail";
@@ -18,6 +19,7 @@ export interface ValidationCorpusCaseDefinition {
   sourceType: "bundled-example";
   relativePath: string;
   runtimeEnabled: boolean;
+  mode?: "codex-plugin" | "generic-mcp";
   expected: {
     validationStatus: ValidationStatus;
     findingIds?: string[];
@@ -98,6 +100,18 @@ const bundledCorpusCases: ValidationCorpusCaseDefinition[] = [
     expected: {
       validationStatus: "pass"
     }
+  },
+  {
+    id: "bundled-generic-mcp",
+    label: "Bundled generic MCP package",
+    profile: "generic-mcp",
+    sourceType: "bundled-example",
+    relativePath: "examples/codex-doctor-generic-mcp",
+    runtimeEnabled: false,
+    mode: "generic-mcp",
+    expected: {
+      validationStatus: "pass"
+    }
   }
 ];
 
@@ -117,6 +131,40 @@ async function runCorpusCase(
   options: BuildDoctorValidationCorpusOptions
 ): Promise<ValidationCorpusCaseResult> {
   const targetPath = path.resolve(resolvePackageRoot(), caseDefinition.relativePath);
+  const expectedFindingIds = [...(caseDefinition.expected.findingIds ?? [])].sort();
+
+  if (caseDefinition.mode === "generic-mcp") {
+    const report = await buildGenericMcpDoctor(targetPath, options.environment);
+    const findingIds = report.findings.map((finding) => finding.id).sort();
+    const compatibilityFailedClients = report.compatibility.results
+      .filter((result) => result.status === "fail")
+      .map((result) => result.client);
+    const expectationMatched =
+      report.status === caseDefinition.expected.validationStatus &&
+      includesExpectedFindings(findingIds, expectedFindingIds);
+
+    return {
+      id: caseDefinition.id,
+      label: caseDefinition.label,
+      profile: caseDefinition.profile,
+      sourceType: caseDefinition.sourceType,
+      targetPath,
+      runtimeEnabled: caseDefinition.runtimeEnabled,
+      expected: {
+        validationStatus: caseDefinition.expected.validationStatus,
+        findingIds: expectedFindingIds
+      },
+      actual: {
+        validationStatus: report.status,
+        findingIds,
+        securityStatus: report.security.status,
+        trustStatus: "pass",
+        compatibilityFailedClients
+      },
+      expectationMatched
+    };
+  }
+
   const analysis = await buildPackageAnalysis(targetPath, {
     environment: options.environment,
     runCheck: (pathToCheck) => validatePlugin(pathToCheck, {
@@ -124,7 +172,6 @@ async function runCorpusCase(
     })
   });
   const findingIds = analysis.validation.findings.map((finding) => finding.id).sort();
-  const expectedFindingIds = [...(caseDefinition.expected.findingIds ?? [])].sort();
   const compatibilityFailedClients = analysis.compatibility.results
     .filter((result) => result.status === "fail")
     .map((result) => result.client);

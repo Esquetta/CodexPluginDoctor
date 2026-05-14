@@ -26,8 +26,8 @@ export interface DoctorPerformanceReport {
   generatedAt: string;
   kind: "doctor.perf";
   targetPath: string;
-  status: "pass";
-  exitCode: 0;
+  status: "pass" | "fail";
+  exitCode: 0 | 1;
   summary: {
     stageCount: number;
     slowestStage: DoctorPerformanceStageName;
@@ -36,13 +36,28 @@ export interface DoctorPerformanceReport {
     securityStatus: "pass" | "warn" | "fail";
     trustScore: number;
     compatibilityFailures: number;
+    thresholdFailures: number;
   };
   stages: DoctorPerformanceStage[];
+  thresholds: DoctorPerformanceThresholdResult[];
 }
 
 export interface BuildDoctorPerformanceReportOptions {
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string) => Promise<CheckResult>;
+  thresholds?: DoctorPerformanceThresholdOptions;
+}
+
+export interface DoctorPerformanceThresholdOptions {
+  totalMs?: number;
+  stages?: Partial<Record<DoctorPerformanceStageName, number>>;
+}
+
+export interface DoctorPerformanceThresholdResult {
+  stage: DoctorPerformanceStageName;
+  limitMs: number;
+  actualMs: number;
+  status: "pass" | "fail";
 }
 
 const stageOrder: DoctorPerformanceStageName[] = [
@@ -73,6 +88,44 @@ function slowestStage(stages: DoctorPerformanceStage[]): DoctorPerformanceStageN
     .reduce((slowest, stage) => (
       stage.durationMs > slowest.durationMs ? stage : slowest
     ), stages[0]).name;
+}
+
+function evaluateThresholds(
+  stages: DoctorPerformanceStage[],
+  thresholds: DoctorPerformanceThresholdOptions = {}
+): DoctorPerformanceThresholdResult[] {
+  const thresholdResults: DoctorPerformanceThresholdResult[] = [];
+  const stageByName = new Map(stages.map((stage) => [stage.name, stage]));
+
+  if (thresholds.totalMs !== undefined) {
+    const totalStage = stageByName.get("total");
+
+    if (totalStage) {
+      thresholdResults.push({
+        stage: "total",
+        limitMs: thresholds.totalMs,
+        actualMs: totalStage.durationMs,
+        status: totalStage.durationMs > thresholds.totalMs ? "fail" : "pass"
+      });
+    }
+  }
+
+  for (const [stageName, limitMs] of Object.entries(thresholds.stages ?? {}) as [DoctorPerformanceStageName, number][]) {
+    const stage = stageByName.get(stageName);
+
+    if (!stage) {
+      continue;
+    }
+
+    thresholdResults.push({
+      stage: stageName,
+      limitMs,
+      actualMs: stage.durationMs,
+      status: stage.durationMs > limitMs ? "fail" : "pass"
+    });
+  }
+
+  return thresholdResults;
 }
 
 export async function buildDoctorPerformanceReport(
@@ -154,14 +207,17 @@ export async function buildDoctorPerformanceReport(
       durationMs: roundDuration(totalDurationMs)
     };
   });
+  const thresholdResults = evaluateThresholds(stages, options.thresholds);
+  const thresholdFailures = thresholdResults
+    .filter((threshold) => threshold.status === "fail").length;
 
   return {
     schemaVersion: "1.0.0",
     generatedAt: analysis.generatedAt,
     kind: "doctor.perf",
     targetPath: analysis.targetPath,
-    status: "pass",
-    exitCode: 0,
+    status: thresholdFailures > 0 ? "fail" : "pass",
+    exitCode: thresholdFailures > 0 ? 1 : 0,
     summary: {
       stageCount: stages.length,
       slowestStage: slowestStage(stages),
@@ -169,9 +225,11 @@ export async function buildDoctorPerformanceReport(
       validationStatus: analysis.validation.status,
       securityStatus: analysis.security.status,
       trustScore: analysis.trust.score,
-      compatibilityFailures
+      compatibilityFailures,
+      thresholdFailures
     },
-    stages
+    stages,
+    thresholds: thresholdResults
   };
 }
 
@@ -206,6 +264,17 @@ export function renderDoctorPerformanceReport(
     const count = stage.itemCount === undefined ? "" : `, items: ${stage.itemCount}`;
 
     lines.push(`${stage.name}: ${stage.durationMs}ms${status}${count}`);
+  }
+
+  if (report.thresholds.length > 0) {
+    lines.push("", "Thresholds", "----------");
+
+    for (const threshold of report.thresholds) {
+      lines.push(
+        `${threshold.stage}: ${threshold.actualMs}ms <= ${threshold.limitMs}ms ` +
+        `(${threshold.status.toUpperCase()})`
+      );
+    }
   }
 
   return lines.join("\n");

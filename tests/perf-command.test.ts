@@ -82,4 +82,51 @@ describe("doctor perf command", () => {
     expect(JSON.parse(stdout.join(""))).toEqual(writtenReport);
     expect(writtenReport.kind).toBe("doctor.perf");
   });
+
+  it("fails when a total duration threshold is exceeded", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "perf", "tests/fixtures/valid-plugin", "--json", "--max-total-ms", "0"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.exitCode).toBe(1);
+    expect(output.thresholds).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "total",
+          limitMs: 0,
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails when a stage duration threshold is exceeded", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "perf", "tests/fixtures/valid-plugin", "--json", "--max-stage-ms", "validation=0"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.thresholds).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "validation",
+          limitMs: 0,
+          status: "fail"
+        })
+      ])
+    );
+  });
 });

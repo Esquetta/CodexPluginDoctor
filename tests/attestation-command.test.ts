@@ -65,6 +65,79 @@ describe("doctor attest command", () => {
     expect(output.signature.status).toBe("unsigned");
   });
 
+  it("signs a local attestation with an explicit HMAC key", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "attest", "examples/codex-doctor-runtime", "--json", "--sign-key", "test-secret"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: {},
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.signature).toMatchObject({
+      status: "signed",
+      algorithm: "hmac-sha256",
+      keyHint: "inline",
+      digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+    });
+    expect(output.signature).not.toHaveProperty("key");
+    expect(output.verification.recomputeCommand).toContain("--sign-key-env");
+  });
+
+  it("signs a local attestation from an environment variable", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "attest", "examples/codex-doctor-runtime", "--json", "--sign-key-env", "DOCTOR_SIGNING_KEY"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "env-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.signature.status).toBe("signed");
+    expect(output.signature.keyHint).toBe("env:DOCTOR_SIGNING_KEY");
+  });
+
+  it("requires an environment value when --sign-key-env is used", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "attest", "examples/codex-doctor-runtime", "--json", "--sign-key-env", "MISSING_KEY"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: {},
+          platform: "win32"
+        }
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Environment variable MISSING_KEY is not set.");
+  });
+
   it("keeps package and report digests stable across repeated runs", async () => {
     const first = createIo();
     const second = createIo();
