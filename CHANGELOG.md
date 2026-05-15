@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.2] - 2026-05-15
+
+### Added
+
+- added `doctor attest verify <attestation.json> --target <path> --sign-key-env <name>` for offline signed attestation verification
+- added verification JSON/text reports with package fingerprint, report digest, signature checks, and explicit unsigned metadata fields
+- added deterministic digest coverage across copied package roots for signed attestation payloads
+
+### Changed
+
+- kept verification secret handling env-only so HMAC keys do not need to be passed through shell arguments
+- updated the public output contract with the attestation verification report surface
+
 ## [1.0.1] - 2026-05-14
 
 ### Added
