@@ -133,6 +133,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "targetPath", "subject", "packageFingerprint", "reportDigest", "summary", "verification", "signature"]
   },
   {
+    id: "doctor.attestation.verification.json",
+    command: "codex-plugin-doctor doctor attest verify <attestation.json> --target <path> --json",
+    outputKind: "doctor.attestation.verification",
+    required: ["schemaVersion", "kind", "generatedAt", "artifactPath", "targetPath", "status", "exitCode", "summary", "unsignedFields", "checks"]
+  },
+  {
     id: "doctor.npm.json",
     command: "codex-plugin-doctor doctor npm <package> --json",
     outputKind: "doctor.npm",

@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -86,6 +86,36 @@ export interface BuildDoctorAttestationOptions {
   signingKey?: string;
   signingKeyHint?: string;
   recomputeKeyEnv?: string;
+  versionOverride?: string;
+}
+
+export interface DoctorAttestationVerificationReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.attestation.verification";
+  generatedAt: string;
+  artifactPath: string;
+  targetPath: string;
+  status: "pass" | "fail";
+  exitCode: 0 | 1;
+  summary: {
+    packageFingerprint: "pass" | "fail";
+    reportDigest: "pass" | "fail";
+    signature: "pass" | "fail";
+  };
+  unsignedFields: string[];
+  checks: DoctorAttestationVerificationCheck[];
+}
+
+export interface DoctorAttestationVerificationCheck {
+  id: string;
+  status: "pass" | "fail";
+  message: string;
+  expected?: string;
+  actual?: string;
+}
+
+export interface VerifyDoctorAttestationOptions {
+  signingKey: string;
 }
 
 interface PackageJsonSubject {
@@ -237,10 +267,11 @@ async function readManifestSubject(rootPath: string): Promise<PackageJsonSubject
 
 function buildReportDigestPayload(
   analysis: PackageAnalysis,
-  packageFingerprint: PackageFingerprint
+  packageFingerprint: PackageFingerprint,
+  version: string
 ): unknown {
   return {
-    version: packageVersion,
+    version,
     packageFingerprint,
     validation: {
       status: analysis.validation.status,
@@ -261,7 +292,13 @@ function buildReportDigestPayload(
       score: analysis.trust.score,
       findings: analysis.trust.findings
     },
-    recommendations: buildDoctorRecommendationsFromAnalysis(analysis).actions
+    recommendations: buildDoctorRecommendationsFromAnalysis(analysis).actions.map((action) => ({
+      priority: action.priority,
+      category: action.category,
+      title: action.title,
+      reason: action.reason,
+      findingId: action.findingId
+    }))
   };
 }
 
@@ -318,21 +355,22 @@ export async function buildDoctorAttestation(
     readPackageSubject(analysis.targetPath),
     readManifestSubject(analysis.targetPath)
   ]);
+  const attestationVersion = options.versionOverride ?? packageVersion;
   const reportDigest = sha256(stableStringify(
-    buildReportDigestPayload(analysis, packageFingerprint)
+    buildReportDigestPayload(analysis, packageFingerprint, attestationVersion)
   ));
 
   const subject = buildSubject(analysis, packageJson, manifest);
   const summary = buildSummary(analysis);
-  const signingPayload = {
+  const signingPayload = buildSigningPayload({
     schemaVersion: "1.0.0",
     kind: "doctor.attestation.signature.v1",
-    version: packageVersion,
+    version: attestationVersion,
     subject,
     packageFingerprint,
     reportDigest,
     summary
-  };
+  });
   const signature: DoctorAttestationSignature = options.signingKey
     ? {
       status: "signed",
@@ -355,7 +393,7 @@ export async function buildDoctorAttestation(
     schemaVersion: "1.0.0",
     kind: "doctor.attestation",
     generatedAt: analysis.generatedAt,
-    version: packageVersion,
+    version: attestationVersion,
     targetPath: analysis.targetPath,
     subject,
     packageFingerprint,
@@ -378,8 +416,231 @@ export async function buildDoctorAttestation(
   };
 }
 
+function buildSigningPayload(attestation: Pick<
+  DoctorAttestation,
+  "schemaVersion" | "subject" | "packageFingerprint" | "summary"
+> & {
+  kind?: string;
+  version: string;
+  reportDigest: string | Digest;
+}): unknown {
+  return {
+    schemaVersion: attestation.schemaVersion,
+    kind: "doctor.attestation.signature.v1",
+    version: attestation.version,
+    subject: attestation.subject,
+    packageFingerprint: attestation.packageFingerprint,
+    reportDigest: typeof attestation.reportDigest === "string"
+      ? attestation.reportDigest
+      : attestation.reportDigest.digest,
+    summary: attestation.summary
+  };
+}
+
+function signPayload(payload: unknown, signingKey: string): Pick<
+  Extract<DoctorAttestationSignature, { status: "signed" }>,
+  "digest" | "payloadDigest"
+> {
+  const serializedPayload = stableStringify(payload);
+
+  return {
+    digest: `sha256:${createHmac("sha256", signingKey)
+      .update(serializedPayload)
+      .digest("hex")}`,
+    payloadDigest: sha256(serializedPayload)
+  };
+}
+
+function isDoctorAttestation(value: unknown): value is DoctorAttestation {
+  return isPlainObject(value) &&
+    value.schemaVersion === "1.0.0" &&
+    value.kind === "doctor.attestation" &&
+    typeof value.version === "string" &&
+    isPlainObject(value.packageFingerprint) &&
+    isPlainObject(value.reportDigest) &&
+    isPlainObject(value.signature);
+}
+
+function digestMatches(expected: string, actual: string): boolean {
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+
+  return expectedBuffer.length === actualBuffer.length &&
+    timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+function createDigestVerificationCheck(
+  id: string,
+  message: string,
+  expected: string,
+  actual: string,
+  includeDigests = true
+): DoctorAttestationVerificationCheck {
+  return {
+    id,
+    status: digestMatches(expected, actual) ? "pass" : "fail",
+    message,
+    ...(includeDigests ? { expected, actual } : {})
+  };
+}
+
+export async function verifyDoctorAttestation(
+  artifactPath: string,
+  targetPath: string,
+  options: VerifyDoctorAttestationOptions
+): Promise<DoctorAttestationVerificationReport> {
+  const resolvedArtifactPath = path.resolve(artifactPath);
+  const artifact = await readJsonFile<unknown>(resolvedArtifactPath);
+
+  if (!isDoctorAttestation(artifact)) {
+    return {
+      schemaVersion: "1.0.0",
+      kind: "doctor.attestation.verification",
+      generatedAt: new Date().toISOString(),
+      artifactPath: resolvedArtifactPath,
+      targetPath: path.resolve(targetPath),
+      status: "fail",
+      exitCode: 1,
+      summary: {
+        packageFingerprint: "fail",
+        reportDigest: "fail",
+        signature: "fail"
+      },
+      unsignedFields: [
+        "generatedAt",
+        "targetPath",
+        "verification",
+        "signature.keyHint"
+      ],
+      checks: [
+        {
+          id: "attestation.artifact.invalid",
+          status: "fail",
+          message: "The attestation artifact is not a valid doctor attestation."
+        }
+      ]
+    };
+  }
+
+  const expected = await buildDoctorAttestation(targetPath, {
+    signingKey: options.signingKey,
+    signingKeyHint: "verification",
+    versionOverride: artifact.version
+  });
+  const checks: DoctorAttestationVerificationCheck[] = [
+    createDigestVerificationCheck(
+      "attestation.package_fingerprint",
+      "Package fingerprint matches the target package contents.",
+      expected.packageFingerprint.digest,
+      artifact.packageFingerprint.digest
+    ),
+    createDigestVerificationCheck(
+      "attestation.report_digest",
+      "Report digest matches the target validation evidence.",
+      expected.reportDigest.digest,
+      artifact.reportDigest.digest
+    )
+  ];
+
+  if (artifact.signature.status !== "signed") {
+    checks.push({
+      id: "attestation.signature.unsigned",
+      status: "fail",
+      message: "The attestation artifact is unsigned and cannot be verified with a signing key."
+    });
+  } else {
+    const expectedSignature = signPayload(buildSigningPayload(artifact), options.signingKey);
+
+    checks.push(
+      createDigestVerificationCheck(
+        "attestation.signature.payload",
+        "Signature payload digest matches the canonical attestation payload.",
+        expectedSignature.payloadDigest,
+        artifact.signature.payloadDigest,
+        false
+      ),
+      createDigestVerificationCheck(
+        "attestation.signature.mismatch",
+        "HMAC-SHA256 signature matches the canonical attestation payload and signing key.",
+        expectedSignature.digest,
+        artifact.signature.digest,
+        false
+      )
+    );
+  }
+
+  const failedChecks = checks.filter((check) => check.status === "fail");
+  const packageFingerprint = checks.find((check) => check.id === "attestation.package_fingerprint")?.status ?? "fail";
+  const reportDigest = checks.find((check) => check.id === "attestation.report_digest")?.status ?? "fail";
+  const signature = checks
+    .filter((check) => check.id.startsWith("attestation.signature."))
+    .every((check) => check.status === "pass")
+      ? "pass"
+      : "fail";
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.attestation.verification",
+    generatedAt: new Date().toISOString(),
+    artifactPath: resolvedArtifactPath,
+    targetPath: expected.targetPath,
+    status: failedChecks.length === 0 ? "pass" : "fail",
+    exitCode: failedChecks.length === 0 ? 0 : 1,
+    summary: {
+      packageFingerprint,
+      reportDigest,
+      signature
+    },
+    unsignedFields: [
+      "generatedAt",
+      "targetPath",
+      "verification",
+      "signature.keyHint"
+    ],
+    checks
+  };
+}
+
 export function renderDoctorAttestationJson(attestation: DoctorAttestation): string {
   return JSON.stringify(attestation, null, 2);
+}
+
+export function renderDoctorAttestationVerificationJson(
+  report: DoctorAttestationVerificationReport
+): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function renderDoctorAttestationVerification(
+  report: DoctorAttestationVerificationReport,
+  options: { outputPath?: string | null } = {}
+): string {
+  const lines = [
+    "Doctor Attestation Verification",
+    "===============================",
+    `Artifact: ${report.artifactPath}`,
+    `Target: ${report.targetPath}`,
+    `Status: ${report.status.toUpperCase()}`,
+    `Package fingerprint: ${report.summary.packageFingerprint.toUpperCase()}`,
+    `Report digest: ${report.summary.reportDigest.toUpperCase()}`,
+    `Signature: ${report.summary.signature.toUpperCase()}`
+  ];
+
+  if (options.outputPath) {
+    lines.push(`Output: ${options.outputPath}`);
+  }
+
+  lines.push("", "Checks", "------");
+
+  for (const check of report.checks) {
+    lines.push(`${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}`);
+    lines.push(`  ${check.message}`);
+  }
+
+  lines.push("", "Unsigned metadata", "-----------------");
+  lines.push(report.unsignedFields.join(", "));
+
+  return lines.join("\n");
 }
 
 export function renderDoctorAttestation(

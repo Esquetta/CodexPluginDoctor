@@ -36,7 +36,12 @@ export {
   buildDoctorAttestation,
   renderDoctorAttestation,
   renderDoctorAttestationJson,
+  renderDoctorAttestationVerification,
+  renderDoctorAttestationVerificationJson,
+  verifyDoctorAttestation,
   type DoctorAttestation,
+  type DoctorAttestationVerificationCheck,
+  type DoctorAttestationVerificationReport,
   type Digest,
   type PackageFingerprint
 } from "./core/attestation.js";
