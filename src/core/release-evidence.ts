@@ -132,17 +132,27 @@ async function readGitValue(args: string[], cwd: string): Promise<string | null>
   }
 }
 
+async function readGitDirty(cwd: string): Promise<boolean | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["status", "--short"], { cwd });
+
+    return stdout.trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
 async function readGitMetadata(rootPath: string): Promise<DoctorReleaseEvidenceGitMetadata> {
   const [commit, tag, dirtyOutput] = await Promise.all([
     readGitValue(["rev-parse", "HEAD"], rootPath),
     readGitValue(["describe", "--tags", "--exact-match"], rootPath),
-    readGitValue(["status", "--short"], rootPath)
+    readGitDirty(rootPath)
   ]);
 
   return {
     commit,
     tag,
-    dirty: dirtyOutput === null ? null : dirtyOutput.length > 0
+    dirty: dirtyOutput
   };
 }
 

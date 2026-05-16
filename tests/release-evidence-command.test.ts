@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -80,10 +80,10 @@ describe("doctor release-evidence command", () => {
     expect(output.package.name).toBe("codex-doctor-runtime");
     expect(output.git).toEqual(
       expect.objectContaining({
-        commit: expect.any(String),
-        tag: expect.anything()
+        commit: expect.any(String)
       })
     );
+    expect(typeof output.git.tag === "string" || output.git.tag === null).toBe(true);
   });
 
   it("fails release readiness when a performance threshold is exceeded", async () => {
@@ -123,13 +123,15 @@ describe("doctor release-evidence command", () => {
   });
 
   it("fails release readiness when strict git release gates are not satisfied", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-gates-"));
+    await cp("examples/codex-doctor-runtime", targetPath, { recursive: true });
     const { io, stdout, stderr } = createIo();
 
     const exitCode = await runCli(
       [
         "doctor",
         "release-evidence",
-        "examples/codex-doctor-runtime",
+        targetPath,
         "--json",
         "--sign-key-env",
         "DOCTOR_SIGNING_KEY",
@@ -155,7 +157,7 @@ describe("doctor release-evidence command", () => {
     expect(output.releaseGates.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "git.worktree.clean",
+          id: "git.commit.present",
           status: "fail"
         })
       ])
