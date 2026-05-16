@@ -9,11 +9,11 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - Repository: public
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
-- npm latest: codex-plugin-doctor@1.0.2
+- npm latest: codex-plugin-doctor@1.0.3
 - npm next: codex-plugin-doctor@1.0.0-rc.2
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
 - Website: not required for the stable 1.0 release; the GitHub README remains the primary landing page
-- Current release lane: `1.0.2` stable patch release verification
+- Current release lane: `1.0.3` stable patch release verification
 
 ## Completed Public Baseline
 
@@ -32,16 +32,17 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - [x] Add output contract and rule catalog freeze metadata.
 - [x] Add validation corpus and package preinstall scan surfaces.
 
-## 1.0.2 Patch Release Checklist
+## 1.0.3 Patch Release Checklist
 
 Use [v1.0 Readiness Checklist](../engineering/v1.0-readiness-checklist.md) for baseline 1.0 compatibility and [Versioning and Releases](../engineering/versioning-and-releases.md) as the stable patch release gate.
 
-Before stable `1.0.2` publication:
+Before stable `1.0.3` publication:
 
 - [ ] Confirm no stale RC-only release language remains in README or operations docs.
 - [ ] Confirm `doctor corpus` passes locally.
 - [ ] Confirm signed attestation smoke passes with `--sign-key-env`.
 - [ ] Confirm signed attestation verification passes with `doctor attest verify`.
+- [ ] Confirm `doctor release-evidence` passes with strict git release gates after tagging.
 - [ ] Confirm `doctor perf` threshold gates can fail and pass deterministically.
 - [ ] Confirm `doctor mcp` stays static and does not execute local MCP servers.
 - [ ] Confirm registry install smoke checks pass.

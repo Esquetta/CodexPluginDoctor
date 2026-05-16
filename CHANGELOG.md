@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.0.3] - 2026-05-16
+
+### Added
+
+- added `doctor release-evidence <path> --sign-key-env <name>` to produce one signed, machine-readable release evidence bundle
+- added strict release gates for git commit, exact tag, and clean worktree checks, with explicit `--allow-dirty` and `--allow-untagged` overrides for local rehearsal
+- added `doctor.release.evidence` to the public output contract
+
+### Changed
+
+- reused redaction logic for release evidence JSON so shared artifacts mask token-like values
+- documented the release evidence workflow for stable 1.0 patch releases
+
 ## [1.0.2] - 2026-05-15
 
 ### Added
