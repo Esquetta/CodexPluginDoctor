@@ -25,7 +25,7 @@ export interface DoctorExportBundle {
   trust: TrustScoreReport;
 }
 
-function redactString(value: string): string {
+export function redactString(value: string): string {
   return value
     .replace(/sk-[A-Za-z0-9_-]{12,}/g, "[REDACTED_SECRET]")
     .replace(/npm_[A-Za-z0-9_-]{12,}/g, "[REDACTED_SECRET]")
@@ -33,7 +33,7 @@ function redactString(value: string): string {
     .replace(/SHOULD_NOT_LEAK/g, "[REDACTED_SECRET]");
 }
 
-function redactValue(value: unknown): unknown {
+export function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
     return redactString(value);
   }

@@ -116,6 +116,7 @@ export interface DoctorAttestationVerificationCheck {
 
 export interface VerifyDoctorAttestationOptions {
   signingKey: string;
+  artifactPath?: string;
 }
 
 interface PackageJsonSubject {
@@ -492,12 +493,25 @@ export async function verifyDoctorAttestation(
   const resolvedArtifactPath = path.resolve(artifactPath);
   const artifact = await readJsonFile<unknown>(resolvedArtifactPath);
 
+  return verifyDoctorAttestationObject(artifact, targetPath, {
+    ...options,
+    artifactPath: resolvedArtifactPath
+  });
+}
+
+export async function verifyDoctorAttestationObject(
+  artifact: unknown,
+  targetPath: string,
+  options: VerifyDoctorAttestationOptions
+): Promise<DoctorAttestationVerificationReport> {
+  const artifactPath = options.artifactPath ?? "inline:doctor.attestation";
+
   if (!isDoctorAttestation(artifact)) {
     return {
       schemaVersion: "1.0.0",
       kind: "doctor.attestation.verification",
       generatedAt: new Date().toISOString(),
-      artifactPath: resolvedArtifactPath,
+      artifactPath,
       targetPath: path.resolve(targetPath),
       status: "fail",
       exitCode: 1,
@@ -582,7 +596,7 @@ export async function verifyDoctorAttestation(
     schemaVersion: "1.0.0",
     kind: "doctor.attestation.verification",
     generatedAt: new Date().toISOString(),
-    artifactPath: resolvedArtifactPath,
+    artifactPath,
     targetPath: expected.targetPath,
     status: failedChecks.length === 0 ? "pass" : "fail",
     exitCode: failedChecks.length === 0 ? 0 : 1,

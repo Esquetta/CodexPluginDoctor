@@ -90,6 +90,11 @@ import {
   type DoctorPerformanceThresholdOptions
 } from "./core/performance-report.js";
 import {
+  buildDoctorReleaseEvidenceReport,
+  renderDoctorReleaseEvidence,
+  renderDoctorReleaseEvidenceJson
+} from "./core/release-evidence.js";
+import {
   buildDoctorNpmPackageReport,
   renderDoctorNpmPackageReport,
   renderDoctorNpmPackageReportJson
@@ -208,7 +213,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -575,6 +580,81 @@ export async function runCli(
 
       if (parsedMcpArgs.outputPath) {
         await writeFile(parsedMcpArgs.outputPath, renderedReport, "utf8");
+      }
+
+      io.writeStdout(renderedReport);
+      return report.exitCode;
+    }
+
+    if (maybePath === "release-evidence") {
+      const targetPath = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs[0]
+        : ".";
+      const evidenceFlags = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs.slice(1)
+        : remainingArgs;
+      const jsonOutput = evidenceFlags.includes("--json");
+      const outputIndex = evidenceFlags.indexOf("--output");
+      const outputPath = outputIndex === -1 ? null : evidenceFlags[outputIndex + 1];
+      const signKeyIndex = evidenceFlags.indexOf("--sign-key");
+      const signKeyEnvIndex = evidenceFlags.indexOf("--sign-key-env");
+      const signKeyEnv = signKeyEnvIndex === -1 ? null : evidenceFlags[signKeyEnvIndex + 1];
+      const allowDirty = evidenceFlags.includes("--allow-dirty");
+      const allowUntagged = evidenceFlags.includes("--allow-untagged");
+
+      if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+        io.writeStderr("Missing path after --output.");
+        return 2;
+      }
+
+      if (signKeyIndex !== -1) {
+        io.writeStderr("Use --sign-key-env for release evidence; inline signing keys are not supported.");
+        return 2;
+      }
+
+      if (signKeyEnvIndex === -1) {
+        io.writeStderr("Missing signing key. Use --sign-key-env <name>.");
+        return 2;
+      }
+
+      if (!signKeyEnv || signKeyEnv.startsWith("--")) {
+        io.writeStderr("Missing environment variable name after --sign-key-env.");
+        return 2;
+      }
+
+      const signingKey = terminalContext.env[signKeyEnv];
+
+      if (!signingKey) {
+        io.writeStderr(`Environment variable ${signKeyEnv} is not set.`);
+        return 2;
+      }
+
+      const parsedThresholds = parsePerformanceThresholds(evidenceFlags);
+
+      if (typeof parsedThresholds === "string") {
+        io.writeStderr(parsedThresholds);
+        return 2;
+      }
+
+      const report = await buildDoctorReleaseEvidenceReport(targetPath, {
+        signingKey,
+        signingKeyEnv: signKeyEnv,
+        allowDirty,
+        allowUntagged,
+        environment: {
+          env: terminalContext.env,
+          platform: terminalContext.platform
+        },
+        runCheck: options.runCheckImpl
+          ? (pathToCheck) => options.runCheckImpl!(pathToCheck)
+          : undefined,
+        performanceThresholds: parsedThresholds.thresholds
+      });
+      const reportJson = renderDoctorReleaseEvidenceJson(report);
+      const renderedReport = jsonOutput ? reportJson : renderDoctorReleaseEvidence(report);
+
+      if (outputPath) {
+        await writeFile(outputPath, reportJson, "utf8");
       }
 
       io.writeStdout(renderedReport);
@@ -1755,3 +1835,4 @@ export async function runCli(
 
   return result.exitCode;
 }
+
