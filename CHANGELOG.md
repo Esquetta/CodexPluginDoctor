@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `doctor release-evidence verify <evidence.json> --sign-key-env <name>` for offline verification of shared release evidence bundles
+- added `doctor.release.evidence.verification` to the public output contract
+
 ## [1.0.3] - 2026-05-16
 
 ### Added
