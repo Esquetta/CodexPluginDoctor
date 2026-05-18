@@ -142,7 +142,13 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.release.evidence.json",
     command: "codex-plugin-doctor doctor release-evidence <path> --json",
     outputKind: "doctor.release.evidence",
-    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "releaseReady", "summary", "package", "git", "releaseGates", "attestation", "attestationVerification", "corpus", "performance", "security", "trust"]
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "releaseReady", "summary", "package", "git", "releaseGates", "attestation", "attestationVerification", "corpus", "performance", "security", "trust", "evidenceSignature"]
+  },
+  {
+    id: "doctor.release.evidence.verification.json",
+    command: "codex-plugin-doctor doctor release-evidence verify <evidence.json> --target <path> --json",
+    outputKind: "doctor.release.evidence.verification",
+    required: ["schemaVersion", "kind", "generatedAt", "artifactPath", "targetPath", "status", "exitCode", "summary", "checks", "attestation"]
   },
   {
     id: "doctor.npm.json",

@@ -92,7 +92,10 @@ import {
 import {
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidence,
-  renderDoctorReleaseEvidenceJson
+  renderDoctorReleaseEvidenceJson,
+  renderDoctorReleaseEvidenceVerification,
+  renderDoctorReleaseEvidenceVerificationJson,
+  verifyDoctorReleaseEvidence
 } from "./core/release-evidence.js";
 import {
   buildDoctorNpmPackageReport,
@@ -213,7 +216,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -587,6 +590,79 @@ export async function runCli(
     }
 
     if (maybePath === "release-evidence") {
+      if (remainingArgs[0] === "verify") {
+        const artifactPath = remainingArgs[1] && !remainingArgs[1].startsWith("--")
+          ? remainingArgs[1]
+          : null;
+        const verifyFlags = artifactPath ? remainingArgs.slice(2) : remainingArgs.slice(1);
+        const jsonOutput = verifyFlags.includes("--json");
+        const outputIndex = verifyFlags.indexOf("--output");
+        const outputPath = outputIndex === -1 ? null : verifyFlags[outputIndex + 1];
+        const targetIndex = verifyFlags.indexOf("--target");
+        const targetPath = targetIndex === -1 ? null : verifyFlags[targetIndex + 1];
+        const signKeyIndex = verifyFlags.indexOf("--sign-key");
+        const signKeyEnvIndex = verifyFlags.indexOf("--sign-key-env");
+        const signKeyEnv = signKeyEnvIndex === -1 ? null : verifyFlags[signKeyEnvIndex + 1];
+
+        if (!artifactPath) {
+          io.writeStderr("Missing release evidence artifact path.");
+          return 2;
+        }
+
+        if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+          io.writeStderr("Missing path after --output.");
+          return 2;
+        }
+
+        if (targetIndex !== -1 && (!targetPath || targetPath.startsWith("--"))) {
+          io.writeStderr("Missing path after --target.");
+          return 2;
+        }
+
+        if (targetIndex === -1) {
+          io.writeStderr("Missing target path. Use --target <path>.");
+          return 2;
+        }
+
+        if (signKeyIndex !== -1) {
+          io.writeStderr("Use --sign-key-env for release evidence verification; inline signing keys are not supported.");
+          return 2;
+        }
+
+        if (signKeyEnvIndex === -1) {
+          io.writeStderr("Missing signing key. Use --sign-key-env <name>.");
+          return 2;
+        }
+
+        if (!signKeyEnv || signKeyEnv.startsWith("--")) {
+          io.writeStderr("Missing environment variable name after --sign-key-env.");
+          return 2;
+        }
+
+        const signingKey = terminalContext.env[signKeyEnv];
+
+        if (!signingKey) {
+          io.writeStderr(`Environment variable ${signKeyEnv} is not set.`);
+          return 2;
+        }
+
+        const report = await verifyDoctorReleaseEvidence(artifactPath, {
+          signingKey,
+          targetPath: targetPath!
+        });
+        const reportJson = renderDoctorReleaseEvidenceVerificationJson(report);
+        const renderedReport = jsonOutput
+          ? reportJson
+          : renderDoctorReleaseEvidenceVerification(report, { outputPath });
+
+        if (outputPath) {
+          await writeFile(outputPath, reportJson, "utf8");
+        }
+
+        io.writeStdout(renderedReport);
+        return report.exitCode;
+      }
+
       const targetPath = remainingArgs[0] && !remainingArgs[0].startsWith("--")
         ? remainingArgs[0]
         : ".";

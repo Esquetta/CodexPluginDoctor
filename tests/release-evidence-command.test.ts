@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -75,6 +75,13 @@ describe("doctor release-evidence command", () => {
     expect(output.corpus.summary.status).toBe("pass");
     expect(output.performance.status).toBe("pass");
     expect(output.releaseGates.status).toBe("pass");
+    expect(output.evidenceSignature).toEqual(
+      expect.objectContaining({
+        status: "signed",
+        algorithm: "hmac-sha256",
+        keyHint: "env:DOCTOR_SIGNING_KEY"
+      })
+    );
     expect(output.security.score).toBeGreaterThanOrEqual(90);
     expect(output.trust.score).toBeGreaterThanOrEqual(90);
     expect(output.package.name).toBe("codex-doctor-runtime");
@@ -264,5 +271,287 @@ describe("doctor release-evidence command", () => {
 
     expect(rendered).toContain("[REDACTED_SECRET]");
     expect(rendered).not.toContain("SHOULD_NOT_LEAK");
+  });
+
+  it("verifies a release evidence bundle against its target package", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-verify-")),
+      "release-evidence.json"
+    );
+    const createEvidence = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputPath,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createEvidence.io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.kind).toBe("doctor.release.evidence.verification");
+    expect(output.status).toBe("pass");
+    expect(output.summary.attestation).toBe("pass");
+    expect(output.summary.evidenceSignature).toBe("pass");
+    expect(output.summary.releaseReady).toBe("pass");
+    expect(output.summary.releaseGates).toBe("pass");
+  });
+
+  it("fails release evidence verification with the wrong signing key", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-wrong-key-")),
+      "release-evidence.json"
+    );
+    const createEvidence = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputPath,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createEvidence.io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "wrong-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.summary.attestation).toBe("fail");
+    expect(JSON.stringify(output)).not.toContain("wrong-secret");
+    const signatureChecks = output.attestation.checks.filter((check: { id: string }) =>
+      check.id.startsWith("attestation.signature.")
+    );
+    expect(JSON.stringify(signatureChecks)).not.toContain("expected");
+    expect(JSON.stringify(signatureChecks)).not.toContain("actual");
+  });
+
+  it("fails release evidence verification for invalid artifacts", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-invalid-")),
+      "release-evidence.json"
+    );
+    await writeFile(outputPath, JSON.stringify({ kind: "not.release.evidence" }), "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "release_evidence.artifact.invalid",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("requires an explicit target path for release evidence verification", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-target-")),
+      "release-evidence.json"
+    );
+    await writeFile(outputPath, JSON.stringify({ kind: "doctor.release.evidence" }), "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing target path. Use --target <path>.");
+  });
+
+  it("fails release evidence verification when top-level release metadata is tampered", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-tampered-")),
+      "release-evidence.json"
+    );
+    const createEvidence = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputPath,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createEvidence.io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const artifact = JSON.parse(await readFile(outputPath, "utf8"));
+    artifact.releaseGates.checks[0].message = "tampered release gate text";
+    await writeFile(outputPath, JSON.stringify(artifact), "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.summary.evidenceSignature).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "release_evidence.signature",
+          status: "fail"
+        })
+      ])
+    );
   });
 });

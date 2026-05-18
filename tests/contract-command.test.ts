@@ -85,6 +85,11 @@ describe("doctor contract command", () => {
           id: "doctor.release.evidence.json",
           command: "codex-plugin-doctor doctor release-evidence <path> --json",
           outputKind: "doctor.release.evidence"
+        }),
+        expect.objectContaining({
+          id: "doctor.release.evidence.verification.json",
+          command: "codex-plugin-doctor doctor release-evidence verify <evidence.json> --target <path> --json",
+          outputKind: "doctor.release.evidence.verification"
         })
       ])
     );

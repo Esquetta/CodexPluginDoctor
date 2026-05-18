@@ -84,10 +84,14 @@ export {
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidence,
   renderDoctorReleaseEvidenceJson,
+  renderDoctorReleaseEvidenceVerification,
+  renderDoctorReleaseEvidenceVerificationJson,
+  verifyDoctorReleaseEvidence,
   type BuildDoctorReleaseEvidenceOptions,
   type DoctorReleaseEvidenceGitMetadata,
   type DoctorReleaseEvidencePackageMetadata,
-  type DoctorReleaseEvidenceReport
+  type DoctorReleaseEvidenceReport,
+  type DoctorReleaseEvidenceVerificationReport
 } from "./core/release-evidence.js";
 export {
   buildDoctorNpmPackageReport,

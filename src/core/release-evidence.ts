@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import path from "node:path";
 
@@ -34,6 +35,14 @@ import { packageVersion } from "../version.js";
 const execFileAsync = promisify(execFile);
 
 type EvidenceStatus = "pass" | "warn" | "fail";
+
+export interface DoctorReleaseEvidenceSignature {
+  status: "signed";
+  algorithm: "hmac-sha256";
+  digest: string;
+  payloadDigest: string;
+  keyHint: string;
+}
 
 export interface DoctorReleaseEvidencePackageMetadata {
   name: string | null;
@@ -81,6 +90,30 @@ export interface DoctorReleaseEvidenceReport {
   performance: DoctorPerformanceReport;
   security: Pick<SecurityAudit, "status" | "score" | "findingCounts">;
   trust: Pick<TrustScoreReport, "status" | "score" | "findingCounts">;
+  evidenceSignature: DoctorReleaseEvidenceSignature;
+}
+
+export interface DoctorReleaseEvidenceVerificationReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.release.evidence.verification";
+  generatedAt: string;
+  artifactPath: string;
+  targetPath: string | null;
+  status: "pass" | "fail";
+  exitCode: 0 | 1;
+  summary: {
+    artifact: EvidenceStatus;
+    attestation: EvidenceStatus;
+    evidenceSignature: EvidenceStatus;
+    releaseReady: EvidenceStatus;
+    releaseGates: EvidenceStatus;
+  };
+  checks: Array<{
+    id: string;
+    status: EvidenceStatus;
+    message: string;
+  }>;
+  attestation: DoctorAttestationVerificationReport | null;
 }
 
 export interface BuildDoctorReleaseEvidenceOptions {
@@ -97,6 +130,48 @@ interface PackageJsonMetadata {
   name?: unknown;
   version?: unknown;
   private?: unknown;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function sha256(value: string | Buffer): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function digestMatches(expected: string, actual: string): boolean {
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+
+  return expectedBuffer.length === actualBuffer.length &&
+    timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+function isDoctorReleaseEvidenceReport(value: unknown): value is DoctorReleaseEvidenceReport {
+  return isPlainObject(value) &&
+    value.schemaVersion === "1.0.0" &&
+    value.kind === "doctor.release.evidence" &&
+    typeof value.targetPath === "string" &&
+    isPlainObject(value.summary) &&
+    isPlainObject(value.releaseGates) &&
+    isPlainObject(value.attestation) &&
+    isPlainObject(value.evidenceSignature);
 }
 
 function toEvidenceStatus(status: "pass" | "warn" | "fail"): EvidenceStatus {
@@ -158,7 +233,7 @@ async function readGitMetadata(rootPath: string): Promise<DoctorReleaseEvidenceG
 
 function releaseReady(report: Omit<
   DoctorReleaseEvidenceReport,
-  "status" | "exitCode" | "releaseReady"
+  "status" | "exitCode" | "releaseReady" | "evidenceSignature"
 >): boolean {
   return report.attestation.summary.status !== "fail" &&
     report.attestationVerification.status === "pass" &&
@@ -204,6 +279,64 @@ function buildReleaseGateReport(
   return {
     status: checks.every((check) => check.status === "pass") ? "pass" : "fail",
     checks
+  };
+}
+
+function buildReleaseEvidenceSigningPayload(
+  report: Omit<DoctorReleaseEvidenceReport, "evidenceSignature">
+): unknown {
+  return {
+    schemaVersion: report.schemaVersion,
+    kind: "doctor.release.evidence.signature.v1",
+    version: report.version,
+    status: report.status,
+    releaseReady: report.releaseReady,
+    summary: report.summary,
+    package: report.package,
+    git: report.git,
+    releaseGates: report.releaseGates,
+    attestation: {
+      version: report.attestation.version,
+      subject: report.attestation.subject,
+      packageFingerprint: report.attestation.packageFingerprint,
+      reportDigest: report.attestation.reportDigest,
+      summary: report.attestation.summary,
+      signature: report.attestation.signature
+    },
+    attestationVerification: {
+      status: report.attestationVerification.status,
+      summary: report.attestationVerification.summary
+    },
+    corpus: {
+      status: report.corpus.summary.status,
+      summary: report.corpus.summary
+    },
+    performance: {
+      status: report.performance.status,
+      summary: report.performance.summary,
+      thresholds: report.performance.thresholds
+    },
+    security: report.security,
+    trust: report.trust
+  };
+}
+
+function signReleaseEvidence(
+  report: Omit<DoctorReleaseEvidenceReport, "evidenceSignature">,
+  signingKey: string,
+  keyHint: string
+): DoctorReleaseEvidenceSignature {
+  const redactedReport = redactValue(report) as Omit<DoctorReleaseEvidenceReport, "evidenceSignature">;
+  const serializedPayload = stableStringify(buildReleaseEvidenceSigningPayload(redactedReport));
+
+  return {
+    status: "signed",
+    algorithm: "hmac-sha256",
+    digest: `sha256:${createHmac("sha256", signingKey)
+      .update(serializedPayload)
+      .digest("hex")}`,
+    payloadDigest: sha256(serializedPayload),
+    keyHint
   };
 }
 
@@ -285,16 +418,179 @@ export async function buildDoctorReleaseEvidenceReport(
   };
   const ready = releaseReady(partialReport);
 
-  return {
+  const report = {
     ...partialReport,
-    status: ready ? "pass" : "fail",
-    exitCode: ready ? 0 : 1,
+    status: (ready ? "pass" : "fail") as "pass" | "fail",
+    exitCode: (ready ? 0 : 1) as 0 | 1,
     releaseReady: ready
+  };
+
+  return {
+    ...report,
+    evidenceSignature: signReleaseEvidence(
+      report,
+      options.signingKey,
+      `env:${options.signingKeyEnv}`
+    )
   };
 }
 
 export function renderDoctorReleaseEvidenceJson(report: DoctorReleaseEvidenceReport): string {
   return JSON.stringify(redactValue(report), null, 2);
+}
+
+export async function verifyDoctorReleaseEvidence(
+  artifactPath: string,
+  options: {
+    signingKey: string;
+    targetPath: string;
+  }
+): Promise<DoctorReleaseEvidenceVerificationReport> {
+  const resolvedArtifactPath = path.resolve(artifactPath);
+  const artifact = await readJsonFile<unknown>(resolvedArtifactPath);
+
+  if (!isDoctorReleaseEvidenceReport(artifact)) {
+    return {
+      schemaVersion: "1.0.0",
+      kind: "doctor.release.evidence.verification",
+      generatedAt: new Date().toISOString(),
+      artifactPath: resolvedArtifactPath,
+      targetPath: options.targetPath ? path.resolve(options.targetPath) : null,
+      status: "fail",
+      exitCode: 1,
+      summary: {
+        artifact: "fail",
+        attestation: "fail",
+        evidenceSignature: "fail",
+        releaseReady: "fail",
+        releaseGates: "fail"
+      },
+      checks: [
+        {
+          id: "release_evidence.artifact.invalid",
+          status: "fail",
+          message: "The release evidence artifact is not a valid doctor release evidence bundle."
+        }
+      ],
+      attestation: null
+    };
+  }
+
+  const targetPath = path.resolve(options.targetPath);
+  const attestation = await verifyDoctorAttestationObject(
+    artifact.attestation,
+    targetPath,
+    {
+      signingKey: options.signingKey,
+      artifactPath: `${resolvedArtifactPath}#attestation`
+    }
+  );
+  const unsignedArtifact = { ...artifact };
+  delete (unsignedArtifact as Partial<DoctorReleaseEvidenceReport>).evidenceSignature;
+  const expectedEvidenceSignature = signReleaseEvidence(
+    unsignedArtifact,
+    options.signingKey,
+    "verification"
+  );
+  const signatureStatus = artifact.evidenceSignature.status === "signed" &&
+    artifact.evidenceSignature.algorithm === "hmac-sha256" &&
+    digestMatches(expectedEvidenceSignature.payloadDigest, artifact.evidenceSignature.payloadDigest) &&
+    digestMatches(expectedEvidenceSignature.digest, artifact.evidenceSignature.digest)
+      ? "pass"
+      : "fail";
+  const checks: DoctorReleaseEvidenceVerificationReport["checks"] = [
+    {
+      id: "release_evidence.artifact.valid",
+      status: "pass",
+      message: "The release evidence artifact has the expected schema and kind."
+    },
+    {
+      id: "release_evidence.signature",
+      status: signatureStatus,
+      message: signatureStatus === "pass"
+        ? "The release evidence signature matches the canonical release evidence payload."
+        : "The release evidence signature does not match the canonical release evidence payload."
+    },
+    {
+      id: "release_evidence.release_ready",
+      status: artifact.releaseReady && artifact.status === "pass" ? "pass" : "fail",
+      message: artifact.releaseReady && artifact.status === "pass"
+        ? "The release evidence bundle reports releaseReady=true and status=pass."
+        : "The release evidence bundle was not release-ready when it was created."
+    },
+    {
+      id: "release_evidence.release_gates",
+      status: artifact.releaseGates.status === "pass" &&
+        artifact.releaseGates.checks.every((check) => check.status === "pass")
+          ? "pass"
+          : "fail",
+      message: artifact.releaseGates.status === "pass"
+        ? "All recorded release gates passed."
+        : "One or more recorded release gates failed."
+    },
+    {
+      id: "release_evidence.attestation",
+      status: attestation.status,
+      message: attestation.status === "pass"
+        ? "The embedded signed attestation verifies against the target package."
+        : "The embedded signed attestation does not verify against the target package."
+    }
+  ];
+  const failedChecks = checks.filter((check) => check.status === "fail");
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.release.evidence.verification",
+    generatedAt: new Date().toISOString(),
+    artifactPath: resolvedArtifactPath,
+    targetPath,
+    status: failedChecks.length === 0 ? "pass" : "fail",
+    exitCode: failedChecks.length === 0 ? 0 : 1,
+      summary: {
+      artifact: "pass",
+      attestation: attestation.status,
+      evidenceSignature: signatureStatus,
+      releaseReady: checks.find((check) => check.id === "release_evidence.release_ready")?.status ?? "fail",
+      releaseGates: checks.find((check) => check.id === "release_evidence.release_gates")?.status ?? "fail"
+    },
+    checks,
+    attestation
+  };
+}
+
+export function renderDoctorReleaseEvidenceVerificationJson(
+  report: DoctorReleaseEvidenceVerificationReport
+): string {
+  return JSON.stringify(redactValue(report), null, 2);
+}
+
+export function renderDoctorReleaseEvidenceVerification(
+  report: DoctorReleaseEvidenceVerificationReport,
+  options: { outputPath?: string | null } = {}
+): string {
+  const lines = [
+    "Doctor Release Evidence Verification",
+    "====================================",
+    `Artifact: ${report.artifactPath}`,
+    `Target: ${report.targetPath ?? "unknown"}`,
+    `Status: ${report.status.toUpperCase()}`,
+    `Attestation: ${report.summary.attestation.toUpperCase()}`,
+    `Release ready: ${report.summary.releaseReady.toUpperCase()}`,
+    `Release gates: ${report.summary.releaseGates.toUpperCase()}`
+  ];
+
+  if (options.outputPath) {
+    lines.push(`Output: ${options.outputPath}`);
+  }
+
+  lines.push("", "Checks", "------");
+
+  for (const check of report.checks) {
+    lines.push(`${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}`);
+    lines.push(`  ${check.message}`);
+  }
+
+  return lines.join("\n");
 }
 
 export function renderDoctorReleaseEvidence(report: DoctorReleaseEvidenceReport): string {
