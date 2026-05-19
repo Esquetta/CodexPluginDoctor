@@ -8,8 +8,10 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Added
 
-- added `doctor release-evidence verify <evidence.json> --sign-key-env <name>` for offline verification of shared release evidence bundles
+- added `doctor release-evidence verify <evidence.json> --target <path> --sign-key-env <name>` for offline verification of shared release evidence bundles
+- added `doctor release-evidence asset <path> --tag <tag> --output <evidence.json>` for GitHub Release evidence asset preparation and optional `--upload`
 - added `doctor.release.evidence.verification` to the public output contract
+- added `doctor.release.evidence.asset` to the public output contract
 
 ## [1.0.3] - 2026-05-16
 
