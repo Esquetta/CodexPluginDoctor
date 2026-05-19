@@ -81,13 +81,17 @@ export {
   type DoctorPerformanceStageName
 } from "./core/performance-report.js";
 export {
+  buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
+  renderDoctorReleaseEvidenceAsset,
+  renderDoctorReleaseEvidenceAssetJson,
   renderDoctorReleaseEvidence,
   renderDoctorReleaseEvidenceJson,
   renderDoctorReleaseEvidenceVerification,
   renderDoctorReleaseEvidenceVerificationJson,
   verifyDoctorReleaseEvidence,
   type BuildDoctorReleaseEvidenceOptions,
+  type DoctorReleaseEvidenceAssetReport,
   type DoctorReleaseEvidenceGitMetadata,
   type DoctorReleaseEvidencePackageMetadata,
   type DoctorReleaseEvidenceReport,

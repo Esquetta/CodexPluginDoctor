@@ -116,6 +116,25 @@ export interface DoctorReleaseEvidenceVerificationReport {
   attestation: DoctorAttestationVerificationReport | null;
 }
 
+export interface DoctorReleaseEvidenceAssetReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.release.evidence.asset";
+  generatedAt: string;
+  version: string;
+  targetPath: string;
+  tag: string;
+  artifactPath: string;
+  status: "pass" | "fail";
+  exitCode: 0 | 1;
+  uploaded: boolean;
+  uploadCommand: string[];
+  releaseEvidence: {
+    status: "pass" | "fail";
+    releaseReady: boolean;
+    evidenceSignature: "signed";
+  };
+}
+
 export interface BuildDoctorReleaseEvidenceOptions {
   signingKey: string;
   signingKeyEnv: string;
@@ -591,6 +610,67 @@ export function renderDoctorReleaseEvidenceVerification(
   }
 
   return lines.join("\n");
+}
+
+export function buildDoctorReleaseEvidenceAssetReport(
+  evidence: DoctorReleaseEvidenceReport,
+  options: {
+    tag: string;
+    artifactPath: string;
+    uploaded: boolean;
+  }
+): DoctorReleaseEvidenceAssetReport {
+  const artifactPath = path.resolve(options.artifactPath);
+  const status = evidence.status === "pass" && evidence.releaseReady
+    ? "pass"
+    : "fail";
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.release.evidence.asset",
+    generatedAt: new Date().toISOString(),
+    version: packageVersion,
+    targetPath: evidence.targetPath,
+    tag: options.tag,
+    artifactPath,
+    status,
+    exitCode: status === "pass" ? 0 : 1,
+    uploaded: options.uploaded,
+    uploadCommand: [
+      "gh",
+      "release",
+      "upload",
+      options.tag,
+      artifactPath,
+      "--clobber"
+    ],
+    releaseEvidence: {
+      status: evidence.status,
+      releaseReady: evidence.releaseReady,
+      evidenceSignature: evidence.evidenceSignature.status
+    }
+  };
+}
+
+export function renderDoctorReleaseEvidenceAssetJson(
+  report: DoctorReleaseEvidenceAssetReport
+): string {
+  return JSON.stringify(redactValue(report), null, 2);
+}
+
+export function renderDoctorReleaseEvidenceAsset(
+  report: DoctorReleaseEvidenceAssetReport
+): string {
+  return [
+    "Doctor Release Evidence Asset",
+    "=============================",
+    `Target: ${report.targetPath}`,
+    `Tag: ${report.tag}`,
+    `Artifact: ${report.artifactPath}`,
+    `Status: ${report.status.toUpperCase()}`,
+    `Uploaded: ${report.uploaded ? "yes" : "no"}`,
+    `Upload command: ${report.uploadCommand.join(" ")}`
+  ].join("\n");
 }
 
 export function renderDoctorReleaseEvidence(report: DoctorReleaseEvidenceReport): string {

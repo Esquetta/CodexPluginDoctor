@@ -554,4 +554,139 @@ describe("doctor release-evidence command", () => {
       ])
     );
   });
+
+  it("creates a GitHub Release evidence asset plan without uploading by default", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-asset-")),
+      "release-evidence.json"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "asset",
+        "examples/codex-doctor-runtime",
+        "--tag",
+        "v1.1.0",
+        "--output",
+        outputPath,
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        },
+        releaseAssetUploadImpl: async () => {
+          throw new Error("upload should not be called");
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+    const evidence = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.kind).toBe("doctor.release.evidence.asset");
+    expect(output.status).toBe("pass");
+    expect(output.uploaded).toBe(false);
+    expect(output.tag).toBe("v1.1.0");
+    expect(output.artifactPath).toBe(path.resolve(outputPath));
+    expect(output.uploadCommand).toEqual([
+      "gh",
+      "release",
+      "upload",
+      "v1.1.0",
+      path.resolve(outputPath),
+      "--clobber"
+    ]);
+    expect(evidence.kind).toBe("doctor.release.evidence");
+    expect(evidence.evidenceSignature.status).toBe("signed");
+  });
+
+  it("uploads the release evidence asset when requested", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-upload-")),
+      "release-evidence.json"
+    );
+    const uploadCalls: string[][] = [];
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "asset",
+        "examples/codex-doctor-runtime",
+        "--tag",
+        "v1.1.0",
+        "--output",
+        outputPath,
+        "--upload",
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        },
+        releaseAssetUploadImpl: async (args) => {
+          uploadCalls.push(args);
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.uploaded).toBe(true);
+    expect(uploadCalls).toEqual([
+      ["release", "upload", "v1.1.0", path.resolve(outputPath), "--clobber"]
+    ]);
+  });
+
+  it("requires tag and output path for release evidence assets", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "asset",
+        "examples/codex-doctor-runtime",
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing release tag. Use --tag <tag>.");
+  });
 });

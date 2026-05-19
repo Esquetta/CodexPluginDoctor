@@ -90,7 +90,10 @@ import {
   type DoctorPerformanceThresholdOptions
 } from "./core/performance-report.js";
 import {
+  buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
+  renderDoctorReleaseEvidenceAsset,
+  renderDoctorReleaseEvidenceAssetJson,
   renderDoctorReleaseEvidence,
   renderDoctorReleaseEvidenceJson,
   renderDoctorReleaseEvidenceVerification,
@@ -190,6 +193,7 @@ export interface CliTerminalContext {
 export interface RunCliOptions {
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
+  releaseAssetUploadImpl?: (args: string[]) => Promise<void>;
   resolveLatestVersion?: () => Promise<string>;
 }
 
@@ -216,7 +220,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -431,6 +435,24 @@ async function resolveLatestNpmVersion(): Promise<string> {
   });
 }
 
+async function uploadGitHubReleaseAsset(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "gh",
+      args,
+      { shell: process.platform === "win32" },
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr.trim() || error.message));
+          return;
+        }
+
+        resolve();
+      }
+    );
+  });
+}
+
 function renderUpdateCheck(latestVersion: string): string {
   const updateAvailable = latestVersion !== packageVersion;
 
@@ -590,6 +612,114 @@ export async function runCli(
     }
 
     if (maybePath === "release-evidence") {
+      if (remainingArgs[0] === "asset") {
+        const targetPath = remainingArgs[1] && !remainingArgs[1].startsWith("--")
+          ? remainingArgs[1]
+          : null;
+        const assetFlags = targetPath ? remainingArgs.slice(2) : remainingArgs.slice(1);
+        const jsonOutput = assetFlags.includes("--json");
+        const upload = assetFlags.includes("--upload");
+        const outputIndex = assetFlags.indexOf("--output");
+        const outputPath = outputIndex === -1 ? null : assetFlags[outputIndex + 1];
+        const tagIndex = assetFlags.indexOf("--tag");
+        const tag = tagIndex === -1 ? null : assetFlags[tagIndex + 1];
+        const signKeyIndex = assetFlags.indexOf("--sign-key");
+        const signKeyEnvIndex = assetFlags.indexOf("--sign-key-env");
+        const signKeyEnv = signKeyEnvIndex === -1 ? null : assetFlags[signKeyEnvIndex + 1];
+        const allowDirty = assetFlags.includes("--allow-dirty");
+        const allowUntagged = assetFlags.includes("--allow-untagged");
+
+        if (!targetPath) {
+          io.writeStderr("Missing target path for release evidence asset.");
+          return 2;
+        }
+
+        if (tagIndex === -1) {
+          io.writeStderr("Missing release tag. Use --tag <tag>.");
+          return 2;
+        }
+
+        if (!tag || tag.startsWith("--")) {
+          io.writeStderr("Missing release tag after --tag.");
+          return 2;
+        }
+
+        if (outputIndex === -1) {
+          io.writeStderr("Missing output path. Use --output <path>.");
+          return 2;
+        }
+
+        if (!outputPath || outputPath.startsWith("--")) {
+          io.writeStderr("Missing path after --output.");
+          return 2;
+        }
+
+        if (signKeyIndex !== -1) {
+          io.writeStderr("Use --sign-key-env for release evidence assets; inline signing keys are not supported.");
+          return 2;
+        }
+
+        if (signKeyEnvIndex === -1) {
+          io.writeStderr("Missing signing key. Use --sign-key-env <name>.");
+          return 2;
+        }
+
+        if (!signKeyEnv || signKeyEnv.startsWith("--")) {
+          io.writeStderr("Missing environment variable name after --sign-key-env.");
+          return 2;
+        }
+
+        const signingKey = terminalContext.env[signKeyEnv];
+
+        if (!signingKey) {
+          io.writeStderr(`Environment variable ${signKeyEnv} is not set.`);
+          return 2;
+        }
+
+        const parsedThresholds = parsePerformanceThresholds(assetFlags);
+
+        if (typeof parsedThresholds === "string") {
+          io.writeStderr(parsedThresholds);
+          return 2;
+        }
+
+        const resolvedOutputPath = path.resolve(outputPath);
+        const evidence = await buildDoctorReleaseEvidenceReport(targetPath, {
+          signingKey,
+          signingKeyEnv: signKeyEnv,
+          allowDirty,
+          allowUntagged,
+          environment: {
+            env: terminalContext.env,
+            platform: terminalContext.platform
+          },
+          runCheck: options.runCheckImpl
+            ? (pathToCheck) => options.runCheckImpl!(pathToCheck)
+            : undefined,
+          performanceThresholds: parsedThresholds.thresholds
+        });
+        await writeFile(resolvedOutputPath, renderDoctorReleaseEvidenceJson(evidence), "utf8");
+
+        let uploaded = false;
+        const uploadArgs = ["release", "upload", tag, resolvedOutputPath, "--clobber"];
+
+        if (upload && evidence.status === "pass" && evidence.releaseReady) {
+          const uploadImpl = options.releaseAssetUploadImpl ?? uploadGitHubReleaseAsset;
+          await uploadImpl(uploadArgs);
+          uploaded = true;
+        }
+
+        const report = buildDoctorReleaseEvidenceAssetReport(evidence, {
+          tag,
+          artifactPath: resolvedOutputPath,
+          uploaded
+        });
+        const reportJson = renderDoctorReleaseEvidenceAssetJson(report);
+
+        io.writeStdout(jsonOutput ? reportJson : renderDoctorReleaseEvidenceAsset(report));
+        return report.exitCode;
+      }
+
       if (remainingArgs[0] === "verify") {
         const artifactPath = remainingArgs[1] && !remainingArgs[1].startsWith("--")
           ? remainingArgs[1]

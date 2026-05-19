@@ -151,6 +151,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "artifactPath", "targetPath", "status", "exitCode", "summary", "checks", "attestation"]
   },
   {
+    id: "doctor.release.evidence.asset.json",
+    command: "codex-plugin-doctor doctor release-evidence asset <path> --tag <tag> --output <evidence.json> --json",
+    outputKind: "doctor.release.evidence.asset",
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "tag", "artifactPath", "status", "exitCode", "uploaded", "uploadCommand", "releaseEvidence"]
+  },
+  {
     id: "doctor.npm.json",
     command: "codex-plugin-doctor doctor npm <package> --json",
     outputKind: "doctor.npm",
