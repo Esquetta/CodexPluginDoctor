@@ -35,9 +35,16 @@ Run structural and config checks before any runtime command execution.
 ### Safe Runtime Policy
 
 - runtime probing is opt-in through `--runtime`
+- runtime approval can be required through `--require-runtime-approval` and a matching `doctor runtime-plan` digest
 - startup timeouts are strict
 - stdout and stderr capture are bounded
 - no destructive follow-up actions are attempted
+
+### Runtime Approval Boundary
+
+`doctor runtime-plan <path>` is a non-executing review surface. It lists MCP server commands, args, cwd, intended probe methods, and security risk reasons before any local process is started.
+
+This is an approval gate, not a sandbox. It reduces accidental or unreviewed execution, but it does not isolate the process after launch.
 
 ### Secret Hygiene
 
@@ -67,4 +74,3 @@ If optional product analytics are added later:
 - encrypted report storage
 - tenant isolation
 - audit trails for shared validation runs
-

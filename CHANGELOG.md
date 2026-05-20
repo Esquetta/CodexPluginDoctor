@@ -4,6 +4,15 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## Unreleased
+
+### Added
+
+- added `doctor runtime-plan <path>` to generate a non-executing runtime approval plan with a stable digest
+- added `--require-runtime-approval --runtime-approval-digest <digest>` gates for runtime checks before local MCP servers are started
+- added signed release evidence `runtimeApproval` metadata so release artifacts record whether runtime execution was approved
+- added `doctor.runtime.plan` to the public output contract
+
 ## [1.1.0] - 2026-05-19
 
 ### Added

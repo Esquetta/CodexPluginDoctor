@@ -62,6 +62,7 @@ This documentation set defines the product, brand, technical architecture, secur
 
 - [Security Architecture](security/security-architecture.md)
 - [Threat Model](security/threat-model.md)
+- [Runtime Approval and Sandboxing](security/runtime-approval-and-sandboxing.md)
 - [Privacy and Compliance](security/privacy-and-compliance.md)
 
 ### Operations

@@ -36,6 +36,8 @@ A malicious package could define a command that executes harmful behavior when r
 #### Controls
 
 - require explicit `--runtime`
+- support pre-execution runtime plan review with `doctor runtime-plan`
+- allow CI and release jobs to require a matching runtime approval digest
 - limit probe scope
 - use bounded timeouts
 - log exact executed command
@@ -76,7 +78,7 @@ Users may over-interpret a passing validation score as a guarantee of production
 The largest residual risk in v1 is the intentional runtime probe surface. This is acceptable if:
 
 - probing remains opt-in
+- approval digests can gate runtime execution in higher-risk workflows
 - documentation is explicit
 - defaults are conservative
 - evidence is transparent
-
