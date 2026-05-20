@@ -81,6 +81,16 @@ export {
   type DoctorPerformanceStageName
 } from "./core/performance-report.js";
 export {
+  buildDoctorRuntimePlan,
+  evaluateRuntimeApproval,
+  renderDoctorRuntimePlan,
+  renderDoctorRuntimePlanJson,
+  runtimeApprovalPassed,
+  type DoctorRuntimePlan,
+  type RuntimeApprovalReport,
+  type RuntimePlanServer
+} from "./core/runtime-plan.js";
+export {
   buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidenceAsset,

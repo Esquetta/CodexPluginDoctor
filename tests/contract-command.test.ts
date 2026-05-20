@@ -95,6 +95,11 @@ describe("doctor contract command", () => {
           id: "doctor.release.evidence.asset.json",
           command: "codex-plugin-doctor doctor release-evidence asset <path> --tag <tag> --output <evidence.json> --json",
           outputKind: "doctor.release.evidence.asset"
+        }),
+        expect.objectContaining({
+          id: "doctor.runtime.plan.json",
+          command: "codex-plugin-doctor doctor runtime-plan <path> --json",
+          outputKind: "doctor.runtime.plan"
         })
       ])
     );

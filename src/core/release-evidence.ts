@@ -28,6 +28,12 @@ import {
   buildTrustScore,
   type TrustScoreReport
 } from "../security/trust-score.js";
+import {
+  buildDoctorRuntimePlan,
+  evaluateRuntimeApproval,
+  runtimeApprovalPassed,
+  type RuntimeApprovalReport
+} from "./runtime-plan.js";
 import type { CompatibilityEnvironment } from "../compatibility/compatibility-matrix.js";
 import type { CheckResult } from "../domain/types.js";
 import { packageVersion } from "../version.js";
@@ -71,6 +77,7 @@ export interface DoctorReleaseEvidenceReport {
     corpus: EvidenceStatus;
     performance: EvidenceStatus;
     releaseGates: EvidenceStatus;
+    runtimeApproval: EvidenceStatus;
     security: EvidenceStatus;
     trust: EvidenceStatus;
   };
@@ -82,6 +89,7 @@ export interface DoctorReleaseEvidenceReport {
       message: string;
     }>;
   };
+  runtimeApproval: RuntimeApprovalReport;
   package: DoctorReleaseEvidencePackageMetadata;
   git: DoctorReleaseEvidenceGitMetadata;
   attestation: DoctorAttestation;
@@ -140,6 +148,8 @@ export interface BuildDoctorReleaseEvidenceOptions {
   signingKeyEnv: string;
   allowDirty?: boolean;
   allowUntagged?: boolean;
+  requireRuntimeApproval?: boolean;
+  runtimeApprovalDigest?: string | null;
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string) => Promise<CheckResult>;
   performanceThresholds?: DoctorPerformanceThresholdOptions;
@@ -259,6 +269,7 @@ function releaseReady(report: Omit<
     report.corpus.summary.status === "pass" &&
     report.performance.status === "pass" &&
     report.releaseGates.status === "pass" &&
+    runtimeApprovalPassed(report.runtimeApproval) &&
     report.security.status !== "fail" &&
     report.trust.status !== "fail";
 }
@@ -314,6 +325,7 @@ function buildReleaseEvidenceSigningPayload(
     package: report.package,
     git: report.git,
     releaseGates: report.releaseGates,
+    runtimeApproval: report.runtimeApproval,
     attestation: {
       version: report.attestation.version,
       subject: report.attestation.subject,
@@ -371,7 +383,8 @@ export async function buildDoctorReleaseEvidenceReport(
     performance,
     trust,
     packageMetadata,
-    git
+    git,
+    runtimePlan
   ] = await Promise.all([
     buildDoctorAttestation(rootPath, {
       signingKey: options.signingKey,
@@ -386,7 +399,8 @@ export async function buildDoctorReleaseEvidenceReport(
     }),
     buildTrustScore(rootPath, { securityAudit: security }),
     readPackageMetadata(rootPath),
-    readGitMetadata(rootPath)
+    readGitMetadata(rootPath),
+    buildDoctorRuntimePlan(rootPath)
   ]);
   const normalizedPackageMetadata = {
     name: packageMetadata.name ?? attestation.subject.name,
@@ -402,6 +416,10 @@ export async function buildDoctorReleaseEvidenceReport(
     }
   );
   const releaseGates = buildReleaseGateReport(git, options);
+  const runtimeApproval = evaluateRuntimeApproval(runtimePlan, {
+    required: options.requireRuntimeApproval ?? false,
+    approvedDigest: options.runtimeApprovalDigest
+  });
   const partialReport = {
     schemaVersion: "1.0.0" as const,
     kind: "doctor.release.evidence" as const,
@@ -414,12 +432,14 @@ export async function buildDoctorReleaseEvidenceReport(
       corpus: corpus.summary.status,
       performance: performance.status,
       releaseGates: releaseGates.status,
+      runtimeApproval: runtimeApprovalPassed(runtimeApproval) ? "pass" as const : "fail" as const,
       security: toEvidenceStatus(security.status),
       trust: toEvidenceStatus(trust.status)
     },
     package: normalizedPackageMetadata,
     git,
     releaseGates,
+    runtimeApproval,
     attestation,
     attestationVerification,
     corpus,
@@ -685,6 +705,7 @@ export function renderDoctorReleaseEvidence(report: DoctorReleaseEvidenceReport)
     `Corpus: ${report.summary.corpus.toUpperCase()}`,
     `Performance: ${report.summary.performance.toUpperCase()}`,
     `Release gates: ${report.summary.releaseGates.toUpperCase()}`,
+    `Runtime approval: ${report.summary.runtimeApproval.toUpperCase()} (${report.runtimeApproval.status})`,
     `Security: ${report.summary.security.toUpperCase()} (${report.security.score}/100)`,
     `Trust: ${report.summary.trust.toUpperCase()} (${report.trust.score}/100)`,
     `Git commit: ${report.git.commit ?? "unknown"}`,

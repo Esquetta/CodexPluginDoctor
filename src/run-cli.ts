@@ -90,6 +90,13 @@ import {
   type DoctorPerformanceThresholdOptions
 } from "./core/performance-report.js";
 import {
+  buildDoctorRuntimePlan,
+  evaluateRuntimeApproval,
+  renderDoctorRuntimePlan,
+  renderDoctorRuntimePlanJson,
+  runtimeApprovalPassed
+} from "./core/runtime-plan.js";
+import {
   buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidenceAsset,
@@ -220,7 +227,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path>|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
 }
 
@@ -611,6 +618,38 @@ export async function runCli(
       return report.exitCode;
     }
 
+    if (maybePath === "runtime-plan") {
+      const targetPath = remainingArgs[0] && !remainingArgs[0].startsWith("--")
+        ? remainingArgs[0]
+        : null;
+      const runtimePlanFlags = targetPath ? remainingArgs.slice(1) : remainingArgs;
+      const jsonOutput = runtimePlanFlags.includes("--json");
+      const outputIndex = runtimePlanFlags.indexOf("--output");
+      const outputPath = outputIndex === -1 ? null : runtimePlanFlags[outputIndex + 1];
+
+      if (!targetPath) {
+        io.writeStderr("Missing target path for runtime plan.");
+        return 2;
+      }
+
+      if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
+        io.writeStderr("Missing path after --output.");
+        return 2;
+      }
+
+      const plan = await buildDoctorRuntimePlan(targetPath);
+      const renderedPlan = jsonOutput
+        ? renderDoctorRuntimePlanJson(plan)
+        : renderDoctorRuntimePlan(plan);
+
+      if (outputPath) {
+        await writeFile(outputPath, renderDoctorRuntimePlanJson(plan), "utf8");
+      }
+
+      io.writeStdout(renderedPlan);
+      return plan.exitCode;
+    }
+
     if (maybePath === "release-evidence") {
       if (remainingArgs[0] === "asset") {
         const targetPath = remainingArgs[1] && !remainingArgs[1].startsWith("--")
@@ -628,6 +667,11 @@ export async function runCli(
         const signKeyEnv = signKeyEnvIndex === -1 ? null : assetFlags[signKeyEnvIndex + 1];
         const allowDirty = assetFlags.includes("--allow-dirty");
         const allowUntagged = assetFlags.includes("--allow-untagged");
+        const requireRuntimeApproval = assetFlags.includes("--require-runtime-approval");
+        const runtimeApprovalDigestIndex = assetFlags.indexOf("--runtime-approval-digest");
+        const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
+          ? null
+          : assetFlags[runtimeApprovalDigestIndex + 1];
 
         if (!targetPath) {
           io.writeStderr("Missing target path for release evidence asset.");
@@ -669,6 +713,14 @@ export async function runCli(
           return 2;
         }
 
+        if (
+          runtimeApprovalDigestIndex !== -1 &&
+          (!runtimeApprovalDigest || runtimeApprovalDigest.startsWith("--"))
+        ) {
+          io.writeStderr("Missing digest after --runtime-approval-digest.");
+          return 2;
+        }
+
         const signingKey = terminalContext.env[signKeyEnv];
 
         if (!signingKey) {
@@ -689,6 +741,8 @@ export async function runCli(
           signingKeyEnv: signKeyEnv,
           allowDirty,
           allowUntagged,
+          requireRuntimeApproval,
+          runtimeApprovalDigest,
           environment: {
             env: terminalContext.env,
             platform: terminalContext.platform
@@ -807,6 +861,11 @@ export async function runCli(
       const signKeyEnv = signKeyEnvIndex === -1 ? null : evidenceFlags[signKeyEnvIndex + 1];
       const allowDirty = evidenceFlags.includes("--allow-dirty");
       const allowUntagged = evidenceFlags.includes("--allow-untagged");
+      const requireRuntimeApproval = evidenceFlags.includes("--require-runtime-approval");
+      const runtimeApprovalDigestIndex = evidenceFlags.indexOf("--runtime-approval-digest");
+      const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
+        ? null
+        : evidenceFlags[runtimeApprovalDigestIndex + 1];
 
       if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
         io.writeStderr("Missing path after --output.");
@@ -825,6 +884,14 @@ export async function runCli(
 
       if (!signKeyEnv || signKeyEnv.startsWith("--")) {
         io.writeStderr("Missing environment variable name after --sign-key-env.");
+        return 2;
+      }
+
+      if (
+        runtimeApprovalDigestIndex !== -1 &&
+        (!runtimeApprovalDigest || runtimeApprovalDigest.startsWith("--"))
+      ) {
+        io.writeStderr("Missing digest after --runtime-approval-digest.");
         return 2;
       }
 
@@ -847,6 +914,8 @@ export async function runCli(
         signingKeyEnv: signKeyEnv,
         allowDirty,
         allowUntagged,
+        requireRuntimeApproval,
+        runtimeApprovalDigest,
         environment: {
           env: terminalContext.env,
           platform: terminalContext.platform
@@ -1845,6 +1914,11 @@ export async function runCli(
   const policy = parsePolicyPack(policyName);
   const historyIndex = normalizedFlags.indexOf("--history");
   const historyPath = historyIndex === -1 ? null : normalizedFlags[historyIndex + 1];
+  const requireRuntimeApproval = normalizedFlags.includes("--require-runtime-approval");
+  const runtimeApprovalDigestIndex = normalizedFlags.indexOf("--runtime-approval-digest");
+  const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
+    ? null
+    : normalizedFlags[runtimeApprovalDigestIndex + 1];
 
   if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
     io.writeStderr("Missing path after --output.");
@@ -1881,6 +1955,14 @@ export async function runCli(
     return 2;
   }
 
+  if (
+    runtimeApprovalDigestIndex !== -1 &&
+    (!runtimeApprovalDigest || runtimeApprovalDigest.startsWith("--"))
+  ) {
+    io.writeStderr("Missing digest after --runtime-approval-digest.");
+    return 2;
+  }
+
   if (checkInstalled && (badgeJsonOutput || badgeMarkdownOutput)) {
     io.writeStderr("Badge output requires a single package target.");
     return 2;
@@ -1896,6 +1978,16 @@ export async function runCli(
     checkProfile === "publish" ||
     policyEnablesRuntime(policy);
 
+  if (requireRuntimeApproval && !effectiveRuntimeProbeEnabled) {
+    io.writeStderr("Runtime approval requires runtime probing. Add --runtime, --profile publish, or a runtime-enabled policy.");
+    return 2;
+  }
+
+  if (checkInstalled && requireRuntimeApproval) {
+    io.writeStderr("Runtime approval gating requires a single package target, not --installed.");
+    return 2;
+  }
+
   const outputPolicy = determineOutputPolicy({
     jsonOutput: jsonOutput || badgeJsonOutput,
     markdownOutput: markdownOutput || badgeMarkdownOutput,
@@ -1908,6 +2000,19 @@ export async function runCli(
   });
 
   const runCheckImpl = options.runCheckImpl ?? runCheck;
+
+  if (!checkInstalled && effectiveRuntimeProbeEnabled && requireRuntimeApproval) {
+    const runtimePlan = await buildDoctorRuntimePlan(targetPath);
+    const approval = evaluateRuntimeApproval(runtimePlan, {
+      required: true,
+      approvedDigest: runtimeApprovalDigest
+    });
+
+    if (!runtimeApprovalPassed(approval)) {
+      io.writeStderr(`${approval.message}\nCurrent runtime plan digest: ${runtimePlan.digest}`);
+      return 1;
+    }
+  }
 
   if (checkInstalled) {
     const installedPlugins = filterInstalledPlugins(

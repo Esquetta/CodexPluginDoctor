@@ -65,9 +65,17 @@ describe("doctor release-evidence command", () => {
       corpus: "pass",
       performance: "pass",
       releaseGates: "pass",
+      runtimeApproval: "pass",
       security: "pass",
       trust: "pass"
     });
+    expect(output.runtimeApproval).toEqual(
+      expect.objectContaining({
+        required: false,
+        status: "not_required",
+        planDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+      })
+    );
     expect(output.attestation.signature.status).toBe("signed");
     expect(output.attestation.signature.keyHint).toBe("env:DOCTOR_SIGNING_KEY");
     expect(output.attestationVerification.status).toBe("pass");
@@ -169,6 +177,40 @@ describe("doctor release-evidence command", () => {
         })
       ])
     );
+  });
+
+  it("fails release readiness when runtime approval is required but not provided", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged",
+        "--require-runtime-approval"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.releaseReady).toBe(false);
+    expect(output.summary.runtimeApproval).toBe("fail");
+    expect(output.runtimeApproval.status).toBe("missing");
   });
 
   it("requires a signing key environment variable", async () => {

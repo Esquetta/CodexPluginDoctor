@@ -121,6 +121,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "targetPath", "status", "exitCode", "summary", "stages", "thresholds"]
   },
   {
+    id: "doctor.runtime.plan.json",
+    command: "codex-plugin-doctor doctor runtime-plan <path> --json",
+    outputKind: "doctor.runtime.plan",
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "digest", "summary", "servers", "findings"]
+  },
+  {
     id: "doctor.export.bundle.json",
     command: "codex-plugin-doctor doctor export --bundle <path> --json",
     outputKind: "doctor.export.bundle",
@@ -142,7 +148,7 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.release.evidence.json",
     command: "codex-plugin-doctor doctor release-evidence <path> --json",
     outputKind: "doctor.release.evidence",
-    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "releaseReady", "summary", "package", "git", "releaseGates", "attestation", "attestationVerification", "corpus", "performance", "security", "trust", "evidenceSignature"]
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "releaseReady", "summary", "package", "git", "releaseGates", "runtimeApproval", "attestation", "attestationVerification", "corpus", "performance", "security", "trust", "evidenceSignature"]
   },
   {
     id: "doctor.release.evidence.verification.json",
