@@ -299,6 +299,97 @@ export function renderDoctorRuntimePlanJson(plan: DoctorRuntimePlan): string {
   return JSON.stringify(plan, null, 2);
 }
 
+function markdownList(items: string[], emptyValue: string): string {
+  if (items.length === 0) {
+    return `- ${emptyValue}`;
+  }
+
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
+function markdownEscape(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+export function renderDoctorRuntimePlanMarkdown(plan: DoctorRuntimePlan): string {
+  const lines = [
+    "# Doctor Runtime Review Plan",
+    "",
+    "This artifact records the intended MCP runtime probe boundary before any package-local server is started.",
+    "",
+    "## Summary",
+    "",
+    `- Target: \`${plan.targetPath}\``,
+    `- Status: **${plan.status.toUpperCase()}**`,
+    `- Runtime execution: \`${plan.runtimeExecution}\``,
+    `- Approval digest: \`${plan.digest}\``,
+    `- Servers: ${plan.summary.serverCount}`,
+    `- Executable servers: ${plan.summary.executableServerCount}`,
+    `- High-risk servers: ${plan.summary.highRiskServerCount}`,
+    `- Findings: ${plan.summary.findings.fail} fail, ${plan.summary.findings.warn} warn, ${plan.summary.findings.total} total`,
+    "",
+    "## Execution Boundary",
+    "",
+    "- This plan is non-executing.",
+    "- Runtime probes require explicit operator approval before local MCP servers are started.",
+    "- The approval digest changes when command, args, cwd, probe methods, risk reasons, or findings change.",
+    "- Runtime approval is a review gate, not an OS, VM, or container sandbox.",
+    "",
+    "## Review Checklist",
+    "",
+    "- Confirm every command, argument, and working directory is expected.",
+    "- Confirm remote URLs and network expectations are acceptable for the task.",
+    "- Confirm high-risk findings are resolved or intentionally accepted before runtime probing.",
+    "- Use the approval digest with `check --runtime --require-runtime-approval --runtime-approval-digest <digest>`.",
+    "- Preserve this artifact with release evidence when runtime execution is part of the release gate."
+  ];
+
+  if (plan.servers.length === 0) {
+    lines.push("", "## Servers", "", "No MCP runtime servers found.");
+  } else {
+    lines.push(
+      "",
+      "## Servers",
+      "",
+      "| Risk | Name | Transport | Command or URL | Cwd |",
+      "| --- | --- | --- | --- | --- |"
+    );
+
+    for (const server of plan.servers) {
+      lines.push(
+        `| ${server.riskLevel.toUpperCase()} | ${markdownEscape(server.name)} | ${server.transport} | ${markdownEscape(server.command ?? server.url ?? "not executable by runtime probe")} | ${markdownEscape(server.cwd ?? "n/a")} |`
+      );
+    }
+
+    for (const server of plan.servers) {
+      lines.push(
+        "",
+        `### ${server.name}`,
+        "",
+        "**Probe methods**",
+        "",
+        markdownList(server.probeMethods, "none"),
+        "",
+        "**Risk reasons**",
+        "",
+        markdownList(server.riskReasons, "none")
+      );
+    }
+  }
+
+  if (plan.findings.length > 0) {
+    lines.push("", "## Findings", "");
+
+    for (const finding of plan.findings) {
+      lines.push(
+        `- **${finding.severity.toUpperCase()}** \`${finding.id}\`: ${finding.message}`
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export function renderDoctorRuntimePlan(plan: DoctorRuntimePlan): string {
   const lines = [
     "Doctor Runtime Plan",

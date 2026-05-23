@@ -84,6 +84,7 @@ export {
   buildDoctorRuntimePlan,
   evaluateRuntimeApproval,
   renderDoctorRuntimePlan,
+  renderDoctorRuntimePlanMarkdown,
   renderDoctorRuntimePlanJson,
   runtimeApprovalPassed,
   type DoctorRuntimePlan,

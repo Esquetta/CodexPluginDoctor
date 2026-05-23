@@ -88,6 +88,48 @@ describe("doctor runtime-plan command", () => {
     expect(writtenPlan.kind).toBe("doctor.runtime.plan");
   });
 
+  it("renders a review-ready runtime plan artifact as Markdown", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-md-")),
+      "runtime-plan.md"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "examples/codex-doctor-runtime",
+        "--markdown",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+    const writtenPlan = await readFile(outputPath, "utf8");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("# Doctor Runtime Review Plan");
+    expect(stdout.join("")).toContain("## Review Checklist");
+    expect(stdout.join("")).toContain("Approval digest: `sha256:");
+    expect(writtenPlan).toContain("| Risk | Name | Transport | Command or URL | Cwd |");
+    expect(writtenPlan).toContain("doctorRuntime");
+  });
+
+  it("rejects conflicting runtime plan output formats", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "runtime-plan", "examples/codex-doctor-runtime", "--json", "--markdown"],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Use either --json or --markdown, not both.");
+  });
+
   it("gates runtime checks behind an approved runtime plan digest", async () => {
     const planIo = createIo();
     await runCli(["doctor", "runtime-plan", "examples/codex-doctor-runtime", "--json"], planIo.io);

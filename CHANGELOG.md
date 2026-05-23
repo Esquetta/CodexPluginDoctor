@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.3.0] - 2026-05-23
+
+### Added
+
+- added `doctor runtime-plan <path> --markdown` for review-ready runtime approval artifacts
+- added Markdown output writing for runtime plans so approval digest, execution boundary, checklist, servers, probes, and risk reasons can be preserved with release evidence
+
 ## [1.2.0] - 2026-05-20
 
 ### Added
