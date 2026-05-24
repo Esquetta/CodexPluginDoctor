@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.4.0] - 2026-05-24
+
+### Added
+
+- added `doctor runtime-policy <path>` to classify runtime execution as `allow`, `review`, `sandbox_recommended`, or `deny`
+- added `doctor.runtime.policy` to the public output contract for automation-friendly runtime policy decisions
+- added runtime policy actions that connect approval digests, Markdown runtime plans, sandbox recommendations, and deny-level security findings
+
 ## [1.3.0] - 2026-05-23
 
 ### Added

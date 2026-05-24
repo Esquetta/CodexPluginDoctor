@@ -127,6 +127,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "digest", "summary", "servers", "findings"]
   },
   {
+    id: "doctor.runtime.policy.json",
+    command: "codex-plugin-doctor doctor runtime-policy <path> --json",
+    outputKind: "doctor.runtime.policy",
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "planDigest", "recommendation", "summary", "servers"]
+  },
+  {
     id: "doctor.export.bundle.json",
     command: "codex-plugin-doctor doctor export --bundle <path> --json",
     outputKind: "doctor.export.bundle",

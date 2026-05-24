@@ -92,6 +92,14 @@ export {
   type RuntimePlanServer
 } from "./core/runtime-plan.js";
 export {
+  buildDoctorRuntimePolicyReport,
+  renderDoctorRuntimePolicy,
+  renderDoctorRuntimePolicyJson,
+  type DoctorRuntimePolicyReport,
+  type RuntimePolicyDecision,
+  type RuntimePolicyRecommendation
+} from "./core/runtime-policy.js";
+export {
   buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidenceAsset,
