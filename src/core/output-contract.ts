@@ -133,6 +133,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "planDigest", "recommendation", "summary", "servers"]
   },
   {
+    id: "doctor.review.bundle.json",
+    command: "codex-plugin-doctor doctor review-bundle <path> --json",
+    outputKind: "doctor.review.bundle",
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "outputDirectory", "status", "exitCode", "summary", "files"]
+  },
+  {
     id: "doctor.export.bundle.json",
     command: "codex-plugin-doctor doctor export --bundle <path> --json",
     outputKind: "doctor.export.bundle",

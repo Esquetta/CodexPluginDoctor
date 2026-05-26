@@ -105,6 +105,11 @@ describe("doctor contract command", () => {
           id: "doctor.runtime.policy.json",
           command: "codex-plugin-doctor doctor runtime-policy <path> --json",
           outputKind: "doctor.runtime.policy"
+        }),
+        expect.objectContaining({
+          id: "doctor.review.bundle.json",
+          command: "codex-plugin-doctor doctor review-bundle <path> --json",
+          outputKind: "doctor.review.bundle"
         })
       ])
     );

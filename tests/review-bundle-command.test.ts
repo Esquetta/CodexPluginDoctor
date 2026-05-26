@@ -1,0 +1,149 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+import { runCli } from "../src/run-cli.js";
+
+function createIo() {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  return {
+    stdout,
+    stderr,
+    io: {
+      writeStdout(message: string) {
+        stdout.push(message);
+      },
+      writeStderr(message: string) {
+        stderr.push(message);
+      }
+    }
+  };
+}
+
+const terminalContext = {
+  stdoutIsTTY: false,
+  stderrIsTTY: false,
+  env: { DOCTOR_SIGNING_KEY: "review-secret" },
+  platform: "win32" as const
+};
+
+describe("doctor review-bundle command", () => {
+  it("writes a signed review bundle directory", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged",
+        "--json"
+      ],
+      io,
+      { terminalContext }
+    );
+    const manifest = JSON.parse(stdout.join(""));
+    const summary = await readFile(path.join(outputDirectory, "summary.md"), "utf8");
+    const runtimePolicy = JSON.parse(await readFile(path.join(outputDirectory, "runtime-policy.json"), "utf8"));
+    const releaseEvidence = JSON.parse(await readFile(path.join(outputDirectory, "release-evidence.json"), "utf8"));
+    const attestation = JSON.parse(await readFile(path.join(outputDirectory, "attestation.json"), "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(manifest.kind).toBe("doctor.review.bundle");
+    expect(manifest.files).toMatchObject({
+      summary: "summary.md",
+      runtimePlanJson: "runtime-plan.json",
+      runtimePlanMarkdown: "runtime-plan.md",
+      runtimePolicyJson: "runtime-policy.json",
+      runtimePolicyText: "runtime-policy.txt",
+      attestationJson: "attestation.json",
+      releaseEvidenceJson: "release-evidence.json"
+    });
+    expect(summary).toContain("# Codex Plugin Doctor Review Bundle");
+    expect(runtimePolicy.kind).toBe("doctor.runtime.policy");
+    expect(releaseEvidence.kind).toBe("doctor.release.evidence");
+    expect(releaseEvidence.evidenceSignature.status).toBe("signed");
+    expect(attestation.kind).toBe("doctor.attestation");
+    expect(attestation.signature.status).toBe("signed");
+  });
+
+  it("renders text output for review bundles", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-text-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      io,
+      { terminalContext }
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Doctor Review Bundle");
+    expect(output).toContain("runtime-plan.md");
+    expect(output).toContain("release-evidence.json");
+  });
+
+  it("requires an output directory", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "review-bundle", "examples/codex-doctor-runtime", "--sign-key-env", "DOCTOR_SIGNING_KEY"],
+      io,
+      { terminalContext }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing output directory. Use --output <dir>.");
+  });
+
+  it("requires a signing key environment variable", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-missing-key-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          ...terminalContext,
+          env: {}
+        }
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Signing key environment variable is not set");
+  });
+});

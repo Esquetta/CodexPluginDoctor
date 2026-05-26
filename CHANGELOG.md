@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.5.0] - 2026-05-26
+
+### Added
+
+- added `doctor review-bundle <path> --output <dir> --sign-key-env <name>` to write a signed review handoff directory
+- added runtime plan, runtime policy, signed attestation, release evidence, manifest, and Markdown summary files to the review bundle
+- added `doctor.review.bundle` to the public output contract
+
 ## [1.4.0] - 2026-05-24
 
 ### Added

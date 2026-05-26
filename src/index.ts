@@ -100,6 +100,14 @@ export {
   type RuntimePolicyRecommendation
 } from "./core/runtime-policy.js";
 export {
+  buildDoctorReviewBundle,
+  renderDoctorReviewBundle,
+  renderDoctorReviewBundleJson,
+  type BuildDoctorReviewBundleOptions,
+  type DoctorReviewBundle,
+  type DoctorReviewBundleManifest
+} from "./core/review-bundle.js";
+export {
   buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
   renderDoctorReleaseEvidenceAsset,
