@@ -139,6 +139,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "outputDirectory", "status", "exitCode", "summary", "files"]
   },
   {
+    id: "doctor.review.bundle.verification.json",
+    command: "codex-plugin-doctor doctor review-bundle verify <bundle-dir> --target <path> --json",
+    outputKind: "doctor.review.bundle.verification",
+    required: ["schemaVersion", "kind", "generatedAt", "bundleDirectory", "targetPath", "status", "exitCode", "summary", "checks", "attestation", "releaseEvidence"]
+  },
+  {
     id: "doctor.export.bundle.json",
     command: "codex-plugin-doctor doctor export --bundle <path> --json",
     outputKind: "doctor.export.bundle",

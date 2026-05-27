@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -105,6 +105,108 @@ describe("doctor review-bundle command", () => {
     expect(output).toContain("release-evidence.json");
   });
 
+  it("verifies a signed review bundle directory", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-verify-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.kind).toBe("doctor.review.bundle.verification");
+    expect(output.status).toBe("pass");
+    expect(output.summary).toMatchObject({
+      manifest: "pass",
+      files: "pass",
+      runtimePlan: "pass",
+      runtimePolicy: "pass",
+      attestation: "pass",
+      releaseEvidence: "pass"
+    });
+  });
+
+  it("fails review bundle verification when signed evidence is tampered", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-tampered-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const evidencePath = path.join(outputDirectory, "release-evidence.json");
+    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+
+    evidence.releaseReady = false;
+    await writeFile(evidencePath, JSON.stringify(evidence, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.summary.releaseEvidence).toBe("fail");
+  });
+
   it("requires an output directory", async () => {
     const { io, stdout, stderr } = createIo();
 
@@ -145,5 +247,19 @@ describe("doctor review-bundle command", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain("Signing key environment variable is not set");
+  });
+
+  it("requires a target path when verifying review bundles", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "review-bundle", "verify", "review-bundle", "--sign-key-env", "DOCTOR_SIGNING_KEY"],
+      io,
+      { terminalContext }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing target path. Use --target <path>.");
   });
 });

@@ -103,9 +103,13 @@ export {
   buildDoctorReviewBundle,
   renderDoctorReviewBundle,
   renderDoctorReviewBundleJson,
+  renderDoctorReviewBundleVerification,
+  renderDoctorReviewBundleVerificationJson,
+  verifyDoctorReviewBundle,
   type BuildDoctorReviewBundleOptions,
   type DoctorReviewBundle,
-  type DoctorReviewBundleManifest
+  type DoctorReviewBundleManifest,
+  type DoctorReviewBundleVerificationReport
 } from "./core/review-bundle.js";
 export {
   buildDoctorReleaseEvidenceAssetReport,
