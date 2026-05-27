@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.6.0] - 2026-05-27
+
+### Added
+
+- added `doctor review-bundle verify <bundle-dir> --target <path> --sign-key-env <name>` for offline review bundle verification
+- added manifest, file presence, runtime plan, runtime policy, attestation, and release evidence checks to review bundle verification
+- added `doctor.review.bundle.verification` to the public output contract
+
 ## [1.5.0] - 2026-05-26
 
 ### Added
