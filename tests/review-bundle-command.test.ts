@@ -207,6 +207,132 @@ describe("doctor review-bundle command", () => {
     expect(output.summary.releaseEvidence).toBe("fail");
   });
 
+  it("diffs two review bundle directories", async () => {
+    const beforeDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-before-"));
+    const afterDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-after-"));
+    const beforeBundle = createIo();
+    const afterBundle = createIo();
+    const diffBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        beforeDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      beforeBundle.io,
+      { terminalContext }
+    );
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        afterDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      afterBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(afterDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    manifest.summary.releaseReady = false;
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "diff",
+        "--before",
+        beforeDirectory,
+        "--after",
+        afterDirectory,
+        "--json"
+      ],
+      diffBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(diffBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(diffBundle.stderr).toEqual([]);
+    expect(output.kind).toBe("doctor.review.bundle.diff");
+    expect(output.summary.releaseReadyChanged).toBe(true);
+    expect(output.summary.riskIncreased).toBe(true);
+    expect(output.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "releaseReady",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("renders text output for review bundle diffs", async () => {
+    const beforeDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-diff-before-"));
+    const afterDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-diff-after-"));
+    const beforeBundle = createIo();
+    const afterBundle = createIo();
+    const diffBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        beforeDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      beforeBundle.io,
+      { terminalContext }
+    );
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        afterDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      afterBundle.io,
+      { terminalContext }
+    );
+
+    const exitCode = await runCli(
+      ["doctor", "review-bundle", "diff", "--before", beforeDirectory, "--after", afterDirectory],
+      diffBundle.io,
+      { terminalContext }
+    );
+    const output = diffBundle.stdout.join("");
+
+    expect(exitCode).toBe(0);
+    expect(diffBundle.stderr).toEqual([]);
+    expect(output).toContain("Doctor Review Bundle Diff");
+    expect(output).toContain("No changes.");
+  });
+
   it("requires an output directory", async () => {
     const { io, stdout, stderr } = createIo();
 
@@ -261,5 +387,19 @@ describe("doctor review-bundle command", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain("Missing target path. Use --target <path>.");
+  });
+
+  it("requires before and after directories when diffing review bundles", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["doctor", "review-bundle", "diff", "--before", "before-bundle"],
+      io,
+      { terminalContext }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing after bundle directory. Use --after <dir>.");
   });
 });

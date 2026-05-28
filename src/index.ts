@@ -101,13 +101,19 @@ export {
 } from "./core/runtime-policy.js";
 export {
   buildDoctorReviewBundle,
+  diffDoctorReviewBundles,
   renderDoctorReviewBundle,
+  renderDoctorReviewBundleDiff,
+  renderDoctorReviewBundleDiffJson,
   renderDoctorReviewBundleJson,
   renderDoctorReviewBundleVerification,
   renderDoctorReviewBundleVerificationJson,
   verifyDoctorReviewBundle,
   type BuildDoctorReviewBundleOptions,
   type DoctorReviewBundle,
+  type DoctorReviewBundleDiffChange,
+  type DoctorReviewBundleDiffReport,
+  type DoctorReviewBundleDiffSnapshot,
   type DoctorReviewBundleManifest,
   type DoctorReviewBundleVerificationReport
 } from "./core/review-bundle.js";

@@ -99,6 +99,48 @@ export interface DoctorReviewBundleVerificationReport {
   releaseEvidence: DoctorReleaseEvidenceVerificationReport | null;
 }
 
+export interface DoctorReviewBundleDiffReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.review.bundle.diff";
+  generatedAt: string;
+  beforeDirectory: string;
+  afterDirectory: string;
+  status: "pass" | "warn" | "fail";
+  exitCode: 0 | 1;
+  summary: {
+    changed: boolean;
+    statusChanged: boolean;
+    runtimePolicyChanged: boolean;
+    releaseReadyChanged: boolean;
+    riskIncreased: boolean;
+    changeCount: number;
+  };
+  before: DoctorReviewBundleDiffSnapshot | null;
+  after: DoctorReviewBundleDiffSnapshot | null;
+  changes: DoctorReviewBundleDiffChange[];
+}
+
+export interface DoctorReviewBundleDiffSnapshot {
+  targetPath: string;
+  version: string;
+  status: DoctorReviewBundleManifest["status"];
+  runtimePolicy: DoctorReviewBundleManifest["summary"]["runtimePolicy"];
+  releaseReady: boolean;
+  attestation: DoctorReviewBundleManifest["summary"]["attestation"];
+  releaseEvidence: DoctorReviewBundleManifest["summary"]["releaseEvidence"];
+  runtimePlanDigest: string | null;
+  releaseEvidenceStatus: DoctorReleaseEvidenceReport["status"] | null;
+  releaseEvidenceReady: boolean | null;
+}
+
+export interface DoctorReviewBundleDiffChange {
+  field: string;
+  before: string | boolean | null;
+  after: string | boolean | null;
+  severity: "info" | "warn" | "fail";
+  message: string;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -111,6 +153,20 @@ function isDoctorReviewBundleManifest(value: unknown): value is DoctorReviewBund
     typeof value.outputDirectory === "string" &&
     isPlainObject(value.summary) &&
     isPlainObject(value.files);
+}
+
+function statusRank(status: "pass" | "warn" | "fail"): number {
+  return status === "fail" ? 2 : status === "warn" ? 1 : 0;
+}
+
+function runtimePolicyRank(policy: DoctorReviewBundleManifest["summary"]["runtimePolicy"]): number {
+  return policy === "deny"
+    ? 3
+    : policy === "sandbox_recommended"
+      ? 2
+      : policy === "review"
+        ? 1
+        : 0;
 }
 
 function relativeBundleFiles(): DoctorReviewBundleManifest["files"] {
@@ -249,6 +305,217 @@ export function renderDoctorReviewBundleJson(bundle: DoctorReviewBundle): string
 
 async function readBundleJsonFile(bundleDirectory: string, relativePath: string): Promise<unknown> {
   return readJsonFile<unknown>(path.join(bundleDirectory, relativePath));
+}
+
+async function readBundleDiffSnapshot(bundleDirectory: string): Promise<DoctorReviewBundleDiffSnapshot | null> {
+  const manifestArtifact = await readBundleJsonFile(bundleDirectory, "manifest.json");
+
+  if (!isDoctorReviewBundleManifest(manifestArtifact)) {
+    return null;
+  }
+
+  const files = manifestArtifact.files;
+  let runtimePlanDigest: string | null = null;
+  let releaseEvidenceStatus: DoctorReleaseEvidenceReport["status"] | null = null;
+  let releaseEvidenceReady: boolean | null = null;
+
+  try {
+    const runtimePlan = await readBundleJsonFile(bundleDirectory, files.runtimePlanJson);
+
+    runtimePlanDigest = isPlainObject(runtimePlan) && typeof runtimePlan.digest === "string"
+      ? runtimePlan.digest
+      : null;
+  } catch {
+    runtimePlanDigest = null;
+  }
+
+  try {
+    const releaseEvidence = await readBundleJsonFile(bundleDirectory, files.releaseEvidenceJson);
+
+    releaseEvidenceStatus = isPlainObject(releaseEvidence) &&
+      (releaseEvidence.status === "pass" || releaseEvidence.status === "fail")
+        ? releaseEvidence.status
+        : null;
+    releaseEvidenceReady = isPlainObject(releaseEvidence) && typeof releaseEvidence.releaseReady === "boolean"
+      ? releaseEvidence.releaseReady
+      : null;
+  } catch {
+    releaseEvidenceStatus = null;
+    releaseEvidenceReady = null;
+  }
+
+  return {
+    targetPath: manifestArtifact.targetPath,
+    version: manifestArtifact.version,
+    status: manifestArtifact.status,
+    runtimePolicy: manifestArtifact.summary.runtimePolicy,
+    releaseReady: manifestArtifact.summary.releaseReady,
+    attestation: manifestArtifact.summary.attestation,
+    releaseEvidence: manifestArtifact.summary.releaseEvidence,
+    runtimePlanDigest,
+    releaseEvidenceStatus,
+    releaseEvidenceReady
+  };
+}
+
+function createDiffChange(
+  field: string,
+  before: string | boolean | null,
+  after: string | boolean | null,
+  severity: DoctorReviewBundleDiffChange["severity"],
+  message: string
+): DoctorReviewBundleDiffChange | null {
+  return before === after
+    ? null
+    : {
+      field,
+      before,
+      after,
+      severity,
+      message
+    };
+}
+
+function diffBundleSnapshots(
+  before: DoctorReviewBundleDiffSnapshot,
+  after: DoctorReviewBundleDiffSnapshot
+): DoctorReviewBundleDiffChange[] {
+  const changes = [
+    createDiffChange("targetPath", before.targetPath, after.targetPath, "warn", "The bundle target path changed."),
+    createDiffChange("version", before.version, after.version, "info", "The doctor version changed."),
+    createDiffChange(
+      "status",
+      before.status,
+      after.status,
+      statusRank(after.status) > statusRank(before.status) ? "fail" : "info",
+      "The review bundle status changed."
+    ),
+    createDiffChange(
+      "runtimePolicy",
+      before.runtimePolicy,
+      after.runtimePolicy,
+      runtimePolicyRank(after.runtimePolicy) > runtimePolicyRank(before.runtimePolicy) ? "warn" : "info",
+      "The runtime policy decision changed."
+    ),
+    createDiffChange(
+      "releaseReady",
+      before.releaseReady,
+      after.releaseReady,
+      before.releaseReady && !after.releaseReady ? "fail" : "info",
+      "The release readiness flag changed."
+    ),
+    createDiffChange(
+      "attestation",
+      before.attestation,
+      after.attestation,
+      statusRank(after.attestation) > statusRank(before.attestation) ? "fail" : "info",
+      "The attestation summary changed."
+    ),
+    createDiffChange(
+      "releaseEvidence",
+      before.releaseEvidence,
+      after.releaseEvidence,
+      statusRank(after.releaseEvidence) > statusRank(before.releaseEvidence) ? "fail" : "info",
+      "The release evidence summary changed."
+    ),
+    createDiffChange(
+      "runtimePlanDigest",
+      before.runtimePlanDigest,
+      after.runtimePlanDigest,
+      "warn",
+      "The runtime plan digest changed."
+    ),
+    createDiffChange(
+      "releaseEvidenceStatus",
+      before.releaseEvidenceStatus,
+      after.releaseEvidenceStatus,
+      after.releaseEvidenceStatus === "fail" ? "fail" : "info",
+      "The embedded release evidence status changed."
+    ),
+    createDiffChange(
+      "releaseEvidenceReady",
+      before.releaseEvidenceReady,
+      after.releaseEvidenceReady,
+      before.releaseEvidenceReady === true && after.releaseEvidenceReady === false ? "fail" : "info",
+      "The embedded release evidence readiness changed."
+    )
+  ];
+
+  return changes.filter((change): change is DoctorReviewBundleDiffChange => change !== null);
+}
+
+export async function diffDoctorReviewBundles(
+  beforeDirectory: string,
+  afterDirectory: string
+): Promise<DoctorReviewBundleDiffReport> {
+  const resolvedBeforeDirectory = path.resolve(beforeDirectory);
+  const resolvedAfterDirectory = path.resolve(afterDirectory);
+  const [before, after] = await Promise.all([
+    readBundleDiffSnapshot(resolvedBeforeDirectory),
+    readBundleDiffSnapshot(resolvedAfterDirectory)
+  ]);
+
+  if (!before || !after) {
+    const changes: DoctorReviewBundleDiffChange[] = [
+      {
+        field: before ? "after" : "before",
+        before: before ? "valid" : "invalid",
+        after: after ? "valid" : "invalid",
+        severity: "fail",
+        message: "One or more review bundles could not be read as valid bundle directories."
+      }
+    ];
+
+    return {
+      schemaVersion: "1.0.0",
+      kind: "doctor.review.bundle.diff",
+      generatedAt: new Date().toISOString(),
+      beforeDirectory: resolvedBeforeDirectory,
+      afterDirectory: resolvedAfterDirectory,
+      status: "fail",
+      exitCode: 1,
+      summary: {
+        changed: true,
+        statusChanged: false,
+        runtimePolicyChanged: false,
+        releaseReadyChanged: false,
+        riskIncreased: true,
+        changeCount: changes.length
+      },
+      before,
+      after,
+      changes
+    };
+  }
+
+  const changes = diffBundleSnapshots(before, after);
+  const riskIncreased = changes.some((change) => change.severity === "fail" || change.severity === "warn");
+  const status = changes.some((change) => change.severity === "fail")
+    ? "fail"
+    : riskIncreased
+      ? "warn"
+      : "pass";
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.review.bundle.diff",
+    generatedAt: new Date().toISOString(),
+    beforeDirectory: resolvedBeforeDirectory,
+    afterDirectory: resolvedAfterDirectory,
+    status,
+    exitCode: status === "fail" ? 1 : 0,
+    summary: {
+      changed: changes.length > 0,
+      statusChanged: before.status !== after.status,
+      runtimePolicyChanged: before.runtimePolicy !== after.runtimePolicy,
+      releaseReadyChanged: before.releaseReady !== after.releaseReady,
+      riskIncreased,
+      changeCount: changes.length
+    },
+    before,
+    after,
+    changes
+  };
 }
 
 export async function verifyDoctorReviewBundle(
@@ -444,6 +711,40 @@ export function renderDoctorReviewBundleVerification(report: DoctorReviewBundleV
   for (const check of report.checks) {
     lines.push(`${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}`);
     lines.push(`  ${check.message}`);
+  }
+
+  return lines.join("\n");
+}
+
+export function renderDoctorReviewBundleDiffJson(report: DoctorReviewBundleDiffReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function renderDoctorReviewBundleDiff(report: DoctorReviewBundleDiffReport): string {
+  const lines = [
+    "Doctor Review Bundle Diff",
+    "=========================",
+    `Before: ${report.beforeDirectory}`,
+    `After: ${report.afterDirectory}`,
+    `Status: ${report.status.toUpperCase()}`,
+    `Changed: ${report.summary.changed ? "yes" : "no"}`,
+    `Risk increased: ${report.summary.riskIncreased ? "yes" : "no"}`,
+    `Changes: ${report.summary.changeCount}`,
+    "",
+    "Changes",
+    "-------"
+  ];
+
+  if (report.changes.length === 0) {
+    lines.push("No changes.");
+    return lines.join("\n");
+  }
+
+  for (const change of report.changes) {
+    lines.push(`${change.severity.toUpperCase()} ${change.field}`);
+    lines.push(`  Before: ${change.before ?? "unknown"}`);
+    lines.push(`  After: ${change.after ?? "unknown"}`);
+    lines.push(`  ${change.message}`);
   }
 
   return lines.join("\n");

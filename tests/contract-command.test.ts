@@ -115,6 +115,11 @@ describe("doctor contract command", () => {
           id: "doctor.review.bundle.verification.json",
           command: "codex-plugin-doctor doctor review-bundle verify <bundle-dir> --target <path> --json",
           outputKind: "doctor.review.bundle.verification"
+        }),
+        expect.objectContaining({
+          id: "doctor.review.bundle.diff.json",
+          command: "codex-plugin-doctor doctor review-bundle diff --before <dir> --after <dir> --json",
+          outputKind: "doctor.review.bundle.diff"
         })
       ])
     );
