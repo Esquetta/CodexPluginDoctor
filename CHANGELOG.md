@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.7.0] - 2026-05-28
+
+### Added
+
+- added `doctor review-bundle diff --before <dir> --after <dir>` to compare review bundle handoffs
+- added risk-increase detection for status, runtime policy, release readiness, attestation, release evidence, and runtime plan digest changes
+- added `doctor.review.bundle.diff` to the public output contract
+
 ## [1.6.0] - 2026-05-27
 
 ### Added
