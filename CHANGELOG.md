@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.8.0] - 2026-05-31
+
+### Added
+
+- added GitHub Action inputs for signed review bundle artifact generation and verification
+- added GitHub Action outputs for review bundle and verification artifact paths
+- added `doctor review-bundle verify --output <path>` so CI can persist verification JSON files
+
 ## [1.7.0] - 2026-05-28
 
 ### Added
