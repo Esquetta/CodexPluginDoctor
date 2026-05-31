@@ -157,6 +157,53 @@ describe("doctor review-bundle command", () => {
     });
   });
 
+  it("writes review bundle verification JSON to an output path", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-verify-output-"));
+    const reportPath = path.join(outputDirectory, "verification.json");
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json",
+        "--output",
+        reportPath
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const writtenReport = JSON.parse(await readFile(reportPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(writtenReport.kind).toBe("doctor.review.bundle.verification");
+    expect(writtenReport.status).toBe("pass");
+  });
+
   it("fails review bundle verification when signed evidence is tampered", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-tampered-"));
     const createBundle = createIo();

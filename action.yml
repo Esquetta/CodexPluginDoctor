@@ -66,6 +66,30 @@ inputs:
     description: Write SARIF output into the output directory.
     required: false
     default: "false"
+  review-bundle:
+    description: Write a signed review bundle directory into the output directory.
+    required: false
+    default: "false"
+  review-bundle-dir:
+    description: Directory name for the generated review bundle inside output-dir.
+    required: false
+    default: review-bundle
+  review-bundle-verify:
+    description: Verify the generated review bundle and write a verification JSON report.
+    required: false
+    default: "false"
+  signing-key-env:
+    description: Environment variable name that contains the local HMAC signing key for review bundle artifacts.
+    required: false
+    default: CODEX_PLUGIN_DOCTOR_SIGNING_KEY
+  review-bundle-allow-dirty:
+    description: Allow dirty git worktrees when generating review bundle release evidence.
+    required: false
+    default: "false"
+  review-bundle-allow-untagged:
+    description: Allow untagged commits when generating review bundle release evidence.
+    required: false
+    default: "true"
 
 outputs:
   status:
@@ -83,6 +107,12 @@ outputs:
   sarif-path:
     description: Path to the generated SARIF report when sarif is enabled.
     value: ${{ steps.run-doctor.outputs.sarif-path }}
+  review-bundle-path:
+    description: Path to the generated review bundle directory when review-bundle is enabled.
+    value: ${{ steps.run-doctor.outputs.review-bundle-path }}
+  review-bundle-verification-path:
+    description: Path to the generated review bundle verification report when review-bundle-verify is enabled.
+    value: ${{ steps.run-doctor.outputs.review-bundle-verification-path }}
 
 runs:
   using: composite
@@ -101,6 +131,8 @@ runs:
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
         json_path="$report_dir/codex-plugin-doctor-report.json"
         sarif_path="$report_dir/codex-plugin-doctor.sarif"
+        review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
+        review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         status=0
 
@@ -178,6 +210,37 @@ runs:
           run_doctor "sarif report" "${args[@]}" --sarif --output "$sarif_path"
         fi
 
+        if [[ "${{ inputs['review-bundle'] }}" == "true" ]]; then
+          signing_key_env="${{ inputs['signing-key-env'] }}"
+
+          if [[ "${{ inputs.installed }}" == "true" ]]; then
+            echo "Review bundle generation requires a single package path, not installed-cache mode."
+            record_status 2
+          elif [[ -z "$signing_key_env" ]]; then
+            echo "Review bundle generation requires signing-key-env."
+            record_status 2
+          elif [[ -z "${!signing_key_env:-}" ]]; then
+            echo "Review bundle signing key environment variable is not set: ${signing_key_env}"
+            record_status 2
+          else
+            review_bundle_args=(doctor review-bundle "${{ inputs.path }}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")
+
+            if [[ "${{ inputs['review-bundle-allow-dirty'] }}" == "true" ]]; then
+              review_bundle_args+=(--allow-dirty)
+            fi
+
+            if [[ "${{ inputs['review-bundle-allow-untagged'] }}" == "true" ]]; then
+              review_bundle_args+=(--allow-untagged)
+            fi
+
+            run_doctor "review bundle" "${review_bundle_args[@]}"
+
+            if [[ "${{ inputs['review-bundle-verify'] }}" == "true" ]]; then
+              run_doctor "review bundle verification" doctor review-bundle verify "$review_bundle_path" --target "${{ inputs.path }}" --sign-key-env "$signing_key_env" --json --output "$review_bundle_verification_path"
+            fi
+          fi
+        fi
+
         printf "%s" "$status" > "$status_file"
 
         {
@@ -186,6 +249,8 @@ runs:
           echo "summary-path=$summary_path"
           echo "json-path=$json_path"
           echo "sarif-path=$sarif_path"
+          echo "review-bundle-path=$review_bundle_path"
+          echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"
 
     - name: Publish Codex Plugin Doctor summary
