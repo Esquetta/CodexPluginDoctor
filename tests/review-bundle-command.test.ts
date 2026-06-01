@@ -69,6 +69,19 @@ describe("doctor review-bundle command", () => {
       attestationJson: "attestation.json",
       releaseEvidenceJson: "release-evidence.json"
     });
+    expect(manifest.integrity).toMatchObject({
+      algorithm: "sha256",
+      files: {
+        summary: {
+          path: "summary.md",
+          digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+        },
+        releaseEvidenceJson: {
+          path: "release-evidence.json",
+          digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+        }
+      }
+    });
     expect(summary).toContain("# Codex Plugin Doctor Review Bundle");
     expect(runtimePolicy.kind).toBe("doctor.runtime.policy");
     expect(releaseEvidence.kind).toBe("doctor.release.evidence");
@@ -252,6 +265,59 @@ describe("doctor review-bundle command", () => {
     expect(verifyBundle.stderr).toEqual([]);
     expect(output.status).toBe("fail");
     expect(output.summary.releaseEvidence).toBe("fail");
+  });
+
+  it("fails review bundle verification when a bundled file digest is tampered", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-digest-tampered-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    await writeFile(path.join(outputDirectory, "summary.md"), "# Tampered review summary\n", "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.files).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.integrity.summary",
+          status: "fail"
+        })
+      ])
+    );
   });
 
   it("diffs two review bundle directories", async () => {

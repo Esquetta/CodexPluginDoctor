@@ -1,4 +1,5 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -63,6 +64,14 @@ export interface DoctorReviewBundleManifest {
     runtimePolicyText: string;
     attestationJson: string;
     releaseEvidenceJson: string;
+  };
+  integrity?: {
+    algorithm: "sha256";
+    files: Record<string, {
+      path: string;
+      digest: string;
+      bytes: number;
+    }>;
   };
 }
 
@@ -169,6 +178,10 @@ function runtimePolicyRank(policy: DoctorReviewBundleManifest["summary"]["runtim
         : 0;
 }
 
+function sha256(content: Buffer): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
 function relativeBundleFiles(): DoctorReviewBundleManifest["files"] {
   return {
     manifest: "manifest.json",
@@ -230,7 +243,6 @@ async function writeBundleFiles(bundle: DoctorReviewBundle): Promise<void> {
 
   await mkdir(outputDirectory, { recursive: true });
   await Promise.all([
-    writeFile(path.join(outputDirectory, files.manifest), JSON.stringify(bundle.manifest, null, 2), "utf8"),
     writeFile(path.join(outputDirectory, files.summary), renderSummary(bundle), "utf8"),
     writeFile(path.join(outputDirectory, files.runtimePlanJson), renderDoctorRuntimePlanJson(bundle.runtimePlan), "utf8"),
     writeFile(path.join(outputDirectory, files.runtimePlanMarkdown), renderDoctorRuntimePlanMarkdown(bundle.runtimePlan), "utf8"),
@@ -239,6 +251,35 @@ async function writeBundleFiles(bundle: DoctorReviewBundle): Promise<void> {
     writeFile(path.join(outputDirectory, files.attestationJson), renderDoctorAttestationJson(bundle.attestation), "utf8"),
     writeFile(path.join(outputDirectory, files.releaseEvidenceJson), renderDoctorReleaseEvidenceJson(bundle.releaseEvidence), "utf8")
   ]);
+  bundle.manifest.integrity = await buildBundleIntegrity(outputDirectory, files);
+  await writeFile(path.join(outputDirectory, files.manifest), JSON.stringify(bundle.manifest, null, 2), "utf8");
+}
+
+async function buildBundleIntegrity(
+  outputDirectory: string,
+  files: DoctorReviewBundleManifest["files"]
+): Promise<NonNullable<DoctorReviewBundleManifest["integrity"]>> {
+  const integrityEntries = await Promise.all(
+    Object.entries(files)
+      .filter(([fileKey]) => fileKey !== "manifest")
+      .map(async ([fileKey, relativePath]) => {
+        const content = await readFile(path.join(outputDirectory, relativePath));
+
+        return [
+          fileKey,
+          {
+            path: relativePath,
+            digest: sha256(content),
+            bytes: content.byteLength
+          }
+        ] as const;
+      })
+  );
+
+  return {
+    algorithm: "sha256",
+    files: Object.fromEntries(integrityEntries)
+  };
 }
 
 export async function buildDoctorReviewBundle(
@@ -533,6 +574,7 @@ export async function verifyDoctorReviewBundle(
   let runtimePolicyStatus: "pass" | "fail" = "fail";
   let attestation: DoctorAttestationVerificationReport | null = null;
   let releaseEvidence: DoctorReleaseEvidenceVerificationReport | null = null;
+  let integrityStatus: "pass" | "fail" = "pass";
 
   try {
     const manifestArtifact = await readBundleJsonFile(resolvedBundleDirectory, "manifest.json");
@@ -578,6 +620,56 @@ export async function verifyDoctorReviewBundle(
         message: `${relativePath} is missing.`
       });
     }
+  }
+
+  if (manifest?.integrity) {
+    if (manifest.integrity.algorithm !== "sha256") {
+      integrityStatus = "fail";
+      checks.push({
+        id: "review_bundle.integrity.algorithm",
+        status: "fail",
+        message: "The review bundle manifest uses an unsupported integrity algorithm."
+      });
+    } else {
+      checks.push({
+        id: "review_bundle.integrity.algorithm",
+        status: "pass",
+        message: "The review bundle manifest uses SHA-256 integrity digests."
+      });
+    }
+
+    for (const [fileKey, expected] of Object.entries(manifest.integrity.files)) {
+      try {
+        const content = await readFile(path.join(resolvedBundleDirectory, expected.path));
+        const digest = sha256(content);
+        const matches = digest === expected.digest && content.byteLength === expected.bytes;
+
+        if (!matches) {
+          integrityStatus = "fail";
+        }
+
+        checks.push({
+          id: `review_bundle.integrity.${fileKey}`,
+          status: matches ? "pass" : "fail",
+          message: matches
+            ? `${expected.path} matches the manifest integrity digest.`
+            : `${expected.path} does not match the manifest integrity digest.`
+        });
+      } catch {
+        integrityStatus = "fail";
+        checks.push({
+          id: `review_bundle.integrity.${fileKey}`,
+          status: "fail",
+          message: `${expected.path} could not be read for integrity verification.`
+        });
+      }
+    }
+  } else {
+    checks.push({
+      id: "review_bundle.integrity.present",
+      status: "pass",
+      message: "No manifest integrity block was present; skipping digest checks for backward compatibility."
+    });
   }
 
   try {
@@ -674,7 +766,7 @@ export async function verifyDoctorReviewBundle(
     exitCode: failedChecks.length === 0 ? 0 : 1,
     summary: {
       manifest: manifestStatus,
-      files: fileChecks.every((check) => check.status === "pass") ? "pass" : "fail",
+      files: fileChecks.every((check) => check.status === "pass") && integrityStatus === "pass" ? "pass" : "fail",
       runtimePlan: runtimePlanStatus,
       runtimePolicy: runtimePolicyStatus,
       attestation: attestation?.status ?? "fail",
