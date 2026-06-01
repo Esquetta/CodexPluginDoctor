@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.9.0] - 2026-06-01
+
+### Added
+
+- added SHA-256 file integrity digests to newly generated review bundle manifests
+- added review bundle verification checks that detect tampered bundle files when manifest integrity metadata is present
+- kept review bundle verification backward-compatible with older bundles that do not include integrity metadata
+
 ## [1.8.0] - 2026-05-31
 
 ### Added
