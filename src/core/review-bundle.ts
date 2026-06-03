@@ -638,7 +638,34 @@ export async function verifyDoctorReviewBundle(
       });
     }
 
+    const expectedIntegrityFileKeys = Object.keys(files).filter((fileKey) => fileKey !== "manifest");
+    const integrityFileKeys = Object.keys(manifest.integrity.files);
+    for (const fileKey of expectedIntegrityFileKeys) {
+      if (!(fileKey in manifest.integrity.files)) {
+        integrityStatus = "fail";
+        checks.push({
+          id: `review_bundle.integrity.${fileKey}`,
+          status: "fail",
+          message: `${files[fileKey as keyof typeof files]} is missing a manifest integrity entry.`
+        });
+      }
+    }
+    for (const fileKey of integrityFileKeys) {
+      if (!expectedIntegrityFileKeys.includes(fileKey)) {
+        integrityStatus = "fail";
+        checks.push({
+          id: `review_bundle.integrity.${fileKey}`,
+          status: "fail",
+          message: "The review bundle manifest includes an unexpected integrity entry."
+        });
+      }
+    }
+
     for (const [fileKey, expected] of Object.entries(manifest.integrity.files)) {
+      if (!expectedIntegrityFileKeys.includes(fileKey)) {
+        continue;
+      }
+
       try {
         const content = await readFile(path.join(resolvedBundleDirectory, expected.path));
         const digest = sha256(content);
