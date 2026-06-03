@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.10.0] - 2026-06-03
+
+### Added
+
+- added stricter review bundle integrity manifest coverage checks for missing bundled files
+- added review bundle verification failure checks for unexpected integrity manifest entries
+- kept legacy review bundle verification backward-compatible when no integrity block is present
+
 ## [1.9.0] - 2026-06-01
 
 ### Added

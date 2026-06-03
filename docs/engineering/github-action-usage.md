@@ -22,9 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.9.0
+      - uses: Esquetta/CodexPluginDoctor@v1.10.0
         with:
-          version: "1.9.0"
+          version: "1.10.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -45,9 +45,9 @@ The Markdown report is appended to the GitHub Actions step summary, and the outp
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     sarif: "true"
 ```
@@ -59,9 +59,9 @@ The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to
 Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -89,11 +89,11 @@ The action also exposes these workflow outputs for follow-up steps:
 Use review bundle artifacts when a pull request or release workflow should preserve signed runtime approval, runtime policy, attestation, and release evidence handoff files.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -139,9 +139,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -161,9 +161,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 The composite action can pass profiles directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     profile: publish
 ```
@@ -173,9 +173,9 @@ The composite action can pass profiles directly:
 Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     path: .
     policy: codex-publish
 ```
@@ -187,9 +187,9 @@ Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The C
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -200,9 +200,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.9.0
+- uses: Esquetta/CodexPluginDoctor@v1.10.0
   with:
-    version: "1.9.0"
+    version: "1.10.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.
