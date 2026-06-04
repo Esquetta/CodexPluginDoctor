@@ -195,6 +195,11 @@ function relativeBundleFiles(): DoctorReviewBundleManifest["files"] {
   };
 }
 
+function isPathInsideDirectory(candidatePath: string, directoryPath: string): boolean {
+  const relativePath = path.relative(directoryPath, candidatePath);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
 function bundleStatus(
   runtimePolicy: DoctorRuntimePolicyReport,
   releaseEvidence: DoctorReleaseEvidenceReport
@@ -605,7 +610,17 @@ export async function verifyDoctorReviewBundle(
 
   for (const [fileKey, relativePath] of Object.entries(files)) {
     try {
-      const fileStat = await stat(path.join(resolvedBundleDirectory, relativePath));
+      const artifactPath = path.resolve(resolvedBundleDirectory, relativePath);
+      if (!isPathInsideDirectory(artifactPath, resolvedBundleDirectory)) {
+        checks.push({
+          id: `review_bundle.file.${fileKey}`,
+          status: "fail",
+          message: `${relativePath} resolves outside the review bundle directory.`
+        });
+        continue;
+      }
+
+      const fileStat = await stat(artifactPath);
       checks.push({
         id: `review_bundle.file.${fileKey}`,
         status: fileStat.isFile() ? "pass" : "fail",
@@ -667,7 +682,29 @@ export async function verifyDoctorReviewBundle(
       }
 
       try {
-        const content = await readFile(path.join(resolvedBundleDirectory, expected.path));
+        const declaredPath = files[fileKey as keyof typeof files];
+        if (expected.path !== declaredPath) {
+          integrityStatus = "fail";
+          checks.push({
+            id: `review_bundle.integrity.${fileKey}.path`,
+            status: "fail",
+            message: `${expected.path} does not match the declared bundle file path.`
+          });
+          continue;
+        }
+
+        const integrityPath = path.resolve(resolvedBundleDirectory, expected.path);
+        if (!isPathInsideDirectory(integrityPath, resolvedBundleDirectory)) {
+          integrityStatus = "fail";
+          checks.push({
+            id: `review_bundle.integrity.${fileKey}.path`,
+            status: "fail",
+            message: `${expected.path} resolves outside the review bundle directory.`
+          });
+          continue;
+        }
+
+        const content = await readFile(integrityPath);
         const digest = sha256(content);
         const matches = digest === expected.digest && content.byteLength === expected.bytes;
 

@@ -436,6 +436,123 @@ describe("doctor review-bundle command", () => {
     );
   });
 
+  it("fails review bundle verification when a declared bundle file path escapes the bundle directory", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-file-path-escape-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.files.summary = "../summary.md";
+    manifest.integrity.files.summary.path = "../summary.md";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.files).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.file.summary",
+          status: "fail"
+        }),
+        expect.objectContaining({
+          id: "review_bundle.integrity.summary.path",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails review bundle verification when an integrity path does not match the declared bundle file", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-integrity-path-mismatch-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.integrity.files.summary.path = "runtime-plan.md";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.files).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.integrity.summary.path",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
   it("diffs two review bundle directories", async () => {
     const beforeDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-before-"));
     const afterDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-after-"));
