@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.11.0] - 2026-06-04
+
+### Added
+
+- added review bundle manifest path confinement checks so declared artifact paths cannot resolve outside the bundle directory
+- added integrity path binding checks so digest entries must match the declared bundle file path
+- added regression coverage for escaped manifest file paths and mismatched integrity paths
+
 ## [1.10.0] - 2026-06-03
 
 ### Added
