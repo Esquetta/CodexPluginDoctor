@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.12.0] - 2026-06-05
+
+### Added
+
+- added canonical path checks that reject review bundle artifacts resolving outside the bundle through symbolic links or junctions
+- applied canonical path confinement to manifest, runtime plan, runtime policy, attestation, release evidence, and integrity reads
+- added a Windows junction and cross-platform symlink regression test using a valid external runtime plan artifact
+
 ## [1.11.0] - 2026-06-04
 
 ### Added
