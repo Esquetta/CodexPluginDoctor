@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -200,6 +200,26 @@ function isPathInsideDirectory(candidatePath: string, directoryPath: string): bo
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
+async function resolveBundleArtifactPath(bundleDirectory: string, relativePath: string): Promise<string> {
+  const resolvedBundleDirectory = path.resolve(bundleDirectory);
+  const artifactPath = path.resolve(resolvedBundleDirectory, relativePath);
+
+  if (!isPathInsideDirectory(artifactPath, resolvedBundleDirectory)) {
+    throw new Error("Bundle artifact path resolves outside the bundle directory.");
+  }
+
+  const [canonicalBundleDirectory, canonicalArtifactPath] = await Promise.all([
+    realpath(resolvedBundleDirectory),
+    realpath(artifactPath)
+  ]);
+
+  if (!isPathInsideDirectory(canonicalArtifactPath, canonicalBundleDirectory)) {
+    throw new Error("Bundle artifact canonical path resolves outside the bundle directory.");
+  }
+
+  return canonicalArtifactPath;
+}
+
 function bundleStatus(
   runtimePolicy: DoctorRuntimePolicyReport,
   releaseEvidence: DoctorReleaseEvidenceReport
@@ -350,7 +370,7 @@ export function renderDoctorReviewBundleJson(bundle: DoctorReviewBundle): string
 }
 
 async function readBundleJsonFile(bundleDirectory: string, relativePath: string): Promise<unknown> {
-  return readJsonFile<unknown>(path.join(bundleDirectory, relativePath));
+  return readJsonFile<unknown>(await resolveBundleArtifactPath(bundleDirectory, relativePath));
 }
 
 async function readBundleDiffSnapshot(bundleDirectory: string): Promise<DoctorReviewBundleDiffSnapshot | null> {
@@ -610,16 +630,7 @@ export async function verifyDoctorReviewBundle(
 
   for (const [fileKey, relativePath] of Object.entries(files)) {
     try {
-      const artifactPath = path.resolve(resolvedBundleDirectory, relativePath);
-      if (!isPathInsideDirectory(artifactPath, resolvedBundleDirectory)) {
-        checks.push({
-          id: `review_bundle.file.${fileKey}`,
-          status: "fail",
-          message: `${relativePath} resolves outside the review bundle directory.`
-        });
-        continue;
-      }
-
+      const artifactPath = await resolveBundleArtifactPath(resolvedBundleDirectory, relativePath);
       const fileStat = await stat(artifactPath);
       checks.push({
         id: `review_bundle.file.${fileKey}`,
@@ -693,8 +704,8 @@ export async function verifyDoctorReviewBundle(
           continue;
         }
 
-        const integrityPath = path.resolve(resolvedBundleDirectory, expected.path);
-        if (!isPathInsideDirectory(integrityPath, resolvedBundleDirectory)) {
+        const resolvedIntegrityPath = path.resolve(resolvedBundleDirectory, expected.path);
+        if (!isPathInsideDirectory(resolvedIntegrityPath, resolvedBundleDirectory)) {
           integrityStatus = "fail";
           checks.push({
             id: `review_bundle.integrity.${fileKey}.path`,
@@ -704,6 +715,7 @@ export async function verifyDoctorReviewBundle(
           continue;
         }
 
+        const integrityPath = await resolveBundleArtifactPath(resolvedBundleDirectory, expected.path);
         const content = await readFile(integrityPath);
         const digest = sha256(content);
         const matches = digest === expected.digest && content.byteLength === expected.bytes;
@@ -773,8 +785,9 @@ export async function verifyDoctorReviewBundle(
   }
 
   try {
+    const attestationPath = await resolveBundleArtifactPath(resolvedBundleDirectory, files.attestationJson);
     attestation = await verifyDoctorAttestation(
-      path.join(resolvedBundleDirectory, files.attestationJson),
+      attestationPath,
       targetPath,
       { signingKey: options.signingKey }
     );
@@ -794,8 +807,9 @@ export async function verifyDoctorReviewBundle(
   }
 
   try {
+    const releaseEvidencePath = await resolveBundleArtifactPath(resolvedBundleDirectory, files.releaseEvidenceJson);
     releaseEvidence = await verifyDoctorReleaseEvidence(
-      path.join(resolvedBundleDirectory, files.releaseEvidenceJson),
+      releaseEvidencePath,
       {
         signingKey: options.signingKey,
         targetPath

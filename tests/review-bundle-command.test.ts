@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -547,6 +547,81 @@ describe("doctor review-bundle command", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "review_bundle.integrity.summary.path",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails review bundle verification when a symlinked artifact escapes the bundle directory", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-symlink-escape-"));
+    const externalDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-external-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const runtimePlan = await readFile(path.join(outputDirectory, "runtime-plan.json"));
+    await writeFile(path.join(externalDirectory, "runtime-plan.json"), runtimePlan);
+    await symlink(
+      externalDirectory,
+      path.join(outputDirectory, "external"),
+      process.platform === "win32" ? "junction" : "dir"
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.files.runtimePlanJson = "external/runtime-plan.json";
+    manifest.integrity.files.runtimePlanJson.path = "external/runtime-plan.json";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.files).toBe("fail");
+    expect(output.summary.runtimePlan).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.file.runtimePlanJson",
+          status: "fail"
+        }),
+        expect.objectContaining({
+          id: "review_bundle.integrity.runtimePlanJson",
+          status: "fail"
+        }),
+        expect.objectContaining({
+          id: "review_bundle.runtime_plan",
           status: "fail"
         })
       ])
