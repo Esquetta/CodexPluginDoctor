@@ -358,9 +358,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.12.0
+      - uses: Esquetta/CodexPluginDoctor@v1.12.1
         with:
-          version: "1.12.0"
+          version: "1.12.1"
           path: .
           runtime: "true"
           policy: codex-publish

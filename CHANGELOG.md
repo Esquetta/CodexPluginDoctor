@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.12.1] - 2026-06-05
+
+### Fixed
+
+- disabled Vitest file-level parallelism to prevent shared runtime and performance checks from intermittently failing during release and npm publish validation
+
 ## [1.12.0] - 2026-06-05
 
 ### Added
