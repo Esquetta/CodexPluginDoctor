@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.13.0] - 2026-06-06
+
+### Added
+
+- added strict review bundle manifest schema validation for summary, status, exit code, file map, and integrity entry shapes
+- rejected review bundle manifests with unexpected bundle file keys or malformed integrity metadata during offline verification
+- added regression coverage for invalid manifest summary fields, unexpected file map entries, and invalid integrity entry types
+
 ## [1.12.1] - 2026-06-05
 
 ### Fixed
