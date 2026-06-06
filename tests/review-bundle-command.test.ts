@@ -170,6 +170,174 @@ describe("doctor review-bundle command", () => {
     });
   });
 
+  it("fails review bundle verification when the manifest summary has invalid field types", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-invalid-summary-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.summary.releaseReady = "yes";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.manifest).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.manifest.valid",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails review bundle verification when the manifest files map has unexpected keys", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-invalid-files-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.files.unexpected = "unexpected.json";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.manifest).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.manifest.valid",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
+  it("fails review bundle verification when manifest integrity entries have invalid shapes", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-invalid-integrity-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    const manifestPath = path.join(outputDirectory, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.integrity.files.summary.bytes = "0";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--json"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = JSON.parse(verifyBundle.stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output.summary.manifest).toBe("fail");
+    expect(output.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.manifest.valid",
+          status: "fail"
+        })
+      ])
+    );
+  });
+
   it("writes review bundle verification JSON to an output path", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-verify-output-"));
     const reportPath = path.join(outputDirectory, "verification.json");

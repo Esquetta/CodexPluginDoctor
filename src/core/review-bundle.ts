@@ -154,14 +154,71 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length && keys.every((key) => actualKeys.includes(key));
+}
+
+function isStatus(value: unknown): value is "pass" | "warn" | "fail" {
+  return value === "pass" || value === "warn" || value === "fail";
+}
+
+function isRuntimePolicyDecision(
+  value: unknown
+): value is DoctorReviewBundleManifest["summary"]["runtimePolicy"] {
+  return value === "allow" ||
+    value === "review" ||
+    value === "sandbox_recommended" ||
+    value === "deny";
+}
+
+function isBundleFileMap(value: unknown): value is DoctorReviewBundleManifest["files"] {
+  const expectedKeys = Object.keys(relativeBundleFiles());
+
+  return isPlainObject(value) &&
+    hasExactKeys(value, expectedKeys) &&
+    expectedKeys.every((key) => typeof value[key] === "string");
+}
+
+function isIntegrityEntry(value: unknown): value is { path: string; digest: string; bytes: number } {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  const bytes = value.bytes;
+
+  return typeof value.path === "string" &&
+    typeof value.digest === "string" &&
+    /^sha256:[a-f0-9]{64}$/.test(value.digest) &&
+    typeof bytes === "number" &&
+    Number.isSafeInteger(bytes) &&
+    bytes >= 0;
+}
+
+function isManifestIntegrity(value: unknown): value is NonNullable<DoctorReviewBundleManifest["integrity"]> {
+  return isPlainObject(value) &&
+    value.algorithm === "sha256" &&
+    isPlainObject(value.files) &&
+    Object.values(value.files).every(isIntegrityEntry);
+}
+
 function isDoctorReviewBundleManifest(value: unknown): value is DoctorReviewBundleManifest {
   return isPlainObject(value) &&
     value.schemaVersion === "1.0.0" &&
     value.kind === "doctor.review.bundle" &&
+    typeof value.generatedAt === "string" &&
+    typeof value.version === "string" &&
     typeof value.targetPath === "string" &&
     typeof value.outputDirectory === "string" &&
+    isStatus(value.status) &&
+    (value.exitCode === 0 || value.exitCode === 1) &&
     isPlainObject(value.summary) &&
-    isPlainObject(value.files);
+    isRuntimePolicyDecision(value.summary.runtimePolicy) &&
+    typeof value.summary.releaseReady === "boolean" &&
+    isStatus(value.summary.attestation) &&
+    (value.summary.releaseEvidence === "pass" || value.summary.releaseEvidence === "fail") &&
+    isBundleFileMap(value.files) &&
+    (value.integrity === undefined || isManifestIntegrity(value.integrity));
 }
 
 function statusRank(status: "pass" | "warn" | "fail"): number {
