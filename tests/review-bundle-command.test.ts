@@ -220,7 +220,8 @@ describe("doctor review-bundle command", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "review_bundle.manifest.valid",
-          status: "fail"
+          status: "fail",
+          message: expect.stringContaining("summary.releaseReady expected boolean, got string.")
         })
       ])
     );
@@ -276,7 +277,8 @@ describe("doctor review-bundle command", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "review_bundle.manifest.valid",
-          status: "fail"
+          status: "fail",
+          message: expect.stringContaining("files.unexpected is unexpected.")
         })
       ])
     );
@@ -332,7 +334,8 @@ describe("doctor review-bundle command", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "review_bundle.manifest.valid",
-          status: "fail"
+          status: "fail",
+          message: expect.stringContaining("integrity.files.summary.bytes expected non-negative safe integer, got string.")
         })
       ])
     );

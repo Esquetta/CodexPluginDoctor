@@ -202,21 +202,134 @@ function isManifestIntegrity(value: unknown): value is NonNullable<DoctorReviewB
     Object.values(value.files).every(isIntegrityEntry);
 }
 
+function valueType(value: unknown): string {
+  return Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
+}
+
+function describeExpectedType(pathName: string, expected: string, actual: unknown): string {
+  return `${pathName} expected ${expected}, got ${valueType(actual)}.`;
+}
+
+function validateManifestFileMap(value: unknown): string[] {
+  if (!isPlainObject(value)) {
+    return [describeExpectedType("files", "object", value)];
+  }
+
+  const expectedKeys = Object.keys(relativeBundleFiles());
+  const actualKeys = Object.keys(value);
+  const errors: string[] = [];
+
+  for (const key of expectedKeys) {
+    if (!(key in value)) {
+      errors.push(`files.${key} is missing.`);
+    } else if (typeof value[key] !== "string") {
+      errors.push(describeExpectedType(`files.${key}`, "string", value[key]));
+    }
+  }
+
+  for (const key of actualKeys) {
+    if (!expectedKeys.includes(key)) {
+      errors.push(`files.${key} is unexpected.`);
+    }
+  }
+
+  return errors;
+}
+
+function validateManifestIntegrity(value: unknown): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!isPlainObject(value)) {
+    return [describeExpectedType("integrity", "object", value)];
+  }
+
+  const errors: string[] = [];
+  if (value.algorithm !== "sha256") {
+    errors.push(`integrity.algorithm expected sha256, got ${String(value.algorithm)}.`);
+  }
+  if (!isPlainObject(value.files)) {
+    errors.push(describeExpectedType("integrity.files", "object", value.files));
+    return errors;
+  }
+
+  for (const [key, entry] of Object.entries(value.files)) {
+    if (!isPlainObject(entry)) {
+      errors.push(describeExpectedType(`integrity.files.${key}`, "object", entry));
+      continue;
+    }
+
+    if (typeof entry.path !== "string") {
+      errors.push(describeExpectedType(`integrity.files.${key}.path`, "string", entry.path));
+    }
+    if (typeof entry.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(entry.digest)) {
+      errors.push(`integrity.files.${key}.digest expected sha256 digest, got ${valueType(entry.digest)}.`);
+    }
+    if (typeof entry.bytes !== "number" || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
+      errors.push(describeExpectedType(`integrity.files.${key}.bytes`, "non-negative safe integer", entry.bytes));
+    }
+  }
+
+  return errors;
+}
+
+function validateDoctorReviewBundleManifest(value: unknown): string[] {
+  if (!isPlainObject(value)) {
+    return [describeExpectedType("manifest", "object", value)];
+  }
+
+  const errors: string[] = [];
+  if (value.schemaVersion !== "1.0.0") {
+    errors.push(`schemaVersion expected 1.0.0, got ${String(value.schemaVersion)}.`);
+  }
+  if (value.kind !== "doctor.review.bundle") {
+    errors.push(`kind expected doctor.review.bundle, got ${String(value.kind)}.`);
+  }
+  if (typeof value.generatedAt !== "string") {
+    errors.push(describeExpectedType("generatedAt", "string", value.generatedAt));
+  }
+  if (typeof value.version !== "string") {
+    errors.push(describeExpectedType("version", "string", value.version));
+  }
+  if (typeof value.targetPath !== "string") {
+    errors.push(describeExpectedType("targetPath", "string", value.targetPath));
+  }
+  if (typeof value.outputDirectory !== "string") {
+    errors.push(describeExpectedType("outputDirectory", "string", value.outputDirectory));
+  }
+  if (!isStatus(value.status)) {
+    errors.push(`status expected pass, warn, or fail, got ${String(value.status)}.`);
+  }
+  if (value.exitCode !== 0 && value.exitCode !== 1) {
+    errors.push(`exitCode expected 0 or 1, got ${String(value.exitCode)}.`);
+  }
+  if (!isPlainObject(value.summary)) {
+    errors.push(describeExpectedType("summary", "object", value.summary));
+  } else {
+    if (!isRuntimePolicyDecision(value.summary.runtimePolicy)) {
+      errors.push(`summary.runtimePolicy expected allow, review, sandbox_recommended, or deny, got ${String(value.summary.runtimePolicy)}.`);
+    }
+    if (typeof value.summary.releaseReady !== "boolean") {
+      errors.push(describeExpectedType("summary.releaseReady", "boolean", value.summary.releaseReady));
+    }
+    if (!isStatus(value.summary.attestation)) {
+      errors.push(`summary.attestation expected pass, warn, or fail, got ${String(value.summary.attestation)}.`);
+    }
+    if (value.summary.releaseEvidence !== "pass" && value.summary.releaseEvidence !== "fail") {
+      errors.push(`summary.releaseEvidence expected pass or fail, got ${String(value.summary.releaseEvidence)}.`);
+    }
+  }
+
+  errors.push(...validateManifestFileMap(value.files));
+  errors.push(...validateManifestIntegrity(value.integrity));
+
+  return errors;
+}
+
 function isDoctorReviewBundleManifest(value: unknown): value is DoctorReviewBundleManifest {
-  return isPlainObject(value) &&
-    value.schemaVersion === "1.0.0" &&
-    value.kind === "doctor.review.bundle" &&
-    typeof value.generatedAt === "string" &&
-    typeof value.version === "string" &&
-    typeof value.targetPath === "string" &&
-    typeof value.outputDirectory === "string" &&
-    isStatus(value.status) &&
-    (value.exitCode === 0 || value.exitCode === 1) &&
+  return validateDoctorReviewBundleManifest(value).length === 0 &&
+    isPlainObject(value) &&
     isPlainObject(value.summary) &&
-    isRuntimePolicyDecision(value.summary.runtimePolicy) &&
-    typeof value.summary.releaseReady === "boolean" &&
-    isStatus(value.summary.attestation) &&
-    (value.summary.releaseEvidence === "pass" || value.summary.releaseEvidence === "fail") &&
     isBundleFileMap(value.files) &&
     (value.integrity === undefined || isManifestIntegrity(value.integrity));
 }
@@ -660,8 +773,9 @@ export async function verifyDoctorReviewBundle(
 
   try {
     const manifestArtifact = await readBundleJsonFile(resolvedBundleDirectory, "manifest.json");
+    const manifestErrors = validateDoctorReviewBundleManifest(manifestArtifact);
 
-    if (isDoctorReviewBundleManifest(manifestArtifact)) {
+    if (manifestErrors.length === 0 && isDoctorReviewBundleManifest(manifestArtifact)) {
       manifest = manifestArtifact;
       checks.push({
         id: "review_bundle.manifest.valid",
@@ -672,7 +786,7 @@ export async function verifyDoctorReviewBundle(
       checks.push({
         id: "review_bundle.manifest.valid",
         status: "fail",
-        message: "The review bundle manifest is missing or invalid."
+        message: `The review bundle manifest is invalid: ${manifestErrors.slice(0, 3).join(" ")}`
       });
     }
   } catch {
