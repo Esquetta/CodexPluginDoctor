@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.14.0] - 2026-06-07
+
+### Added
+
+- added field-level explanations when review bundle manifest verification fails
+- reported unexpected file map keys and malformed integrity entry fields in the manifest validity check message
+- kept the existing review bundle verification JSON contract stable while making failure output more actionable
+
 ## [1.13.0] - 2026-06-06
 
 ### Added
