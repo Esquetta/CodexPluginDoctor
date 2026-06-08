@@ -104,6 +104,10 @@ export interface DoctorReviewBundleVerificationReport {
     status: "pass" | "fail";
     message: string;
   }>;
+  failedChecks: Array<{
+    id: string;
+    message: string;
+  }>;
   attestation: DoctorAttestationVerificationReport | null;
   releaseEvidence: DoctorReleaseEvidenceVerificationReport | null;
 }
@@ -1001,7 +1005,12 @@ export async function verifyDoctorReviewBundle(
     });
   }
 
-  const failedChecks = checks.filter((check) => check.status === "fail");
+  const failedChecks = checks
+    .filter((check) => check.status === "fail")
+    .map((check) => ({
+      id: check.id,
+      message: check.message
+    }));
   const fileChecks = checks.filter((check) => check.id.startsWith("review_bundle.file."));
   const manifestStatus = checks.find((check) => check.id === "review_bundle.manifest.valid")?.status ?? "fail";
 
@@ -1022,6 +1031,7 @@ export async function verifyDoctorReviewBundle(
       releaseEvidence: releaseEvidence?.status ?? "fail"
     },
     checks,
+    failedChecks,
     attestation,
     releaseEvidence
   };
@@ -1044,10 +1054,26 @@ export function renderDoctorReviewBundleVerification(report: DoctorReviewBundleV
     `Runtime policy: ${report.summary.runtimePolicy.toUpperCase()}`,
     `Attestation: ${report.summary.attestation.toUpperCase()}`,
     `Release evidence: ${report.summary.releaseEvidence.toUpperCase()}`,
+    `Failed checks: ${report.failedChecks.length}`,
+    "",
+    "Failed Checks",
+    "-------------"
+  ];
+
+  if (report.failedChecks.length === 0) {
+    lines.push("None.");
+  } else {
+    for (const check of report.failedChecks) {
+      lines.push(`FAIL ${check.id}`);
+      lines.push(`  ${check.message}`);
+    }
+  }
+
+  lines.push(
     "",
     "Checks",
     "------"
-  ];
+  );
 
   for (const check of report.checks) {
     lines.push(`${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}`);

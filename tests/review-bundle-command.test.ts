@@ -168,6 +168,7 @@ describe("doctor review-bundle command", () => {
       attestation: "pass",
       releaseEvidence: "pass"
     });
+    expect(output.failedChecks).toEqual([]);
   });
 
   it("fails review bundle verification when the manifest summary has invalid field types", async () => {
@@ -216,6 +217,14 @@ describe("doctor review-bundle command", () => {
     expect(exitCode).toBe(1);
     expect(verifyBundle.stderr).toEqual([]);
     expect(output.summary.manifest).toBe("fail");
+    expect(output.failedChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.manifest.valid",
+          message: expect.stringContaining("summary.releaseReady expected boolean, got string.")
+        })
+      ])
+    );
     expect(output.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -481,6 +490,14 @@ describe("doctor review-bundle command", () => {
     expect(exitCode).toBe(1);
     expect(verifyBundle.stderr).toEqual([]);
     expect(output.summary.files).toBe("fail");
+    expect(output.failedChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_bundle.integrity.summary",
+          message: expect.stringContaining("summary.md does not match the manifest integrity digest.")
+        })
+      ])
+    );
     expect(output.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -489,6 +506,53 @@ describe("doctor review-bundle command", () => {
         })
       ])
     );
+  });
+
+  it("renders failed review bundle checks in text output", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-text-fail-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    await writeFile(path.join(outputDirectory, "summary.md"), "# Tampered review summary\n", "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = verifyBundle.stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output).toContain("Failed checks: 1");
+    expect(output).toContain("Failed Checks");
+    expect(output).toContain("FAIL review_bundle.integrity.summary");
+    expect(output).toContain("summary.md does not match the manifest integrity digest.");
   });
 
   it("fails review bundle verification when a manifest integrity entry is missing", async () => {
