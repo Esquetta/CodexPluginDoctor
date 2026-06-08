@@ -9,11 +9,11 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - Repository: public
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
-- npm latest: codex-plugin-doctor@1.14.0
+- npm latest: codex-plugin-doctor@1.15.0
 - npm next: codex-plugin-doctor@1.0.0-rc.2
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
 - Website: not required for the stable 1.0 release; the GitHub README remains the primary landing page
-- Current release lane: `1.14.0` stable minor release verification
+- Current release lane: `1.15.0` stable minor release verification
 
 ## Completed Public Baseline
 
@@ -32,11 +32,11 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - [x] Add output contract and rule catalog freeze metadata.
 - [x] Add validation corpus and package preinstall scan surfaces.
 
-## 1.14.0 Minor Release Checklist
+## 1.15.0 Minor Release Checklist
 
 Use [v1.0 Readiness Checklist](../engineering/v1.0-readiness-checklist.md) for baseline 1.0 compatibility and [Versioning and Releases](../engineering/versioning-and-releases.md) as the stable patch release gate.
 
-Before stable `1.14.0` publication:
+Before stable `1.15.0` publication:
 
 - [ ] Confirm no stale RC-only release language remains in README or operations docs.
 - [ ] Confirm `doctor corpus` passes locally.

@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.15.0] - 2026-06-08
+
+### Added
+
+- added a deterministic `failedChecks` summary to review bundle verification JSON reports
+- rendered failed review bundle checks before the full check list in text output
+- added regression coverage for successful empty failure summaries, JSON failure summaries, and text failure summaries
+
 ## [1.14.0] - 2026-06-07
 
 ### Added
