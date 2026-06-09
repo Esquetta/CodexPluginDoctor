@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.16.0] - 2026-06-09
+
+### Added
+
+- added `doctor review-bundle verify --failures-only` for compact CI-friendly text output
+- kept JSON verification output unchanged while allowing text output to omit the full pass/fail check log
+- added regression coverage for failures-only review bundle verification output
+
 ## [1.15.0] - 2026-06-08
 
 ### Added
