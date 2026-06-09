@@ -555,6 +555,54 @@ describe("doctor review-bundle command", () => {
     expect(output).toContain("summary.md does not match the manifest integrity digest.");
   });
 
+  it("renders only failed review bundle checks when requested", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-failures-only-"));
+    const createBundle = createIo();
+    const verifyBundle = createIo();
+
+    await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "examples/codex-doctor-runtime",
+        "--output",
+        outputDirectory,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createBundle.io,
+      { terminalContext }
+    );
+
+    await writeFile(path.join(outputDirectory, "summary.md"), "# Tampered review summary\n", "utf8");
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "review-bundle",
+        "verify",
+        outputDirectory,
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--failures-only"
+      ],
+      verifyBundle.io,
+      { terminalContext }
+    );
+    const output = verifyBundle.stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(verifyBundle.stderr).toEqual([]);
+    expect(output).toContain("Failed checks: 1");
+    expect(output).toContain("FAIL review_bundle.integrity.summary");
+    expect(output).not.toContain("\nChecks\n------");
+    expect(output).not.toContain("PASS review_bundle.manifest.valid");
+  });
+
   it("fails review bundle verification when a manifest integrity entry is missing", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-review-bundle-integrity-missing-"));
     const createBundle = createIo();

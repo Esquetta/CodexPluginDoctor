@@ -1041,7 +1041,10 @@ export function renderDoctorReviewBundleVerificationJson(report: DoctorReviewBun
   return JSON.stringify(report, null, 2);
 }
 
-export function renderDoctorReviewBundleVerification(report: DoctorReviewBundleVerificationReport): string {
+export function renderDoctorReviewBundleVerification(
+  report: DoctorReviewBundleVerificationReport,
+  options: { failuresOnly?: boolean } = {}
+): string {
   const lines = [
     "Doctor Review Bundle Verification",
     "=================================",
@@ -1069,11 +1072,11 @@ export function renderDoctorReviewBundleVerification(report: DoctorReviewBundleV
     }
   }
 
-  lines.push(
-    "",
-    "Checks",
-    "------"
-  );
+  if (options.failuresOnly) {
+    return lines.join("\n");
+  }
+
+  lines.push("", "Checks", "------");
 
   for (const check of report.checks) {
     lines.push(`${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}`);
