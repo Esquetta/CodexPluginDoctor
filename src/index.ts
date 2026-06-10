@@ -190,6 +190,10 @@ export {
   type DepAuditReport,
   type DepAuditVulnerability
 } from "./core/dep-audit.js";
+export {
+  initGitHooks,
+  type InitGitHooksResult
+} from "./core/init-git-hooks.js";
 
 export async function runCheck(
   targetPath: string,
