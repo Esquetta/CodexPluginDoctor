@@ -178,6 +178,11 @@ export {
   renderGenericMcpDoctorJson,
   type GenericMcpDoctorReport
 } from "./mcp/generic-mcp-doctor.js";
+export {
+  watchPlugin,
+  type WatchPluginOptions,
+  type WatchPluginResult
+} from "./core/watch-plugin.js";
 
 export async function runCheck(
   targetPath: string,
