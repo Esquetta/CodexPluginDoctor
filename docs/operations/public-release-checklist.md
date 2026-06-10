@@ -9,7 +9,7 @@ This checklist records the public release state for `Codex Plugin Doctor` withou
 - Repository: public
 - License: MIT
 - Distribution preference: npm package plus GitHub repository and GitHub Releases
-- npm latest: codex-plugin-doctor@1.16.0
+- npm latest: codex-plugin-doctor@1.17.0
 - npm next: codex-plugin-doctor@1.0.0-rc.2
 - GitHub Releases: matching `vX.Y.Z` releases are published for public versions
 - Website: not required for the stable 1.0 release; the GitHub README remains the primary landing page
