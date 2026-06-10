@@ -183,6 +183,13 @@ export {
   type WatchPluginOptions,
   type WatchPluginResult
 } from "./core/watch-plugin.js";
+export {
+  buildDepAudit,
+  renderDepAudit,
+  renderDepAuditJson,
+  type DepAuditReport,
+  type DepAuditVulnerability
+} from "./core/dep-audit.js";
 
 export async function runCheck(
   targetPath: string,
