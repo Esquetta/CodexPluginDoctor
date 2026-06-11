@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.18.0] - 2026-06-11
+
+### Added
+
+- added public output contract entries for `audit deps`, `watch --json`, and `init-git-hooks --json`
+- added JSON output support for `init-git-hooks` setup automation
+- documented workflow automation commands with CI-friendly JSON examples
+
 ## [1.17.0] - 2026-06-11
 
 ### Added
