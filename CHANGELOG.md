@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.17.0] - 2026-06-11
+
+### Added
+
+- added watch mode for continuous plugin validation
+- added dependency vulnerability scanning through `audit deps`
+- added git hook initialization for pre-commit and pre-push validation
+
 ## [1.16.0] - 2026-06-09
 
 ### Added
