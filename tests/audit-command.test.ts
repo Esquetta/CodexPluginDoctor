@@ -230,4 +230,23 @@ describe("audit command", () => {
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain("Usage: codex-plugin-doctor audit --installed");
   });
+
+  it("renders dependency audit JSON for automation consumers", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["audit", "deps", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      schemaVersion: "1.0.0",
+      targetPath: path.resolve(targetPath),
+      status: "pass",
+      totalVulnerabilities: 0,
+      vulnerabilities: [],
+      audit: null
+    });
+  });
 });

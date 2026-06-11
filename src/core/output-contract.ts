@@ -84,9 +84,25 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "generatedAt", "summary", "items"]
   },
   {
+    id: "doctor.audit.deps.json",
+    command: "codex-plugin-doctor audit deps <path> --json",
+    required: ["schemaVersion", "targetPath", "status", "totalVulnerabilities", "vulnerabilities", "audit"]
+  },
+  {
     id: "doctor.fix.plan.json",
     command: "codex-plugin-doctor fix <path> --dry-run --json",
     required: ["schemaVersion", "targetPath", "mode", "actions"]
+  },
+  {
+    id: "doctor.watch.validation.json",
+    command: "codex-plugin-doctor watch <path> --json",
+    required: ["schemaVersion", "iteration", "timestamp", "targetPath", "status", "findingsCount", "findings"]
+  },
+  {
+    id: "doctor.git.hooks.json",
+    command: "codex-plugin-doctor init-git-hooks <path> --json",
+    outputKind: "doctor.git.hooks",
+    required: ["schemaVersion", "kind", "rootPath", "hookPaths", "preExisting"]
   },
   {
     id: "doctor.history.json",

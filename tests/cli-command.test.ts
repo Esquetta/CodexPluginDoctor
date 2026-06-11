@@ -2080,6 +2080,28 @@ describe("runCli", () => {
     });
   });
 
+  it("renders git hook initialization as JSON for automation consumers", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-hooks-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init-git-hooks", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      schemaVersion: "1.0.0",
+      kind: "doctor.git.hooks",
+      rootPath: path.resolve(targetPath),
+      preExisting: []
+    });
+    expect(output.hookPaths).toEqual([
+      path.join(path.resolve(targetPath), ".git", "hooks", "pre-commit"),
+      path.join(path.resolve(targetPath), ".git", "hooks", "pre-push")
+    ]);
+    expect(await readFile(output.hookPaths[0], "utf8")).toContain("Codex Plugin Doctor: running pre-commit validation");
+  });
+
   it("fails history regression gates when the latest run is worse", async () => {
     const historyPath = await createTempFilePath("history.jsonl");
     const { io, stdout, stderr } = createIo();
