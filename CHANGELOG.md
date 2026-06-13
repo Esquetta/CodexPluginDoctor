@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.19.0] - 2026-06-13
+
+### Added
+
+- added GitHub Action `corpus` and `contract` artifact inputs for CI evidence generation
+- added action outputs for `validation-corpus.json` and `output-contract.json` paths
+- documented corpus and contract artifacts in the public action usage examples
+
 ## [1.18.0] - 2026-06-11
 
 ### Added
