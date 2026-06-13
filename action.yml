@@ -66,6 +66,14 @@ inputs:
     description: Write SARIF output into the output directory.
     required: false
     default: "false"
+  corpus:
+    description: Write bundled validation corpus JSON into the output directory.
+    required: false
+    default: "false"
+  contract:
+    description: Write public output contract JSON into the output directory.
+    required: false
+    default: "false"
   review-bundle:
     description: Write a signed review bundle directory into the output directory.
     required: false
@@ -107,6 +115,12 @@ outputs:
   sarif-path:
     description: Path to the generated SARIF report when sarif is enabled.
     value: ${{ steps.run-doctor.outputs.sarif-path }}
+  validation-corpus-path:
+    description: Path to the generated validation corpus JSON report when corpus is enabled.
+    value: ${{ steps.run-doctor.outputs.validation-corpus-path }}
+  output-contract-path:
+    description: Path to the generated output contract JSON report when contract is enabled.
+    value: ${{ steps.run-doctor.outputs.output-contract-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -131,6 +145,8 @@ runs:
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
         json_path="$report_dir/codex-plugin-doctor-report.json"
         sarif_path="$report_dir/codex-plugin-doctor.sarif"
+        validation_corpus_path="$report_dir/validation-corpus.json"
+        output_contract_path="$report_dir/output-contract.json"
         review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
         review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
@@ -210,6 +226,14 @@ runs:
           run_doctor "sarif report" "${args[@]}" --sarif --output "$sarif_path"
         fi
 
+        if [[ "${{ inputs.corpus }}" == "true" ]]; then
+          run_doctor "validation corpus" doctor corpus --json --output "$validation_corpus_path"
+        fi
+
+        if [[ "${{ inputs.contract }}" == "true" ]]; then
+          run_doctor "output contract" doctor contract --json --output "$output_contract_path"
+        fi
+
         if [[ "${{ inputs['review-bundle'] }}" == "true" ]]; then
           signing_key_env="${{ inputs['signing-key-env'] }}"
 
@@ -249,6 +273,8 @@ runs:
           echo "summary-path=$summary_path"
           echo "json-path=$json_path"
           echo "sarif-path=$sarif_path"
+          echo "validation-corpus-path=$validation_corpus_path"
+          echo "output-contract-path=$output_contract_path"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"

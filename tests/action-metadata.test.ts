@@ -14,6 +14,8 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("summary-path:");
     expect(actionMetadata).toContain("json-path:");
     expect(actionMetadata).toContain("sarif-path:");
+    expect(actionMetadata).toContain("validation-corpus-path:");
+    expect(actionMetadata).toContain("output-contract-path:");
     expect(actionMetadata).toContain("review-bundle-path:");
     expect(actionMetadata).toContain("review-bundle-verification-path:");
     expect(actionMetadata).toContain("steps.run-doctor.outputs.status");
@@ -35,6 +37,8 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("step-summary:");
     expect(actionMetadata).toContain("json:");
     expect(actionMetadata).toContain("markdown:");
+    expect(actionMetadata).toContain("corpus:");
+    expect(actionMetadata).toContain("contract:");
     expect(actionMetadata).toContain("review-bundle:");
     expect(actionMetadata).toContain("review-bundle-dir:");
     expect(actionMetadata).toContain("review-bundle-verify:");
@@ -47,12 +51,18 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("codex-plugin-doctor-report.json");
     expect(actionMetadata).toContain("codex-plugin-doctor-summary.md");
     expect(actionMetadata).toContain("codex-plugin-doctor.sarif");
+    expect(actionMetadata).toContain("validation-corpus.json");
+    expect(actionMetadata).toContain("output-contract.json");
+    expect(actionMetadata).toContain('run_doctor "validation corpus" doctor corpus --json --output "$validation_corpus_path"');
+    expect(actionMetadata).toContain('run_doctor "output contract" doctor contract --json --output "$output_contract_path"');
     expect(actionMetadata).toContain('review_bundle_args=(doctor review-bundle "${{ inputs.path }}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")');
     expect(actionMetadata).toContain('doctor review-bundle verify "$review_bundle_path" --target "${{ inputs.path }}" --sign-key-env "$signing_key_env" --json --output "$review_bundle_verification_path"');
     expect(actionMetadata).toContain("actions/upload-artifact@v7");
     expect(actionMetadata).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"");
     expect(actionMetadata).toContain('cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"');
     expect(actionMetadata).toContain('echo "status=$status"');
+    expect(actionMetadata).toContain('echo "validation-corpus-path=$validation_corpus_path"');
+    expect(actionMetadata).toContain('echo "output-contract-path=$output_contract_path"');
     expect(actionMetadata).toContain('echo "review-bundle-path=$review_bundle_path"');
     expect(actionMetadata).toContain('echo "review-bundle-verification-path=$review_bundle_verification_path"');
     expect(actionMetadata).toContain('>> "$GITHUB_OUTPUT"');
@@ -83,6 +93,10 @@ describe("GitHub Action metadata", () => {
     expect(actionUsage).toContain("codex-plugin-doctor-report.json");
     expect(actionUsage).toContain("review-bundle:");
     expect(actionUsage).toContain("review-bundle-verify:");
+    expect(actionUsage).toContain("corpus:");
+    expect(actionUsage).toContain("contract:");
+    expect(actionUsage).toContain("validation-corpus.json");
+    expect(actionUsage).toContain("output-contract.json");
     expect(actionUsage).toContain("CODEX_PLUGIN_DOCTOR_SIGNING_KEY");
     expect(actionUsage).toContain('sarif: "true"');
     expect(actionUsage).toContain("history: validation-history.jsonl");

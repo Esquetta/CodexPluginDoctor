@@ -28,6 +28,8 @@ jobs:
           path: .
           runtime: "true"
           policy: codex-publish
+          corpus: "true"
+          contract: "true"
           upload-artifact: "true"
           artifact-name: codex-plugin-doctor-reports
           output-dir: codex-plugin-doctor-reports
@@ -39,6 +41,8 @@ By default the action writes:
 - `codex-plugin-doctor-report.json`
 
 The Markdown report is appended to the GitHub Actions step summary, and the output directory is uploaded as a workflow artifact. The action preserves the real validation exit code after report generation, so failed checks still fail the job after artifacts are available.
+
+Set `corpus: "true"` to add `validation-corpus.json` and `contract: "true"` to add `output-contract.json` to the same artifact directory. These reports are useful when a release workflow needs bundled validation evidence and the current public JSON contract without adding separate CLI steps.
 
 ## SARIF Output
 
@@ -70,6 +74,8 @@ Use artifact and summary controls when the workflow needs custom retention or wa
     json: "true"
     markdown: "true"
     sarif: "true"
+    corpus: "true"
+    contract: "true"
 ```
 
 Set `upload-artifact: "false"` when a consuming workflow wants to upload files itself. Set `step-summary: "false"` when the Markdown report should only be retained as an artifact.
@@ -81,6 +87,8 @@ The action also exposes these workflow outputs for follow-up steps:
 - `summary-path`
 - `json-path`
 - `sarif-path`
+- `validation-corpus-path`
+- `output-contract-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 
