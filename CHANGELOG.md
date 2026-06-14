@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.20.0] - 2026-06-14
+
+### Added
+
+- added `codex-plugin-doctor-action-manifest.json` to GitHub Action report artifacts
+- added `action-manifest-path` as a GitHub Action output for follow-up workflow steps
+- documented action manifest contents for CI artifact discovery
+
 ## [1.19.0] - 2026-06-13
 
 ### Added
