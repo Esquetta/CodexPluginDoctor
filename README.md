@@ -384,7 +384,7 @@ jobs:
           review-bundle-verify: "true"
 ```
 
-The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, optional `codex-plugin-doctor.sarif`, optional `validation-corpus.json`, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
+The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, `codex-plugin-doctor-action-manifest.json`, optional `codex-plugin-doctor.sarif`, optional `validation-corpus.json`, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
 
 To self-test this repository after cloning it:
 

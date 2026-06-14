@@ -16,6 +16,7 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("sarif-path:");
     expect(actionMetadata).toContain("validation-corpus-path:");
     expect(actionMetadata).toContain("output-contract-path:");
+    expect(actionMetadata).toContain("action-manifest-path:");
     expect(actionMetadata).toContain("review-bundle-path:");
     expect(actionMetadata).toContain("review-bundle-verification-path:");
     expect(actionMetadata).toContain("steps.run-doctor.outputs.status");
@@ -53,6 +54,9 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("codex-plugin-doctor.sarif");
     expect(actionMetadata).toContain("validation-corpus.json");
     expect(actionMetadata).toContain("output-contract.json");
+    expect(actionMetadata).toContain("codex-plugin-doctor-action-manifest.json");
+    expect(actionMetadata).toContain("doctor.github.action.manifest");
+    expect(actionMetadata).toContain('doctor_version="$(codex-plugin-doctor --version)"');
     expect(actionMetadata).toContain('run_doctor "validation corpus" doctor corpus --json --output "$validation_corpus_path"');
     expect(actionMetadata).toContain('run_doctor "output contract" doctor contract --json --output "$output_contract_path"');
     expect(actionMetadata).toContain('review_bundle_args=(doctor review-bundle "${{ inputs.path }}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")');
@@ -63,6 +67,7 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('echo "status=$status"');
     expect(actionMetadata).toContain('echo "validation-corpus-path=$validation_corpus_path"');
     expect(actionMetadata).toContain('echo "output-contract-path=$output_contract_path"');
+    expect(actionMetadata).toContain('echo "action-manifest-path=$action_manifest_path"');
     expect(actionMetadata).toContain('echo "review-bundle-path=$review_bundle_path"');
     expect(actionMetadata).toContain('echo "review-bundle-verification-path=$review_bundle_verification_path"');
     expect(actionMetadata).toContain('>> "$GITHUB_OUTPUT"');
@@ -97,6 +102,8 @@ describe("GitHub Action metadata", () => {
     expect(actionUsage).toContain("contract:");
     expect(actionUsage).toContain("validation-corpus.json");
     expect(actionUsage).toContain("output-contract.json");
+    expect(actionUsage).toContain("codex-plugin-doctor-action-manifest.json");
+    expect(actionUsage).toContain("action-manifest-path");
     expect(actionUsage).toContain("CODEX_PLUGIN_DOCTOR_SIGNING_KEY");
     expect(actionUsage).toContain('sarif: "true"');
     expect(actionUsage).toContain("history: validation-history.jsonl");

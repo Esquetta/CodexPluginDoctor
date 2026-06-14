@@ -44,6 +44,8 @@ The Markdown report is appended to the GitHub Actions step summary, and the outp
 
 Set `corpus: "true"` to add `validation-corpus.json` and `contract: "true"` to add `output-contract.json` to the same artifact directory. These reports are useful when a release workflow needs bundled validation evidence and the current public JSON contract without adding separate CLI steps.
 
+Every action run also writes `codex-plugin-doctor-action-manifest.json`. The manifest records the installed CLI version, final action status, report directory, artifact name, target mode, and enabled report paths so follow-up workflow steps can discover generated files without hard-coded path assumptions.
+
 ## SARIF Output
 
 Use SARIF when repository security tooling should ingest validation findings.
@@ -89,6 +91,7 @@ The action also exposes these workflow outputs for follow-up steps:
 - `sarif-path`
 - `validation-corpus-path`
 - `output-contract-path`
+- `action-manifest-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 

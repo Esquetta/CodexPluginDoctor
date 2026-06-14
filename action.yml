@@ -121,6 +121,9 @@ outputs:
   output-contract-path:
     description: Path to the generated output contract JSON report when contract is enabled.
     value: ${{ steps.run-doctor.outputs.output-contract-path }}
+  action-manifest-path:
+    description: Path to the generated GitHub Action artifact manifest.
+    value: ${{ steps.run-doctor.outputs.action-manifest-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -147,10 +150,12 @@ runs:
         sarif_path="$report_dir/codex-plugin-doctor.sarif"
         validation_corpus_path="$report_dir/validation-corpus.json"
         output_contract_path="$report_dir/output-contract.json"
+        action_manifest_path="$report_dir/codex-plugin-doctor-action-manifest.json"
         review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
         review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         status=0
+        doctor_version="$(codex-plugin-doctor --version)"
 
         mkdir -p "$report_dir"
 
@@ -265,6 +270,67 @@ runs:
           fi
         fi
 
+        export CODEX_PLUGIN_DOCTOR_ACTION_MANIFEST_PATH="$action_manifest_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_STATUS="$status"
+        export CODEX_PLUGIN_DOCTOR_ACTION_VERSION="$doctor_version"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REPORT_DIR="$report_dir"
+        export CODEX_PLUGIN_DOCTOR_ACTION_ARTIFACT_NAME="${{ inputs['artifact-name'] }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PATH="${{ inputs.path }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_INSTALLED="${{ inputs.installed }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_RUNTIME="${{ inputs.runtime }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_JSON="${{ inputs.json }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_MARKDOWN="${{ inputs.markdown }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SARIF="${{ inputs.sarif }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS="${{ inputs.corpus }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT="${{ inputs.contract }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${{ inputs['review-bundle'] }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${{ inputs['review-bundle-verify'] }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_JSON_PATH="$json_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SARIF_PATH="$sarif_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_PATH="$validation_corpus_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH="$output_contract_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
+        node <<'NODE'
+        const fs = require("node:fs");
+
+        const enabled = (name) => process.env[name] === "true";
+        const report = (key, enabledEnv, pathEnv) => ({
+          enabled: enabled(enabledEnv),
+          path: process.env[pathEnv] || ""
+        });
+        const manifest = {
+          schemaVersion: "1.0.0",
+          kind: "doctor.github.action.manifest",
+          generatedAt: new Date().toISOString(),
+          version: process.env.CODEX_PLUGIN_DOCTOR_ACTION_VERSION || "",
+          status: Number(process.env.CODEX_PLUGIN_DOCTOR_ACTION_STATUS || "1"),
+          reportDirectory: process.env.CODEX_PLUGIN_DOCTOR_ACTION_REPORT_DIR || "",
+          artifactName: process.env.CODEX_PLUGIN_DOCTOR_ACTION_ARTIFACT_NAME || "",
+          target: {
+            path: process.env.CODEX_PLUGIN_DOCTOR_ACTION_PATH || "",
+            installed: enabled("CODEX_PLUGIN_DOCTOR_ACTION_INSTALLED"),
+            runtime: enabled("CODEX_PLUGIN_DOCTOR_ACTION_RUNTIME")
+          },
+          reports: {
+            summary: report("summary", "CODEX_PLUGIN_DOCTOR_ACTION_MARKDOWN", "CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH"),
+            json: report("json", "CODEX_PLUGIN_DOCTOR_ACTION_JSON", "CODEX_PLUGIN_DOCTOR_ACTION_JSON_PATH"),
+            sarif: report("sarif", "CODEX_PLUGIN_DOCTOR_ACTION_SARIF", "CODEX_PLUGIN_DOCTOR_ACTION_SARIF_PATH"),
+            corpus: report("corpus", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_PATH"),
+            contract: report("contract", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH"),
+            reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
+            reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
+          }
+        };
+
+        fs.writeFileSync(
+          process.env.CODEX_PLUGIN_DOCTOR_ACTION_MANIFEST_PATH,
+          `${JSON.stringify(manifest, null, 2)}\n`,
+          "utf8"
+        );
+        NODE
+
         printf "%s" "$status" > "$status_file"
 
         {
@@ -275,6 +341,7 @@ runs:
           echo "sarif-path=$sarif_path"
           echo "validation-corpus-path=$validation_corpus_path"
           echo "output-contract-path=$output_contract_path"
+          echo "action-manifest-path=$action_manifest_path"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"
