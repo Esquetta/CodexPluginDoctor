@@ -50,8 +50,20 @@ interface NpmPackEntry {
   files?: unknown[];
 }
 
-function npmCommand(): string {
-  return "npm";
+interface CommandSpec {
+  command: string;
+  args: string[];
+}
+
+function npmCommand(args: string[]): CommandSpec {
+  if (process.platform === "win32") {
+    return {
+      command: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", "npm", ...args]
+    };
+  }
+
+  return { command: "npm", args };
 }
 
 function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
@@ -146,20 +158,20 @@ async function packNpmPackage(packageSpec: string, destinationPath: string): Pro
   metadata: NpmPackEntry;
 }> {
   const resolvedPackageSpec = await resolvePackageSpecForPack(packageSpec);
+  const npmPackCommand = npmCommand([
+    "pack",
+    resolvedPackageSpec,
+    "--json",
+    "--ignore-scripts",
+    "--pack-destination",
+    destinationPath
+  ]);
   const { stdout } = await execFileAsync(
-    npmCommand(),
-    [
-      "pack",
-      resolvedPackageSpec,
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      destinationPath
-    ],
+    npmPackCommand.command,
+    npmPackCommand.args,
     {
       cwd: destinationPath,
-      maxBuffer: 10 * 1024 * 1024,
-      shell: process.platform === "win32"
+      maxBuffer: 10 * 1024 * 1024
     }
   );
   const packEntries = JSON.parse(stdout) as NpmPackEntry[];

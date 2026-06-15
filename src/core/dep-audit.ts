@@ -33,10 +33,15 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 async function runNpmAudit(cwd: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const command = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "npm";
+    const args = process.platform === "win32"
+      ? ["/d", "/s", "/c", "npm", "audit", "--json"]
+      : ["audit", "--json"];
+
     execFile(
-      "npm",
-      ["audit", "--json"],
-      { cwd, shell: process.platform === "win32", timeout: 120_000 },
+      command,
+      args,
+      { cwd, timeout: 120_000 },
       (error, stdout, stderr) => {
         const parsed = ((): unknown => {
           try {

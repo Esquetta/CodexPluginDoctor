@@ -11,13 +11,24 @@ const allowDirty = args.has("--allow-dirty") || process.env.npm_config_allow_dir
 const allowPublished =
   args.has("--allow-published") || process.env.npm_config_allow_published === "true";
 
+function resolveCommand(command, commandArgs) {
+  if (process.platform === "win32" && ["npm", "npx"].includes(command)) {
+    return {
+      command: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", command, ...commandArgs]
+    };
+  }
+
+  return { command, args: commandArgs };
+}
+
 function run(command, commandArgs, options = {}) {
   const label = [command, ...commandArgs].join(" ");
   console.log(`> ${label}`);
-  const result = spawnSync(command, commandArgs, {
+  const resolved = resolveCommand(command, commandArgs);
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd: repoRoot,
     encoding: "utf8",
-    shell: process.platform === "win32",
     stdio: options.capture ? "pipe" : "inherit"
   });
 

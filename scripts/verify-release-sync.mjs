@@ -66,12 +66,23 @@ function readNpmConfigPositional(name) {
   return positionals[0] ?? null;
 }
 
+function resolveCommand(command, commandArgs) {
+  if (process.platform === "win32" && ["npm", "npx"].includes(command)) {
+    return {
+      command: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", command, ...commandArgs]
+    };
+  }
+
+  return { command, args: commandArgs };
+}
+
 function run(command, commandArgs, options = {}) {
   const label = [command, ...commandArgs].join(" ");
-  const result = spawnSync(command, commandArgs, {
+  const resolved = resolveCommand(command, commandArgs);
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd: repoRoot,
     encoding: "utf8",
-    shell: process.platform === "win32",
     stdio: "pipe"
   });
 
