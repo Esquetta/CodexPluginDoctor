@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.21.0] - 2026-06-15
+
+### Fixed
+
+- removed shell-based npm child process calls from release verification scripts
+- removed shell-based npm package scan and dependency audit calls on Windows
+- kept npm command execution Windows-compatible without triggering Node `DEP0190` warnings
+
 ## [1.20.0] - 2026-06-14
 
 ### Added
