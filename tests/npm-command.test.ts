@@ -109,6 +109,18 @@ describe("doctor npm command", () => {
       name: "doctor-npm-fixture",
       version: "1.2.3"
     });
+    expect(output.tarball).toMatchObject({
+      filename: expect.stringMatching(/^doctor-npm-fixture-1\.2\.3\.tgz$/),
+      integrity: expect.stringMatching(/^sha512-/),
+      shasum: expect.stringMatching(/^[a-f0-9]{40}$/),
+      fileCount: expect.any(Number),
+      packageName: "doctor-npm-fixture",
+      packageVersion: "1.2.3"
+    });
+    expect(output.tarball.path).toContain(output.tarball.filename);
+    expect(output.tarball.packageRoot).toContain("extract");
+    expect(output.tarball.size).toEqual(expect.any(Number));
+    expect(output.tarball.unpackedSize).toEqual(expect.any(Number));
     expect(output.summary.status).toBe("fail");
     expect(output.summary.safeToInstall).toBe(false);
     expect(output.validation.summary.status).toBe("pass");

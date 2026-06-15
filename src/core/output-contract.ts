@@ -206,7 +206,7 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.npm.json",
     command: "codex-plugin-doctor doctor npm <package> --json",
     outputKind: "doctor.npm",
-    required: ["schemaVersion", "kind", "generatedAt", "package", "summary", "validation", "security", "trust", "recommendations"]
+    required: ["schemaVersion", "kind", "generatedAt", "package", "tarball", "summary", "validation", "security", "trust", "recommendations"]
   },
   {
     id: "doctor.risk.diff.json",

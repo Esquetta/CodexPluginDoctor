@@ -28,6 +28,18 @@ export interface DoctorNpmPackageReport {
     version: string | null;
     fileCount: number | null;
   };
+  tarball: {
+    filename: string;
+    path: string;
+    integrity: string | null;
+    shasum: string | null;
+    size: number | null;
+    unpackedSize: number | null;
+    fileCount: number | null;
+    packageRoot: string;
+    packageName: string | null;
+    packageVersion: string | null;
+  };
   summary: {
     status: "pass" | "warn" | "fail";
     exitCode: 0 | 1;
@@ -48,6 +60,10 @@ interface NpmPackEntry {
   name?: string;
   version?: string;
   files?: unknown[];
+  integrity?: string;
+  shasum?: string;
+  size?: number;
+  unpackedSize?: number;
 }
 
 interface CommandSpec {
@@ -204,6 +220,9 @@ export async function buildDoctorNpmPackageReport(
     const packageRoot = await directoryExists(path.join(extractPath, "package"))
       ? path.join(extractPath, "package")
       : extractPath;
+    const packageName = typeof metadata.name === "string" ? metadata.name : null;
+    const packageVersion = typeof metadata.version === "string" ? metadata.version : null;
+    const fileCount = Array.isArray(metadata.files) ? metadata.files.length : null;
     const analysis = await buildPackageAnalysis(packageRoot, {
       environment: options.environment
     });
@@ -215,9 +234,21 @@ export async function buildDoctorNpmPackageReport(
       kind: "doctor.npm",
       packageSpec,
       package: {
-        name: typeof metadata.name === "string" ? metadata.name : null,
-        version: typeof metadata.version === "string" ? metadata.version : null,
-        fileCount: Array.isArray(metadata.files) ? metadata.files.length : null
+        name: packageName,
+        version: packageVersion,
+        fileCount
+      },
+      tarball: {
+        filename: path.basename(tarballPath),
+        path: tarballPath,
+        integrity: typeof metadata.integrity === "string" ? metadata.integrity : null,
+        shasum: typeof metadata.shasum === "string" ? metadata.shasum : null,
+        size: typeof metadata.size === "number" ? metadata.size : null,
+        unpackedSize: typeof metadata.unpackedSize === "number" ? metadata.unpackedSize : null,
+        fileCount,
+        packageRoot,
+        packageName,
+        packageVersion
       },
       summary: {
         status: recommendations.status,
@@ -250,6 +281,7 @@ export function renderDoctorNpmPackageReport(
     "==========================",
     `Package: ${packageLabel}`,
     `Spec: ${report.packageSpec}`,
+    `Tarball: ${report.tarball.filename}`,
     `Status: ${report.summary.status.toUpperCase()}`,
     `Safe to install: ${report.summary.safeToInstall ? "yes" : "no"}`,
     `Security: ${report.security.status.toUpperCase()} (${report.security.score}/100)`,
