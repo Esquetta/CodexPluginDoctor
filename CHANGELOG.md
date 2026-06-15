@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.22.0] - 2026-06-15
+
+### Added
+
+- added tarball metadata to `doctor npm --json` preinstall scan reports
+- included tarball filename, path, integrity, shasum, size, unpacked size, file count, and extracted package root
+- added `tarball` to the public `doctor.npm.json` output contract
+
 ## [1.21.0] - 2026-06-15
 
 ### Fixed
