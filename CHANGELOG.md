@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.23.0] - 2026-06-16
+
+### Added
+
+- added `plugin.security.path_traversal_risk` for MCP path-like runtime args that escape the plugin root
+- added `plugin.security.dangerous_env_usage` for code-loading env variables such as `NODE_OPTIONS`, `NODE_PATH`, `PYTHONPATH`, `LD_PRELOAD`, and `DYLD_INSERT_LIBRARIES`
+- documented the new security rule IDs in the public rule catalog
+
 ## [1.22.0] - 2026-06-15
 
 ### Added
