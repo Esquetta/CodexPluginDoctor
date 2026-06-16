@@ -211,6 +211,24 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "command": "npx", "args": ["-y", "@scope/server"] }'
   },
   {
+    id: "plugin.security.path_traversal_risk",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server passes a package-external path to a path-like runtime argument.",
+    why: "Runtime file arguments outside the plugin root can load code or configuration that was not included in the reviewed package.",
+    fix: "Keep runtime file arguments inside the plugin package root, or package the referenced file with the plugin.",
+    example: '{ "command": "node", "args": ["server.js", "--config", "config/server.json"] }'
+  },
+  {
+    id: "plugin.security.dangerous_env_usage",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server sets an environment variable that can alter code loading.",
+    why: "Variables such as NODE_OPTIONS, NODE_PATH, PYTHONPATH, LD_PRELOAD, or DYLD_INSERT_LIBRARIES can inject imports, preload native libraries, or load modules outside the reviewed package.",
+    fix: "Remove code-loading environment overrides, or keep referenced modules and preload files inside the reviewed plugin package.",
+    example: '{ "env": { "OPENAI_API_KEY": "${OPENAI_API_KEY}" } }'
+  },
+  {
     id: "plugin.security.cwd_outside_root",
     category: "security",
     defaultSeverity: "fail",

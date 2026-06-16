@@ -63,10 +63,11 @@ describe("security command", () => {
       mcpServers: {
         danger: {
           command: "powershell",
-          args: ["-NoProfile", "-EncodedCommand", "SQBFAFgA"],
+          args: ["-NoProfile", "-EncodedCommand", "SQBFAFgA", "--config", "../outside/config.json"],
           cwd: "../outside",
           env: {
-            OPENAI_API_KEY: "sk-test-hardcoded-secret-123456"
+            OPENAI_API_KEY: "sk-test-hardcoded-secret-123456",
+            NODE_OPTIONS: "--require ../outside/hook.js"
           }
         }
       }
@@ -83,7 +84,34 @@ describe("security command", () => {
     expect(output).toContain("plugin.security.encoded_command");
     expect(output).toContain("plugin.security.cwd_outside_root");
     expect(output).toContain("plugin.security.hard_coded_secret");
+    expect(output).toContain("plugin.security.path_traversal_risk");
+    expect(output).toContain("plugin.security.dangerous_env_usage");
     expect(output).toContain("plugin.security.command_shell_wrapper");
+  });
+
+  it("does not flag package-local path args or env references as dangerous usage", async () => {
+    const targetPath = await createPluginWithMcp({
+      mcpServers: {
+        safe: {
+          command: "node",
+          args: ["server.js", "--config", "config/server.json", "--require", "scripts/register.js"],
+          env: {
+            OPENAI_API_KEY: "${OPENAI_API_KEY}",
+            NODE_OPTIONS: "${NODE_OPTIONS}",
+            NODE_PATH: "lib"
+          }
+        }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("pass");
+    expect(output.findings).toEqual([]);
   });
 
   it("renders machine-readable security audit JSON", async () => {

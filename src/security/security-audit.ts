@@ -80,6 +80,142 @@ function containsPipeInstaller(args: unknown): boolean {
   );
 }
 
+const pathLikeArgFlags = new Set([
+  "--config",
+  "--config-path",
+  "--cwd",
+  "--dir",
+  "--directory",
+  "--file",
+  "--import",
+  "--loader",
+  "--path",
+  "--project",
+  "--require",
+  "--root",
+  "--script",
+  "--tsconfig",
+  "--workspace"
+]);
+
+const codeLoadingEnvKeys = new Set([
+  "LD_PRELOAD",
+  "DYLD_INSERT_LIBRARIES"
+]);
+
+const modulePathEnvKeys = new Set([
+  "NODE_PATH",
+  "PYTHONPATH",
+  "RUBYLIB"
+]);
+
+function looksLikeEnvReference(value: string): boolean {
+  return /^\$\{?[A-Z0-9_]+\}?$/i.test(value.trim());
+}
+
+function looksLikePathValue(value: string): boolean {
+  const trimmed = value.trim();
+
+  return (
+    trimmed.includes("..") ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.startsWith(".") ||
+    trimmed.startsWith("~") ||
+    path.isAbsolute(trimmed)
+  );
+}
+
+function isEscapingPathValue(rootPath: string, value: string): boolean {
+  const trimmed = value.trim();
+
+  if (
+    !trimmed ||
+    looksLikeEnvReference(trimmed) ||
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ||
+    !looksLikePathValue(trimmed)
+  ) {
+    return false;
+  }
+
+  return !isPathWithinRoot(rootPath, path.resolve(rootPath, trimmed));
+}
+
+function collectEscapingPathArgs(
+  rootPath: string,
+  args: unknown
+): Array<{ flag: string; value: string }> {
+  if (!Array.isArray(args)) {
+    return [];
+  }
+
+  const stringArgs = args.filter((arg): arg is string => typeof arg === "string");
+  const findings: Array<{ flag: string; value: string }> = [];
+
+  for (let index = 0; index < stringArgs.length; index += 1) {
+    const arg = stringArgs[index];
+    const equalsIndex = arg.indexOf("=");
+
+    if (equalsIndex > 0) {
+      const flag = arg.slice(0, equalsIndex).toLowerCase();
+      const value = arg.slice(equalsIndex + 1);
+
+      if (pathLikeArgFlags.has(flag) && isEscapingPathValue(rootPath, value)) {
+        findings.push({ flag, value });
+      }
+
+      continue;
+    }
+
+    const flag = arg.toLowerCase();
+    const value = stringArgs[index + 1];
+
+    if (pathLikeArgFlags.has(flag) && value && isEscapingPathValue(rootPath, value)) {
+      findings.push({ flag, value });
+      index += 1;
+    }
+  }
+
+  return findings;
+}
+
+function splitModulePathEnvValue(value: string): string[] {
+  const trimmed = value.trim();
+
+  if (/^[a-z]:[\\/]/i.test(trimmed)) {
+    return trimmed.includes(";") ? trimmed.split(";") : [trimmed];
+  }
+
+  return trimmed.includes(";") ? trimmed.split(";") : trimmed.split(":");
+}
+
+function hasEscapingModulePath(rootPath: string, value: string): boolean {
+  return splitModulePathEnvValue(value).some((entry) =>
+    isEscapingPathValue(rootPath, entry)
+  );
+}
+
+function isDangerousEnvUsage(rootPath: string, envKey: string, envValue: unknown): boolean {
+  if (typeof envValue !== "string" || looksLikeEnvReference(envValue)) {
+    return false;
+  }
+
+  const normalizedKey = envKey.toUpperCase();
+
+  if (codeLoadingEnvKeys.has(normalizedKey)) {
+    return true;
+  }
+
+  if (
+    normalizedKey === "NODE_OPTIONS" &&
+    /(?:^|\s)--(?:require|import|loader|experimental-loader)(?:=|\s+)/i.test(envValue)
+  ) {
+    return true;
+  }
+
+  return modulePathEnvKeys.has(normalizedKey) && hasEscapingModulePath(rootPath, envValue);
+}
+
 const poisonScanExtensions = new Set([
   ".json",
   ".md",
@@ -163,6 +299,18 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
       );
     }
 
+    for (const riskyArg of collectEscapingPathArgs(rootPath, args)) {
+      findings.push(
+        buildFinding(
+          "fail",
+          "plugin.security.path_traversal_risk",
+          `The MCP server \`${serverName}\` passes \`${riskyArg.value}\` to path-like arg \`${riskyArg.flag}\`, which escapes the plugin root.`,
+          "Path-like runtime arguments that point outside the package can make startup depend on unreviewed local files or load code outside the reviewed tarball.",
+          "Keep runtime file arguments inside the plugin package root, or package the referenced file with the plugin."
+        )
+      );
+    }
+
     if (typeof cwd === "string") {
       const cwdPath = path.resolve(rootPath, cwd);
 
@@ -174,6 +322,24 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
             `The MCP server \`${serverName}\` sets cwd outside the plugin root.`,
             "A working directory outside the package root can make server startup depend on unreviewed local files.",
             "Keep MCP server `cwd` inside the plugin package root or remove it."
+          )
+        );
+      }
+    }
+
+    if (isPlainObject(serverConfig.env)) {
+      for (const [envKey, envValue] of Object.entries(serverConfig.env)) {
+        if (!isDangerousEnvUsage(rootPath, envKey, envValue)) {
+          continue;
+        }
+
+        findings.push(
+          buildFinding(
+            "fail",
+            "plugin.security.dangerous_env_usage",
+            `The MCP server \`${serverName}\` sets dangerous code-loading env variable \`${envKey}\`.`,
+            "Environment variables that alter module lookup, preload native libraries, or inject runtime imports can execute code outside the reviewed package.",
+            "Remove code-loading environment overrides, or keep referenced modules and preload files inside the reviewed plugin package."
           )
         );
       }
