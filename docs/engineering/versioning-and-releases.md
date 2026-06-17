@@ -54,7 +54,7 @@ Confirmed:
 - license is MIT
 - repository visibility is public
 - package name remains `codex-plugin-doctor`
-- npm latest: `codex-plugin-doctor@1.23.0`
+- npm latest: `codex-plugin-doctor@1.24.0`
 - npm next: `codex-plugin-doctor@1.0.0-rc.2`
 - GitHub Release flow uses matching `vX.Y.Z` tags
 - post-publish release sync is verified with `npm run verify-release-sync`
@@ -62,7 +62,7 @@ Confirmed:
 
 Current release target:
 
-- `1.23.0` is the stable package version.
+- `1.24.0` is the stable package version.
 - `1.0.0-rc.2` remains the final release-candidate package under the npm `next` tag.
 - Post-1.0 releases should stay additive unless the public contract requires a major-version decision.
 

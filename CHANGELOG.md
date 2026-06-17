@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.24.0] - 2026-06-17
+
+### Added
+
+- added optional structured `evidence` metadata to findings
+- added evidence metadata for MCP security findings, including server names, config paths, env keys, runtime arg flags, and resolved escaped paths
+- surfaced finding evidence in text, Markdown, security scorecard, JSON, and SARIF reports
+
 ## [1.23.0] - 2026-06-16
 
 ### Added
