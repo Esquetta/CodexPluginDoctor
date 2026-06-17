@@ -15,4 +15,15 @@ describe("buildMarkdownReport", () => {
     expect(report).toContain("Status | WARN");
     expect(report).toContain("plugin.heuristic.description.too_long");
   });
+
+  it("renders finding evidence when present", async () => {
+    const targetPath = path.resolve("tests/fixtures/security-hardcoded-secret");
+    const result = await runCheck(targetPath);
+
+    const report = buildMarkdownReport(result, { runtimeProbeEnabled: false });
+
+    expect(report).toContain("- Evidence: serverName=dangerServer");
+    expect(report).toContain("envKey=OPENAI_API_KEY");
+    expect(report).toContain("envValue=[REDACTED]");
+  });
 });

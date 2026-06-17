@@ -4,7 +4,8 @@ import path from "node:path";
 import { discoverPackage } from "../core/discover-package.js";
 import { readJsonFile } from "../core/read-json-file.js";
 import { validatePlugin } from "../core/validate-plugin.js";
-import type { DiscoveredPackage, Finding } from "../domain/types.js";
+import type { DiscoveredPackage, Finding, FindingEvidence } from "../domain/types.js";
+import { formatFindingEvidenceLine } from "../reporting/format-finding-evidence.js";
 
 export interface SecurityAudit {
   targetPath: string;
@@ -23,14 +24,16 @@ function buildFinding(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity,
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -45,6 +48,10 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
     relativePath === "" ||
     (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
   );
+}
+
+function relativePackagePath(rootPath: string, targetPath: string): string {
+  return path.relative(rootPath, targetPath).replace(/\\/g, "/") || ".";
 }
 
 function normalizeCommandName(command: string): string {
@@ -144,13 +151,13 @@ function isEscapingPathValue(rootPath: string, value: string): boolean {
 function collectEscapingPathArgs(
   rootPath: string,
   args: unknown
-): Array<{ flag: string; value: string }> {
+): Array<{ flag: string; value: string; resolvedPath: string }> {
   if (!Array.isArray(args)) {
     return [];
   }
 
   const stringArgs = args.filter((arg): arg is string => typeof arg === "string");
-  const findings: Array<{ flag: string; value: string }> = [];
+  const findings: Array<{ flag: string; value: string; resolvedPath: string }> = [];
 
   for (let index = 0; index < stringArgs.length; index += 1) {
     const arg = stringArgs[index];
@@ -161,7 +168,7 @@ function collectEscapingPathArgs(
       const value = arg.slice(equalsIndex + 1);
 
       if (pathLikeArgFlags.has(flag) && isEscapingPathValue(rootPath, value)) {
-        findings.push({ flag, value });
+        findings.push({ flag, value, resolvedPath: path.resolve(rootPath, value) });
       }
 
       continue;
@@ -171,7 +178,7 @@ function collectEscapingPathArgs(
     const value = stringArgs[index + 1];
 
     if (pathLikeArgFlags.has(flag) && value && isEscapingPathValue(rootPath, value)) {
-      findings.push({ flag, value });
+      findings.push({ flag, value, resolvedPath: path.resolve(rootPath, value) });
       index += 1;
     }
   }
@@ -238,7 +245,15 @@ const promptInjectionPatterns: RegExp[] = [
   /\bdo\s+not\s+(?:reveal|tell|mention|disclose)\b.{0,120}\b(?:instruction|instructions|prompt|prompts|system|developer)\b/i
 ];
 
-export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): Finding[] {
+export function auditMcpServerConfig(
+  rootPath: string,
+  parsedConfig: unknown,
+  options: { configPath?: string } = {}
+): Finding[] {
+  const configPath = options.configPath
+    ? relativePackagePath(rootPath, options.configPath)
+    : ".mcp.json";
+
   if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
     return [
       buildFinding(
@@ -246,7 +261,8 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
         "plugin.security.audit_unavailable",
         "The MCP security audit could not find a valid `mcpServers` object.",
         "Without server entries, the audit cannot evaluate command execution or remote transport risk.",
-        "Define MCP servers under a top-level `mcpServers` object."
+        "Define MCP servers under a top-level `mcpServers` object.",
+        { configPath }
       )
     ];
   }
@@ -270,7 +286,8 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
           "plugin.security.command_shell_wrapper",
           `The MCP server \`${serverName}\` starts through shell wrapper \`${command}\`.`,
           "Shell wrappers expand quoting, pipes, aliases, and platform-specific behavior, which makes the real execution path harder to audit.",
-          "Prefer launching the concrete executable directly with explicit args."
+          "Prefer launching the concrete executable directly with explicit args.",
+          { serverName, configPath, command }
         )
       );
     }
@@ -282,7 +299,8 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
           "plugin.security.encoded_command",
           `The MCP server \`${serverName}\` uses an encoded shell command flag.`,
           "Encoded command payloads hide the executed script from reviewers and increase supply-chain risk.",
-          "Replace encoded shell payloads with a checked-in script or direct executable plus readable args."
+          "Replace encoded shell payloads with a checked-in script or direct executable plus readable args.",
+          { serverName, configPath, command: typeof command === "string" ? command : null }
         )
       );
     }
@@ -294,7 +312,8 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
           "plugin.security.remote_pipe_install",
           `The MCP server \`${serverName}\` appears to pipe remote content into a shell.`,
           "Download-and-execute install patterns can run unreviewed remote code during plugin startup.",
-          "Pin dependencies through the package manager or check in a reviewed setup script instead of piping remote content to a shell."
+          "Pin dependencies through the package manager or check in a reviewed setup script instead of piping remote content to a shell.",
+          { serverName, configPath, command: typeof command === "string" ? command : null }
         )
       );
     }
@@ -306,7 +325,14 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
           "plugin.security.path_traversal_risk",
           `The MCP server \`${serverName}\` passes \`${riskyArg.value}\` to path-like arg \`${riskyArg.flag}\`, which escapes the plugin root.`,
           "Path-like runtime arguments that point outside the package can make startup depend on unreviewed local files or load code outside the reviewed tarball.",
-          "Keep runtime file arguments inside the plugin package root, or package the referenced file with the plugin."
+          "Keep runtime file arguments inside the plugin package root, or package the referenced file with the plugin.",
+          {
+            serverName,
+            configPath,
+            argFlag: riskyArg.flag,
+            argValue: riskyArg.value,
+            resolvedPath: riskyArg.resolvedPath
+          }
         )
       );
     }
@@ -321,7 +347,13 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
             "plugin.security.cwd_outside_root",
             `The MCP server \`${serverName}\` sets cwd outside the plugin root.`,
             "A working directory outside the package root can make server startup depend on unreviewed local files.",
-            "Keep MCP server `cwd` inside the plugin package root or remove it."
+            "Keep MCP server `cwd` inside the plugin package root or remove it.",
+            {
+              serverName,
+              configPath,
+              cwd,
+              resolvedPath: cwdPath
+            }
           )
         );
       }
@@ -339,7 +371,13 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
             "plugin.security.dangerous_env_usage",
             `The MCP server \`${serverName}\` sets dangerous code-loading env variable \`${envKey}\`.`,
             "Environment variables that alter module lookup, preload native libraries, or inject runtime imports can execute code outside the reviewed package.",
-            "Remove code-loading environment overrides, or keep referenced modules and preload files inside the reviewed plugin package."
+            "Remove code-loading environment overrides, or keep referenced modules and preload files inside the reviewed plugin package.",
+            {
+              serverName,
+              configPath,
+              envKey,
+              envValue: typeof envValue === "string" ? envValue : null
+            }
           )
         );
       }
@@ -352,7 +390,8 @@ export function auditMcpServerConfig(rootPath: string, parsedConfig: unknown): F
           "plugin.security.insecure_http_url",
           `The MCP server \`${serverName}\` uses an insecure HTTP URL.`,
           "Plain HTTP transports can expose MCP traffic on non-local networks and make endpoint identity harder to verify.",
-          "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints."
+          "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
+          { serverName, configPath, url }
         )
       );
     }
@@ -416,7 +455,8 @@ async function auditPromptPoisoningSurface(rootPath: string): Promise<Finding[]>
         "plugin.security.prompt_injection_text",
         `The packaged text file \`${relativeFilePath}\` contains prompt-injection or secret-exfiltration style instructions.`,
         "Malicious or poisoned tool, prompt, resource, or skill text can instruct an agent to ignore higher-priority instructions or leak secrets when loaded into context.",
-        "Remove hidden override or exfiltration instructions, then keep tool/prompt/resource descriptions scoped to the legitimate user-facing behavior."
+        "Remove hidden override or exfiltration instructions, then keep tool/prompt/resource descriptions scoped to the legitimate user-facing behavior.",
+        { filePath: relativeFilePath }
       )
     );
   }
@@ -450,12 +490,13 @@ async function auditMcpCommandSurface(
         "plugin.security.audit_unavailable",
         "The MCP security audit could not parse the referenced MCP config.",
         "Unreadable MCP configuration prevents review of server commands, URLs, and working directories before install.",
-        "Fix the `.mcp.json` syntax, then rerun `codex-plugin-doctor security <path>`."
+        "Fix the `.mcp.json` syntax, then rerun `codex-plugin-doctor security <path>`.",
+        { configPath: relativePackagePath(rootPath, mcpConfigPath) }
       )
     ];
   }
 
-  return auditMcpServerConfig(rootPath, parsedConfig);
+  return auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath });
 }
 
 function dedupeFindings(findings: Finding[]): Finding[] {
@@ -519,7 +560,8 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
         "plugin.security.audit_unavailable",
         "The target directory is missing `.codex-plugin/plugin.json`, so the package security audit cannot run.",
         "Without a Codex plugin manifest, the audit cannot resolve packaged skills or MCP server configuration safely.",
-        "Run the audit against a Codex plugin package root."
+        "Run the audit against a Codex plugin package root.",
+        { targetPath: path.resolve(targetPath) }
       )
     ];
     const findingCounts = buildFindingCounts(findings);
@@ -592,6 +634,12 @@ export function renderSecurityScorecard(
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const evidence = formatFindingEvidenceLine(finding);
+
+      if (evidence) {
+        lines.push(`  Evidence: ${evidence}`);
+      }
     }
   };
 

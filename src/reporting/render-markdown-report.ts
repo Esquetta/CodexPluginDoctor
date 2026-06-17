@@ -1,4 +1,5 @@
 import type { CheckResult } from "../domain/types.js";
+import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
 
 export function buildMarkdownReport(
   result: CheckResult,
@@ -52,6 +53,13 @@ export function buildMarkdownReport(
     lines.push(`- Message: ${finding.message}`);
     lines.push(`- Impact: ${finding.impact}`);
     lines.push(`- Suggested fix: ${finding.suggestedFix}`);
+
+    const evidence = formatFindingEvidenceLine(finding);
+
+    if (evidence) {
+      lines.push(`- Evidence: ${evidence}`);
+    }
+
     lines.push("");
   }
 

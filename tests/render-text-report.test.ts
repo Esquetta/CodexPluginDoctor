@@ -29,5 +29,8 @@ describe("renderTextReport", () => {
     expect(output).toContain("Summary: 1 fail, 0 warn, 1 total");
     expect(output).toContain("x plugin.security.hard_coded_secret");
     expect(output).toContain("Suggested fix: Replace the literal value");
+    expect(output).toContain("Evidence: serverName=dangerServer");
+    expect(output).toContain("envKey=OPENAI_API_KEY");
+    expect(output).toContain("envValue=[REDACTED]");
   });
 });

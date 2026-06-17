@@ -1891,6 +1891,14 @@ describe("runCli", () => {
     expect(writtenReport.runs[0].tool.driver.name).toBe("Codex Plugin Doctor");
     expect(writtenReport.runs[0].results[0].ruleId).toBe("plugin.security.hard_coded_secret");
     expect(writtenReport.runs[0].results[0].level).toBe("error");
+    expect(writtenReport.runs[0].results[0].properties.evidence).toEqual(
+      expect.objectContaining({
+        serverName: "dangerServer",
+        configPath: ".mcp.json",
+        envKey: "OPENAI_API_KEY",
+        envValue: "[REDACTED]"
+      })
+    );
   });
 
   it("renders Shields-compatible badge JSON for a passing package", async () => {

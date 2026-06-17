@@ -5,7 +5,8 @@ import type {
   CheckOptions,
   CheckResult,
   DiscoveredPackage,
-  Finding
+  Finding,
+  FindingEvidence
 } from "../domain/types.js";
 import { discoverPackage } from "./discover-package.js";
 import { probeRuntime } from "./runtime-probe.js";
@@ -14,14 +15,16 @@ function buildFailure(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity: "fail",
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -29,14 +32,16 @@ function buildWarning(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity: "warn",
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -112,6 +117,10 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
     relativePath === "" ||
     (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
   );
+}
+
+function relativePackagePath(rootPath: string, targetPath: string): string {
+  return path.relative(rootPath, targetPath).replace(/\\/g, "/") || ".";
 }
 
 function isSensitiveKey(key: string): boolean {
@@ -366,7 +375,13 @@ async function validateSkillsDirectory(
         "plugin.security.path_traversal",
         "The plugin manifest points the skills path outside the package root.",
         "Paths that escape the package root make the package harder to audit and can expose unintended files during packaging or validation.",
-        "Keep the `skills` path inside the plugin root."
+        "Keep the `skills` path inside the plugin root.",
+        {
+          manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
+          field: "skills",
+          configuredPath: manifest.skills,
+          resolvedPath: skillsPath
+        }
       )
     ];
   }
@@ -506,7 +521,13 @@ async function validateMcpConfig(
         "plugin.security.path_traversal",
         "The plugin manifest points the MCP config path outside the package root.",
         "Paths that escape the package root make the package harder to audit and can expose unintended files during packaging or validation.",
-        "Keep the `mcpServers` path inside the plugin root."
+        "Keep the `mcpServers` path inside the plugin root.",
+        {
+          manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
+          field: "mcpServers",
+          configuredPath: manifest.mcpServers,
+          resolvedPath: mcpConfigPath
+        }
       )
     ];
   }
@@ -605,7 +626,13 @@ async function validateMcpConfig(
               "plugin.security.hard_coded_secret",
               `The MCP server \`${serverName}\` contains a hard-coded secret-like env value for \`${envKey}\`.`,
               "Hard-coded credentials inside plugin bundles increase leakage risk and make secure rotation difficult.",
-              `Replace the literal value for \`${envKey}\` with an environment reference or injected secret outside the package.`
+              `Replace the literal value for \`${envKey}\` with an environment reference or injected secret outside the package.`,
+              {
+                serverName,
+                configPath: relativePackagePath(rootPath, mcpConfigPath),
+                envKey,
+                envValue: "[REDACTED]"
+              }
             )
           );
         }

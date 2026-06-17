@@ -1,11 +1,16 @@
 export type FindingSeverity = "warn" | "fail";
 
+export type FindingEvidenceValue = string | number | boolean | null;
+
+export type FindingEvidence = Record<string, FindingEvidenceValue>;
+
 export interface Finding {
   id: string;
   severity: FindingSeverity;
   message: string;
   impact: string;
   suggestedFix: string;
+  evidence?: FindingEvidence;
 }
 
 export interface CheckResult {

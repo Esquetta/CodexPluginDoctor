@@ -52,7 +52,8 @@ export function renderSarifReport(result: CheckResult): string {
                 }
               }
             }
-          ]
+          ],
+          ...(finding.evidence ? { properties: { evidence: finding.evidence } } : {})
         }))
       }
     ]

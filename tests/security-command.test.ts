@@ -87,6 +87,8 @@ describe("security command", () => {
     expect(output).toContain("plugin.security.path_traversal_risk");
     expect(output).toContain("plugin.security.dangerous_env_usage");
     expect(output).toContain("plugin.security.command_shell_wrapper");
+    expect(output).toContain("Evidence: serverName=danger");
+    expect(output).toContain("envKey=OPENAI_API_KEY");
   });
 
   it("does not flag package-local path args or env references as dangerous usage", async () => {
@@ -136,7 +138,14 @@ describe("security command", () => {
     expect(output.findingCounts.fail).toBeGreaterThanOrEqual(1);
     expect(output.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "plugin.security.encoded_command" })
+        expect.objectContaining({
+          id: "plugin.security.encoded_command",
+          evidence: expect.objectContaining({
+            serverName: "danger",
+            configPath: ".mcp.json",
+            command: "pwsh"
+          })
+        })
       ])
     );
   });

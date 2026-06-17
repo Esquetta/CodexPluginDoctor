@@ -1,5 +1,6 @@
 import type { CheckResult } from "../domain/types.js";
 import { findRuleDefinition } from "../rules/rule-catalog.js";
+import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
 
 function getCounts(result: CheckResult) {
   const failCount = result.findings.filter(
@@ -82,6 +83,12 @@ export function renderTextReport(
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const evidence = formatFindingEvidenceLine(finding);
+
+      if (evidence) {
+        lines.push(`  Evidence: ${evidence}`);
+      }
 
       if (explain) {
         const rule = findRuleDefinition(finding.id);
