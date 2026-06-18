@@ -87,6 +87,7 @@ describe("security command", () => {
     expect(output).toContain("plugin.security.path_traversal_risk");
     expect(output).toContain("plugin.security.dangerous_env_usage");
     expect(output).toContain("plugin.security.command_shell_wrapper");
+    expect(output).toMatch(/Fingerprint: [a-f0-9]{64}/);
     expect(output).toContain("Evidence: serverName=danger");
     expect(output).toContain("envKey=OPENAI_API_KEY");
   });
@@ -140,6 +141,7 @@ describe("security command", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.security.encoded_command",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
           evidence: expect.objectContaining({
             serverName: "danger",
             configPath: ".mcp.json",

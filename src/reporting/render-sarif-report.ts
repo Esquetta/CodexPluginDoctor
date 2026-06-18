@@ -53,6 +53,13 @@ export function renderSarifReport(result: CheckResult): string {
               }
             }
           ],
+          ...(finding.fingerprint
+            ? {
+                partialFingerprints: {
+                  "codexPluginDoctor/v1": finding.fingerprint
+                }
+              }
+            : {}),
           ...(finding.evidence ? { properties: { evidence: finding.evidence } } : {})
         }))
       }

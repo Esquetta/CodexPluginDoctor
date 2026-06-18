@@ -22,6 +22,7 @@ describe("buildMarkdownReport", () => {
 
     const report = buildMarkdownReport(result, { runtimeProbeEnabled: false });
 
+    expect(report).toMatch(/- Fingerprint: `[a-f0-9]{64}`/);
     expect(report).toContain("- Evidence: serverName=dangerServer");
     expect(report).toContain("envKey=OPENAI_API_KEY");
     expect(report).toContain("envValue=[REDACTED]");

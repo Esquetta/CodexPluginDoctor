@@ -5,6 +5,10 @@ import { discoverPackage } from "../core/discover-package.js";
 import { readJsonFile } from "../core/read-json-file.js";
 import { validatePlugin } from "../core/validate-plugin.js";
 import type { DiscoveredPackage, Finding, FindingEvidence } from "../domain/types.js";
+import {
+  formatFindingFingerprintLine,
+  withFindingFingerprints
+} from "../reporting/finding-fingerprint.js";
 import { formatFindingEvidenceLine } from "../reporting/format-finding-evidence.js";
 
 export interface SecurityAudit {
@@ -533,8 +537,12 @@ export function buildSecurityAuditFromFindings(
   targetPath: string,
   findings: Finding[]
 ): SecurityAudit {
-  const dedupedFindings = dedupeFindings(findings);
-  const findingCounts = buildFindingCounts(dedupedFindings);
+  const rootPath = path.resolve(targetPath);
+  const fingerprintedFindings = withFindingFingerprints(
+    dedupeFindings(findings),
+    rootPath
+  );
+  const findingCounts = buildFindingCounts(fingerprintedFindings);
   const status = findingCounts.fail > 0
     ? "fail"
     : findingCounts.warn > 0
@@ -542,11 +550,11 @@ export function buildSecurityAuditFromFindings(
       : "pass";
 
   return {
-    targetPath: path.resolve(targetPath),
+    targetPath: rootPath,
     status,
     score: scoreSecurityAudit(findingCounts),
     findingCounts,
-    findings: dedupedFindings
+    findings: fingerprintedFindings
   };
 }
 
@@ -564,15 +572,7 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
         { targetPath: path.resolve(targetPath) }
       )
     ];
-    const findingCounts = buildFindingCounts(findings);
-
-    return {
-      targetPath: path.resolve(targetPath),
-      status: "fail",
-      score: scoreSecurityAudit(findingCounts),
-      findingCounts,
-      findings
-    };
+    return buildSecurityAuditFromFindings(targetPath, findings);
   }
 
   const validationResult = await validatePlugin(discoveredPackage.rootPath);
@@ -634,6 +634,12 @@ export function renderSecurityScorecard(
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const fingerprint = formatFindingFingerprintLine(finding);
+
+      if (fingerprint) {
+        lines.push(`  Fingerprint: ${fingerprint}`);
+      }
 
       const evidence = formatFindingEvidenceLine(finding);
 

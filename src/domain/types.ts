@@ -11,6 +11,7 @@ export interface Finding {
   impact: string;
   suggestedFix: string;
   evidence?: FindingEvidence;
+  fingerprint?: string;
 }
 
 export interface CheckResult {

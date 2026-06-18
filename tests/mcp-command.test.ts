@@ -36,6 +36,17 @@ async function createStandaloneMcpPackage(mcpConfig: unknown): Promise<string> {
 }
 
 describe("mcp command", () => {
+  it("renders finding fingerprints in text output", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-missing-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath], io);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toMatch(/Fingerprint: [a-f0-9]{64}/);
+  });
+
   it("diagnoses a standalone MCP package without a Codex plugin manifest", async () => {
     const targetPath = await createStandaloneMcpPackage({
       mcpServers: {
@@ -83,7 +94,11 @@ describe("mcp command", () => {
     expect(output.status).toBe("fail");
     expect(output.security.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "plugin.security.encoded_command", severity: "fail" })
+        expect.objectContaining({
+          id: "plugin.security.encoded_command",
+          severity: "fail",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/)
+        })
       ])
     );
   });
@@ -101,7 +116,11 @@ describe("mcp command", () => {
     expect(output.status).toBe("fail");
     expect(output.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "mcp.config.missing", severity: "fail" })
+        expect.objectContaining({
+          id: "mcp.config.missing",
+          severity: "fail",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/)
+        })
       ])
     );
   });

@@ -5,6 +5,10 @@ import { discoverPackage } from "../core/discover-package.js";
 import { parseJsonText } from "../core/read-json-file.js";
 import type { Finding } from "../domain/types.js";
 import {
+  formatFindingFingerprintLine,
+  withFindingFingerprints
+} from "../reporting/finding-fingerprint.js";
+import {
   buildSecurityAudit,
   type SecurityAudit
 } from "./security-audit.js";
@@ -236,11 +240,14 @@ export async function buildTrustScore(
     : await discoverPackage(rootPath)
       ? await buildSecurityAudit(rootPath)
       : null;
-  const findings = dedupeFindings([
-    ...scriptAudit.findings,
-    ...dependencyAudit.findings,
-    ...(securityAudit?.findings ?? [])
-  ]);
+  const findings = withFindingFingerprints(
+    dedupeFindings([
+      ...scriptAudit.findings,
+      ...dependencyAudit.findings,
+      ...(securityAudit?.findings ?? [])
+    ]),
+    rootPath
+  );
   const fail = findings.filter((finding) => finding.severity === "fail").length;
   const warn = findings.filter((finding) => finding.severity === "warn").length;
   const score = scoreFindings(findings);
@@ -302,6 +309,12 @@ export function renderTrustScore(report: TrustScoreReport): string {
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const fingerprint = formatFindingFingerprintLine(finding);
+
+      if (fingerprint) {
+        lines.push(`  Fingerprint: ${fingerprint}`);
+      }
     }
   };
 

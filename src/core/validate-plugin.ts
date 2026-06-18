@@ -8,6 +8,7 @@ import type {
   Finding,
   FindingEvidence
 } from "../domain/types.js";
+import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
 import { probeRuntime } from "./runtime-probe.js";
 
@@ -656,7 +657,10 @@ export async function validatePlugin(
       targetPath: rootPath,
       status: "fail",
       exitCode: 1,
-      findings: [await buildMissingManifestFailure(rootPath)]
+      findings: withFindingFingerprints(
+        [await buildMissingManifestFailure(rootPath)],
+        rootPath
+      )
     };
   }
 
@@ -674,8 +678,16 @@ export async function validatePlugin(
     ...(runtimeResult ? runtimeResult.findings : [])
   ];
 
-  const hasFailures = findings.some((finding) => finding.severity === "fail");
-  const hasWarnings = findings.some((finding) => finding.severity === "warn");
+  const fingerprintedFindings = withFindingFingerprints(
+    findings,
+    discoveredPackage.rootPath
+  );
+  const hasFailures = fingerprintedFindings.some(
+    (finding) => finding.severity === "fail"
+  );
+  const hasWarnings = fingerprintedFindings.some(
+    (finding) => finding.severity === "warn"
+  );
 
   if (!hasFailures && !hasWarnings) {
     return {
@@ -691,7 +703,7 @@ export async function validatePlugin(
     targetPath: discoveredPackage.rootPath,
     status: hasFailures ? "fail" : "warn",
     exitCode: hasFailures ? 1 : 0,
-    findings,
+    findings: fingerprintedFindings,
     ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {})
   };
 }

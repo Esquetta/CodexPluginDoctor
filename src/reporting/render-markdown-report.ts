@@ -1,5 +1,6 @@
 import type { CheckResult } from "../domain/types.js";
 import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
+import { formatFindingFingerprintLine } from "./finding-fingerprint.js";
 
 export function buildMarkdownReport(
   result: CheckResult,
@@ -53,6 +54,12 @@ export function buildMarkdownReport(
     lines.push(`- Message: ${finding.message}`);
     lines.push(`- Impact: ${finding.impact}`);
     lines.push(`- Suggested fix: ${finding.suggestedFix}`);
+
+    const fingerprint = formatFindingFingerprintLine(finding);
+
+    if (fingerprint) {
+      lines.push(`- Fingerprint: \`${fingerprint}\``);
+    }
 
     const evidence = formatFindingEvidenceLine(finding);
 

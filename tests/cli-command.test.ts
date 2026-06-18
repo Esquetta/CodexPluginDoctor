@@ -1891,6 +1891,9 @@ describe("runCli", () => {
     expect(writtenReport.runs[0].tool.driver.name).toBe("Codex Plugin Doctor");
     expect(writtenReport.runs[0].results[0].ruleId).toBe("plugin.security.hard_coded_secret");
     expect(writtenReport.runs[0].results[0].level).toBe("error");
+    expect(
+      writtenReport.runs[0].results[0].partialFingerprints["codexPluginDoctor/v1"]
+    ).toMatch(/^[a-f0-9]{64}$/);
     expect(writtenReport.runs[0].results[0].properties.evidence).toEqual(
       expect.objectContaining({
         serverName: "dangerServer",

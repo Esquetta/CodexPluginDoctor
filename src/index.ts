@@ -1,6 +1,12 @@
 import type { CheckOptions, CheckResult } from "./domain/types.js";
 import { validatePlugin } from "./core/validate-plugin.js";
 export {
+  buildFindingFingerprint,
+  formatFindingFingerprintLine,
+  withFindingFingerprint,
+  withFindingFingerprints
+} from "./reporting/finding-fingerprint.js";
+export {
   buildSecurityAudit,
   renderSecurityAuditJson,
   renderSecurityScorecard,

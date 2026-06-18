@@ -50,6 +50,17 @@ async function createRiskyPackage(): Promise<string> {
 }
 
 describe("doctor trust command", () => {
+  it("renders finding fingerprints in text output", async () => {
+    const targetPath = await createRiskyPackage();
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "trust", targetPath], io);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toMatch(/Fingerprint: [a-f0-9]{64}/);
+  });
+
   it("fails packages with remote pipe install scripts", async () => {
     const targetPath = await createRiskyPackage();
     const { io, stdout, stderr } = createIo();
@@ -64,7 +75,11 @@ describe("doctor trust command", () => {
     expect(output.score).toBeLessThan(80);
     expect(output.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "trust.package.remote_pipe_install", severity: "fail" }),
+        expect.objectContaining({
+          id: "trust.package.remote_pipe_install",
+          severity: "fail",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/)
+        }),
         expect.objectContaining({ id: "trust.package.unpinned_dependency", severity: "warn" })
       ])
     );

@@ -15,7 +15,8 @@ describe("runCheck", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.manifest.missing",
-          severity: "fail"
+          severity: "fail",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/)
         })
       ])
     );

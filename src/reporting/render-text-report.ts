@@ -1,6 +1,7 @@
 import type { CheckResult } from "../domain/types.js";
 import { findRuleDefinition } from "../rules/rule-catalog.js";
 import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
+import { formatFindingFingerprintLine } from "./finding-fingerprint.js";
 
 function getCounts(result: CheckResult) {
   const failCount = result.findings.filter(
@@ -83,6 +84,12 @@ export function renderTextReport(
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const fingerprint = formatFindingFingerprintLine(finding);
+
+      if (fingerprint) {
+        lines.push(`  Fingerprint: ${fingerprint}`);
+      }
 
       const evidence = formatFindingEvidenceLine(finding);
 

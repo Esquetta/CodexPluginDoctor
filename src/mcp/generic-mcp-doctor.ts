@@ -10,6 +10,10 @@ import {
 import { readJsonFile } from "../core/read-json-file.js";
 import type { Finding } from "../domain/types.js";
 import {
+  formatFindingFingerprintLine,
+  withFindingFingerprints
+} from "../reporting/finding-fingerprint.js";
+import {
   auditMcpServerConfig,
   buildSecurityAuditFromFindings,
   type SecurityAudit
@@ -213,7 +217,11 @@ export async function buildGenericMcpDoctor(
       ? auditMcpServerConfig(rootPath, parsedConfig)
       : []
   );
-  const status = mergeReportStatus(staticFindings, security);
+  const fingerprintedStaticFindings = withFindingFingerprints(
+    staticFindings,
+    rootPath
+  );
+  const status = mergeReportStatus(fingerprintedStaticFindings, security);
 
   return {
     targetPath: rootPath,
@@ -221,7 +229,7 @@ export async function buildGenericMcpDoctor(
     exitCode: status === "fail" ? 1 : 0,
     mcpConfigPath,
     serverCount,
-    findings: [...staticFindings, ...security.findings],
+    findings: [...fingerprintedStaticFindings, ...security.findings],
     security,
     compatibility
   };
@@ -274,6 +282,12 @@ export function renderGenericMcpDoctor(report: GenericMcpDoctorReport): string {
       lines.push(`  Message: ${finding.message}`);
       lines.push(`  Impact: ${finding.impact}`);
       lines.push(`  Suggested fix: ${finding.suggestedFix}`);
+
+      const fingerprint = formatFindingFingerprintLine(finding);
+
+      if (fingerprint) {
+        lines.push(`  Fingerprint: ${fingerprint}`);
+      }
     }
   };
 
