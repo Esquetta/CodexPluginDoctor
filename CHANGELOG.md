@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.25.0] - 2026-06-18
+
+### Added
+
+- added deterministic SHA-256 fingerprints for validation, runtime, security, trust, and generic MCP findings
+- normalized structured path evidence relative to the analyzed package root so fingerprints remain stable across machines
+- surfaced finding fingerprints in text, Markdown, JSON, security scorecard, trust, generic MCP, and SARIF reports
+
 ## [1.24.0] - 2026-06-17
 
 ### Added
