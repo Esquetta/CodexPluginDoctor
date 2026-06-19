@@ -54,7 +54,11 @@ describe("runtime protocol probing", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.runtime.tools_list.invalid",
-          severity: "fail"
+          severity: "fail",
+          evidence: {
+            serverName: "mockServer",
+            method: "tools/list"
+          }
         })
       ])
     );
@@ -73,7 +77,12 @@ describe("runtime protocol probing", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.runtime.tool_call.invalid",
-          severity: "fail"
+          severity: "fail",
+          evidence: {
+            serverName: "mockServer",
+            method: "tools/call",
+            toolName: "ping"
+          }
         })
       ])
     );
@@ -235,17 +244,36 @@ describe("runtime protocol probing", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.runtime.tool_call.content_too_large",
-          severity: "warn"
+          severity: "warn",
+          evidence: {
+            serverName: "mockServer",
+            method: "tools/call",
+            toolName: "ping",
+            contentLength: 6000
+          }
         }),
         expect.objectContaining({
           id: "plugin.runtime.resource_read.content_too_large",
-          severity: "warn"
+          severity: "warn",
+          evidence: {
+            serverName: "mockServer",
+            method: "resources/read",
+            resourceUri: "file:///workspace/README.md",
+            contentLength: 6000
+          }
         }),
         expect.objectContaining({
           id: "plugin.runtime.prompt_get.content_too_large",
-          severity: "warn"
+          severity: "warn",
+          evidence: {
+            serverName: "mockServer",
+            method: "prompts/get",
+            promptName: "summary",
+            contentLength: 6000
+          }
         })
       ])
     );
+    expect(JSON.stringify(result.findings)).not.toContain("XXXX");
   });
 });

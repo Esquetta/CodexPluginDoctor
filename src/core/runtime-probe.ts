@@ -6,6 +6,7 @@ import readline from "node:readline";
 import type {
   DiscoveredPackage,
   Finding,
+  FindingEvidence,
   RuntimeProbeResult,
   RuntimeScorecard
 } from "../domain/types.js";
@@ -70,14 +71,16 @@ function buildFailure(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity: "fail",
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -85,14 +88,40 @@ function buildWarning(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity: "warn",
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
+  };
+}
+
+function methodForRuntimeFinding(id: string): string {
+  if (id.includes(".initialize.")) return "initialize";
+  if (id.includes(".tools_list.")) return "tools/list";
+  if (id.includes(".tool_call.")) return "tools/call";
+  if (id.includes(".resources_list.")) return "resources/list";
+  if (id.includes(".resource_read.")) return "resources/read";
+  if (id.includes(".resource_templates_list.")) return "resources/templates/list";
+  if (id.includes(".prompts_list.")) return "prompts/list";
+  if (id.includes(".prompt_get.")) return "prompts/get";
+  if (id.includes(".startup.") || id.includes(".exited_early")) return "startup";
+  return "protocol";
+}
+
+function withRuntimeEvidence(finding: Finding, serverName: string): Finding {
+  return {
+    ...finding,
+    evidence: {
+      serverName,
+      method: methodForRuntimeFinding(finding.id),
+      ...(finding.evidence ?? {})
+    }
   };
 }
 
@@ -757,17 +786,20 @@ function getContentBlockLength(content: JsonObject): number {
 }
 
 function collectOversizedToolCallWarnings(
-  message: JsonObject
+  message: JsonObject,
+  evidence: FindingEvidence
 ): Finding[] {
   if (!isPlainObject(message.result) || !Array.isArray(message.result.content)) {
     return [];
   }
 
-  const hasOversizedContent = message.result.content.some((content) => {
-    return isPlainObject(content) && getContentBlockLength(content) > MAX_TOOL_CALL_CONTENT_LENGTH;
-  });
+  const contentLength = message.result.content.reduce((maximum, content) => {
+    return isPlainObject(content)
+      ? Math.max(maximum, getContentBlockLength(content))
+      : maximum;
+  }, 0);
 
-  if (!hasOversizedContent) {
+  if (contentLength <= MAX_TOOL_CALL_CONTENT_LENGTH) {
     return [];
   }
 
@@ -776,33 +808,32 @@ function collectOversizedToolCallWarnings(
       "plugin.runtime.tool_call.content_too_large",
       "The tools/call response contains unusually large content payloads.",
       "Large tool call payloads increase runtime cost, transcript size, and the risk of degraded model performance.",
-      "Keep tool responses concise or move large payloads into resource references instead of inline content."
+      "Keep tool responses concise or move large payloads into resource references instead of inline content.",
+      { ...evidence, contentLength }
     )
   ];
 }
 
 function collectOversizedResourceReadWarnings(
-  message: JsonObject
+  message: JsonObject,
+  evidence: FindingEvidence
 ): Finding[] {
   if (!isPlainObject(message.result) || !Array.isArray(message.result.contents)) {
     return [];
   }
 
-  const hasOversizedContent = message.result.contents.some((content) => {
+  const contentLength = message.result.contents.reduce((maximum, content) => {
     if (!isPlainObject(content)) {
-      return false;
+      return maximum;
     }
 
     const textLength = typeof content.text === "string" ? content.text.length : 0;
     const blobLength = typeof content.blob === "string" ? content.blob.length : 0;
 
-    return (
-      textLength > MAX_RESOURCE_READ_CONTENT_LENGTH ||
-      blobLength > MAX_RESOURCE_READ_CONTENT_LENGTH
-    );
-  });
+    return Math.max(maximum, textLength, blobLength);
+  }, 0);
 
-  if (!hasOversizedContent) {
+  if (contentLength <= MAX_RESOURCE_READ_CONTENT_LENGTH) {
     return [];
   }
 
@@ -811,27 +842,29 @@ function collectOversizedResourceReadWarnings(
       "plugin.runtime.resource_read.content_too_large",
       "The resources/read response contains unusually large resource payloads.",
       "Large resource contents increase runtime cost and can make downstream model use less reliable.",
-      "Reduce inline resource size or break large resources into smaller references."
+      "Reduce inline resource size or break large resources into smaller references.",
+      { ...evidence, contentLength }
     )
   ];
 }
 
 function collectOversizedPromptGetWarnings(
-  message: JsonObject
+  message: JsonObject,
+  evidence: FindingEvidence
 ): Finding[] {
   if (!isPlainObject(message.result) || !Array.isArray(message.result.messages)) {
     return [];
   }
 
-  const hasOversizedContent = message.result.messages.some((promptMessage) => {
+  const contentLength = message.result.messages.reduce((maximum, promptMessage) => {
     if (!isPlainObject(promptMessage) || !isPlainObject(promptMessage.content)) {
-      return false;
+      return maximum;
     }
 
-    return getContentBlockLength(promptMessage.content) > MAX_PROMPT_GET_CONTENT_LENGTH;
-  });
+    return Math.max(maximum, getContentBlockLength(promptMessage.content));
+  }, 0);
 
-  if (!hasOversizedContent) {
+  if (contentLength <= MAX_PROMPT_GET_CONTENT_LENGTH) {
     return [];
   }
 
@@ -840,7 +873,8 @@ function collectOversizedPromptGetWarnings(
       "plugin.runtime.prompt_get.content_too_large",
       "The prompts/get response contains unusually large prompt message payloads.",
       "Large prompt bodies increase token cost and reduce the usefulness of prompt probing as a lightweight validation step.",
-      "Keep prompt message content concise or move large context into resources."
+      "Keep prompt message content concise or move large context into resources.",
+      { ...evidence, contentLength }
     )
   ];
 }
@@ -896,7 +930,10 @@ async function probeCommandServer(input: {
       }
 
       resolve({
-        findings: [...warnings, ...(finding ? [finding] : [])],
+        findings: [
+          ...warnings.map((warning) => withRuntimeEvidence(warning, serverName)),
+          ...(finding ? [withRuntimeEvidence(finding, serverName)] : [])
+        ],
         scorecard
       });
     };
@@ -1189,12 +1226,13 @@ async function probeCommandServer(input: {
             name: callableTool.tool.name,
             arguments: callableTool.args
           },
-          buildFailure(
-            "plugin.runtime.tool_call.timeout",
-            `The MCP server \`${serverName}\` did not answer the tools/call request in time.`,
-            "A server that cannot complete a basic tool invocation in time will feel broken in real Codex usage.",
-            "Inspect the selected tool implementation and reduce its response latency."
-          )
+            buildFailure(
+              "plugin.runtime.tool_call.timeout",
+              `The MCP server \`${serverName}\` did not answer the tools/call request in time.`,
+              "A server that cannot complete a basic tool invocation in time will feel broken in real Codex usage.",
+              "Inspect the selected tool implementation and reduce its response latency.",
+              { toolName: callableTool.tool.name }
+            )
         );
 
         if (isErrorResponse(toolCallResponse) || !isValidCallToolResult(toolCallResponse)) {
@@ -1204,14 +1242,19 @@ async function probeCommandServer(input: {
               "plugin.runtime.tool_call.invalid",
               `The MCP server \`${serverName}\` returned an invalid tools/call result.`,
               "Codex cannot safely consume malformed tool call results from the server.",
-              "Return a CallToolResult with a `content` array containing valid MCP content blocks."
+              "Return a CallToolResult with a `content` array containing valid MCP content blocks.",
+              { toolName: callableTool.tool.name }
             )
           );
           return;
         }
 
         scorecard.toolsCall = "pass";
-        warnings.push(...collectOversizedToolCallWarnings(toolCallResponse));
+        warnings.push(
+          ...collectOversizedToolCallWarnings(toolCallResponse, {
+            toolName: callableTool.tool.name
+          })
+        );
       }
 
       if (!hasResourcesCapability(initializeResponse)) {
@@ -1251,12 +1294,13 @@ async function probeCommandServer(input: {
             {
               uri: resources[0].uri
             },
-            buildFailure(
-              "plugin.runtime.resource_read.timeout",
-              `The MCP server \`${serverName}\` did not answer the resources/read request in time.`,
-              "A server that lists resources but cannot read them in time will feel broken in Codex.",
-              "Inspect the resource read path and reduce latency before returning resource contents."
-            )
+              buildFailure(
+                "plugin.runtime.resource_read.timeout",
+                `The MCP server \`${serverName}\` did not answer the resources/read request in time.`,
+                "A server that lists resources but cannot read them in time will feel broken in Codex.",
+                "Inspect the resource read path and reduce latency before returning resource contents.",
+                { resourceUri: resources[0].uri }
+              )
           );
 
           if (
@@ -1269,14 +1313,19 @@ async function probeCommandServer(input: {
                 "plugin.runtime.resource_read.invalid",
                 `The MCP server \`${serverName}\` returned an invalid resources/read result.`,
                 "Codex cannot safely consume malformed resource contents from `resources/read`.",
-                "Return a `contents` array where each entry has a string `uri` plus either string `text` or string `blob`."
+                "Return a `contents` array where each entry has a string `uri` plus either string `text` or string `blob`.",
+                { resourceUri: resources[0].uri }
               )
             );
             return;
           }
 
           scorecard.resourceRead = "pass";
-          warnings.push(...collectOversizedResourceReadWarnings(resourceReadResponse));
+          warnings.push(
+            ...collectOversizedResourceReadWarnings(resourceReadResponse, {
+              resourceUri: resources[0].uri
+            })
+          );
         } else {
           scorecard.resourceRead = "skipped";
         }
@@ -1360,12 +1409,13 @@ async function probeCommandServer(input: {
                 ? { arguments: buildPromptArguments(promptForGet) }
                 : {})
             },
-            buildFailure(
-              "plugin.runtime.prompt_get.timeout",
-              `The MCP server \`${serverName}\` did not answer the prompts/get request in time.`,
-              "A server that lists prompts but cannot return prompt content in time will feel broken in Codex.",
-              "Inspect the prompt retrieval path and reduce latency before returning prompt messages."
-            )
+              buildFailure(
+                "plugin.runtime.prompt_get.timeout",
+                `The MCP server \`${serverName}\` did not answer the prompts/get request in time.`,
+                "A server that lists prompts but cannot return prompt content in time will feel broken in Codex.",
+                "Inspect the prompt retrieval path and reduce latency before returning prompt messages.",
+                { promptName: promptForGet.name }
+              )
           );
 
           if (
@@ -1378,14 +1428,19 @@ async function probeCommandServer(input: {
                 "plugin.runtime.prompt_get.invalid",
                 `The MCP server \`${serverName}\` returned an invalid prompts/get result.`,
                 "Codex cannot safely consume malformed prompt messages from `prompts/get`.",
-                "Return a `messages` array where each entry has a valid `role` and a valid MCP content block."
+                "Return a `messages` array where each entry has a valid `role` and a valid MCP content block.",
+                { promptName: promptForGet.name }
               )
             );
             return;
           }
 
           scorecard.promptGet = "pass";
-          warnings.push(...collectOversizedPromptGetWarnings(promptGetResponse));
+          warnings.push(
+            ...collectOversizedPromptGetWarnings(promptGetResponse, {
+              promptName: promptForGet.name
+            })
+          );
         }
       }
 
