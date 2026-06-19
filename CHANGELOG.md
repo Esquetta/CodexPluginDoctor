@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.26.0] - 2026-06-19
+
+### Added
+
+- added package-relative locator evidence for manifest, skill, MCP config, and generic MCP findings
+- added runtime finding evidence with server, protocol method, selected tool, resource, prompt, and bounded content-length metadata
+- added lifecycle script and dependency-section evidence so repeated trust findings receive distinct fingerprints
+
+### Security
+
+- removed absolute target paths from missing-manifest security audit evidence
+- kept secrets, stderr, prompt bodies, resource contents, tool payloads, and encoded commands out of finding evidence
+
 ## [1.25.0] - 2026-06-18
 
 ### Added
