@@ -569,7 +569,7 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
         "The target directory is missing `.codex-plugin/plugin.json`, so the package security audit cannot run.",
         "Without a Codex plugin manifest, the audit cannot resolve packaged skills or MCP server configuration safely.",
         "Run the audit against a Codex plugin package root.",
-        { targetPath: path.resolve(targetPath) }
+        { manifestPath: ".codex-plugin/plugin.json" }
       )
     ];
     return buildSecurityAuditFromFindings(targetPath, findings);

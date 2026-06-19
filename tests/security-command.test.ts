@@ -58,6 +58,27 @@ async function createPluginWithMcp(mcpConfig: unknown): Promise<string> {
 }
 
 describe("security command", () => {
+  it("uses the expected manifest locator when an audit cannot run", async () => {
+    const targetPath = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-security-missing-")
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings[0]).toEqual(
+      expect.objectContaining({
+        id: "plugin.security.audit_unavailable",
+        evidence: {
+          manifestPath: ".codex-plugin/plugin.json"
+        }
+      })
+    );
+  });
+
   it("fails risky MCP command patterns with a security scorecard", async () => {
     const targetPath = await createPluginWithMcp({
       mcpServers: {
