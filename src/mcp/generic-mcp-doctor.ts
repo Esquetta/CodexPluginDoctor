@@ -8,7 +8,7 @@ import {
   readMcpConfigPath
 } from "../compatibility/compatibility-matrix.js";
 import { readJsonFile } from "../core/read-json-file.js";
-import type { Finding } from "../domain/types.js";
+import type { Finding, FindingEvidence } from "../domain/types.js";
 import {
   formatFindingFingerprintLine,
   withFindingFingerprints
@@ -35,14 +35,16 @@ function buildFinding(
   id: string,
   message: string,
   impact: string,
-  suggestedFix: string
+  suggestedFix: string,
+  evidence?: FindingEvidence
 ): Finding {
   return {
     id,
     severity,
     message,
     impact,
-    suggestedFix
+    suggestedFix,
+    ...(evidence ? { evidence } : {})
   };
 }
 
@@ -69,10 +71,10 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
 }
 
 function buildStaticMcpFindings(
-  mcpConfigPath: string | null,
+  configPath: string | null,
   parsedConfig: unknown
 ): { findings: Finding[]; serverCount: number } {
-  if (!mcpConfigPath) {
+  if (!configPath) {
     return {
       serverCount: 0,
       findings: [
@@ -81,7 +83,8 @@ function buildStaticMcpFindings(
           "mcp.config.missing",
           "No MCP config was found for this target.",
           "A generic MCP package needs a `.mcp.json` file or a Codex manifest `mcpServers` reference before clients can discover servers.",
-          "Add `.mcp.json` with a non-empty top-level `mcpServers` object."
+          "Add `.mcp.json` with a non-empty top-level `mcpServers` object.",
+          { configPath: ".mcp.json", field: "mcpServers" }
         )
       ]
     };
@@ -96,7 +99,8 @@ function buildStaticMcpFindings(
           "mcp.config.invalid_shape",
           "The MCP config must be a JSON object.",
           "MCP clients expect object-shaped configuration so server entries can be resolved deterministically.",
-          `Wrap the MCP config in a top-level object inside \`${mcpConfigPath}\`.`
+          `Wrap the MCP config in a top-level object inside \`${configPath}\`.`,
+          { configPath, field: "root" }
         )
       ]
     };
@@ -113,7 +117,8 @@ function buildStaticMcpFindings(
           "mcp.config.invalid_shape",
           "The MCP config must contain a non-empty `mcpServers` object.",
           "Without server entries, MCP clients cannot discover any package capabilities.",
-          `Define MCP servers under \`mcpServers\` in \`${mcpConfigPath}\`.`
+          `Define MCP servers under \`mcpServers\` in \`${configPath}\`.`,
+          { configPath, field: "mcpServers" }
         )
       ]
     };
@@ -129,7 +134,8 @@ function buildStaticMcpFindings(
           "mcp.server.invalid",
           `The MCP server \`${serverName}\` must be configured as an object.`,
           "MCP clients cannot interpret a server entry unless it is represented as an object with server options.",
-          `Change the \`${serverName}\` entry in \`${mcpConfigPath}\` to an object.`
+          `Change the \`${serverName}\` entry in \`${configPath}\` to an object.`,
+          { configPath, serverName, field: "server" }
         )
       );
       continue;
@@ -142,7 +148,8 @@ function buildStaticMcpFindings(
           "mcp.server.transport.missing",
           `The MCP server \`${serverName}\` must define either \`command\` or \`url\`.`,
           "MCP clients need a process command for stdio servers or a URL for remote servers.",
-          `Add either \`command\` or \`url\` to the \`${serverName}\` entry in \`${mcpConfigPath}\`.`
+          `Add either \`command\` or \`url\` to the \`${serverName}\` entry in \`${configPath}\`.`,
+          { configPath, serverName, field: "transport" }
         )
       );
     }
@@ -189,13 +196,21 @@ export async function buildGenericMcpDoctor(
         "mcp.config.path_outside_root",
         "The MCP config path resolves outside the target root.",
         "A package that reads MCP configuration outside its root is harder to audit and can depend on unreviewed local files.",
-        "Keep `.mcp.json` or the manifest `mcpServers` reference inside the package root."
+        "Keep `.mcp.json` or the manifest `mcpServers` reference inside the package root.",
+        {
+          configPath: path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/"),
+          resolvedPath: mcpConfigPath,
+          field: "configPath"
+        }
       )
     ];
   } else {
     try {
       parsedConfig = await readJsonFile<unknown>(mcpConfigPath);
-      const staticResult = buildStaticMcpFindings(mcpConfigPath, parsedConfig);
+      const staticResult = buildStaticMcpFindings(
+        path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/"),
+        parsedConfig
+      );
       staticFindings = staticResult.findings;
       serverCount = staticResult.serverCount;
     } catch {
@@ -205,7 +220,11 @@ export async function buildGenericMcpDoctor(
           "mcp.config.invalid_json",
           "The MCP config is not valid JSON.",
           "MCP clients cannot parse server configuration until the JSON syntax is valid.",
-          `Fix the JSON syntax in \`${mcpConfigPath}\`.`
+          `Fix the JSON syntax in \`${mcpConfigPath}\`.`,
+          {
+            configPath: path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/"),
+            field: "json"
+          }
         )
       ];
     }

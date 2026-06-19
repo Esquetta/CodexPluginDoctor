@@ -307,7 +307,11 @@ function validateRequiredManifestFields(
   discoveredPackage: DiscoveredPackage
 ): Finding[] {
   const findings: Finding[] = [];
-  const { manifest } = discoveredPackage;
+  const { manifest, rootPath } = discoveredPackage;
+  const manifestPath = relativePackagePath(
+    rootPath,
+    discoveredPackage.manifestPath
+  );
 
   if (!manifest.name) {
     findings.push(
@@ -315,7 +319,8 @@ function validateRequiredManifestFields(
         "plugin.manifest.name.missing",
         "The plugin manifest is missing a `name` field.",
         "Codex cannot identify the plugin reliably without a stable package name.",
-        "Add a kebab-case `name` field to `.codex-plugin/plugin.json`."
+        "Add a kebab-case `name` field to `.codex-plugin/plugin.json`.",
+        { manifestPath, field: "name" }
       )
     );
   }
@@ -326,7 +331,8 @@ function validateRequiredManifestFields(
         "plugin.manifest.version.missing",
         "The plugin manifest is missing a `version` field.",
         "Release and compatibility workflows cannot reason about the package version.",
-        "Add a semantic `version` field to `.codex-plugin/plugin.json`."
+        "Add a semantic `version` field to `.codex-plugin/plugin.json`.",
+        { manifestPath, field: "version" }
       )
     );
   }
@@ -337,7 +343,8 @@ function validateRequiredManifestFields(
         "plugin.manifest.description.missing",
         "The plugin manifest is missing a `description` field.",
         "The package will be harder to understand and present in Codex surfaces.",
-        "Add a concise `description` field to `.codex-plugin/plugin.json`."
+        "Add a concise `description` field to `.codex-plugin/plugin.json`.",
+        { manifestPath, field: "description" }
       )
     );
   }
@@ -351,7 +358,8 @@ function validateRequiredManifestFields(
         "plugin.heuristic.description.too_long",
         "The plugin manifest description is likely too verbose.",
         "Overly long metadata increases context cost and can dilute plugin discovery quality.",
-        "Shorten the manifest description to a precise one- or two-sentence summary."
+        "Shorten the manifest description to a precise one- or two-sentence summary.",
+        { manifestPath, field: "description" }
       )
     );
   }
@@ -398,7 +406,13 @@ async function validateSkillsDirectory(
       "plugin.skills.path.missing",
       "The plugin manifest points to a missing skills directory.",
       "Codex will not be able to load the packaged skills as expected.",
-      `Create the skills directory at \`${skillsPath}\` or update the manifest path.`
+      `Create the skills directory at \`${skillsPath}\` or update the manifest path.`,
+      {
+        manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
+        field: "skills",
+        configuredPath: manifest.skills,
+        resolvedPath: skillsPath
+      }
     )
   ];
 }
@@ -439,7 +453,11 @@ async function validateSkillDefinitions(
           "plugin.skill.skill_md.missing",
           `The skill \`${skillDirectory.name}\` is missing \`SKILL.md\`.`,
           "Codex cannot load a skill directory that does not contain the required SKILL.md entrypoint.",
-          `Add \`SKILL.md\` to \`${skillRoot}\` with at least \`name\` and \`description\` frontmatter.`
+          `Add \`SKILL.md\` to \`${skillRoot}\` with at least \`name\` and \`description\` frontmatter.`,
+          {
+            skillName: skillDirectory.name,
+            skillPath: relativePackagePath(rootPath, skillFilePath)
+          }
         )
       );
       continue;
@@ -454,7 +472,12 @@ async function validateSkillDefinitions(
           "plugin.skill.name.missing",
           `The skill \`${skillDirectory.name}\` is missing a \`name\` field in frontmatter.`,
           "Codex cannot expose skill metadata correctly without a stable skill name.",
-          `Add a \`name\` field to the frontmatter in \`${skillFilePath}\`.`
+          `Add a \`name\` field to the frontmatter in \`${skillFilePath}\`.`,
+          {
+            skillName: skillDirectory.name,
+            skillPath: relativePackagePath(rootPath, skillFilePath),
+            field: "name"
+          }
         )
       );
     }
@@ -465,7 +488,12 @@ async function validateSkillDefinitions(
           "plugin.skill.description.missing",
           `The skill \`${skillDirectory.name}\` is missing a \`description\` field in frontmatter.`,
           "Codex uses skill descriptions for discovery and implicit matching, so missing descriptions reduce skill usability.",
-          `Add a scoped \`description\` field to the frontmatter in \`${skillFilePath}\`.`
+          `Add a scoped \`description\` field to the frontmatter in \`${skillFilePath}\`.`,
+          {
+            skillName: skillDirectory.name,
+            skillPath: relativePackagePath(rootPath, skillFilePath),
+            field: "description"
+          }
         )
       );
     }
@@ -479,7 +507,12 @@ async function validateSkillDefinitions(
           "plugin.heuristic.skill_description.too_long",
           `The skill \`${skillDirectory.name}\` description is likely too verbose.`,
           "Overly long skill descriptions increase context cost and reduce the precision of skill matching.",
-          `Shorten the \`description\` field in \`${skillFilePath}\` to a tightly scoped summary.`
+          `Shorten the \`description\` field in \`${skillFilePath}\` to a tightly scoped summary.`,
+          {
+            skillName: skillDirectory.name,
+            skillPath: relativePackagePath(rootPath, skillFilePath),
+            field: "description"
+          }
         )
       );
     }
@@ -495,7 +528,13 @@ async function validateSkillDefinitions(
             "plugin.skill.asset_reference.missing",
             `The skill \`${skillDirectory.name}\` references missing support asset \`${supportReference}\`.`,
             "Skills that point to missing scripts, templates, assets, or examples are harder to execute and can fail when an agent follows the instructions.",
-            `Create \`${supportPath}\` or update the reference in \`${skillFilePath}\`.`
+            `Create \`${supportPath}\` or update the reference in \`${skillFilePath}\`.`,
+            {
+              skillName: skillDirectory.name,
+              skillPath: relativePackagePath(rootPath, skillFilePath),
+              assetReference: supportReference,
+              assetPath: relativePackagePath(rootPath, supportPath)
+            }
           )
         );
       }
@@ -541,7 +580,13 @@ async function validateMcpConfig(
         "plugin.mcp.path.missing",
         "The plugin manifest points to a missing `.mcp.json` file.",
         "Codex cannot load bundled MCP server definitions if the referenced config file does not exist.",
-        `Create \`${mcpConfigPath}\` or update the manifest \`mcpServers\` path.`
+      `Create \`${mcpConfigPath}\` or update the manifest \`mcpServers\` path.`,
+      {
+        manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
+        field: "mcpServers",
+        configuredPath: manifest.mcpServers,
+        configPath: relativePackagePath(rootPath, mcpConfigPath)
+      }
       )
     ];
   }
@@ -556,7 +601,8 @@ async function validateMcpConfig(
         "plugin.mcp.invalid_json",
         "The referenced `.mcp.json` file is not valid JSON.",
         "Codex will not be able to parse bundled MCP server configuration.",
-        `Fix the JSON syntax in \`${mcpConfigPath}\`.`
+      `Fix the JSON syntax in \`${mcpConfigPath}\`.`,
+      { configPath: relativePackagePath(rootPath, mcpConfigPath), field: "json" }
       )
     ];
   }
@@ -567,7 +613,8 @@ async function validateMcpConfig(
         "plugin.mcp.invalid_shape",
         "The referenced `.mcp.json` file must contain a JSON object.",
         "Codex expects bundled MCP configuration to be object-shaped so server entries can be resolved reliably.",
-        `Wrap the MCP configuration in a top-level object inside \`${mcpConfigPath}\`.`
+      `Wrap the MCP configuration in a top-level object inside \`${mcpConfigPath}\`.`,
+      { configPath: relativePackagePath(rootPath, mcpConfigPath), field: "root" }
       )
     ];
   }
@@ -580,7 +627,11 @@ async function validateMcpConfig(
         "plugin.mcp.invalid_shape",
         "The referenced `.mcp.json` file must contain a non-empty `mcpServers` object.",
         "Without a valid `mcpServers` object, Codex cannot discover the bundled MCP server definitions.",
-        `Define bundled servers under \`mcpServers\` in \`${mcpConfigPath}\`.`
+      `Define bundled servers under \`mcpServers\` in \`${mcpConfigPath}\`.`,
+      {
+        configPath: relativePackagePath(rootPath, mcpConfigPath),
+        field: "mcpServers"
+      }
       )
     ];
   }
@@ -594,7 +645,12 @@ async function validateMcpConfig(
           "plugin.mcp.server.invalid",
           `The MCP server \`${serverName}\` must be configured as an object.`,
           "Codex cannot interpret a server entry unless it is represented as an object with server options.",
-          `Change the \`${serverName}\` entry in \`${mcpConfigPath}\` to an object.`
+          `Change the \`${serverName}\` entry in \`${mcpConfigPath}\` to an object.`,
+          {
+            configPath: relativePackagePath(rootPath, mcpConfigPath),
+            serverName,
+            field: "server"
+          }
         )
       );
       continue;
@@ -610,7 +666,12 @@ async function validateMcpConfig(
           "plugin.mcp.server.transport.missing",
           `The MCP server \`${serverName}\` must define either \`command\` or \`url\`.`,
           "Codex needs a process command for STDIO servers or a URL for streamable HTTP servers.",
-          `Add either \`command\` or \`url\` to the \`${serverName}\` entry in \`${mcpConfigPath}\`.`
+          `Add either \`command\` or \`url\` to the \`${serverName}\` entry in \`${mcpConfigPath}\`.`,
+          {
+            configPath: relativePackagePath(rootPath, mcpConfigPath),
+            serverName,
+            field: "transport"
+          }
         )
       );
     }

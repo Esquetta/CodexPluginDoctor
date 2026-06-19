@@ -1,9 +1,55 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCheck } from "../src/index.js";
 
+async function createPluginWithMissingSkillFiles(): Promise<string> {
+  const targetPath = await mkdtemp(
+    path.join(os.tmpdir(), "codex-plugin-doctor-evidence-")
+  );
+
+  await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+  await mkdir(path.join(targetPath, "skills", "alpha"), { recursive: true });
+  await mkdir(path.join(targetPath, "skills", "beta"), { recursive: true });
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify({
+      name: "evidence-fixture",
+      version: "1.0.0",
+      description: "Evidence fixture.",
+      skills: "./skills"
+    }),
+    "utf8"
+  );
+
+  return targetPath;
+}
+
 describe("runCheck", () => {
+  it("distinguishes repeated skill findings with package-relative evidence", async () => {
+    const targetPath = await createPluginWithMissingSkillFiles();
+
+    const result = await runCheck(targetPath);
+    const findings = result.findings.filter(
+      (finding) => finding.id === "plugin.skill.skill_md.missing"
+    );
+
+    expect(findings).toHaveLength(2);
+    expect(findings.map((finding) => finding.evidence)).toEqual([
+      {
+        skillName: "alpha",
+        skillPath: "skills/alpha/SKILL.md"
+      },
+      {
+        skillName: "beta",
+        skillPath: "skills/beta/SKILL.md"
+      }
+    ]);
+    expect(new Set(findings.map((finding) => finding.fingerprint)).size).toBe(2);
+  });
+
   it("returns a blocking failure when the plugin manifest is missing", async () => {
     const targetPath = path.resolve("tests/fixtures/missing-manifest");
 

@@ -103,6 +103,40 @@ describe("mcp command", () => {
     );
   });
 
+  it("distinguishes repeated invalid server entries with config locators", async () => {
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        alpha: "invalid",
+        beta: "invalid"
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+    const findings = output.findings.filter(
+      (finding: { id: string }) => finding.id === "mcp.server.invalid"
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(findings.map((finding: { evidence: unknown }) => finding.evidence)).toEqual([
+      {
+        configPath: ".mcp.json",
+        serverName: "alpha",
+        field: "server"
+      },
+      {
+        configPath: ".mcp.json",
+        serverName: "beta",
+        field: "server"
+      }
+    ]);
+    expect(
+      new Set(findings.map((finding: { fingerprint: string }) => finding.fingerprint)).size
+    ).toBe(2);
+  });
+
   it("fails when no MCP config is available", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-missing-"));
     await mkdir(path.join(targetPath, "src"), { recursive: true });
