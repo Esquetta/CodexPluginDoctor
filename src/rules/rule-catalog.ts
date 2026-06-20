@@ -1,4 +1,10 @@
-export type RuleCategory = "package" | "skill" | "mcp" | "runtime" | "security";
+export type RuleCategory =
+  | "package"
+  | "skill"
+  | "mcp"
+  | "runtime"
+  | "security"
+  | "configuration";
 export type RuleSeverity = "fail" | "warn";
 
 export interface RuleDefinition {
@@ -12,6 +18,24 @@ export interface RuleDefinition {
 }
 
 export const ruleCatalog: RuleDefinition[] = [
+  {
+    id: "suppression.invalid",
+    category: "configuration",
+    defaultSeverity: "warn",
+    summary: "A targeted suppression record is invalid.",
+    why: "Invalid suppression records are not applied and can create false confidence about accepted findings.",
+    fix: "Fix or remove the invalid suppression record in `.codex-doctor.json`.",
+    example: '{ "fingerprint": "<64 lowercase hex characters>", "reason": "Reviewed exception.", "expiresAt": "2026-07-31" }'
+  },
+  {
+    id: "suppression.expired",
+    category: "configuration",
+    defaultSeverity: "warn",
+    summary: "A targeted suppression has expired.",
+    why: "Expired risk acceptance must be reviewed again before the finding can be suppressed.",
+    fix: "Remove the expired record or replace it with a newly reviewed expiration date.",
+    example: '{ "fingerprint": "<fingerprint>", "reason": "Reviewed again.", "expiresAt": "2026-08-31" }'
+  },
   {
     id: "plugin.manifest.missing",
     category: "package",

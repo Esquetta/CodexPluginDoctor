@@ -27,9 +27,17 @@ export function buildMarkdownReport(
     `| Total Findings | ${result.findings.length} |`
   ];
 
-  if (result.findings.length === 0) {
+  if (result.suppressionSummary) {
+    lines.push(
+      `| Suppressions Applied | ${result.suppressionSummary.applied} |`,
+      `| Suppressions Expired | ${result.suppressionSummary.expired} |`,
+      `| Suppressions Invalid | ${result.suppressionSummary.invalid} |`
+    );
+  }
+
+  if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     lines.push("", "No findings.");
-      return lines.join("\n");
+    return lines.join("\n");
   }
 
   if (result.runtimeScorecard) {
@@ -46,28 +54,46 @@ export function buildMarkdownReport(
     lines.push(`| prompts/get | ${result.runtimeScorecard.promptGet.toUpperCase()} |`);
   }
 
-  lines.push("", "## Findings", "");
+  if (result.findings.length > 0) {
+    lines.push("", "## Findings", "");
 
-  for (const finding of result.findings) {
-    lines.push(`### ${finding.severity.toUpperCase()} \`${finding.id}\``);
-    lines.push("");
-    lines.push(`- Message: ${finding.message}`);
-    lines.push(`- Impact: ${finding.impact}`);
-    lines.push(`- Suggested fix: ${finding.suggestedFix}`);
+    for (const finding of result.findings) {
+      lines.push(`### ${finding.severity.toUpperCase()} \`${finding.id}\``);
+      lines.push("");
+      lines.push(`- Message: ${finding.message}`);
+      lines.push(`- Impact: ${finding.impact}`);
+      lines.push(`- Suggested fix: ${finding.suggestedFix}`);
 
-    const fingerprint = formatFindingFingerprintLine(finding);
+      const fingerprint = formatFindingFingerprintLine(finding);
 
-    if (fingerprint) {
-      lines.push(`- Fingerprint: \`${fingerprint}\``);
+      if (fingerprint) {
+        lines.push(`- Fingerprint: \`${fingerprint}\``);
+      }
+
+      const evidence = formatFindingEvidenceLine(finding);
+
+      if (evidence) {
+        lines.push(`- Evidence: ${evidence}`);
+      }
+
+      lines.push("");
     }
+  } else {
+    lines.push("", "No active findings.");
+  }
 
-    const evidence = formatFindingEvidenceLine(finding);
+  if (result.suppressedFindings?.length) {
+    lines.push("", "## Suppressed Findings", "");
 
-    if (evidence) {
-      lines.push(`- Evidence: ${evidence}`);
+    for (const finding of result.suppressedFindings) {
+      lines.push(`### ${finding.severity.toUpperCase()} \`${finding.id}\``);
+      lines.push("");
+      lines.push(`- Message: ${finding.message}`);
+      lines.push(`- Fingerprint: \`${finding.fingerprint ?? "unavailable"}\``);
+      lines.push(`- Reason: ${finding.suppression.reason}`);
+      lines.push(`- Expires: ${finding.suppression.expiresAt}`);
+      lines.push("");
     }
-
-    lines.push("");
   }
 
   return lines.join("\n");

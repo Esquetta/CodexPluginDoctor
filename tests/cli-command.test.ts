@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 
+import { runCheck } from "../src/index.js";
 import { runCli } from "../src/run-cli.js";
 
 function createIo() {
@@ -1298,6 +1299,71 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("Status: PASS");
     expect(stdout.join("")).toContain("No findings.");
     expect(stdout.join("")).not.toContain("plugin.heuristic.description.too_long");
+  });
+
+  it("suppresses one exact fingerprint while keeping the same-rule sibling active", async () => {
+    const targetPath = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-suppression-")
+    );
+
+    await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+    await mkdir(path.join(targetPath, "skills", "alpha"), { recursive: true });
+    await mkdir(path.join(targetPath, "skills", "beta"), { recursive: true });
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "suppression-fixture",
+        version: "1.0.0",
+        description: "Suppression fixture.",
+        skills: "./skills"
+      }),
+      "utf8"
+    );
+
+    const initial = await runCheck(targetPath);
+    const candidates = initial.findings.filter(
+      (finding) => finding.id === "plugin.skill.skill_md.missing"
+    );
+
+    await writeFile(
+      path.join(targetPath, ".codex-doctor.json"),
+      JSON.stringify({
+        suppressions: [
+          {
+            fingerprint: candidates[0].fingerprint,
+            reason: "Accepted for the alpha fixture.",
+            expiresAt: "2099-12-31"
+          }
+        ]
+      }),
+      "utf8"
+    );
+
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli(
+      ["check", targetPath, "--json", "--no-animations"],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toHaveLength(1);
+    expect(output.findings[0].fingerprint).toBe(candidates[1].fingerprint);
+    expect(output.suppressedFindings).toEqual([
+      expect.objectContaining({
+        fingerprint: candidates[0].fingerprint,
+        suppression: {
+          reason: "Accepted for the alpha fixture.",
+          expiresAt: "2099-12-31"
+        }
+      })
+    ]);
+    expect(output.suppressionSummary).toEqual({
+      applied: 1,
+      expired: 0,
+      invalid: 0
+    });
   });
 
   it("adds inline rule explanations to check output when requested", async () => {

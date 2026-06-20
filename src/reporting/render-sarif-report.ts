@@ -61,7 +61,15 @@ export function renderSarifReport(result: CheckResult): string {
               }
             : {}),
           ...(finding.evidence ? { properties: { evidence: finding.evidence } } : {})
-        }))
+        })),
+        ...(result.suppressionSummary
+          ? {
+              properties: {
+                suppressionSummary: result.suppressionSummary,
+                suppressedFindings: result.suppressedFindings ?? []
+              }
+            }
+          : {})
       }
     ]
   };

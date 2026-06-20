@@ -76,6 +76,8 @@ export interface JsonReport {
   generatedAt: string;
   summary: JsonReportSummary;
   findings: Finding[];
+  suppressedFindings?: SuppressedFinding[];
+  suppressionSummary?: SuppressionSummary;
 }
 
 export type RuntimeCapabilityStatus =

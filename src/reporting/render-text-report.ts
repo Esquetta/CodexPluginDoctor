@@ -48,7 +48,13 @@ export function renderTextReport(
     `Summary: ${failCount} fail, ${warnCount} warn, ${totalCount} total`
   ];
 
-  if (result.findings.length === 0) {
+  if (result.suppressionSummary) {
+    lines.push(
+      `Suppressions: ${result.suppressionSummary.applied} applied, ${result.suppressionSummary.expired} expired, ${result.suppressionSummary.invalid} invalid`
+    );
+  }
+
+  if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     if (result.runtimeScorecard) {
       lines.push("", "Runtime Scorecard", "----------------");
       lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
@@ -111,6 +117,18 @@ export function renderTextReport(
 
   appendSection("Failures", failures, glyphs.fail);
   appendSection("Warnings", warnings, glyphs.warn);
+
+  if (result.suppressedFindings?.length) {
+    lines.push("", "Suppressed Findings", "-------------------");
+
+    for (const finding of result.suppressedFindings) {
+      lines.push(`- ${finding.id}`);
+      lines.push(`  Message: ${finding.message}`);
+      lines.push(`  Fingerprint: ${finding.fingerprint ?? "unavailable"}`);
+      lines.push(`  Reason: ${finding.suppression.reason}`);
+      lines.push(`  Expires: ${finding.suppression.expiresAt}`);
+    }
+  }
 
   if (result.runtimeScorecard) {
     lines.push("", "Runtime Scorecard", "----------------");

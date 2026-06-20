@@ -28,7 +28,13 @@ export function buildJsonReport(
         total: result.findings.length
       }
     },
-    findings: result.findings
+    findings: result.findings,
+    ...(result.suppressedFindings
+      ? { suppressedFindings: result.suppressedFindings }
+      : {}),
+    ...(result.suppressionSummary
+      ? { suppressionSummary: result.suppressionSummary }
+      : {})
   };
 }
 
