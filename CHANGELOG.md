@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.27.0] - 2026-06-20
+
+### Added
+
+- added exact finding fingerprint suppressions with required review reasons and expiration dates
+- added `suppression.invalid` and `suppression.expired` governance warnings
+- added suppression summaries and audit details to text, Markdown, JSON, and SARIF reports
+
+### Security
+
+- kept expired and invalid suppressions from hiding active findings
+- kept SARIF results limited to active findings while preserving suppression audit metadata in run properties
+
 ## [1.26.0] - 2026-06-19
 
 ### Added

@@ -341,9 +341,20 @@ Optional local policy file:
 ```json
 {
   "ignoreRules": ["plugin.heuristic.description.too_long"],
+  "suppressions": [
+    {
+      "fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "reason": "Accepted until the upstream package layout is corrected.",
+      "expiresAt": "2026-07-31"
+    }
+  ],
   "failOnWarnings": true
 }
 ```
+
+`ignoreRules` disables every finding with a matching rule ID. Prefer `suppressions` when accepting one specific finding instance: each record requires the exact 64-character lowercase SHA-256 fingerprint shown in Doctor reports, a non-empty review reason, and a real `YYYY-MM-DD` expiration date.
+
+Active suppressions remove only the matching finding from the active result and preserve it under `suppressedFindings` for audit output. Expired or invalid records do not suppress findings; Doctor emits `suppression.expired` or `suppression.invalid` warnings instead. Duplicate active records use the first valid match.
 
 Run these when you want Codex Plugin Doctor to find plugins from the local Codex installation:
 
@@ -370,9 +381,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.26.0
+      - uses: Esquetta/CodexPluginDoctor@v1.27.0
         with:
-          version: "1.26.0"
+          version: "1.27.0"
           path: .
           runtime: "true"
           policy: codex-publish
