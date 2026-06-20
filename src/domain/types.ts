@@ -14,11 +14,28 @@ export interface Finding {
   fingerprint?: string;
 }
 
+export interface FindingSuppression {
+  reason: string;
+  expiresAt: string;
+}
+
+export interface SuppressedFinding extends Finding {
+  suppression: FindingSuppression;
+}
+
+export interface SuppressionSummary {
+  applied: number;
+  expired: number;
+  invalid: number;
+}
+
 export interface CheckResult {
   targetPath: string;
   status: "pass" | "warn" | "fail";
   exitCode: 0 | 1;
   findings: Finding[];
+  suppressedFindings?: SuppressedFinding[];
+  suppressionSummary?: SuppressionSummary;
   runtimeScorecard?: RuntimeScorecard;
 }
 

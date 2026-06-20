@@ -1,6 +1,11 @@
 import type { CheckOptions, CheckResult } from "./domain/types.js";
 import { validatePlugin } from "./core/validate-plugin.js";
 export {
+  applyDoctorConfig,
+  loadDoctorConfig,
+  type DoctorConfig
+} from "./core/doctor-config.js";
+export {
   buildFindingFingerprint,
   formatFindingFingerprintLine,
   withFindingFingerprint,
