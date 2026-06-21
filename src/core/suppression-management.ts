@@ -219,18 +219,11 @@ export function addSuppression(
     );
   }
 
-  const suppression = isPlainObject(record)
-    ? {
-        ...record,
-        fingerprint: validation.fingerprint,
-        reason: validation.reason,
-        expiresAt: validation.expiresAt
-      }
-    : {
-        fingerprint: validation.fingerprint,
-        reason: validation.reason,
-        expiresAt: validation.expiresAt
-      };
+  const suppression = {
+    fingerprint: validation.fingerprint,
+    reason: validation.reason,
+    expiresAt: validation.expiresAt
+  };
   const nextSuppressions = [...suppressions, suppression];
 
   return {

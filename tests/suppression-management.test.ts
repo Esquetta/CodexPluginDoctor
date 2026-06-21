@@ -144,8 +144,7 @@ describe("addSuppression", () => {
           {
             fingerprint: removableFingerprint,
             reason: "Reviewed exception.",
-            expiresAt: "2026-08-31",
-            source: "manual"
+            expiresAt: "2026-08-31"
           }
         ],
         unknownTopLevel: { keep: true }
@@ -154,8 +153,7 @@ describe("addSuppression", () => {
       suppression: {
         fingerprint: removableFingerprint,
         reason: "Reviewed exception.",
-        expiresAt: "2026-08-31",
-        source: "manual"
+        expiresAt: "2026-08-31"
       }
     });
     expect(result.config).not.toBe(config);
