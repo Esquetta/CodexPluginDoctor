@@ -32,8 +32,11 @@ function isRawDoctorConfig(value: unknown): value is RawDoctorConfig {
 }
 
 export async function readRawDoctorConfig(
-  configPath: string
+  targetPath: string,
+  explicitConfigPath?: string | null
 ): Promise<LoadedDoctorConfig> {
+  const configPath = resolveDoctorConfigPath(targetPath, explicitConfigPath);
+
   try {
     const parsed = parseJsonText<unknown>(await readFile(configPath, "utf8"));
 

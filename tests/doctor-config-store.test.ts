@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -30,12 +30,10 @@ describe("resolveDoctorConfigPath", () => {
 
 describe("readRawDoctorConfig", () => {
   it("returns an empty object when the config file is missing", async () => {
-    const configPath = path.join(
-      await createTempDirectory(),
-      ".codex-doctor.json"
-    );
+    const targetPath = await createTempDirectory();
+    const configPath = path.join(targetPath, ".codex-doctor.json");
 
-    await expect(readRawDoctorConfig(configPath)).resolves.toEqual({
+    await expect(readRawDoctorConfig(targetPath)).resolves.toEqual({
       configPath,
       exists: false,
       value: {}
@@ -43,10 +41,8 @@ describe("readRawDoctorConfig", () => {
   });
 
   it("returns exact top-level fields from a valid JSON object", async () => {
-    const configPath = path.join(
-      await createTempDirectory(),
-      ".codex-doctor.json"
-    );
+    const targetPath = await createTempDirectory();
+    const configPath = path.join(targetPath, ".codex-doctor.json");
     const rawValue = {
       ignoreRules: ["plugin.example"],
       failOnWarnings: true,
@@ -56,24 +52,67 @@ describe("readRawDoctorConfig", () => {
 
     await writeFile(configPath, `${JSON.stringify(rawValue)}\n`, "utf8");
 
-    await expect(readRawDoctorConfig(configPath)).resolves.toEqual({
+    await expect(readRawDoctorConfig(targetPath)).resolves.toEqual({
       configPath,
       exists: true,
       value: rawValue
     });
   });
 
+  it("returns the resolved explicit config path", async () => {
+    const targetPath = await createTempDirectory();
+    const explicitConfigPath = path.join(targetPath, "configs", "doctor.json");
+    const rawValue = {
+      custom: true
+    };
+
+    await mkdir(path.dirname(explicitConfigPath), { recursive: true });
+    await writeFile(explicitConfigPath, `${JSON.stringify(rawValue)}\n`, "utf8");
+
+    await expect(
+      readRawDoctorConfig(targetPath, explicitConfigPath)
+    ).resolves.toEqual({
+      configPath: path.resolve(explicitConfigPath),
+      exists: true,
+      value: rawValue
+    });
+  });
+
   it("throws a parse error for malformed JSON", async () => {
-    const configPath = path.join(
-      await createTempDirectory(),
-      ".codex-doctor.json"
-    );
+    const targetPath = await createTempDirectory();
+    const configPath = path.join(targetPath, ".codex-doctor.json");
 
     await writeFile(configPath, "{not-json", "utf8");
 
-    await expect(readRawDoctorConfig(configPath)).rejects.toThrow(
+    await expect(readRawDoctorConfig(targetPath)).rejects.toThrow(
       /Unable to parse Doctor config/
     );
+  });
+
+  it("propagates non-ENOENT filesystem read errors", async () => {
+    const targetPath = await createTempDirectory();
+    const directoryPath = path.join(targetPath, "as-directory");
+
+    await writeFile(
+      path.join(targetPath, ".codex-doctor.json"),
+      "{}\n",
+      "utf8"
+    );
+    await writeRawDoctorConfig(path.join(directoryPath, "child.json"), {
+      ignored: true
+    });
+
+    try {
+      await readRawDoctorConfig(targetPath, directoryPath);
+      throw new Error("expected readRawDoctorConfig to reject");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: expect.any(String)
+      });
+      expect(error).not.toMatchObject({
+        code: "ENOENT"
+      });
+    }
   });
 
   it.each([
@@ -83,14 +122,12 @@ describe("readRawDoctorConfig", () => {
     ["number", 42],
     ["boolean", false]
   ])("rejects a %s root value", async (_label, rootValue) => {
-    const configPath = path.join(
-      await createTempDirectory(),
-      ".codex-doctor.json"
-    );
+    const targetPath = await createTempDirectory();
+    const configPath = path.join(targetPath, ".codex-doctor.json");
 
     await writeFile(configPath, JSON.stringify(rootValue), "utf8");
 
-    await expect(readRawDoctorConfig(configPath)).rejects.toThrow(
+    await expect(readRawDoctorConfig(targetPath)).rejects.toThrow(
       "Doctor config root must be a JSON object"
     );
   });
@@ -121,7 +158,9 @@ describe("writeRawDoctorConfig", () => {
   }
 }
 `);
-    await expect(readRawDoctorConfig(configPath)).resolves.toEqual({
+    await expect(
+      readRawDoctorConfig(path.dirname(configPath), configPath)
+    ).resolves.toEqual({
       configPath,
       exists: true,
       value: rawValue
