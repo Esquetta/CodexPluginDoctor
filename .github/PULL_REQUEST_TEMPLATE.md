@@ -29,4 +29,4 @@
 ## Release Notes
 
 - [ ] `CHANGELOG.md` updated when needed.
-- [ ] `docs/engineering/` release notes updated when needed.
+- [ ] `CHANGELOG.md` and public documentation updated when needed.

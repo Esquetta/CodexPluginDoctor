@@ -77,7 +77,7 @@ describe("GitHub Action metadata", () => {
 
   it("documents the public GitHub Action consumer workflow", async () => {
     const readme = await readFile("README.md", "utf8");
-    const actionUsage = await readFile("docs/engineering/github-action-usage.md", "utf8");
+    const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
     const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
     const artifactScript = await readFile("scripts/generate-validation-artifacts.mjs", "utf8");
 
@@ -86,7 +86,7 @@ describe("GitHub Action metadata", () => {
 
     expect(readme).toContain(actionRef);
     expect(readme).toContain(packageVersion);
-    expect(readme).toContain("docs/engineering/github-action-usage.md");
+    expect(readme).toContain("docs/guides/github-action.md");
     expect(actionUsage).toContain(`uses: ${actionRef}`);
     expect(actionUsage).toContain(packageVersion);
     expect(actionUsage).toContain('runtime: "true"');

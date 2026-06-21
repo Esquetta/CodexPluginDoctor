@@ -27,7 +27,7 @@ The 1.0 line is the stable compatibility baseline for plugin authors and CI cons
 - The project remains Codex-first; broader MCP Doctor positioning stays a post-1.0 expansion path.
 - Post-1.0 feature work should stay additive unless a documented major-version decision is made.
 
-See [v1.0 Readiness Checklist](./docs/engineering/v1.0-readiness-checklist.md) for the stable release evidence and smoke plan.
+See the [documentation index](./docs/README.md) for architecture, usage, security, and contributor guides.
 
 ## Why This Exists
 
@@ -395,7 +395,7 @@ jobs:
           review-bundle-verify: "true"
 ```
 
-The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, `codex-plugin-doctor-action-manifest.json`, optional `codex-plugin-doctor.sarif`, optional `validation-corpus.json`, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/engineering/github-action-usage.md).
+The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, `codex-plugin-doctor-action-manifest.json`, optional `codex-plugin-doctor.sarif`, optional `validation-corpus.json`, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/guides/github-action.md).
 
 To self-test this repository after cloning it:
 
@@ -406,7 +406,7 @@ codex-plugin-doctor check examples/codex-doctor-runtime --runtime --no-animation
 ## Repository Layout
 
 ```text
-docs/                 Product, engineering, security, and release docs
+docs/                 Public architecture, guides, rules, security, and contributor docs
 examples/             Manual plugin packs for local CLI testing
 src/                  CLI, validation logic, runtime probing, reports
 tests/                Fixture-based regression tests
@@ -417,7 +417,7 @@ validation-sessions/  Real-world validation waves and tuning notes
 
 The validator is tuned against local fixtures and real marketplace-style plugin packages. See:
 
-- [Real-World Validation Workflow](./docs/engineering/real-world-validation-workflow.md)
+- [Real-World Validation Workflow](./docs/guides/real-world-validation.md)
 - [Validation Sessions](./validation-sessions/README.md)
 - [Examples](./examples/README.md)
 - [Rule Catalog](./docs/rules/catalog.md)
@@ -446,9 +446,9 @@ Related docs:
 - [Contributing](./CONTRIBUTING.md)
 - [Security Policy](./SECURITY.md)
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [NPM Release Checklist](./docs/engineering/npm-release-checklist.md)
-- [Release Candidate Workflow](./docs/engineering/release-candidate-workflow.md)
-- [v1.0 Readiness Checklist](./docs/engineering/v1.0-readiness-checklist.md)
+- [NPM Release Checklist](./docs/contributing/npm-release-checklist.md)
+- [Release Candidate Workflow](./docs/contributing/release-candidates.md)
+- [Versioning and Releases](./docs/contributing/releasing.md)
 
 ## Contributing
 

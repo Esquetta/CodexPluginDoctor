@@ -44,29 +44,20 @@ describe("public repository readiness", () => {
     expect(readme).toContain("npm run release-check");
   });
 
-  it("documents the current 1.0 stable state without stale pre-public wording", async () => {
-    const packageJson = JSON.parse(await readText("package.json")) as {
-      version: string;
-    };
+  it("keeps public documentation focused on users and contributors", async () => {
     const readme = await readText("README.md");
     const docsReadme = await readText("docs/README.md");
-    const versioning = await readText("docs/engineering/versioning-and-releases.md");
-    const publicReleaseChecklist = await readText("docs/operations/public-release-checklist.md");
-    const readinessChecklist = await readText("docs/engineering/v1.0-readiness-checklist.md");
-    const packageDistTag = packageJson.version.includes("-") ? "next" : "latest";
+    const releasing = await readText("docs/contributing/releasing.md");
 
     expect(readme).not.toContain("early public CLI release");
     expect(readme).toContain("1.0 Stability");
-    expect(docsReadme).toContain("v1.0 Readiness Checklist");
-    expect(versioning).toContain(`codex-plugin-doctor@${packageJson.version}`);
-    expect(versioning).toContain(packageJson.version);
-    expect(publicReleaseChecklist).toContain(
-      `npm ${packageDistTag}: codex-plugin-doctor@${packageJson.version}`
-    );
-    expect(publicReleaseChecklist).toContain("1.0 Readiness Checklist");
-    expect(readinessChecklist).toContain(packageJson.version);
-    expect(readinessChecklist).toContain("Expected result: non-zero status with `plugin.manifest.missing`");
-    expect(readinessChecklist).toContain("No new feature work");
-    expect(readinessChecklist).toContain("npm run release-check");
+    expect(docsReadme).toContain("## Architecture");
+    expect(docsReadme).toContain("## Guides");
+    expect(docsReadme).toContain("## Security");
+    expect(docsReadme).toContain("## Contributing");
+    expect(docsReadme).not.toContain("Go-To-Market");
+    expect(docsReadme).not.toContain("superpowers");
+    expect(releasing).toContain("npm run release-check");
+    expect(releasing).toContain("npm run verify-release-sync");
   });
 });

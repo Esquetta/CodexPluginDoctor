@@ -40,6 +40,6 @@ node dist/cli.js compat examples/codex-doctor-runtime --client cursor --install-
 
 ## Release Notes
 
-Release notes live under `docs/engineering/`. Changelog entries live in `CHANGELOG.md`.
+Release history lives in `CHANGELOG.md` and GitHub Releases. Contributor release procedures live under `docs/contributing/`.
 
 Publishing to npm is a human-gated step because the registry may require one-time password or browser authentication.

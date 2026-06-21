@@ -45,26 +45,16 @@ Use a major release when:
 7. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
 8. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
 
-## Current Publish Position
+## Distribution Contract
 
-The project is publicly distributed through npm and GitHub Releases.
+The project is distributed through npm and matching GitHub Releases.
 
-Confirmed:
-
-- license is MIT
-- repository visibility is public
-- package name remains `codex-plugin-doctor`
-- npm latest: `codex-plugin-doctor@1.27.0`
-- npm next: `codex-plugin-doctor@1.0.0-rc.2`
-- GitHub Release flow uses matching `vX.Y.Z` tags
-- post-publish release sync is verified with `npm run verify-release-sync`
-- public JSON schema surfaces and existing rule IDs/default severities are stable through `1.0.0`
-
-Current release target:
-
-- `1.27.0` is the stable package version.
-- `1.0.0-rc.2` remains the final release-candidate package under the npm `next` tag.
-- Post-1.0 releases should stay additive unless the public contract requires a major-version decision.
+- Stable releases publish `codex-plugin-doctor` under the npm `latest` tag.
+- Release candidates publish under the npm `next` tag.
+- Git tags and GitHub Releases use the matching `vX.Y.Z` version.
+- `npm run verify-release-sync` verifies stable npm, git, and GitHub alignment.
+- `npm run verify-release-sync -- --dist-tag next --prerelease` verifies release candidates.
+- Public JSON schema surfaces and existing rule IDs/default severities remain compatibility-sensitive.
 
 ## 1.0 Compatibility Position
 
