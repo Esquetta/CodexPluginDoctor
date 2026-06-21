@@ -14,6 +14,7 @@ export {
 } from "./core/doctor-config-store.js";
 export {
   classifySuppressionRecord,
+  isValidSuppressionFingerprint,
   isSuppressionExpired,
   validateSuppressionRecord,
   type ClassifiedSuppressionRecord,
@@ -26,7 +27,9 @@ export {
   listSuppressions,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
+  SuppressionManagementError,
   type ManagedSuppressionRecord,
+  type SuppressionManagementErrorCode,
   type SuppressionMutationResult
 } from "./core/suppression-management.js";
 export {

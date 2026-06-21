@@ -1,6 +1,7 @@
 import type { RawDoctorConfig } from "./doctor-config-store.js";
 import {
   classifySuppressionRecord,
+  isValidSuppressionFingerprint,
   type SuppressionRecordField,
   validateSuppressionRecord
 } from "./suppression-record.js";
@@ -20,25 +21,43 @@ export interface SuppressionMutationResult {
   suppression: unknown;
 }
 
+export type SuppressionManagementErrorCode =
+  | "suppression_non_array"
+  | "suppression_invalid_record"
+  | "suppression_duplicate_fingerprint"
+  | "suppression_invalid_index"
+  | "suppression_invalid_fingerprint"
+  | "suppression_fingerprint_not_found"
+  | "suppression_fingerprint_ambiguous";
+
 type SuppressionManagementErrorDetails = {
-  code:
-    | "suppression_non_array"
-    | "suppression_invalid_record"
-    | "suppression_duplicate_fingerprint"
-    | "suppression_invalid_index"
-    | "suppression_invalid_fingerprint"
-    | "suppression_fingerprint_not_found"
-    | "suppression_fingerprint_ambiguous";
+  code: SuppressionManagementErrorCode;
   field?: SuppressionRecordField;
   index?: number;
   indexes?: number[];
 };
 
+export class SuppressionManagementError extends Error {
+  readonly code: SuppressionManagementErrorCode;
+  readonly field?: SuppressionRecordField;
+  readonly index?: number;
+  readonly indexes?: number[];
+
+  constructor(message: string, details: SuppressionManagementErrorDetails) {
+    super(message);
+    this.name = "SuppressionManagementError";
+    this.code = details.code;
+    this.field = details.field;
+    this.index = details.index;
+    this.indexes = details.indexes;
+  }
+}
+
 function createSuppressionManagementError(
   message: string,
   details: SuppressionManagementErrorDetails
-): Error & SuppressionManagementErrorDetails {
-  return Object.assign(new Error(message), details);
+): SuppressionManagementError {
+  return new SuppressionManagementError(message, details);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -82,43 +101,31 @@ function copyConfigWithSuppressions(
   };
 }
 
-function normalizeManagedInvalidReason(reason: string): string | undefined {
-  const trimmedReason = reason.trim();
-  return trimmedReason.length > 0 ? trimmedReason : undefined;
-}
-
 function buildManagedInvalidSuppression(
-  suppression: unknown,
   index: number,
   invalidField: SuppressionRecordField
 ): ManagedSuppressionRecord {
-  const managed: ManagedSuppressionRecord = {
+  return {
     index,
     status: "invalid",
     invalidField
   };
+}
 
-  if (!isPlainObject(suppression)) {
-    return managed;
+function buildRemovedSuppressionSummary(suppression: unknown): unknown {
+  const classified = classifySuppressionRecord(suppression, new Date(0));
+
+  if (classified.status === "invalid") {
+    return {
+      invalidField: classified.field
+    };
   }
 
-  if (typeof suppression.fingerprint === "string") {
-    managed.fingerprint = suppression.fingerprint;
-  }
-
-  if (typeof suppression.reason === "string") {
-    const reason = normalizeManagedInvalidReason(suppression.reason);
-
-    if (reason) {
-      managed.reason = reason;
-    }
-  }
-
-  if (typeof suppression.expiresAt === "string") {
-    managed.expiresAt = suppression.expiresAt;
-  }
-
-  return managed;
+  return {
+    fingerprint: classified.fingerprint,
+    reason: classified.reason,
+    expiresAt: classified.expiresAt
+  };
 }
 
 function findDuplicateFingerprintIndex(
@@ -134,7 +141,7 @@ function findDuplicateFingerprintIndex(
 }
 
 function validateManagedFingerprint(fingerprint: string): string {
-  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+  if (!isValidSuppressionFingerprint(fingerprint)) {
     throw createSuppressionManagementError("Suppression fingerprint is invalid.", {
       code: "suppression_invalid_fingerprint"
     });
@@ -170,11 +177,7 @@ export function listSuppressions(
     const classified = classifySuppressionRecord(suppression, now);
 
     if (classified.status === "invalid") {
-      return buildManagedInvalidSuppression(
-        suppression,
-        index,
-        classified.field
-      );
+      return buildManagedInvalidSuppression(index, classified.field);
     }
 
     return {
@@ -262,7 +265,7 @@ export function removeSuppressionByIndex(
   return {
     config: copyConfigWithSuppressions(config, nextSuppressions),
     index,
-    suppression
+    suppression: buildRemovedSuppressionSummary(suppression)
   };
 }
 

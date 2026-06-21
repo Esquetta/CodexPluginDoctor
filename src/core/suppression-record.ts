@@ -56,6 +56,10 @@ function isRealDate(value: string): boolean {
   );
 }
 
+export function isValidSuppressionFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
 export function validateSuppressionRecord(
   value: unknown
 ): ValidSuppressionRecord | InvalidSuppressionRecord {
@@ -63,10 +67,7 @@ export function validateSuppressionRecord(
     return { valid: false, field: "record" };
   }
 
-  if (
-    typeof value.fingerprint !== "string" ||
-    !/^[a-f0-9]{64}$/.test(value.fingerprint)
-  ) {
+  if (!isValidSuppressionFingerprint(value.fingerprint)) {
     return { valid: false, field: "fingerprint" };
   }
 

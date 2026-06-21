@@ -7,6 +7,7 @@ import {
   listSuppressions,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
+  SuppressionManagementError,
   type ManagedSuppressionRecord,
   type SuppressionMutationResult
 } from "../src/core/suppression-management.js";
@@ -37,17 +38,18 @@ describe("listSuppressions", () => {
           },
           {
             fingerprint: "A".repeat(64),
-            reason: { secret: "do-not-echo" },
-            expiresAt: "2026-07-31",
-            token: "do-not-echo"
+            reason: "token sk_live_invalid_reason",
+            expiresAt: "secret-date-2026-07-31",
+            token: "ghp_should_not_echo"
           },
           {
             fingerprint: invalidReasonFingerprint,
             reason: "   ",
             expiresAt: "2026-07-31",
-            metadata: { internal: true }
+            metadata: { internal: true },
+            secret: "sk_test_hidden"
           },
-          "opaque-secret"
+          "sk_live_raw_string_secret"
         ]
       },
       new Date("2026-08-01T00:00:00.000Z")
@@ -71,15 +73,11 @@ describe("listSuppressions", () => {
       {
         index: 2,
         status: "invalid",
-        fingerprint: "A".repeat(64),
-        expiresAt: "2026-07-31",
         invalidField: "fingerprint"
       },
       {
         index: 3,
         status: "invalid",
-        fingerprint: invalidReasonFingerprint,
-        expiresAt: "2026-07-31",
         invalidField: "reason"
       },
       {
@@ -88,6 +86,12 @@ describe("listSuppressions", () => {
         invalidField: "record"
       }
     ]);
+    expect(records[2]).not.toHaveProperty("fingerprint");
+    expect(records[2]).not.toHaveProperty("reason");
+    expect(records[2]).not.toHaveProperty("expiresAt");
+    expect(JSON.stringify(records)).not.toContain("ghp_should_not_echo");
+    expect(JSON.stringify(records)).not.toContain("sk_live_raw_string_secret");
+    expect(JSON.stringify(records)).not.toContain("sk_test_hidden");
   });
 
   it("rejects a non-array suppressions value consistently", () => {
@@ -97,22 +101,27 @@ describe("listSuppressions", () => {
       }
     };
 
-    expect(() => listSuppressions(config)).toThrow(
-      "Doctor config suppressions must be an array when present."
-    );
-    expect(() =>
-      addSuppression(config, {
-        fingerprint: removableFingerprint,
-        reason: "Reviewed exception.",
-        expiresAt: "2026-08-31"
-      })
-    ).toThrow("Doctor config suppressions must be an array when present.");
-    expect(() => removeSuppressionByIndex(config, 0)).toThrow(
-      "Doctor config suppressions must be an array when present."
-    );
-    expect(() =>
-      removeSuppressionByFingerprint(config, removableFingerprint)
-    ).toThrow("Doctor config suppressions must be an array when present.");
+    for (const operation of [
+      () => listSuppressions(config),
+      () =>
+        addSuppression(config, {
+          fingerprint: removableFingerprint,
+          reason: "Reviewed exception.",
+          expiresAt: "2026-08-31"
+        }),
+      () => removeSuppressionByIndex(config, 0),
+      () => removeSuppressionByFingerprint(config, removableFingerprint)
+    ]) {
+      try {
+        operation();
+        throw new Error("expected operation to reject");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SuppressionManagementError);
+        expect(error).toMatchObject({
+          code: "suppression_non_array"
+        });
+      }
+    }
   });
 });
 
@@ -167,7 +176,7 @@ describe("addSuppression", () => {
   });
 
   it("rejects an invalid suppression record using the shared validator", () => {
-    expect(() =>
+    try {
       addSuppression(
         { suppressions: [] },
         {
@@ -175,12 +184,19 @@ describe("addSuppression", () => {
           reason: "Reviewed exception.",
           expiresAt: "2026-08-31"
         }
-      )
-    ).toThrow("Suppression record is invalid: fingerprint.");
+      );
+      throw new Error("expected addSuppression to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SuppressionManagementError);
+      expect(error).toMatchObject({
+        code: "suppression_invalid_record",
+        field: "fingerprint"
+      });
+    }
   });
 
   it("rejects a duplicate fingerprint using the first matching config index", () => {
-    expect(() =>
+    try {
       addSuppression(
         {
           suppressions: [
@@ -201,18 +217,26 @@ describe("addSuppression", () => {
           reason: "Reviewed exception.",
           expiresAt: "2026-09-30"
         }
-      )
-    ).toThrow("Suppression fingerprint already exists at index 0.");
+      );
+      throw new Error("expected addSuppression to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SuppressionManagementError);
+      expect(error).toMatchObject({
+        code: "suppression_duplicate_fingerprint",
+        index: 0
+      });
+    }
   });
 });
 
 describe("removeSuppressionByIndex", () => {
-  it("removes exactly one suppression by index, including invalid records", () => {
+  it("removes exactly one invalid suppression by index using a safe summary", () => {
     const invalidSuppression = {
       fingerprint: removableFingerprint,
       reason: "   ",
       expiresAt: "2026-08-31",
-      note: "broken"
+      note: "broken",
+      secret: "ghp_invalid_secret"
     };
     const keptSuppression = {
       fingerprint: activeFingerprint,
@@ -231,14 +255,45 @@ describe("removeSuppressionByIndex", () => {
         failOnWarnings: true
       },
       index: 1,
-      suppression: invalidSuppression
+      suppression: {
+        invalidField: "reason"
+      }
     });
+    expect(result.suppression).not.toBe(invalidSuppression);
+    expect(result.suppression).not.toHaveProperty("secret");
     expect(result.config).not.toBe(config);
     expect(result.config.suppressions).not.toBe(config.suppressions);
     expect(config).toEqual({
       suppressions: [keptSuppression, invalidSuppression],
       failOnWarnings: true
     });
+  });
+
+  it("removes exactly one valid suppression by index using a canonical summary", () => {
+    const removedSuppression = {
+      fingerprint: removableFingerprint,
+      reason: "Reviewed exception.",
+      expiresAt: "2026-08-31",
+      secret: "sk_live_keep_out"
+    };
+    const config: RawDoctorConfig = {
+      suppressions: [removedSuppression]
+    };
+    const result = removeSuppressionByIndex(config, 0);
+
+    expect(result).toEqual({
+      config: {
+        suppressions: []
+      },
+      index: 0,
+      suppression: {
+        fingerprint: removableFingerprint,
+        reason: "Reviewed exception.",
+        expiresAt: "2026-08-31"
+      }
+    });
+    expect(result.suppression).not.toBe(removedSuppression);
+    expect(result.suppression).not.toHaveProperty("secret");
   });
 
   it("rejects suppression indexes that are not integers within range", () => {
@@ -252,12 +307,18 @@ describe("removeSuppressionByIndex", () => {
       ]
     };
 
-    expect(() => removeSuppressionByIndex(config, 1)).toThrow(
-      "Suppression index must be an integer within range."
-    );
-    expect(() => removeSuppressionByIndex(config, 0.5)).toThrow(
-      "Suppression index must be an integer within range."
-    );
+    for (const invalidIndex of [1, 0.5]) {
+      try {
+        removeSuppressionByIndex(config, invalidIndex);
+        throw new Error("expected removeSuppressionByIndex to reject");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SuppressionManagementError);
+        expect(error).toMatchObject({
+          code: "suppression_invalid_index",
+          index: invalidIndex
+        });
+      }
+    }
   });
 });
 
@@ -289,8 +350,14 @@ describe("removeSuppressionByFingerprint", () => {
         unknownTopLevel: "kept"
       },
       index: 1,
-      suppression: removedSuppression
+      suppression: {
+        fingerprint: removableFingerprint,
+        reason: "Reviewed exception.",
+        expiresAt: "2026-08-31"
+      }
     });
+    expect(result.suppression).not.toBe(removedSuppression);
+    expect(result.suppression).not.toHaveProperty("source");
     expect(result.config).not.toBe(config);
     expect(result.config.suppressions).not.toBe(config.suppressions);
     expect(config).toEqual({
@@ -300,10 +367,16 @@ describe("removeSuppressionByFingerprint", () => {
   });
 
   it("rejects invalid fingerprints, missing matches, and ambiguous matches", () => {
-    expect(() =>
-      removeSuppressionByFingerprint({ suppressions: [] }, "A".repeat(64))
-    ).toThrow("Suppression fingerprint is invalid.");
-    expect(() =>
+    try {
+      removeSuppressionByFingerprint({ suppressions: [] }, "A".repeat(64));
+      throw new Error("expected invalid fingerprint to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SuppressionManagementError);
+      expect(error).toMatchObject({
+        code: "suppression_invalid_fingerprint"
+      });
+    }
+    try {
       removeSuppressionByFingerprint(
         {
           suppressions: [
@@ -315,8 +388,14 @@ describe("removeSuppressionByFingerprint", () => {
           ]
         },
         removableFingerprint
-      )
-    ).toThrow("Suppression fingerprint not found.");
+      );
+      throw new Error("expected missing fingerprint to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SuppressionManagementError);
+      expect(error).toMatchObject({
+        code: "suppression_fingerprint_not_found"
+      });
+    }
 
     const duplicateConfig: RawDoctorConfig = {
       suppressions: [
@@ -333,11 +412,16 @@ describe("removeSuppressionByFingerprint", () => {
       ]
     };
 
-    expect(() =>
-      removeSuppressionByFingerprint(duplicateConfig, removableFingerprint)
-    ).toThrow(
-      "Suppression fingerprint matches multiple suppressions at indexes: 0, 1."
-    );
+    try {
+      removeSuppressionByFingerprint(duplicateConfig, removableFingerprint);
+      throw new Error("expected ambiguous fingerprint to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SuppressionManagementError);
+      expect(error).toMatchObject({
+        code: "suppression_fingerprint_ambiguous",
+        indexes: [0, 1]
+      });
+    }
     expect(duplicateConfig).toEqual({
       suppressions: [
         {
@@ -363,6 +447,10 @@ describe("public API exports", () => {
     expect(publicApi.removeSuppressionByFingerprint).toBe(
       removeSuppressionByFingerprint
     );
+    expect(publicApi.SuppressionManagementError).toBe(
+      SuppressionManagementError
+    );
+    expect(publicApi.isValidSuppressionFingerprint).toBeTypeOf("function");
     expect(publicApi.validateSuppressionRecord).toBeTypeOf("function");
     expect(publicApi.classifySuppressionRecord).toBeTypeOf("function");
     expect(publicApi.readRawDoctorConfig).toBeTypeOf("function");

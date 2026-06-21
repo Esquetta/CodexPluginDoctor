@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifySuppressionRecord,
+  isValidSuppressionFingerprint,
   isSuppressionExpired,
   validateSuppressionRecord
 } from "../src/core/suppression-record.js";
@@ -32,6 +33,19 @@ describe("validateSuppressionRecord", () => {
     [{ fingerprint, reason: "Reviewed exception.", expiresAt: "2026-02-30" }, { valid: false, field: "expiresAt" }]
   ])("rejects %j", (value, expected) => {
     expect(validateSuppressionRecord(value)).toEqual(expected);
+  });
+});
+
+describe("isValidSuppressionFingerprint", () => {
+  it.each([
+    [fingerprint, true],
+    ["A".repeat(64), false],
+    ["a".repeat(63), false],
+    ["a".repeat(65), false],
+    [null, false],
+    [{ fingerprint }, false]
+  ])("returns %s => %s", (value, expected) => {
+    expect(isValidSuppressionFingerprint(value)).toBe(expected);
   });
 });
 
