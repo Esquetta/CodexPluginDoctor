@@ -6,6 +6,30 @@ export {
   type DoctorConfig
 } from "./core/doctor-config.js";
 export {
+  readRawDoctorConfig,
+  resolveDoctorConfigPath,
+  writeRawDoctorConfig,
+  type LoadedDoctorConfig,
+  type RawDoctorConfig
+} from "./core/doctor-config-store.js";
+export {
+  classifySuppressionRecord,
+  isSuppressionExpired,
+  validateSuppressionRecord,
+  type ClassifiedSuppressionRecord,
+  type InvalidSuppressionRecord,
+  type SuppressionRecordField,
+  type ValidSuppressionRecord
+} from "./core/suppression-record.js";
+export {
+  addSuppression,
+  listSuppressions,
+  removeSuppressionByFingerprint,
+  removeSuppressionByIndex,
+  type ManagedSuppressionRecord,
+  type SuppressionMutationResult
+} from "./core/suppression-management.js";
+export {
   buildFindingFingerprint,
   formatFindingFingerprintLine,
   withFindingFingerprint,
