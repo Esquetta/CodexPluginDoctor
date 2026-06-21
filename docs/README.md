@@ -6,6 +6,7 @@ This directory contains public documentation for users, contributors, and securi
 
 - [Architecture Overview](architecture/overview.md)
 - [Validation Engine](architecture/validation-engine.md)
+- [Suppression Management](architecture/suppression-management.md)
 
 ## Guides
 
