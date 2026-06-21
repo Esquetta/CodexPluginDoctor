@@ -9,6 +9,7 @@ import type {
   SuppressionSummary
 } from "../domain/types.js";
 import { withFindingFingerprint } from "../reporting/finding-fingerprint.js";
+import { classifySuppressionRecord } from "./suppression-record.js";
 
 export interface DoctorConfig {
   ignoreRules: string[];
@@ -79,9 +80,9 @@ export function applyDoctorConfig(
   };
 
   for (const [index, suppression] of config.suppressions.entries()) {
-    const validation = validateSuppression(suppression);
+    const classified = classifySuppressionRecord(suppression, now);
 
-    if (!validation.valid) {
+    if (classified.status === "invalid") {
       summary.invalid += 1;
       governanceWarnings.push(
         buildGovernanceWarning(
@@ -92,14 +93,14 @@ export function applyDoctorConfig(
           "Fix or remove the invalid suppression record in `.codex-doctor.json`.",
           {
             suppressionIndex: index,
-            field: validation.field
+            field: classified.field
           }
         )
       );
       continue;
     }
 
-    if (isExpired(validation.expiresAt, now)) {
+    if (classified.status === "expired") {
       summary.expired += 1;
       governanceWarnings.push(
         buildGovernanceWarning(
@@ -110,18 +111,18 @@ export function applyDoctorConfig(
           "Remove the expired suppression or replace it with a newly reviewed expiration date.",
           {
             suppressionIndex: index,
-            fingerprint: validation.fingerprint,
-            expiresAt: validation.expiresAt
+            fingerprint: classified.fingerprint,
+            expiresAt: classified.expiresAt
           }
         )
       );
       continue;
     }
 
-    if (!activeSuppressions.has(validation.fingerprint)) {
-      activeSuppressions.set(validation.fingerprint, {
-        reason: validation.reason,
-        expiresAt: validation.expiresAt
+    if (!activeSuppressions.has(classified.fingerprint)) {
+      activeSuppressions.set(classified.fingerprint, {
+        reason: classified.reason,
+        expiresAt: classified.expiresAt
       });
     }
   }
@@ -168,76 +169,6 @@ export function applyDoctorConfig(
         }
       : {})
   };
-}
-
-type ValidSuppression = {
-  valid: true;
-  fingerprint: string;
-  reason: string;
-  expiresAt: string;
-};
-
-type InvalidSuppression = {
-  valid: false;
-  field: "record" | "fingerprint" | "reason" | "expiresAt";
-};
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isRealDate(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-
-  if (!match) {
-    return false;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-function validateSuppression(
-  value: unknown
-): ValidSuppression | InvalidSuppression {
-  if (!isPlainObject(value)) {
-    return { valid: false, field: "record" };
-  }
-
-  if (
-    typeof value.fingerprint !== "string" ||
-    !/^[a-f0-9]{64}$/.test(value.fingerprint)
-  ) {
-    return { valid: false, field: "fingerprint" };
-  }
-
-  if (typeof value.reason !== "string" || value.reason.trim().length === 0) {
-    return { valid: false, field: "reason" };
-  }
-
-  if (typeof value.expiresAt !== "string" || !isRealDate(value.expiresAt)) {
-    return { valid: false, field: "expiresAt" };
-  }
-
-  return {
-    valid: true,
-    fingerprint: value.fingerprint,
-    reason: value.reason.trim(),
-    expiresAt: value.expiresAt
-  };
-}
-
-function isExpired(expiresAt: string, now: Date): boolean {
-  const expirationBoundary = Date.parse(`${expiresAt}T00:00:00.000Z`) + 86_400_000;
-  return now.getTime() >= expirationBoundary;
 }
 
 function buildGovernanceWarning(
