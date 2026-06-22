@@ -92,6 +92,7 @@ describe("renderSuppressionList", () => {
     );
     expect(JSON.parse(json)).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.list",
       command: "suppress.list",
       configPath,
       suppressions: [
@@ -144,6 +145,7 @@ describe("renderSuppressionListJson", () => {
 
     expect(JSON.parse(output)).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.list",
       command: "suppress.list",
       configPath,
       suppressions: [
@@ -298,6 +300,7 @@ describe("renderSuppressionMutation", () => {
       );
       expect(JSON.parse(json)).toEqual({
         schemaVersion: "1.0.0",
+        kind: "doctor.suppress.remove",
         command: "suppress.remove",
         configPath,
         index: 6 + offset,
@@ -336,6 +339,7 @@ describe("renderSuppressionMutationJson", () => {
       )
     ).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.add",
       command: "suppress.add",
       configPath,
       index: 2,
@@ -366,6 +370,7 @@ describe("renderSuppressionMutationJson", () => {
 
     expect(JSON.parse(output)).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.remove",
       command: "suppress.remove",
       configPath,
       index: 4,

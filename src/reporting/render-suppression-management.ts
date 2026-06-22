@@ -147,6 +147,7 @@ export function renderSuppressionListJson(
   return JSON.stringify(
     {
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.list",
       command: "suppress.list",
       configPath,
       suppressions: suppressions.map(buildListEntry)
@@ -190,6 +191,7 @@ export function renderSuppressionMutationJson(
   return JSON.stringify(
     {
       schemaVersion: "1.0.0",
+      kind: `doctor.${command}`,
       command,
       configPath,
       index: result.index,

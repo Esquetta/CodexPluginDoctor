@@ -9,12 +9,12 @@ It complements targeted suppression evaluation. It does not replace rule-level `
 ## Command Surface
 
 ```bash
-codex-plugin-doctor suppress add <path>
-codex-plugin-doctor suppress list <path>
-codex-plugin-doctor suppress remove <path>
+codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]
+codex-plugin-doctor suppress list <path> [--config <path>] [--json]
+codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]
 ```
 
-All commands accept `--config <path>` when the configuration file is outside the target package root. `add`, `list`, and `remove` accept `--json` for automation.
+All commands accept `--config <path>` when the configuration file is outside the target package root. Interactive add and remove do not support `--json`; flag-based add, flag-based remove, and list do.
 
 ## Add
 
@@ -28,13 +28,13 @@ Interactive add:
 
 1. Runs the normal configured package check.
 2. Lists active findings that have fingerprints.
-3. Excludes `suppression.invalid` and `suppression.expired` governance findings.
+3. Excludes every governance finding whose ID begins with `suppression.`.
 4. Prompts for one finding number.
 5. Prompts for a non-empty review reason.
-6. Offers an expiration date 30 calendar days from the current local date.
+6. Offers an expiration date 30 local calendar days from the current local date.
 7. Writes one suppression after confirmation.
 
-The user may replace the proposed date with another real `YYYY-MM-DD` date. Empty input accepts the proposed date.
+The default is calculated from the local year, month, and day, then advanced by 30 calendar days. The user may replace it with another real `YYYY-MM-DD` date; empty input accepts the default.
 
 Interactive mode requires readable stdin. If no interactive input is available, the command fails and explains which flags are required.
 
@@ -58,14 +58,15 @@ codex-plugin-doctor suppress list .
 codex-plugin-doctor suppress list . --json
 ```
 
-List reads suppression records without running plugin validation. Each record is reported with:
+List reads suppression records without running plugin validation. Active and expired records expose:
 
 - zero-based configuration index
-- fingerprint when present
-- reason when present
-- expiration date when present
-- status: `active`, `expired`, or `invalid`
-- invalid field when validation fails
+- status
+- fingerprint
+- reason
+- expiration date
+
+Invalid records expose only the zero-based index, `status: "invalid"`, and `invalidField`. Raw malformed fields are never rendered.
 
 An empty or missing config produces a successful empty result.
 
@@ -106,12 +107,16 @@ The writer:
 
 The current config must remain intact when validation or replacement fails.
 
+Interactive add and remove validate and prepare the mutation before asking for confirmation, but do not call the writer unless the response is exactly `yes` after trimming and case normalization. Cancellation returns successfully without modifying the config.
+
 ## JSON Results
 
 Successful machine-readable responses use these command-specific shapes:
 
 ```json
 {
+  "schemaVersion": "1.0.0",
+  "kind": "doctor.suppress.add",
   "command": "suppress.add",
   "configPath": "/package/.codex-doctor.json",
   "index": 0,
@@ -125,6 +130,8 @@ Successful machine-readable responses use these command-specific shapes:
 
 ```json
 {
+  "schemaVersion": "1.0.0",
+  "kind": "doctor.suppress.list",
   "command": "suppress.list",
   "configPath": "/package/.codex-doctor.json",
   "suppressions": [
@@ -139,8 +146,20 @@ Successful machine-readable responses use these command-specific shapes:
 }
 ```
 
+An invalid list record is redacted to:
+
 ```json
 {
+  "index": 1,
+  "status": "invalid",
+  "invalidField": "fingerprint"
+}
+```
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "kind": "doctor.suppress.remove",
   "command": "suppress.remove",
   "configPath": "/package/.codex-doctor.json",
   "index": 0,
@@ -187,15 +206,3 @@ CLI tests cover:
 - governance findings excluded from add selection
 
 Release verification includes the full test suite, TypeScript build, and a global CLI smoke test against a temporary plugin package.
-
-## Scope Boundary
-
-This version does not include:
-
-- suppression renewal
-- wildcard or rule-level suppression creation
-- permanent suppression
-- automatic suppression from CI output
-- baseline files
-- bulk removal
-- editor integration

@@ -1429,6 +1429,7 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(output).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.add",
       command: "suppress.add",
       configPath: path.resolve(configPath),
       index: 1,
@@ -1551,6 +1552,7 @@ describe("runCli", () => {
     );
     expect(jsonOutput).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.list",
       command: "suppress.list",
       configPath: path.resolve(configPath),
       suppressions: [
@@ -1610,6 +1612,7 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(output).toEqual({
       schemaVersion: "1.0.0",
+      kind: "doctor.suppress.remove",
       command: "suppress.remove",
       configPath: path.resolve(configPath),
       index: 1,

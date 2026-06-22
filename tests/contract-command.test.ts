@@ -86,6 +86,21 @@ describe("doctor contract command", () => {
           outputKind: "doctor.git.hooks"
         }),
         expect.objectContaining({
+          id: "doctor.suppress.add.json",
+          command: "codex-plugin-doctor suppress add <path> --json",
+          outputKind: "doctor.suppress.add"
+        }),
+        expect.objectContaining({
+          id: "doctor.suppress.list.json",
+          command: "codex-plugin-doctor suppress list <path> --json",
+          outputKind: "doctor.suppress.list"
+        }),
+        expect.objectContaining({
+          id: "doctor.suppress.remove.json",
+          command: "codex-plugin-doctor suppress remove <path> --json",
+          outputKind: "doctor.suppress.remove"
+        }),
+        expect.objectContaining({
           id: "doctor.attestation.json",
           command: "codex-plugin-doctor doctor attest <path> --json"
         }),
@@ -144,6 +159,36 @@ describe("doctor contract command", () => {
       });
       expect(surface.schema.required).toContain("schemaVersion");
     }
+
+    const suppressionSchemas = Object.fromEntries(
+      output.schemas
+        .filter((surface: { id: string }) => surface.id.startsWith("doctor.suppress."))
+        .map((surface: { id: string }) => [surface.id, surface])
+    );
+
+    expect(suppressionSchemas["doctor.suppress.add.json"].schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "command",
+      "configPath",
+      "index",
+      "suppression"
+    ]);
+    expect(suppressionSchemas["doctor.suppress.list.json"].schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "command",
+      "configPath",
+      "suppressions"
+    ]);
+    expect(suppressionSchemas["doctor.suppress.remove.json"].schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "command",
+      "configPath",
+      "index",
+      "suppression"
+    ]);
   });
 
   it("keeps the rule catalog digest deterministic", async () => {

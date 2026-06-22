@@ -105,6 +105,24 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "rootPath", "hookPaths", "preExisting"]
   },
   {
+    id: "doctor.suppress.add.json",
+    command: "codex-plugin-doctor suppress add <path> --json",
+    outputKind: "doctor.suppress.add",
+    required: ["schemaVersion", "kind", "command", "configPath", "index", "suppression"]
+  },
+  {
+    id: "doctor.suppress.list.json",
+    command: "codex-plugin-doctor suppress list <path> --json",
+    outputKind: "doctor.suppress.list",
+    required: ["schemaVersion", "kind", "command", "configPath", "suppressions"]
+  },
+  {
+    id: "doctor.suppress.remove.json",
+    command: "codex-plugin-doctor suppress remove <path> --json",
+    outputKind: "doctor.suppress.remove",
+    required: ["schemaVersion", "kind", "command", "configPath", "index", "suppression"]
+  },
+  {
     id: "doctor.history.json",
     command: "codex-plugin-doctor history <history.jsonl> --json",
     required: ["schemaVersion", "entryCount", "latest", "previous", "delta", "regression"]

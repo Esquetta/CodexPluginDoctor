@@ -356,6 +356,25 @@ Optional local policy file:
 
 Active suppressions remove only the matching finding from the active result and preserve it under `suppressedFindings` for audit output. Expired or invalid records do not suppress findings; Doctor emits `suppression.expired` or `suppression.invalid` warnings instead. Duplicate active records use the first valid match.
 
+### Manage suppressions
+
+```bash
+codex-plugin-doctor suppress add .
+codex-plugin-doctor suppress list .
+codex-plugin-doctor suppress remove .
+```
+
+Interactive add selects one active fingerprinted finding and defaults to an expiration 30 local calendar days from today. Suppressions match only the exact finding fingerprint; invalid or expired records never hide findings.
+
+For automation, supply all add fields or one remove selector and add `--json` when machine-readable output is required:
+
+```bash
+codex-plugin-doctor suppress add . --fingerprint <sha256> --reason "Accepted temporarily." --expires-at 2026-07-31 --json
+codex-plugin-doctor suppress list . --json
+codex-plugin-doctor suppress remove . --index 0 --json
+codex-plugin-doctor suppress remove . --fingerprint <sha256> --json
+```
+
 Run these when you want Codex Plugin Doctor to find plugins from the local Codex installation:
 
 ```bash
