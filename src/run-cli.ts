@@ -234,6 +234,7 @@ export interface CliTerminalContext {
 export interface RunCliOptions {
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
+  writeRawDoctorConfigImpl?: typeof writeRawDoctorConfig;
   releaseAssetUploadImpl?: (args: string[]) => Promise<void>;
   resolveLatestVersion?: () => Promise<string>;
 }
@@ -586,6 +587,15 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
       };
     }
 
+    const parsedIndex = Number(indexValue);
+
+    if (!Number.isSafeInteger(parsedIndex)) {
+      return {
+        message: "--index must be a non-negative integer.",
+        showUsage: false
+      };
+    }
+
     return {
       action,
       targetPath,
@@ -593,7 +603,7 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
       jsonOutput,
       selector: {
         type: "index",
-        index: Number(indexValue)
+        index: parsedIndex
       }
     };
   }
@@ -612,7 +622,8 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
 
 async function executeSuppressCommand(
   command: ParsedSuppressCommand,
-  io: CliIo
+  io: CliIo,
+  writeConfig: typeof writeRawDoctorConfig = writeRawDoctorConfig
 ): Promise<number> {
   try {
     const rawConfig = await readRawDoctorConfig(command.targetPath, command.configPath);
@@ -634,7 +645,7 @@ async function executeSuppressCommand(
         expiresAt: command.expiresAt
       });
 
-      await writeRawDoctorConfig(rawConfig.configPath, result.config);
+      await writeConfig(rawConfig.configPath, result.config);
       io.writeStdout(
         command.jsonOutput
           ? renderSuppressionMutationJson("suppress.add", rawConfig.configPath, result)
@@ -647,7 +658,7 @@ async function executeSuppressCommand(
       ? removeSuppressionByIndex(rawConfig.value, command.selector.index)
       : removeSuppressionByFingerprint(rawConfig.value, command.selector.fingerprint);
 
-    await writeRawDoctorConfig(rawConfig.configPath, result.config);
+    await writeConfig(rawConfig.configPath, result.config);
     io.writeStdout(
       command.jsonOutput
         ? renderSuppressionMutationJson("suppress.remove", rawConfig.configPath, result)
@@ -2594,7 +2605,11 @@ export async function runCli(
       return 2;
     }
 
-    return executeSuppressCommand(parsedSuppressCommand, io);
+    return executeSuppressCommand(
+      parsedSuppressCommand,
+      io,
+      options.writeRawDoctorConfigImpl
+    );
   }
 
   if (command !== "check") {

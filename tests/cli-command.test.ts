@@ -1751,6 +1751,41 @@ describe("runCli", () => {
     }
   });
 
+  it("rejects oversized suppress remove indexes before config read or write", async () => {
+    const originalConfig = JSON.stringify(
+      {
+        preserve: true,
+        suppressions: [
+          {
+            fingerprint: "8".repeat(64),
+            reason: "Keep this suppression.",
+            expiresAt: "2026-12-31"
+          }
+        ]
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+
+    for (const indexValue of [
+      "99999999999999999999999999999999999999999999999999",
+      "9007199254740993"
+    ]) {
+      const { io, stdout, stderr } = createIo();
+      const exitCode = await runCli(
+        ["suppress", "remove", targetPath, "--index", indexValue, "--config", configPath],
+        io
+      );
+      const finalConfig = await readFile(configPath, "utf8");
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain("--index must be a non-negative integer.");
+      expect(finalConfig).toBe(originalConfig);
+    }
+  });
+
   it("rejects duplicate suppress flags before reading or writing config", async () => {
     const originalConfig = JSON.stringify(
       {
@@ -1968,12 +2003,15 @@ describe("runCli", () => {
   });
 
   it("does not print success output when writing the config fails", async () => {
-    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-suppress-write-fail-"));
-    const configPath = process.platform === "win32"
-      ? "C:\\Windows\\System32\\codex-plugin-doctor-test\\doctor.json"
-      : process.platform === "darwin"
-        ? "/System/codex-plugin-doctor-test/doctor.json"
-        : "/proc/codex-plugin-doctor-test/doctor.json";
+    const originalConfig = JSON.stringify(
+      {
+        preserve: true,
+        suppressions: []
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
     const { io, stdout, stderr } = createIo();
 
     const exitCode = await runCli(
@@ -1990,13 +2028,19 @@ describe("runCli", () => {
         "--config",
         configPath
       ],
-      io
+      io,
+      {
+        writeRawDoctorConfigImpl: async () => {
+          throw new Error("write failed");
+        }
+      }
     );
+    const finalConfig = await readFile(configPath, "utf8");
 
     expect(exitCode).toBe(1);
     expect(stdout).toEqual([]);
-    expect(stderr.join("")).not.toContain("Action: Added");
-    expect(stderr.join("")).not.toContain("Fingerprint:");
+    expect(stderr.join("")).toContain("write failed");
+    expect(finalConfig).toBe(originalConfig);
   });
 
   it("adds inline rule explanations to check output when requested", async () => {
