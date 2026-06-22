@@ -65,6 +65,53 @@ describe("renderSuppressionList", () => {
       )
     );
   });
+
+  it("fails closed for malformed active entries in text and JSON", () => {
+    const suppressions = [
+      {
+        index: 3,
+        status: "active",
+        fingerprint: null,
+        reason: { secret: "sk_list_should_not_render" },
+        expiresAt: 20260915,
+        rawSecret: "ghp_list_should_not_render"
+      }
+    ] as unknown as ManagedSuppressionRecord[];
+    const text = renderSuppressionList(configPath, suppressions);
+    const json = renderSuppressionListJson(configPath, suppressions);
+
+    expect(text).toBe(
+      [
+        `Config: ${configPath}`,
+        "Total suppressions: 1",
+        "",
+        "Suppressions",
+        "------------",
+        "[3] INVALID record"
+      ].join("\n")
+    );
+    expect(JSON.parse(json)).toEqual({
+      schemaVersion: "1.0.0",
+      command: "suppress.list",
+      configPath,
+      suppressions: [
+        {
+          index: 3,
+          status: "invalid",
+          invalidField: "record"
+        }
+      ]
+    });
+
+    for (const output of [text, json]) {
+      expect(output).not.toContain("undefined");
+      expect(output).not.toContain("null");
+      expect(output).not.toContain("[object Object]");
+      expect(output).not.toContain("20260915");
+      expect(output).not.toContain("sk_list_should_not_render");
+      expect(output).not.toContain("ghp_list_should_not_render");
+    }
+  });
 });
 
 describe("renderSuppressionListJson", () => {
@@ -207,6 +254,67 @@ describe("renderSuppressionMutation", () => {
     );
     expect(output).not.toContain("should-not-render");
     expect(output).not.toContain("sk_test_should_not_render");
+  });
+
+  it("fails closed for malformed mutation summaries in text and JSON", () => {
+    const malformedSummaries = [
+      {
+        fingerprint: addedFingerprint,
+        reason: "",
+        expiresAt: "2026-09-15",
+        rawSecret: "sk_mutation_should_not_render"
+      },
+      {
+        invalidField: { rawSecret: "ghp_mutation_should_not_render" },
+        fingerprint: "should-not-render"
+      }
+    ];
+
+    for (const [offset, suppression] of malformedSummaries.entries()) {
+      const result: SuppressionMutationResult = {
+        config: { suppressions: [] },
+        index: 6 + offset,
+        suppression
+      };
+      const text = renderSuppressionMutation(
+        "suppress.remove",
+        configPath,
+        result
+      );
+      const json = renderSuppressionMutationJson(
+        "suppress.remove",
+        configPath,
+        result
+      );
+
+      expect(text).toBe(
+        [
+          "Action: Removed",
+          `Config: ${configPath}`,
+          `Index: ${6 + offset}`,
+          "",
+          "Invalid field: record"
+        ].join("\n")
+      );
+      expect(JSON.parse(json)).toEqual({
+        schemaVersion: "1.0.0",
+        command: "suppress.remove",
+        configPath,
+        index: 6 + offset,
+        suppression: {
+          invalidField: "record"
+        }
+      });
+
+      for (const output of [text, json]) {
+        expect(output).not.toContain("undefined");
+        expect(output).not.toContain("null");
+        expect(output).not.toContain("[object Object]");
+        expect(output).not.toContain("should-not-render");
+        expect(output).not.toContain("sk_mutation_should_not_render");
+        expect(output).not.toContain("ghp_mutation_should_not_render");
+      }
+    }
   });
 });
 

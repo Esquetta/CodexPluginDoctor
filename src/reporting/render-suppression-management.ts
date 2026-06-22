@@ -6,17 +6,55 @@ import type {
 type SuppressionMutationCommand = "suppress.add" | "suppress.remove";
 
 type ValidSuppressionSummary = {
-  fingerprint?: string;
-  reason?: string;
-  expiresAt?: string;
+  fingerprint: string;
+  reason: string;
+  expiresAt: string;
 };
 
 type InvalidSuppressionSummary = {
-  invalidField: string;
+  invalidField: "record" | "fingerprint" | "reason" | "expiresAt";
 };
 
-function buildListEntry(record: ManagedSuppressionRecord) {
-  if (record.status === "invalid") {
+type SuppressionListEntry =
+  | ({
+      index: number;
+      status: "active" | "expired";
+    } & ValidSuppressionSummary)
+  | ({
+      index: number;
+      status: "invalid";
+    } & InvalidSuppressionSummary);
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInvalidField(
+  value: unknown
+): value is InvalidSuppressionSummary["invalidField"] {
+  return (
+    value === "record" ||
+    value === "fingerprint" ||
+    value === "reason" ||
+    value === "expiresAt"
+  );
+}
+
+function isValidSuppressionSummary(
+  value: unknown
+): value is ValidSuppressionSummary {
+  return (
+    isObject(value) &&
+    !("invalidField" in value) &&
+    typeof value.fingerprint === "string" &&
+    typeof value.reason === "string" &&
+    value.reason.trim().length > 0 &&
+    typeof value.expiresAt === "string"
+  );
+}
+
+function buildListEntry(record: ManagedSuppressionRecord): SuppressionListEntry {
+  if (record.status === "invalid" && isInvalidField(record.invalidField)) {
     return {
       index: record.index,
       status: record.status,
@@ -24,42 +62,44 @@ function buildListEntry(record: ManagedSuppressionRecord) {
     };
   }
 
+  if (
+    (record.status === "active" || record.status === "expired") &&
+    isValidSuppressionSummary(record)
+  ) {
+    return {
+      index: record.index,
+      status: record.status,
+      fingerprint: record.fingerprint,
+      reason: record.reason,
+      expiresAt: record.expiresAt
+    };
+  }
+
   return {
     index: record.index,
-    status: record.status,
-    fingerprint: record.fingerprint,
-    reason: record.reason,
-    expiresAt: record.expiresAt
+    status: "invalid",
+    invalidField: "record"
   };
-}
-
-function isInvalidSuppressionSummary(
-  value: unknown
-): value is InvalidSuppressionSummary {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "invalidField" in value &&
-    typeof value.invalidField === "string"
-  );
 }
 
 function buildMutationSummary(
   value: unknown
 ): InvalidSuppressionSummary | ValidSuppressionSummary {
-  if (isInvalidSuppressionSummary(value)) {
+  if (isObject(value) && isInvalidField(value.invalidField)) {
     return {
       invalidField: value.invalidField
     };
   }
 
-  const summary = (value ?? {}) as ValidSuppressionSummary;
+  if (isValidSuppressionSummary(value)) {
+    return {
+      fingerprint: value.fingerprint,
+      reason: value.reason,
+      expiresAt: value.expiresAt
+    };
+  }
 
-  return {
-    fingerprint: summary.fingerprint,
-    reason: summary.reason,
-    expiresAt: summary.expiresAt
-  };
+  return { invalidField: "record" };
 }
 
 function getActionLabel(command: SuppressionMutationCommand): "Added" | "Removed" {
@@ -83,16 +123,18 @@ export function renderSuppressionList(
   lines.push("", "Suppressions", "------------");
 
   for (const suppression of suppressions) {
-    if (suppression.status === "invalid") {
-      lines.push(`[${suppression.index}] INVALID ${suppression.invalidField}`);
+    const entry = buildListEntry(suppression);
+
+    if (entry.status === "invalid") {
+      lines.push(`[${entry.index}] INVALID ${entry.invalidField}`);
       continue;
     }
 
     lines.push(
-      `[${suppression.index}] ${suppression.status.toUpperCase()} ${suppression.fingerprint}`
+      `[${entry.index}] ${entry.status.toUpperCase()} ${entry.fingerprint}`
     );
-    lines.push(`  Reason: ${suppression.reason}`);
-    lines.push(`  Expires: ${suppression.expiresAt}`);
+    lines.push(`  Reason: ${entry.reason}`);
+    lines.push(`  Expires: ${entry.expiresAt}`);
   }
 
   return lines.join("\n");
