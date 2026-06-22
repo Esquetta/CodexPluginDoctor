@@ -742,6 +742,7 @@ async function executeSuppressCommand(
 
     if (command.action === "add") {
       if (command.interactive) {
+        listSuppressions(rawConfig.value, now);
         const configuredResult = applyDoctorConfig(
           await (options.runCheckImpl ?? runCheck)(command.targetPath),
           await loadDoctorConfig(command.targetPath, command.configPath),

@@ -1940,6 +1940,53 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("plugin.active");
   });
 
+  it("rejects a non-array suppression collection before interactive add prompts", async () => {
+    const originalConfig = JSON.stringify({ suppressions: {} }, null, 2);
+    const fingerprint = "6".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const { io, stdout, stderr, prompts } = createIo([
+      "1",
+      "Reviewed.",
+      "",
+      "yes"
+    ]);
+    const runCheckImpl = vi.fn(async (checkedPath: string) => ({
+      targetPath: checkedPath,
+      status: "warn" as const,
+      exitCode: 0 as const,
+      findings: [
+        {
+          id: "plugin.invalid-config-order",
+          severity: "warn" as const,
+          message: "Candidate finding.",
+          impact: "Impact.",
+          suggestedFix: "Fix.",
+          fingerprint
+        }
+      ]
+    }));
+    const writeConfig = vi.fn();
+
+    const exitCode = await runCli(
+      ["suppress", "add", targetPath, "--config", configPath],
+      io,
+      {
+        runCheckImpl,
+        writeRawDoctorConfigImpl: writeConfig
+      }
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr).toEqual([
+      "Doctor config suppressions must be an array when present."
+    ]);
+    expect(prompts).toEqual([]);
+    expect(runCheckImpl).not.toHaveBeenCalled();
+    expect(writeConfig).not.toHaveBeenCalled();
+    expect(await readFile(configPath, "utf8")).toBe(originalConfig);
+  });
+
   it("removes the exact selected suppression index interactively across all statuses", async () => {
     const activeFingerprint = "2".repeat(64);
     const expiredFingerprint = "3".repeat(64);
