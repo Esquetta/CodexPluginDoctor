@@ -87,7 +87,7 @@ describe("doctor contract command", () => {
         }),
         expect.objectContaining({
           id: "doctor.suppress.add.json",
-          command: "codex-plugin-doctor suppress add <path> --json",
+          command: "codex-plugin-doctor suppress add <path> --fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD --json",
           outputKind: "doctor.suppress.add"
         }),
         expect.objectContaining({
@@ -97,7 +97,7 @@ describe("doctor contract command", () => {
         }),
         expect.objectContaining({
           id: "doctor.suppress.remove.json",
-          command: "codex-plugin-doctor suppress remove <path> --json",
+          command: "codex-plugin-doctor suppress remove <path> --index <n> --json",
           outputKind: "doctor.suppress.remove"
         }),
         expect.objectContaining({
@@ -202,6 +202,73 @@ describe("doctor contract command", () => {
     const secondOutput = JSON.parse(second.stdout.join(""));
 
     expect(secondOutput.ruleCatalog.digest).toBe(firstOutput.ruleCatalog.digest);
+  });
+
+  it("publishes runnable suppression automation commands", async () => {
+    const contractIo = createIo();
+    const targetPath = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-contract-suppress-")
+    );
+    const fingerprint = "a".repeat(64);
+
+    await runCli(["doctor", "contract", "--json"], contractIo.io);
+
+    const contract = JSON.parse(contractIo.stdout.join(""));
+    const commands = Object.fromEntries(
+      contract.schemas
+        .filter((surface: { id: string }) => surface.id.startsWith("doctor.suppress."))
+        .map((surface: { id: string; command: string }) => [
+          surface.id,
+          surface.command
+        ])
+    );
+
+    expect(commands).toEqual({
+      "doctor.suppress.add.json":
+        "codex-plugin-doctor suppress add <path> --fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD --json",
+      "doctor.suppress.list.json":
+        "codex-plugin-doctor suppress list <path> --json",
+      "doctor.suppress.remove.json":
+        "codex-plugin-doctor suppress remove <path> --index <n> --json"
+    });
+
+    const invocations = [
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--fingerprint",
+          fingerprint,
+          "--reason",
+          "Contract verification.",
+          "--expires-at",
+          "2099-12-31",
+          "--json"
+        ],
+        kind: "doctor.suppress.add"
+      },
+      {
+        args: ["suppress", "list", targetPath, "--json"],
+        kind: "doctor.suppress.list"
+      },
+      {
+        args: ["suppress", "remove", targetPath, "--index", "0", "--json"],
+        kind: "doctor.suppress.remove"
+      }
+    ];
+
+    for (const invocation of invocations) {
+      const result = createIo();
+      const exitCode = await runCli(invocation.args, result.io);
+
+      expect(exitCode).toBe(0);
+      expect(result.stderr).toEqual([]);
+      expect(JSON.parse(result.stdout.join(""))).toMatchObject({
+        schemaVersion: "1.0.0",
+        kind: invocation.kind
+      });
+    }
   });
 
   it("renders a compact text summary", async () => {

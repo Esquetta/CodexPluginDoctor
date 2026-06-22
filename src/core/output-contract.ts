@@ -106,7 +106,7 @@ const publicSchemaDefinitions: Array<{
   },
   {
     id: "doctor.suppress.add.json",
-    command: "codex-plugin-doctor suppress add <path> --json",
+    command: "codex-plugin-doctor suppress add <path> --fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD --json",
     outputKind: "doctor.suppress.add",
     required: ["schemaVersion", "kind", "command", "configPath", "index", "suppression"]
   },
@@ -118,7 +118,7 @@ const publicSchemaDefinitions: Array<{
   },
   {
     id: "doctor.suppress.remove.json",
-    command: "codex-plugin-doctor suppress remove <path> --json",
+    command: "codex-plugin-doctor suppress remove <path> --index <n> --json",
     outputKind: "doctor.suppress.remove",
     required: ["schemaVersion", "kind", "command", "configPath", "index", "suppression"]
   },
