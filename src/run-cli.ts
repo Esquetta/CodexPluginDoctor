@@ -363,16 +363,41 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
   let reason: string | null = null;
   let expiresAt: string | null = null;
   let indexValue: string | null = null;
+  const seenFlags = new Set<string>();
+
+  const markSeenFlag = (flag: string): SuppressParseError | null => {
+    if (seenFlags.has(flag)) {
+      return {
+        message: `Duplicate suppress flag: ${flag}.`,
+        showUsage: false
+      };
+    }
+
+    seenFlags.add(flag);
+    return null;
+  };
 
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
 
     if (flag === "--json") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       jsonOutput = true;
       continue;
     }
 
     if (flag === "--config") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {
@@ -388,6 +413,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     }
 
     if (action === "add" && flag === "--fingerprint") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {
@@ -403,6 +434,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     }
 
     if (action === "add" && flag === "--reason") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {
@@ -418,6 +455,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     }
 
     if (action === "add" && flag === "--expires-at") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {
@@ -433,6 +476,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     }
 
     if (action === "remove" && flag === "--fingerprint") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {
@@ -448,6 +497,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     }
 
     if (action === "remove" && flag === "--index") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
       const value = flags[index + 1];
 
       if (!value || value.startsWith("--")) {

@@ -1751,6 +1751,170 @@ describe("runCli", () => {
     }
   });
 
+  it("rejects duplicate suppress flags before reading or writing config", async () => {
+    const originalConfig = JSON.stringify(
+      {
+        preserve: true,
+        suppressions: [
+          {
+            fingerprint: "9".repeat(64),
+            reason: "Keep this suppression.",
+            expiresAt: "2026-12-31"
+          }
+        ]
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+
+    for (const scenario of [
+      {
+        args: ["suppress", "list", targetPath, "--json", "--json", "--config", configPath],
+        message: "Duplicate suppress flag: --json."
+      },
+      {
+        args: [
+          "suppress",
+          "list",
+          targetPath,
+          "--config",
+          configPath,
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --config."
+      },
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--json",
+          "--json",
+          "--fingerprint",
+          "6".repeat(64),
+          "--reason",
+          "Reviewed exception.",
+          "--expires-at",
+          "2026-10-01",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --json."
+      },
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--config",
+          configPath,
+          "--config",
+          configPath,
+          "--fingerprint",
+          "6".repeat(64),
+          "--reason",
+          "Reviewed exception.",
+          "--expires-at",
+          "2026-10-01"
+        ],
+        message: "Duplicate suppress flag: --config."
+      },
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--fingerprint",
+          "6".repeat(64),
+          "--fingerprint",
+          "6".repeat(64),
+          "--reason",
+          "Reviewed exception.",
+          "--expires-at",
+          "2026-10-01",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --fingerprint."
+      },
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--fingerprint",
+          "6".repeat(64),
+          "--reason",
+          "Reviewed exception.",
+          "--reason",
+          "Reviewed exception.",
+          "--expires-at",
+          "2026-10-01",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --reason."
+      },
+      {
+        args: [
+          "suppress",
+          "add",
+          targetPath,
+          "--fingerprint",
+          "6".repeat(64),
+          "--reason",
+          "Reviewed exception.",
+          "--expires-at",
+          "2026-10-01",
+          "--expires-at",
+          "2026-10-01",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --expires-at."
+      },
+      {
+        args: [
+          "suppress",
+          "remove",
+          targetPath,
+          "--fingerprint",
+          "9".repeat(64),
+          "--fingerprint",
+          "9".repeat(64),
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --fingerprint."
+      },
+      {
+        args: [
+          "suppress",
+          "remove",
+          targetPath,
+          "--index",
+          "0",
+          "--index",
+          "0",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --index."
+      }
+    ]) {
+      const { io, stdout, stderr } = createIo();
+      const exitCode = await runCli(scenario.args, io);
+      const finalConfig = await readFile(configPath, "utf8");
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain(scenario.message);
+      expect(finalConfig).toBe(originalConfig);
+    }
+  });
+
   it("returns exit code 1 and preserves malformed config bytes", async () => {
     const malformedConfig = "{\n  \"suppressions\": [\n";
     const { targetPath, configPath } = await createSuppressCommandFixture(malformedConfig);
