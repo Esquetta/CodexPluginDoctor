@@ -30,6 +30,23 @@ async function createTempFilePath(filename: string): Promise<string> {
   return path.join(directory, filename);
 }
 
+async function createSuppressCommandFixture(
+  config?: unknown
+): Promise<{ targetPath: string; configPath: string }> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-suppress-cli-"));
+  const configPath = path.join(targetPath, "doctor-config.json");
+
+  if (config !== undefined) {
+    await writeFile(
+      configPath,
+      typeof config === "string" ? config : JSON.stringify(config, null, 2),
+      "utf8"
+    );
+  }
+
+  return { targetPath, configPath };
+}
+
 async function createClaudeAppDataFixture(config?: unknown): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-claude-"));
   const claudeDirectory = path.join(directory, "Claude");
@@ -1364,6 +1381,458 @@ describe("runCli", () => {
       expired: 0,
       invalid: 0
     });
+  });
+
+  it("adds a suppression in JSON mode and preserves unknown top-level config fields", async () => {
+    const existingFingerprint = "a".repeat(64);
+    const addedFingerprint = "b".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      unknownTopLevel: { keep: true },
+      suppressions: [
+        {
+          fingerprint: existingFingerprint,
+          reason: "Existing exception.",
+          expiresAt: "2026-12-31",
+          source: "existing"
+        }
+      ]
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "add",
+        targetPath,
+        "--fingerprint",
+        addedFingerprint,
+        "--reason",
+        "  Reviewed exception.  ",
+        "--expires-at",
+        "2026-09-15",
+        "--config",
+        configPath,
+        "--json"
+      ],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toEqual({
+      schemaVersion: "1.0.0",
+      command: "suppress.add",
+      configPath: path.resolve(configPath),
+      index: 1,
+      suppression: {
+        fingerprint: addedFingerprint,
+        reason: "Reviewed exception.",
+        expiresAt: "2026-09-15"
+      }
+    });
+    expect(writtenConfig).toEqual({
+      unknownTopLevel: { keep: true },
+      suppressions: [
+        {
+          fingerprint: existingFingerprint,
+          reason: "Existing exception.",
+          expiresAt: "2026-12-31",
+          source: "existing"
+        },
+        {
+          fingerprint: addedFingerprint,
+          reason: "Reviewed exception.",
+          expiresAt: "2026-09-15"
+        }
+      ]
+    });
+  });
+
+  it("adds a suppression in text mode", async () => {
+    const addedFingerprint = "c".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture();
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "add",
+        targetPath,
+        "--fingerprint",
+        addedFingerprint,
+        "--reason",
+        "Reviewed in triage.",
+        "--expires-at",
+        "2026-10-01",
+        "--config",
+        configPath
+      ],
+      io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toBe(
+      [
+        "Action: Added",
+        `Config: ${path.resolve(configPath)}`,
+        "Index: 0",
+        "",
+        `Fingerprint: ${addedFingerprint}`,
+        "Reason: Reviewed in triage.",
+        "Expires: 2026-10-01"
+      ].join("\n")
+    );
+  });
+
+  it("lists suppressions in text and JSON without writing the config", async () => {
+    const activeFingerprint = "d".repeat(64);
+    const originalConfig = JSON.stringify(
+      {
+        unknownTopLevel: { keep: true },
+        suppressions: [
+          {
+            fingerprint: activeFingerprint,
+            reason: "Reviewed exception.",
+            expiresAt: "2026-12-31"
+          },
+          {
+            reason: "Missing fingerprint.",
+            expiresAt: "2026-09-15",
+            secret: "sk_should_not_escape"
+          }
+        ]
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const { io, stdout, stderr } = createIo();
+
+    const textExitCode = await runCli(
+      ["suppress", "list", targetPath, "--config", configPath],
+      io
+    );
+    const textOutput = stdout.join("");
+
+    stdout.length = 0;
+    stderr.length = 0;
+
+    const jsonExitCode = await runCli(
+      ["suppress", "list", targetPath, "--config", configPath, "--json"],
+      io
+    );
+    const jsonOutput = JSON.parse(stdout.join(""));
+    const finalConfig = await readFile(configPath, "utf8");
+
+    expect(textExitCode).toBe(0);
+    expect(jsonExitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(textOutput).toBe(
+      [
+        `Config: ${path.resolve(configPath)}`,
+        "Total suppressions: 2",
+        "",
+        "Suppressions",
+        "------------",
+        `[0] ACTIVE ${activeFingerprint}`,
+        "  Reason: Reviewed exception.",
+        "  Expires: 2026-12-31",
+        "[1] INVALID fingerprint"
+      ].join("\n")
+    );
+    expect(jsonOutput).toEqual({
+      schemaVersion: "1.0.0",
+      command: "suppress.list",
+      configPath: path.resolve(configPath),
+      suppressions: [
+        {
+          index: 0,
+          status: "active",
+          fingerprint: activeFingerprint,
+          reason: "Reviewed exception.",
+          expiresAt: "2026-12-31"
+        },
+        {
+          index: 1,
+          status: "invalid",
+          invalidField: "fingerprint"
+        }
+      ]
+    });
+    expect(finalConfig).toBe(originalConfig);
+  });
+
+  it("removes a suppression by index in JSON mode", async () => {
+    const firstFingerprint = "e".repeat(64);
+    const removedFingerprint = "f".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      suppressions: [
+        {
+          fingerprint: firstFingerprint,
+          reason: "Keep this suppression.",
+          expiresAt: "2026-12-31"
+        },
+        {
+          fingerprint: removedFingerprint,
+          reason: "Remove this suppression.",
+          expiresAt: "2026-09-15"
+        }
+      ]
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "remove",
+        targetPath,
+        "--index",
+        "1",
+        "--config",
+        configPath,
+        "--json"
+      ],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toEqual({
+      schemaVersion: "1.0.0",
+      command: "suppress.remove",
+      configPath: path.resolve(configPath),
+      index: 1,
+      suppression: {
+        fingerprint: removedFingerprint,
+        reason: "Remove this suppression.",
+        expiresAt: "2026-09-15"
+      }
+    });
+    expect(writtenConfig).toEqual({
+      suppressions: [
+        {
+          fingerprint: firstFingerprint,
+          reason: "Keep this suppression.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+  });
+
+  it("removes a suppression by fingerprint in text mode", async () => {
+    const keptFingerprint = "1".repeat(64);
+    const removedFingerprint = "2".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      unknownTopLevel: "kept",
+      suppressions: [
+        {
+          fingerprint: keptFingerprint,
+          reason: "Keep this suppression.",
+          expiresAt: "2026-12-31"
+        },
+        {
+          fingerprint: removedFingerprint,
+          reason: "Remove by fingerprint.",
+          expiresAt: "2026-10-15"
+        }
+      ]
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "remove",
+        targetPath,
+        "--fingerprint",
+        removedFingerprint,
+        "--config",
+        configPath
+      ],
+      io
+    );
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toBe(
+      [
+        "Action: Removed",
+        `Config: ${path.resolve(configPath)}`,
+        "Index: 1",
+        "",
+        `Fingerprint: ${removedFingerprint}`,
+        "Reason: Remove by fingerprint.",
+        "Expires: 2026-10-15"
+      ].join("\n")
+    );
+    expect(writtenConfig).toEqual({
+      unknownTopLevel: "kept",
+      suppressions: [
+        {
+          fingerprint: keptFingerprint,
+          reason: "Keep this suppression.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+  });
+
+  it("rejects invalid suppress command shapes and flags with exit code 2", async () => {
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      suppressions: []
+    });
+    const fingerprint = "3".repeat(64);
+
+    for (const scenario of [
+      {
+        args: ["suppress", "rename", targetPath],
+        message: "Unknown suppress action: rename.",
+        usage: "codex-plugin-doctor suppress add <path>"
+      },
+      {
+        args: ["suppress", "list"],
+        message: "Missing suppression target path.",
+        usage: "codex-plugin-doctor suppress list <path>"
+      },
+      {
+        args: ["suppress", "list", targetPath, "--config"],
+        message: "Missing path after --config."
+      },
+      {
+        args: ["suppress", "add", targetPath, "--fingerprint", fingerprint, "--reason", "why"],
+        message: "suppress add requires --fingerprint, --reason, and --expires-at together."
+      },
+      {
+        args: ["suppress", "add", targetPath],
+        message: "suppress add requires --fingerprint, --reason, and --expires-at in this slice. Interactive mode is not implemented yet."
+      },
+      {
+        args: [
+          "suppress",
+          "remove",
+          targetPath,
+          "--index",
+          "0",
+          "--fingerprint",
+          fingerprint
+        ],
+        message: "Use exactly one of --index or --fingerprint for suppress remove."
+      },
+      {
+        args: ["suppress", "remove", targetPath],
+        message: "suppress remove requires --index or --fingerprint."
+      },
+      {
+        args: ["suppress", "remove", targetPath, "--index", "-1"],
+        message: "--index must be a non-negative integer."
+      },
+      {
+        args: ["suppress", "list", targetPath, "--unexpected", "value", "--config", configPath],
+        message: "Unknown suppress flag: --unexpected."
+      }
+    ]) {
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(scenario.args, io);
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain(scenario.message);
+
+      if ("usage" in scenario) {
+        expect(stderr.join("")).toContain(scenario.usage);
+      }
+    }
+  });
+
+  it("returns exit code 1 and preserves malformed config bytes", async () => {
+    const malformedConfig = "{\n  \"suppressions\": [\n";
+    const { targetPath, configPath } = await createSuppressCommandFixture(malformedConfig);
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["suppress", "list", targetPath, "--config", configPath],
+      io
+    );
+    const finalConfig = await readFile(configPath, "utf8");
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Unable to parse Doctor config at");
+    expect(finalConfig).toBe(malformedConfig);
+  });
+
+  it("does not print success output when suppression mutation fails in the domain layer", async () => {
+    const duplicateFingerprint = "4".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      suppressions: [
+        {
+          fingerprint: duplicateFingerprint,
+          reason: "Existing suppression.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "add",
+        targetPath,
+        "--fingerprint",
+        duplicateFingerprint,
+        "--reason",
+        "Duplicate suppression.",
+        "--expires-at",
+        "2026-10-15",
+        "--config",
+        configPath
+      ],
+      io
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Suppression fingerprint already exists at index 0.");
+  });
+
+  it("does not print success output when writing the config fails", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-suppress-write-fail-"));
+    const configPath = process.platform === "win32"
+      ? "C:\\Windows\\System32\\codex-plugin-doctor-test\\doctor.json"
+      : process.platform === "darwin"
+        ? "/System/codex-plugin-doctor-test/doctor.json"
+        : "/proc/codex-plugin-doctor-test/doctor.json";
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "add",
+        targetPath,
+        "--fingerprint",
+        "5".repeat(64),
+        "--reason",
+        "Needs a write failure test.",
+        "--expires-at",
+        "2026-10-15",
+        "--config",
+        configPath
+      ],
+      io
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).not.toContain("Action: Added");
+    expect(stderr.join("")).not.toContain("Fingerprint:");
   });
 
   it("adds inline rule explanations to check output when requested", async () => {

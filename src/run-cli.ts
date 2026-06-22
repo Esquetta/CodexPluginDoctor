@@ -177,6 +177,12 @@ import { renderCompatibilityReport } from "./reporting/render-compatibility-repo
 import { renderHistorySummary } from "./reporting/render-history-summary.js";
 import { renderJsonReport } from "./reporting/render-json-report.js";
 import { buildMarkdownReport } from "./reporting/render-markdown-report.js";
+import {
+  renderSuppressionList,
+  renderSuppressionListJson,
+  renderSuppressionMutation,
+  renderSuppressionMutationJson
+} from "./reporting/render-suppression-management.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
@@ -203,6 +209,14 @@ import { createLiveStatusRenderer } from "./terminal/live-status-renderer.js";
 import { determineOutputPolicy } from "./terminal/output-policy.js";
 import { getSpinner } from "./terminal/spinner-registry.js";
 import { packageVersion } from "./version.js";
+import {
+  addSuppression,
+  listSuppressions,
+  readRawDoctorConfig,
+  removeSuppressionByFingerprint,
+  removeSuppressionByIndex,
+  writeRawDoctorConfig
+} from "./index.js";
 
 export interface CliIo {
   writeStdout(message: string): void;
@@ -247,8 +261,56 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path> [--json|--markdown] [--output <path>]|runtime-policy <path> [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+    "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path> [--json|--markdown] [--output <path>]|runtime-policy <path> [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
+}
+
+const suppressUsageText = [
+  "Usage:",
+  "       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]",
+  "       codex-plugin-doctor suppress list <path> [--config <path>] [--json]",
+  "       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]"
+].join("\n");
+
+type ParsedSuppressCommand =
+  | {
+      action: "add";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+      fingerprint: string;
+      reason: string;
+      expiresAt: string;
+    }
+  | {
+      action: "list";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+    }
+  | {
+      action: "remove";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+      selector:
+        | {
+            type: "fingerprint";
+            fingerprint: string;
+          }
+        | {
+            type: "index";
+            index: number;
+          };
+    };
+
+type SuppressParseError = {
+  message: string;
+  showUsage: boolean;
+};
+
+function printSuppressUsage(io: CliIo): void {
+  io.writeStderr(suppressUsageText);
 }
 
 const performanceStageNames = new Set<DoctorPerformanceStageName>([
@@ -269,6 +331,278 @@ function parseNonNegativeNumber(value: string | undefined): number | null {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressParseError {
+  const [action, targetPath, ...flags] = args;
+
+  if (!action) {
+    return {
+      message: "Missing suppress action.",
+      showUsage: true
+    };
+  }
+
+  if (action !== "add" && action !== "list" && action !== "remove") {
+    return {
+      message: `Unknown suppress action: ${action}.`,
+      showUsage: true
+    };
+  }
+
+  if (!targetPath || targetPath.startsWith("--")) {
+    return {
+      message: "Missing suppression target path.",
+      showUsage: true
+    };
+  }
+
+  let configPath: string | null = null;
+  let jsonOutput = false;
+  let fingerprint: string | null = null;
+  let reason: string | null = null;
+  let expiresAt: string | null = null;
+  let indexValue: string | null = null;
+
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+
+    if (flag === "--json") {
+      jsonOutput = true;
+      continue;
+    }
+
+    if (flag === "--config") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing path after --config.",
+          showUsage: false
+        };
+      }
+
+      configPath = value;
+      index += 1;
+      continue;
+    }
+
+    if (action === "add" && flag === "--fingerprint") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing fingerprint after --fingerprint.",
+          showUsage: false
+        };
+      }
+
+      fingerprint = value;
+      index += 1;
+      continue;
+    }
+
+    if (action === "add" && flag === "--reason") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing reason after --reason.",
+          showUsage: false
+        };
+      }
+
+      reason = value;
+      index += 1;
+      continue;
+    }
+
+    if (action === "add" && flag === "--expires-at") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing date after --expires-at.",
+          showUsage: false
+        };
+      }
+
+      expiresAt = value;
+      index += 1;
+      continue;
+    }
+
+    if (action === "remove" && flag === "--fingerprint") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing fingerprint after --fingerprint.",
+          showUsage: false
+        };
+      }
+
+      fingerprint = value;
+      index += 1;
+      continue;
+    }
+
+    if (action === "remove" && flag === "--index") {
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing value after --index.",
+          showUsage: false
+        };
+      }
+
+      indexValue = value;
+      index += 1;
+      continue;
+    }
+
+    return {
+      message: `Unknown suppress flag: ${flag}.`,
+      showUsage: false
+    };
+  }
+
+  if (action === "list") {
+    return {
+      action,
+      targetPath,
+      configPath,
+      jsonOutput
+    };
+  }
+
+  if (action === "add") {
+    const suppliedFlagCount = [fingerprint, reason, expiresAt].filter(
+      (value) => value !== null
+    ).length;
+
+    if (suppliedFlagCount === 0) {
+      return {
+        message:
+          "suppress add requires --fingerprint, --reason, and --expires-at in this slice. Interactive mode is not implemented yet.",
+        showUsage: false
+      };
+    }
+
+    if (suppliedFlagCount !== 3 || !fingerprint || !reason || !expiresAt) {
+      return {
+        message:
+          "suppress add requires --fingerprint, --reason, and --expires-at together.",
+        showUsage: false
+      };
+    }
+
+    return {
+      action,
+      targetPath,
+      configPath,
+      jsonOutput,
+      fingerprint,
+      reason,
+      expiresAt
+    };
+  }
+
+  if (fingerprint && indexValue !== null) {
+    return {
+      message: "Use exactly one of --index or --fingerprint for suppress remove.",
+      showUsage: false
+    };
+  }
+
+  if (!fingerprint && indexValue === null) {
+    return {
+      message: "suppress remove requires --index or --fingerprint.",
+      showUsage: false
+    };
+  }
+
+  if (indexValue !== null) {
+    if (!/^\d+$/.test(indexValue)) {
+      return {
+        message: "--index must be a non-negative integer.",
+        showUsage: false
+      };
+    }
+
+    return {
+      action,
+      targetPath,
+      configPath,
+      jsonOutput,
+      selector: {
+        type: "index",
+        index: Number(indexValue)
+      }
+    };
+  }
+
+  return {
+    action,
+    targetPath,
+    configPath,
+    jsonOutput,
+    selector: {
+      type: "fingerprint",
+      fingerprint: fingerprint!
+    }
+  };
+}
+
+async function executeSuppressCommand(
+  command: ParsedSuppressCommand,
+  io: CliIo
+): Promise<number> {
+  try {
+    const rawConfig = await readRawDoctorConfig(command.targetPath, command.configPath);
+
+    if (command.action === "list") {
+      const suppressions = listSuppressions(rawConfig.value);
+      io.writeStdout(
+        command.jsonOutput
+          ? renderSuppressionListJson(rawConfig.configPath, suppressions)
+          : renderSuppressionList(rawConfig.configPath, suppressions)
+      );
+      return 0;
+    }
+
+    if (command.action === "add") {
+      const result = addSuppression(rawConfig.value, {
+        fingerprint: command.fingerprint,
+        reason: command.reason,
+        expiresAt: command.expiresAt
+      });
+
+      await writeRawDoctorConfig(rawConfig.configPath, result.config);
+      io.writeStdout(
+        command.jsonOutput
+          ? renderSuppressionMutationJson("suppress.add", rawConfig.configPath, result)
+          : renderSuppressionMutation("suppress.add", rawConfig.configPath, result)
+      );
+      return 0;
+    }
+
+    const result = command.selector.type === "index"
+      ? removeSuppressionByIndex(rawConfig.value, command.selector.index)
+      : removeSuppressionByFingerprint(rawConfig.value, command.selector.fingerprint);
+
+    await writeRawDoctorConfig(rawConfig.configPath, result.config);
+    io.writeStdout(
+      command.jsonOutput
+        ? renderSuppressionMutationJson("suppress.remove", rawConfig.configPath, result)
+        : renderSuppressionMutation("suppress.remove", rawConfig.configPath, result)
+    );
+    return 0;
+  } catch (error) {
+    io.writeStderr(error instanceof Error ? error.message : "Unknown suppression command error.");
+    return 1;
+  }
 }
 
 function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]): {
@@ -2190,6 +2524,22 @@ export async function runCli(
 
     io.writeStdout(report);
     return matrixExitCode(matrix);
+  }
+
+  if (command === "suppress") {
+    const parsedSuppressCommand = parseSuppressCommand([maybePath ?? "", ...remainingArgs]);
+
+    if ("message" in parsedSuppressCommand) {
+      io.writeStderr(parsedSuppressCommand.message);
+
+      if (parsedSuppressCommand.showUsage) {
+        printSuppressUsage(io);
+      }
+
+      return 2;
+    }
+
+    return executeSuppressCommand(parsedSuppressCommand, io);
   }
 
   if (command !== "check") {
