@@ -7,19 +7,25 @@ import packageJson from "../package.json" with { type: "json" };
 import { runCheck } from "../src/index.js";
 import { runCli } from "../src/run-cli.js";
 
-function createIo() {
+function createIo(answers: string[] = []) {
   const stdout: string[] = [];
   const stderr: string[] = [];
+  const prompts: string[] = [];
 
   return {
     stdout,
     stderr,
+    prompts,
     io: {
       writeStdout(message: string) {
         stdout.push(message);
       },
       writeStderr(message: string) {
         stderr.push(message);
+      },
+      async readStdin(prompt: string) {
+        prompts.push(prompt);
+        return answers.shift() ?? "";
       }
     }
   };
@@ -1683,6 +1689,486 @@ describe("runCli", () => {
     });
   });
 
+  it("adds a selected active finding interactively with the default local-calendar expiry", async () => {
+    const firstFingerprint = "a".repeat(64);
+    const selectedFingerprint = "b".repeat(64);
+    const governanceFingerprint = "c".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      unknownTopLevel: { keep: true }
+    });
+    const { io, stdout, stderr, prompts } = createIo([
+      "2",
+      "Accepted until upstream release.",
+      "",
+      "yes"
+    ]);
+
+    const exitCode = await runCli(
+      ["suppress", "add", targetPath, "--config", configPath],
+      io,
+      {
+        now: () => new Date(2026, 0, 31, 23, 45),
+        runCheckImpl: async (checkedPath) => ({
+          targetPath: checkedPath,
+          status: "fail",
+          exitCode: 1,
+          findings: [
+            {
+              id: "plugin.first",
+              severity: "warn",
+              message: "First finding.",
+              impact: "First impact.",
+              suggestedFix: "Fix first.",
+              fingerprint: firstFingerprint
+            },
+            {
+              id: "plugin.second",
+              severity: "fail",
+              message: "Second finding.",
+              impact: "Second impact.",
+              suggestedFix: "Fix second.",
+              fingerprint: selectedFingerprint
+            },
+            {
+              id: "suppression.invalid",
+              severity: "warn",
+              message: "Governance finding.",
+              impact: "Governance impact.",
+              suggestedFix: "Fix governance.",
+              fingerprint: governanceFingerprint
+            }
+          ]
+        })
+      }
+    );
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+    const output = stdout.join("\n");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(prompts).toEqual([
+      "Select finding to suppress: ",
+      "Reason: ",
+      "Expiration date [2026-03-02]: ",
+      "Type yes to confirm: "
+    ]);
+    expect(output).toContain(`[1] WARN plugin.first - First finding.\n    ${firstFingerprint}`);
+    expect(output).toContain(`[2] FAIL plugin.second - Second finding.\n    ${selectedFingerprint}`);
+    expect(output).not.toContain("suppression.invalid");
+    expect(output).not.toContain(governanceFingerprint);
+    expect(writtenConfig).toEqual({
+      unknownTopLevel: { keep: true },
+      suppressions: [
+        {
+          fingerprint: selectedFingerprint,
+          reason: "Accepted until upstream release.",
+          expiresAt: "2026-03-02"
+        }
+      ]
+    });
+  });
+
+  it("accepts a custom expiry date for interactive suppression add", async () => {
+    const fingerprint = "d".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture();
+    const { io, stderr } = createIo([
+      "1",
+      "Temporary acceptance.",
+      "2026-08-15",
+      " YES "
+    ]);
+
+    const exitCode = await runCli(
+      ["suppress", "add", targetPath, "--config", configPath],
+      io,
+      {
+        now: () => new Date(2026, 5, 1),
+        runCheckImpl: async (checkedPath) => ({
+          targetPath: checkedPath,
+          status: "warn",
+          exitCode: 0,
+          findings: [
+            {
+              id: "plugin.custom-expiry",
+              severity: "warn",
+              message: "Custom expiry finding.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint
+            }
+          ]
+        })
+      }
+    );
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(writtenConfig.suppressions).toEqual([
+      {
+        fingerprint,
+        reason: "Temporary acceptance.",
+        expiresAt: "2026-08-15"
+      }
+    ]);
+  });
+
+  it.each([
+    {
+      name: "invalid selection",
+      answers: ["2"],
+      message: "Selection must be a number from 1 to 1."
+    },
+    {
+      name: "blank reason",
+      answers: ["1", "   "],
+      message: "Suppression reason must not be blank."
+    },
+    {
+      name: "invalid date",
+      answers: ["1", "Reviewed.", "2026-02-30"],
+      message: "Suppression record is invalid: expiresAt."
+    }
+  ])("rejects $name during interactive suppression add without writing", async ({
+    answers,
+    message
+  }) => {
+    const originalConfig = JSON.stringify({ preserve: true }, null, 2);
+    const fingerprint = "e".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const { io, stdout, stderr } = createIo(answers);
+    const writeConfig = vi.fn();
+
+    const exitCode = await runCli(
+      ["suppress", "add", targetPath, "--config", configPath],
+      io,
+      {
+        writeRawDoctorConfigImpl: writeConfig,
+        runCheckImpl: async (checkedPath) => ({
+          targetPath: checkedPath,
+          status: "warn",
+          exitCode: 0,
+          findings: [
+            {
+              id: "plugin.invalid-input",
+              severity: "warn",
+              message: "Interactive finding.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint
+            }
+          ]
+        })
+      }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout.join("")).toContain("plugin.invalid-input");
+    expect(stderr.join("")).toContain(message);
+    expect(writeConfig).not.toHaveBeenCalled();
+    expect(await readFile(configPath, "utf8")).toBe(originalConfig);
+  });
+
+  it("runs interactive add against the explicitly configured check and reads raw config first", async () => {
+    const suppressedFingerprint = "f".repeat(64);
+    const activeFingerprint = "1".repeat(64);
+    const malformedConfig = "{ invalid json";
+    const malformedFixture = await createSuppressCommandFixture(malformedConfig);
+    const malformedIo = createIo(["1", "Reason.", "", "yes"]);
+    const malformedRunCheck = vi.fn();
+
+    const malformedExitCode = await runCli(
+      [
+        "suppress",
+        "add",
+        malformedFixture.targetPath,
+        "--config",
+        malformedFixture.configPath
+      ],
+      malformedIo.io,
+      { runCheckImpl: malformedRunCheck }
+    );
+
+    expect(malformedExitCode).toBe(1);
+    expect(malformedRunCheck).not.toHaveBeenCalled();
+    expect(malformedIo.prompts).toEqual([]);
+
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      suppressions: [
+        {
+          fingerprint: suppressedFingerprint,
+          reason: "Already accepted.",
+          expiresAt: "2099-12-31"
+        }
+      ]
+    });
+    const { io, stdout } = createIo(["1", "Accept active.", "", "yes"]);
+
+    const exitCode = await runCli(
+      ["suppress", "add", targetPath, "--config", configPath],
+      io,
+      {
+        now: () => new Date(2026, 6, 1),
+        runCheckImpl: async (checkedPath) => ({
+          targetPath: checkedPath,
+          status: "fail",
+          exitCode: 1,
+          findings: [
+            {
+              id: "plugin.suppressed",
+              severity: "warn",
+              message: "Already suppressed.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint: suppressedFingerprint
+            },
+            {
+              id: "plugin.active",
+              severity: "fail",
+              message: "Still active.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint: activeFingerprint
+            }
+          ]
+        })
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join("")).not.toContain("plugin.suppressed");
+    expect(stdout.join("")).toContain("plugin.active");
+  });
+
+  it("removes the exact selected suppression index interactively across all statuses", async () => {
+    const activeFingerprint = "2".repeat(64);
+    const expiredFingerprint = "3".repeat(64);
+    const { targetPath, configPath } = await createSuppressCommandFixture({
+      preserve: true,
+      suppressions: [
+        {
+          fingerprint: activeFingerprint,
+          reason: "Active record.",
+          expiresAt: "2026-12-31"
+        },
+        {
+          fingerprint: expiredFingerprint,
+          reason: "Expired record.",
+          expiresAt: "2025-12-31"
+        },
+        {
+          reason: "Invalid record.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+    const { io, stdout, stderr, prompts } = createIo(["2", "yes"]);
+
+    const exitCode = await runCli(
+      ["suppress", "remove", targetPath, "--config", configPath],
+      io,
+      { now: () => new Date(2026, 5, 1) }
+    );
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+    const output = stdout.join("\n");
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(prompts).toEqual([
+      "Select suppression to remove: ",
+      "Type yes to confirm: "
+    ]);
+    expect(output).toContain(`[1] ACTIVE config index 0 ${activeFingerprint}`);
+    expect(output).toContain(`[2] EXPIRED config index 1 ${expiredFingerprint}`);
+    expect(output).toContain("[3] INVALID config index 2 fingerprint");
+    expect(output).toContain("Index: 1");
+    expect(writtenConfig).toEqual({
+      preserve: true,
+      suppressions: [
+        {
+          fingerprint: activeFingerprint,
+          reason: "Active record.",
+          expiresAt: "2026-12-31"
+        },
+        {
+          reason: "Invalid record.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+  });
+
+  it.each([
+    {
+      action: "add",
+      args: ["suppress", "add"],
+      answers: ["1", "Reviewed.", "", "no"]
+    },
+    {
+      action: "remove",
+      args: ["suppress", "remove"],
+      answers: ["1", "y"]
+    }
+  ])("cancels interactive suppression $action unless confirmation is exact yes", async ({
+    action,
+    args,
+    answers
+  }) => {
+    const fingerprint = "4".repeat(64);
+    const originalConfig = JSON.stringify({
+      preserve: true,
+      suppressions: action === "remove"
+        ? [
+            {
+              fingerprint,
+              reason: "Keep after cancellation.",
+              expiresAt: "2099-12-31"
+            }
+          ]
+        : []
+    }, null, 2);
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const { io, stdout, stderr } = createIo(answers);
+    const writeConfig = vi.fn();
+
+    const exitCode = await runCli(
+      [...args, targetPath, "--config", configPath],
+      io,
+      {
+        now: () => new Date(2026, 5, 1),
+        writeRawDoctorConfigImpl: writeConfig,
+        runCheckImpl: async (checkedPath) => ({
+          targetPath: checkedPath,
+          status: "warn",
+          exitCode: 0,
+          findings: [
+            {
+              id: "plugin.cancel",
+              severity: "warn",
+              message: "Cancellation candidate.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint
+            }
+          ]
+        })
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain(`Suppression ${action} cancelled.`);
+    expect(writeConfig).not.toHaveBeenCalled();
+    expect(await readFile(configPath, "utf8")).toBe(originalConfig);
+  });
+
+  it("fails interactive add with no candidates and interactive remove with no suppressions", async () => {
+    const { targetPath, configPath } = await createSuppressCommandFixture();
+
+    for (const scenario of [
+      {
+        action: "add",
+        runCheckImpl: async (checkedPath: string) => ({
+          targetPath: checkedPath,
+          status: "warn" as const,
+          exitCode: 0 as const,
+          findings: [
+            {
+              id: "suppression.expired",
+              severity: "warn" as const,
+              message: "Governance only.",
+              impact: "Impact.",
+              suggestedFix: "Fix.",
+              fingerprint: "5".repeat(64)
+            },
+            {
+              id: "plugin.no-fingerprint",
+              severity: "warn" as const,
+              message: "No fingerprint.",
+              impact: "Impact.",
+              suggestedFix: "Fix."
+            }
+          ]
+        }),
+        message: "No active fingerprinted findings are available to suppress."
+      },
+      {
+        action: "remove",
+        runCheckImpl: undefined,
+        message: "No suppressions are available to remove."
+      }
+    ]) {
+      const { io, stdout, stderr, prompts } = createIo();
+      const writeConfig = vi.fn();
+      const exitCode = await runCli(
+        ["suppress", scenario.action, targetPath, "--config", configPath],
+        io,
+        {
+          writeRawDoctorConfigImpl: writeConfig,
+          ...(scenario.runCheckImpl ? { runCheckImpl: scenario.runCheckImpl } : {})
+        }
+      );
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain(scenario.message);
+      expect(prompts).toEqual([]);
+      expect(writeConfig).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects JSON and missing stdin support for interactive suppression modes", async () => {
+    const { targetPath, configPath } = await createSuppressCommandFixture();
+
+    for (const scenario of [
+      {
+        action: "add",
+        extraArgs: ["--json"],
+        message: "Interactive suppress add does not support --json."
+      },
+      {
+        action: "remove",
+        extraArgs: ["--json"],
+        message: "Interactive suppress remove does not support --json."
+      },
+      {
+        action: "add",
+        extraArgs: [],
+        message: "Interactive suppress add requires stdin input."
+      },
+      {
+        action: "remove",
+        extraArgs: [],
+        message: "Interactive suppress remove requires stdin input."
+      }
+    ]) {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const exitCode = await runCli(
+        [
+          "suppress",
+          scenario.action,
+          targetPath,
+          "--config",
+          configPath,
+          ...scenario.extraArgs
+        ],
+        {
+          writeStdout(message) {
+            stdout.push(message);
+          },
+          writeStderr(message) {
+            stderr.push(message);
+          }
+        }
+      );
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain(scenario.message);
+    }
+  });
+
   it("rejects invalid suppress command shapes and flags with exit code 2", async () => {
     const { targetPath, configPath } = await createSuppressCommandFixture({
       suppressions: []
@@ -1709,10 +2195,6 @@ describe("runCli", () => {
         message: "suppress add requires --fingerprint, --reason, and --expires-at together."
       },
       {
-        args: ["suppress", "add", targetPath],
-        message: "suppress add requires --fingerprint, --reason, and --expires-at in this slice. Interactive mode is not implemented yet."
-      },
-      {
         args: [
           "suppress",
           "remove",
@@ -1723,10 +2205,6 @@ describe("runCli", () => {
           fingerprint
         ],
         message: "Use exactly one of --index or --fingerprint for suppress remove."
-      },
-      {
-        args: ["suppress", "remove", targetPath],
-        message: "suppress remove requires --index or --fingerprint."
       },
       {
         args: ["suppress", "remove", targetPath, "--index", "-1"],

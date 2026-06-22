@@ -215,6 +215,7 @@ import {
   readRawDoctorConfig,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
+  SuppressionManagementError,
   writeRawDoctorConfig
 } from "./index.js";
 
@@ -235,6 +236,7 @@ export interface RunCliOptions {
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
   writeRawDoctorConfigImpl?: typeof writeRawDoctorConfig;
+  now?: () => Date;
   releaseAssetUploadImpl?: (args: string[]) => Promise<void>;
   resolveLatestVersion?: () => Promise<string>;
 }
@@ -279,9 +281,17 @@ type ParsedSuppressCommand =
       targetPath: string;
       configPath: string | null;
       jsonOutput: boolean;
+      interactive: false;
       fingerprint: string;
       reason: string;
       expiresAt: string;
+    }
+  | {
+      action: "add";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+      interactive: true;
     }
   | {
       action: "list";
@@ -294,6 +304,7 @@ type ParsedSuppressCommand =
       targetPath: string;
       configPath: string | null;
       jsonOutput: boolean;
+      interactive: false;
       selector:
         | {
             type: "fingerprint";
@@ -303,6 +314,13 @@ type ParsedSuppressCommand =
             type: "index";
             index: number;
           };
+    }
+  | {
+      action: "remove";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+      interactive: true;
     };
 
 type SuppressParseError = {
@@ -540,9 +558,11 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
 
     if (suppliedFlagCount === 0) {
       return {
-        message:
-          "suppress add requires --fingerprint, --reason, and --expires-at in this slice. Interactive mode is not implemented yet.",
-        showUsage: false
+        action,
+        targetPath,
+        configPath,
+        jsonOutput,
+        interactive: true
       };
     }
 
@@ -559,6 +579,7 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
       targetPath,
       configPath,
       jsonOutput,
+      interactive: false,
       fingerprint,
       reason,
       expiresAt
@@ -574,8 +595,11 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
 
   if (!fingerprint && indexValue === null) {
     return {
-      message: "suppress remove requires --index or --fingerprint.",
-      showUsage: false
+      action,
+      targetPath,
+      configPath,
+      jsonOutput,
+      interactive: true
     };
   }
 
@@ -601,6 +625,7 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
       targetPath,
       configPath,
       jsonOutput,
+      interactive: false,
       selector: {
         type: "index",
         index: parsedIndex
@@ -613,6 +638,7 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     targetPath,
     configPath,
     jsonOutput,
+    interactive: false,
     selector: {
       type: "fingerprint",
       fingerprint: fingerprint!
@@ -620,16 +646,92 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
   };
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultSuppressionExpiry(now: Date): string {
+  const expiry = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  expiry.setDate(expiry.getDate() + 30);
+  return formatLocalDate(expiry);
+}
+
+function parseInteractiveSelection(answer: string, count: number): number | null {
+  const trimmed = answer.trim();
+
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const selection = Number(trimmed);
+  return Number.isSafeInteger(selection) && selection >= 1 && selection <= count
+    ? selection - 1
+    : null;
+}
+
+function renderInteractiveFindingCandidates(
+  findings: Array<{
+    severity: string;
+    id: string;
+    message: string;
+    fingerprint?: string;
+  }>
+): string {
+  return findings
+    .map(
+      (finding, index) =>
+        `[${index + 1}] ${finding.severity.toUpperCase()} ${finding.id} - ${finding.message}\n    ${finding.fingerprint}`
+    )
+    .join("\n");
+}
+
+function renderInteractiveSuppressionCandidates(
+  suppressions: ReturnType<typeof listSuppressions>
+): string {
+  return suppressions
+    .map((suppression, selectionIndex) => {
+      const prefix =
+        `[${selectionIndex + 1}] ${suppression.status.toUpperCase()} config index ${suppression.index}`;
+
+      return suppression.status === "invalid"
+        ? `${prefix} ${suppression.invalidField}`
+        : `${prefix} ${suppression.fingerprint}`;
+    })
+    .join("\n");
+}
+
 async function executeSuppressCommand(
   command: ParsedSuppressCommand,
   io: CliIo,
-  writeConfig: typeof writeRawDoctorConfig = writeRawDoctorConfig
+  options: {
+    runCheckImpl?: typeof runCheck;
+    writeRawDoctorConfigImpl?: typeof writeRawDoctorConfig;
+    now?: () => Date;
+  } = {}
 ): Promise<number> {
+  const writeConfig = options.writeRawDoctorConfigImpl ?? writeRawDoctorConfig;
+
+  if (command.action !== "list" && command.interactive) {
+    if (command.jsonOutput) {
+      io.writeStderr(`Interactive suppress ${command.action} does not support --json.`);
+      return 2;
+    }
+
+    if (!io.readStdin) {
+      io.writeStderr(`Interactive suppress ${command.action} requires stdin input.`);
+      return 2;
+    }
+  }
+
   try {
     const rawConfig = await readRawDoctorConfig(command.targetPath, command.configPath);
+    const now = options.now?.() ?? new Date();
 
     if (command.action === "list") {
-      const suppressions = listSuppressions(rawConfig.value);
+      const suppressions = listSuppressions(rawConfig.value, now);
       io.writeStdout(
         command.jsonOutput
           ? renderSuppressionListJson(rawConfig.configPath, suppressions)
@@ -639,6 +741,64 @@ async function executeSuppressCommand(
     }
 
     if (command.action === "add") {
+      if (command.interactive) {
+        const configuredResult = applyDoctorConfig(
+          await (options.runCheckImpl ?? runCheck)(command.targetPath),
+          await loadDoctorConfig(command.targetPath, command.configPath),
+          { now }
+        );
+        const candidates = configuredResult.findings.filter(
+          (finding) =>
+            Boolean(finding.fingerprint) &&
+            !finding.id.startsWith("suppression.")
+        );
+
+        if (candidates.length === 0) {
+          io.writeStderr("No active fingerprinted findings are available to suppress.");
+          return 1;
+        }
+
+        io.writeStdout(renderInteractiveFindingCandidates(candidates));
+        const selection = parseInteractiveSelection(
+          await io.readStdin!("Select finding to suppress: "),
+          candidates.length
+        );
+
+        if (selection === null) {
+          io.writeStderr(`Selection must be a number from 1 to ${candidates.length}.`);
+          return 2;
+        }
+
+        const reason = (await io.readStdin!("Reason: ")).trim();
+
+        if (!reason) {
+          io.writeStderr("Suppression reason must not be blank.");
+          return 2;
+        }
+
+        const defaultExpiry = defaultSuppressionExpiry(now);
+        const expiryAnswer = (
+          await io.readStdin!(`Expiration date [${defaultExpiry}]: `)
+        ).trim();
+        const result = addSuppression(rawConfig.value, {
+          fingerprint: candidates[selection].fingerprint,
+          reason,
+          expiresAt: expiryAnswer || defaultExpiry
+        });
+        const confirmation = await io.readStdin!("Type yes to confirm: ");
+
+        if (confirmation.trim().toLowerCase() !== "yes") {
+          io.writeStdout("Suppression add cancelled.");
+          return 0;
+        }
+
+        await writeConfig(rawConfig.configPath, result.config);
+        io.writeStdout(
+          renderSuppressionMutation("suppress.add", rawConfig.configPath, result)
+        );
+        return 0;
+      }
+
       const result = addSuppression(rawConfig.value, {
         fingerprint: command.fingerprint,
         reason: command.reason,
@@ -650,6 +810,43 @@ async function executeSuppressCommand(
         command.jsonOutput
           ? renderSuppressionMutationJson("suppress.add", rawConfig.configPath, result)
           : renderSuppressionMutation("suppress.add", rawConfig.configPath, result)
+      );
+      return 0;
+    }
+
+    if (command.interactive) {
+      const suppressions = listSuppressions(rawConfig.value, now);
+
+      if (suppressions.length === 0) {
+        io.writeStderr("No suppressions are available to remove.");
+        return 1;
+      }
+
+      io.writeStdout(renderInteractiveSuppressionCandidates(suppressions));
+      const selection = parseInteractiveSelection(
+        await io.readStdin!("Select suppression to remove: "),
+        suppressions.length
+      );
+
+      if (selection === null) {
+        io.writeStderr(`Selection must be a number from 1 to ${suppressions.length}.`);
+        return 2;
+      }
+
+      const result = removeSuppressionByIndex(
+        rawConfig.value,
+        suppressions[selection].index
+      );
+      const confirmation = await io.readStdin!("Type yes to confirm: ");
+
+      if (confirmation.trim().toLowerCase() !== "yes") {
+        io.writeStdout("Suppression remove cancelled.");
+        return 0;
+      }
+
+      await writeConfig(rawConfig.configPath, result.config);
+      io.writeStdout(
+        renderSuppressionMutation("suppress.remove", rawConfig.configPath, result)
       );
       return 0;
     }
@@ -667,7 +864,12 @@ async function executeSuppressCommand(
     return 0;
   } catch (error) {
     io.writeStderr(error instanceof Error ? error.message : "Unknown suppression command error.");
-    return 1;
+    return command.action === "add" &&
+      command.interactive &&
+      error instanceof SuppressionManagementError &&
+      error.code === "suppression_invalid_record"
+      ? 2
+      : 1;
   }
 }
 
@@ -2608,7 +2810,11 @@ export async function runCli(
     return executeSuppressCommand(
       parsedSuppressCommand,
       io,
-      options.writeRawDoctorConfigImpl
+      {
+        runCheckImpl: options.runCheckImpl,
+        writeRawDoctorConfigImpl: options.writeRawDoctorConfigImpl,
+        now: options.now
+      }
     );
   }
 
