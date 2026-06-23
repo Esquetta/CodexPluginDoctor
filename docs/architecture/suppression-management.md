@@ -34,7 +34,7 @@ Interactive add:
 6. Offers an expiration date 30 local calendar days from the current local date.
 7. Writes one suppression after confirmation.
 
-The default is calculated from the local year, month, and day, then advanced by 30 calendar days. The user may replace it with another real `YYYY-MM-DD` date; empty input accepts the default.
+The default is calculated from the local year, month, and day, then advanced by 30 calendar days. The user may replace it with another real `YYYY-MM-DD` date; empty input accepts the default. The stored record remains active through that UTC calendar date and expires at `00:00 UTC` on the following day.
 
 Interactive mode requires readable stdin. If no interactive input is available, the command fails and explains which flags are required.
 
@@ -47,7 +47,7 @@ codex-plugin-doctor suppress add . \
   --expires-at 2026-07-21
 ```
 
-Flag mode requires all three values. It validates the fingerprint, trimmed reason, and real expiration date before reading or writing the configuration.
+Flag mode requires all three values. It reads and validates the raw configuration first, then validates the fingerprint, trimmed reason, and real expiration date before writing the updated configuration.
 
 An existing record with the same fingerprint blocks add, including a malformed or expired record. The command reports the existing record index so the user can remove or repair it instead of creating ambiguous duplicates.
 

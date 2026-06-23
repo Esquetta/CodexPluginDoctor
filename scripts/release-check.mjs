@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-// Preflight includes: npm view codex-plugin-doctor version
+// Preflight includes: npm view codex-plugin-doctor@<version> version
 // Preflight includes: npm pack --dry-run
 // Preflight includes: npm publish --dry-run --access public
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,14 +57,33 @@ function assertCleanGit() {
   }
 }
 
-function assertVersionIsPublishable(version) {
-  const publishedVersion = run(
-    "npm",
-    ["view", "codex-plugin-doctor", "version"],
-    { capture: true }
-  );
+function isUnpublishedVersionError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bE404\b|npm (?:error|ERR!) 404\b/i.test(message);
+}
 
-  if (publishedVersion === version && !allowPublished) {
+export function assertVersionIsPublishable(
+  version,
+  options = {}
+) {
+  const commandRunner = options.run ?? run;
+  const publishedAllowed = options.allowPublished ?? allowPublished;
+
+  try {
+    commandRunner(
+      "npm",
+      ["view", `codex-plugin-doctor@${version}`, "version"],
+      { capture: true }
+    );
+  } catch (error) {
+    if (isUnpublishedVersionError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+
+  if (!publishedAllowed) {
     throw new Error(
       `Version ${version} is already published. Bump package.json or pass --allow-published.`
     );
@@ -96,10 +115,15 @@ function main() {
   console.log("Release check passed.");
 }
 
-try {
-  main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`release-check failed: ${message}`);
-  process.exitCode = 1;
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+) {
+  try {
+    main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`release-check failed: ${message}`);
+    process.exitCode = 1;
+  }
 }

@@ -364,7 +364,7 @@ codex-plugin-doctor suppress list .
 codex-plugin-doctor suppress remove .
 ```
 
-Interactive add selects one active fingerprinted finding and defaults to an expiration 30 local calendar days from today. Suppressions match only the exact finding fingerprint; invalid or expired records never hide findings.
+Interactive add selects one active fingerprinted finding and defaults to an expiration 30 local calendar days from today. The stored `YYYY-MM-DD` record remains active through that UTC calendar date and expires at `00:00 UTC` on the following day. Suppressions match only the exact finding fingerprint; invalid or expired records never hide findings.
 
 For automation, supply all add fields or one remove selector and add `--json` when machine-readable output is required:
 
