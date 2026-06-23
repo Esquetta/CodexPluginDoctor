@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 // Preflight includes: npm view codex-plugin-doctor version
 // Preflight includes: npm pack --dry-run
+// Preflight includes: npm publish --dry-run --access public
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2));
 const allowDirty = args.has("--allow-dirty") || process.env.npm_config_allow_dirty === "true";
@@ -91,6 +92,7 @@ function main() {
   run("npm", ["test"]);
   run("npm", ["run", "build"]);
   run("npm", ["pack", "--dry-run"]);
+  run("npm", ["publish", "--dry-run", "--access", "public"]);
   console.log("Release check passed.");
 }
 

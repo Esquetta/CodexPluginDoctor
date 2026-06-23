@@ -131,4 +131,38 @@ describe("doctor npm command", () => {
       ])
     );
   });
+
+  it("packs the nested npm package when the outer npm command is a dry run", async () => {
+    const packageRoot = await createPackedPluginFixture();
+    const { io, stdout, stderr } = createIo();
+    const previousDryRun = process.env.npm_config_dry_run;
+
+    process.env.npm_config_dry_run = "true";
+
+    try {
+      const exitCode = await runCli(["doctor", "npm", packageRoot, "--json"], io, {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: {},
+          platform: "win32"
+        }
+      });
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toEqual([]);
+      expect(output.tarball).toMatchObject({
+        filename: "doctor-npm-fixture-1.2.3.tgz",
+        packageName: "doctor-npm-fixture",
+        packageVersion: "1.2.3"
+      });
+    } finally {
+      if (previousDryRun === undefined) {
+        delete process.env.npm_config_dry_run;
+      } else {
+        process.env.npm_config_dry_run = previousDryRun;
+      }
+    }
+  });
 });

@@ -82,6 +82,19 @@ function npmCommand(args: string[]): CommandSpec {
   return { command: "npm", args };
 }
 
+function npmPackEnvironment(): NodeJS.ProcessEnv {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => key.toLowerCase() !== "npm_config_dry_run"
+    )
+  );
+
+  return {
+    ...environment,
+    npm_config_dry_run: "false"
+  };
+}
+
 function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
   const relativePath = path.relative(rootPath, candidatePath);
 
@@ -187,6 +200,7 @@ async function packNpmPackage(packageSpec: string, destinationPath: string): Pro
     npmPackCommand.args,
     {
       cwd: destinationPath,
+      env: npmPackEnvironment(),
       maxBuffer: 10 * 1024 * 1024
     }
   );
