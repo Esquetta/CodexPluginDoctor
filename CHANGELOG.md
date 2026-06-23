@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.28.0] - 2026-06-23
+
+### Added
+
+- added interactive and flag-based suppression add, list, and remove workflows
+- added JSON output contracts for suppression management automation
+- preserved raw config content and used same-directory replacement for safe updates
+- prevented duplicate and ambiguous suppression changes, and excluded governance findings from interactive add
+
+### Security
+
+- kept invalid and expired suppressions from hiding active findings
+- redacted invalid suppression management output
+
 ## [1.27.0] - 2026-06-20
 
 ### Added
