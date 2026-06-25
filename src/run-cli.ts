@@ -181,7 +181,9 @@ import {
   renderSuppressionList,
   renderSuppressionListJson,
   renderSuppressionMutation,
-  renderSuppressionMutationJson
+  renderSuppressionMutationJson,
+  renderSuppressionPrune,
+  renderSuppressionPruneJson
 } from "./reporting/render-suppression-management.js";
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
@@ -212,6 +214,7 @@ import { packageVersion } from "./version.js";
 import {
   addSuppression,
   listSuppressions,
+  pruneSuppressions,
   readRawDoctorConfig,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
@@ -266,13 +269,17 @@ function printUsage(io: CliIo): void {
   io.writeStderr(
     "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--json] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path> [--json|--markdown] [--output <path>]|runtime-policy <path> [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
+  io.writeStderr(
+    "Suppression governance: codex-plugin-doctor suppress list <path> [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]\n       codex-plugin-doctor suppress prune <path> [--apply] [--json]"
+  );
 }
 
 const suppressUsageText = [
   "Usage:",
   "       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]",
-  "       codex-plugin-doctor suppress list <path> [--config <path>] [--json]",
-  "       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]"
+  "       codex-plugin-doctor suppress list <path> [--config <path>] [--json] [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]",
+  "       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]",
+  "       codex-plugin-doctor suppress prune <path> [--config <path>] [--apply] [--json]"
 ].join("\n");
 
 type ParsedSuppressCommand =
@@ -298,6 +305,9 @@ type ParsedSuppressCommand =
       targetPath: string;
       configPath: string | null;
       jsonOutput: boolean;
+      failOnExpired: boolean;
+      failOnInvalid: boolean;
+      warnExpiringWithinDays: number | null;
     }
   | {
       action: "remove";
@@ -321,6 +331,13 @@ type ParsedSuppressCommand =
       configPath: string | null;
       jsonOutput: boolean;
       interactive: true;
+    }
+  | {
+      action: "prune";
+      targetPath: string;
+      configPath: string | null;
+      jsonOutput: boolean;
+      apply: boolean;
     };
 
 type SuppressParseError = {
@@ -362,7 +379,12 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
     };
   }
 
-  if (action !== "add" && action !== "list" && action !== "remove") {
+  if (
+    action !== "add" &&
+    action !== "list" &&
+    action !== "remove" &&
+    action !== "prune"
+  ) {
     return {
       message: `Unknown suppress action: ${action}.`,
       showUsage: true
@@ -382,6 +404,10 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
   let reason: string | null = null;
   let expiresAt: string | null = null;
   let indexValue: string | null = null;
+  let failOnExpired = false;
+  let failOnInvalid = false;
+  let apply = false;
+  let warnExpiringWithinDays: number | null = null;
   const seenFlags = new Set<string>();
 
   const markSeenFlag = (flag: string): SuppressParseError | null => {
@@ -428,6 +454,76 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
 
       configPath = value;
       index += 1;
+      continue;
+    }
+
+    if (action === "list" && flag === "--fail-on-expired") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
+      failOnExpired = true;
+      continue;
+    }
+
+    if (action === "list" && flag === "--fail-on-invalid") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
+      failOnInvalid = true;
+      continue;
+    }
+
+    if (action === "list" && flag === "--warn-expiring-within-days") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return {
+          message: "Missing days after --warn-expiring-within-days.",
+          showUsage: false
+        };
+      }
+
+      if (!/^\d+$/.test(value)) {
+        return {
+          message: "--warn-expiring-within-days must be a non-negative integer.",
+          showUsage: false
+        };
+      }
+
+      const parsedDays = Number(value);
+
+      if (!Number.isSafeInteger(parsedDays)) {
+        return {
+          message: "--warn-expiring-within-days must be a non-negative integer.",
+          showUsage: false
+        };
+      }
+
+      warnExpiringWithinDays = parsedDays;
+      index += 1;
+      continue;
+    }
+
+    if (action === "prune" && flag === "--apply") {
+      const duplicateError = markSeenFlag(flag);
+
+      if (duplicateError) {
+        return duplicateError;
+      }
+
+      apply = true;
       continue;
     }
 
@@ -547,7 +643,20 @@ function parseSuppressCommand(args: string[]): ParsedSuppressCommand | SuppressP
       action,
       targetPath,
       configPath,
-      jsonOutput
+      jsonOutput,
+      failOnExpired,
+      failOnInvalid,
+      warnExpiringWithinDays
+    };
+  }
+
+  if (action === "prune") {
+    return {
+      action,
+      targetPath,
+      configPath,
+      jsonOutput,
+      apply
     };
   }
 
@@ -659,6 +768,54 @@ function defaultSuppressionExpiry(now: Date): string {
   return formatLocalDate(expiry);
 }
 
+function parseSuppressionDateUtcStart(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const date = new Date(timestamp);
+
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+    ? timestamp
+    : null;
+}
+
+function listExpiringSuppressionIndexes(
+  suppressions: ReturnType<typeof listSuppressions>,
+  now: Date,
+  withinDays: number
+): number[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  );
+  const cutoffUtc = todayUtc + withinDays * dayMs;
+
+  return suppressions.flatMap((suppression) => {
+    if (suppression.status !== "active" || !suppression.expiresAt) {
+      return [];
+    }
+
+    const expiresAtUtc = parseSuppressionDateUtcStart(suppression.expiresAt);
+
+    return expiresAtUtc !== null &&
+      expiresAtUtc >= todayUtc &&
+      expiresAtUtc <= cutoffUtc
+      ? [suppression.index]
+      : [];
+  });
+}
+
 function parseInteractiveSelection(answer: string, count: number): number | null {
   const trimmed = answer.trim();
 
@@ -714,7 +871,10 @@ async function executeSuppressCommand(
 ): Promise<number> {
   const writeConfig = options.writeRawDoctorConfigImpl ?? writeRawDoctorConfig;
 
-  if (command.action !== "list" && command.interactive) {
+  if (
+    (command.action === "add" || command.action === "remove") &&
+    command.interactive
+  ) {
     if (command.jsonOutput) {
       io.writeStderr(`Interactive suppress ${command.action} does not support --json.`);
       return 2;
@@ -732,10 +892,54 @@ async function executeSuppressCommand(
 
     if (command.action === "list") {
       const suppressions = listSuppressions(rawConfig.value, now);
+      const expiredCount = suppressions.filter(
+        (suppression) => suppression.status === "expired"
+      ).length;
+      const invalidCount = suppressions.filter(
+        (suppression) => suppression.status === "invalid"
+      ).length;
+
       io.writeStdout(
         command.jsonOutput
           ? renderSuppressionListJson(rawConfig.configPath, suppressions)
           : renderSuppressionList(rawConfig.configPath, suppressions)
+      );
+
+      if (command.warnExpiringWithinDays !== null) {
+        const expiringIndexes = listExpiringSuppressionIndexes(
+          suppressions,
+          now,
+          command.warnExpiringWithinDays
+        );
+
+        if (expiringIndexes.length > 0) {
+          io.writeStderr(
+            `Warning: ${expiringIndexes.length} suppression(s) expire within ${command.warnExpiringWithinDays} day(s): indexes ${expiringIndexes.join(", ")}.`
+          );
+        }
+      }
+
+      return (command.failOnExpired && expiredCount > 0) ||
+        (command.failOnInvalid && invalidCount > 0)
+        ? 1
+        : 0;
+    }
+
+    if (command.action === "prune") {
+      const result = pruneSuppressions(rawConfig.value, now);
+
+      if (command.apply && result.removed.length > 0) {
+        await writeConfig(rawConfig.configPath, result.config);
+      }
+
+      io.writeStdout(
+        command.jsonOutput
+          ? renderSuppressionPruneJson(rawConfig.configPath, result, {
+              applied: command.apply
+            })
+          : renderSuppressionPrune(rawConfig.configPath, result, {
+              applied: command.apply
+            })
       );
       return 0;
     }

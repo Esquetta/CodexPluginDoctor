@@ -5,6 +5,7 @@ import type { RawDoctorConfig } from "../src/core/doctor-config-store.js";
 import {
   addSuppression,
   listSuppressions,
+  pruneSuppressions,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
   SuppressionManagementError,
@@ -439,10 +440,71 @@ describe("removeSuppressionByFingerprint", () => {
   });
 });
 
+describe("pruneSuppressions", () => {
+  it("removes expired and invalid suppressions without mutating the input config", () => {
+    const activeSuppression = {
+      fingerprint: activeFingerprint,
+      reason: "Active exception.",
+      expiresAt: "2026-09-01"
+    };
+    const expiredSuppression = {
+      fingerprint: expiredFingerprint,
+      reason: "Expired exception.",
+      expiresAt: "2026-07-31",
+      secret: "sk_expired_secret"
+    };
+    const invalidSuppression = {
+      fingerprint: invalidReasonFingerprint,
+      reason: "   ",
+      expiresAt: "2026-09-01",
+      secret: "ghp_invalid_secret"
+    };
+    const config: RawDoctorConfig = {
+      unknownTopLevel: { keep: true },
+      suppressions: [activeSuppression, expiredSuppression, invalidSuppression]
+    };
+
+    const result = pruneSuppressions(
+      config,
+      new Date("2026-08-01T00:00:00.000Z")
+    );
+
+    expect(result).toEqual({
+      config: {
+        unknownTopLevel: { keep: true },
+        suppressions: [activeSuppression]
+      },
+      removed: [
+        {
+          index: 1,
+          status: "expired",
+          fingerprint: expiredFingerprint,
+          reason: "Expired exception.",
+          expiresAt: "2026-07-31"
+        },
+        {
+          index: 2,
+          status: "invalid",
+          invalidField: "reason"
+        }
+      ]
+    });
+    expect(result.config).not.toBe(config);
+    expect(result.config.suppressions).not.toBe(config.suppressions);
+    expect(JSON.stringify(result.removed)).not.toContain("sk_expired_secret");
+    expect(JSON.stringify(result.removed)).not.toContain("ghp_invalid_secret");
+    expect(config).toEqual({
+      unknownTopLevel: { keep: true },
+      suppressions: [activeSuppression, expiredSuppression, invalidSuppression]
+    });
+  });
+});
+
 describe("public API exports", () => {
   it("re-exports suppression management, suppression record, and config store APIs", () => {
     expect(publicApi.listSuppressions).toBe(listSuppressions);
     expect(publicApi.addSuppression).toBe(addSuppression);
+    expect(publicApi.pruneSuppressions).toBe(pruneSuppressions);
     expect(publicApi.removeSuppressionByIndex).toBe(removeSuppressionByIndex);
     expect(publicApi.removeSuppressionByFingerprint).toBe(
       removeSuppressionByFingerprint

@@ -21,6 +21,11 @@ export interface SuppressionMutationResult {
   suppression: unknown;
 }
 
+export interface SuppressionPruneResult {
+  config: RawDoctorConfig;
+  removed: ManagedSuppressionRecord[];
+}
+
 export type SuppressionManagementErrorCode =
   | "suppression_non_array"
   | "suppression_invalid_record"
@@ -294,4 +299,24 @@ export function removeSuppressionByFingerprint(
   }
 
   return removeSuppressionByIndex(config, matches[0]);
+}
+
+export function pruneSuppressions(
+  config: RawDoctorConfig,
+  now: Date = new Date()
+): SuppressionPruneResult {
+  const { suppressions } = readSuppressions(config);
+  const managedSuppressions = listSuppressions(config, now);
+  const removed = managedSuppressions.filter(
+    (suppression) => suppression.status !== "active"
+  );
+  const removedIndexes = new Set(removed.map((suppression) => suppression.index));
+  const nextSuppressions = suppressions.filter(
+    (_suppression, index) => !removedIndexes.has(index)
+  );
+
+  return {
+    config: copyConfigWithSuppressions(config, nextSuppressions),
+    removed
+  };
 }

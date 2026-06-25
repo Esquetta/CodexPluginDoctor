@@ -123,6 +123,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "command", "configPath", "index", "suppression"]
   },
   {
+    id: "doctor.suppress.prune.json",
+    command: "codex-plugin-doctor suppress prune <path> --apply --json",
+    outputKind: "doctor.suppress.prune",
+    required: ["schemaVersion", "kind", "command", "configPath", "applied", "removedCount", "removed"]
+  },
+  {
     id: "doctor.history.json",
     command: "codex-plugin-doctor history <history.jsonl> --json",
     required: ["schemaVersion", "entryCount", "latest", "previous", "delta", "regression"]

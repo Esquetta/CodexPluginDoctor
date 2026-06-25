@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { ManagedSuppressionRecord, SuppressionMutationResult } from "../src/core/suppression-management.js";
+import type {
+  ManagedSuppressionRecord,
+  SuppressionMutationResult,
+  SuppressionPruneResult
+} from "../src/core/suppression-management.js";
 import {
   renderSuppressionList,
   renderSuppressionListJson,
   renderSuppressionMutation,
-  renderSuppressionMutationJson
+  renderSuppressionMutationJson,
+  renderSuppressionPrune,
+  renderSuppressionPruneJson
 } from "../src/reporting/render-suppression-management.js";
 
 const configPath = "C:\\repo\\.codex-doctor.json";
@@ -172,6 +178,84 @@ describe("renderSuppressionListJson", () => {
     });
     expect(output).not.toContain("should-not-render");
     expect(output).not.toContain("ghp_should_not_render");
+  });
+});
+
+describe("renderSuppressionPrune", () => {
+  it("renders pruned expired and invalid suppressions in text and JSON", () => {
+    const result: SuppressionPruneResult = {
+      config: { suppressions: [] },
+      removed: [
+        {
+          index: 0,
+          status: "expired",
+          fingerprint: expiredFingerprint,
+          reason: "Expired exception.",
+          expiresAt: "2026-07-31"
+        },
+        {
+          index: 1,
+          status: "invalid",
+          invalidField: "reason"
+        }
+      ]
+    };
+
+    expect(renderSuppressionPrune(configPath, result, { applied: true })).toBe(
+      [
+        "Action: Prune",
+        "Mode: apply",
+        `Config: ${configPath}`,
+        "Removed suppressions: 2",
+        "",
+        "Removed",
+        "-------",
+        `[0] EXPIRED ${expiredFingerprint}`,
+        "  Reason: Expired exception.",
+        "  Expires: 2026-07-31",
+        "[1] INVALID reason"
+      ].join("\n")
+    );
+    expect(JSON.parse(renderSuppressionPruneJson(configPath, result, { applied: true }))).toEqual({
+      schemaVersion: "1.0.0",
+      kind: "doctor.suppress.prune",
+      command: "suppress.prune",
+      configPath,
+      applied: true,
+      removedCount: 2,
+      removed: [
+        {
+          index: 0,
+          status: "expired",
+          fingerprint: expiredFingerprint,
+          reason: "Expired exception.",
+          expiresAt: "2026-07-31"
+        },
+        {
+          index: 1,
+          status: "invalid",
+          invalidField: "reason"
+        }
+      ]
+    });
+  });
+
+  it("renders empty dry-run prune results", () => {
+    const result: SuppressionPruneResult = {
+      config: { suppressions: [] },
+      removed: []
+    };
+
+    expect(renderSuppressionPrune(configPath, result, { applied: false })).toBe(
+      [
+        "Action: Prune",
+        "Mode: dry-run",
+        `Config: ${configPath}`,
+        "Removed suppressions: 0",
+        "",
+        "No expired or invalid suppressions to prune."
+      ].join("\n")
+    );
   });
 });
 

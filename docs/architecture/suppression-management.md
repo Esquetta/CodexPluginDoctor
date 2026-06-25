@@ -10,11 +10,12 @@ It complements targeted suppression evaluation. It does not replace rule-level `
 
 ```bash
 codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]
-codex-plugin-doctor suppress list <path> [--config <path>] [--json]
+codex-plugin-doctor suppress list <path> [--config <path>] [--json] [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]
 codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]
+codex-plugin-doctor suppress prune <path> [--config <path>] [--apply] [--json]
 ```
 
-All commands accept `--config <path>` when the configuration file is outside the target package root. Interactive add and remove do not support `--json`; flag-based add, flag-based remove, and list do.
+All commands accept `--config <path>` when the configuration file is outside the target package root. Interactive add and remove do not support `--json`; flag-based add, flag-based remove, list, and prune do.
 
 ## Add
 
@@ -70,6 +71,17 @@ Invalid records expose only the zero-based index, `status: "invalid"`, and `inva
 
 An empty or missing config produces a successful empty result.
 
+List can also act as a CI governance gate:
+
+```bash
+codex-plugin-doctor suppress list . --fail-on-expired --fail-on-invalid
+codex-plugin-doctor suppress list . --warn-expiring-within-days 7
+```
+
+`--fail-on-expired` returns exit code `1` when at least one expired suppression exists. `--fail-on-invalid` returns exit code `1` when at least one invalid suppression exists. The command still renders the list before exiting so CI logs show the records that need attention.
+
+`--warn-expiring-within-days <days>` prints a stderr warning for active suppressions whose expiration date is within the requested UTC calendar-day window. It does not change the exit code by itself.
+
 ## Remove
 
 ### Interactive Mode
@@ -90,6 +102,20 @@ codex-plugin-doctor suppress remove . --index 2
 `--index` removes exactly one array entry.
 
 `--fingerprint` succeeds only when exactly one record matches. Zero matches return a not-found error. Multiple matches return an ambiguity error and require `--index`; the command never removes duplicate records in bulk.
+
+## Prune
+
+```bash
+codex-plugin-doctor suppress prune .
+codex-plugin-doctor suppress prune . --apply
+codex-plugin-doctor suppress prune . --apply --json
+```
+
+Prune removes expired and invalid suppression records while preserving active records and unknown top-level config fields.
+
+The default mode is dry-run. It reports which records would be removed but does not write the config. `--apply` is required before the command writes `.codex-doctor.json`.
+
+Removed invalid records are redacted the same way as list output; malformed raw fields are never rendered.
 
 ## Configuration Preservation
 
@@ -171,6 +197,26 @@ An invalid list record is redacted to:
 }
 ```
 
+```json
+{
+  "schemaVersion": "1.0.0",
+  "kind": "doctor.suppress.prune",
+  "command": "suppress.prune",
+  "configPath": "/package/.codex-doctor.json",
+  "applied": true,
+  "removedCount": 1,
+  "removed": [
+    {
+      "index": 1,
+      "status": "expired",
+      "fingerprint": "<sha256>",
+      "reason": "Accepted until the upstream package is fixed.",
+      "expiresAt": "2026-07-21"
+    }
+  ]
+}
+```
+
 Errors keep the existing CLI convention: a concise stderr message and non-zero exit code. No partial success response is emitted.
 
 ## Module Boundaries
@@ -178,7 +224,7 @@ Errors keep the existing CLI convention: a concise stderr message and non-zero e
 The implementation uses three focused layers:
 
 1. A config-store module reads raw JSON, validates the root, and performs safe replacement.
-2. A suppression-management module validates records and implements add, list, and remove transformations.
+2. A suppression-management module validates records and implements add, list, remove, and prune transformations.
 3. The CLI layer parses flags, handles prompts, renders results, and selects exit codes.
 
 Suppression record validation is shared with the existing evaluator so management commands and package checks cannot disagree about fingerprint, reason, date, or expiration semantics.
@@ -200,8 +246,11 @@ CLI tests cover:
 - interactive add with the 30-day default
 - flag-based add
 - list text and JSON output
+- list governance gates for expired and invalid records
+- expiring-soon warnings
 - interactive remove
 - index and fingerprint removal
+- dry-run and applied prune
 - non-interactive missing flags
 - governance findings excluded from add selection
 

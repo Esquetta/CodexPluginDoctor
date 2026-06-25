@@ -25,12 +25,14 @@ export {
 export {
   addSuppression,
   listSuppressions,
+  pruneSuppressions,
   removeSuppressionByFingerprint,
   removeSuppressionByIndex,
   SuppressionManagementError,
   type ManagedSuppressionRecord,
   type SuppressionManagementErrorCode,
-  type SuppressionMutationResult
+  type SuppressionMutationResult,
+  type SuppressionPruneResult
 } from "./core/suppression-management.js";
 export {
   buildFindingFingerprint,

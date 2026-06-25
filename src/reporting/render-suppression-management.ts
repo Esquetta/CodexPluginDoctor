@@ -1,6 +1,7 @@
 import type {
   ManagedSuppressionRecord,
-  SuppressionMutationResult
+  SuppressionMutationResult,
+  SuppressionPruneResult
 } from "../core/suppression-management.js";
 
 type SuppressionMutationCommand = "suppress.add" | "suppress.remove";
@@ -196,6 +197,63 @@ export function renderSuppressionMutationJson(
       configPath,
       index: result.index,
       suppression: buildMutationSummary(result.suppression)
+    },
+    null,
+    2
+  );
+}
+
+export function renderSuppressionPrune(
+  configPath: string,
+  result: SuppressionPruneResult,
+  options: { applied: boolean }
+): string {
+  const lines = [
+    "Action: Prune",
+    `Mode: ${options.applied ? "apply" : "dry-run"}`,
+    `Config: ${configPath}`,
+    `Removed suppressions: ${result.removed.length}`
+  ];
+
+  if (result.removed.length === 0) {
+    lines.push("", "No expired or invalid suppressions to prune.");
+    return lines.join("\n");
+  }
+
+  lines.push("", "Removed", "-------");
+
+  for (const suppression of result.removed) {
+    const entry = buildListEntry(suppression);
+
+    if (entry.status === "invalid") {
+      lines.push(`[${entry.index}] INVALID ${entry.invalidField}`);
+      continue;
+    }
+
+    lines.push(
+      `[${entry.index}] ${entry.status.toUpperCase()} ${entry.fingerprint}`
+    );
+    lines.push(`  Reason: ${entry.reason}`);
+    lines.push(`  Expires: ${entry.expiresAt}`);
+  }
+
+  return lines.join("\n");
+}
+
+export function renderSuppressionPruneJson(
+  configPath: string,
+  result: SuppressionPruneResult,
+  options: { applied: boolean }
+): string {
+  return JSON.stringify(
+    {
+      schemaVersion: "1.0.0",
+      kind: "doctor.suppress.prune",
+      command: "suppress.prune",
+      configPath,
+      applied: options.applied,
+      removedCount: result.removed.length,
+      removed: result.removed.map(buildListEntry)
     },
     null,
     2

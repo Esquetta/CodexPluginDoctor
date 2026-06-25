@@ -101,6 +101,11 @@ describe("doctor contract command", () => {
           outputKind: "doctor.suppress.remove"
         }),
         expect.objectContaining({
+          id: "doctor.suppress.prune.json",
+          command: "codex-plugin-doctor suppress prune <path> --apply --json",
+          outputKind: "doctor.suppress.prune"
+        }),
+        expect.objectContaining({
           id: "doctor.attestation.json",
           command: "codex-plugin-doctor doctor attest <path> --json"
         }),
@@ -189,6 +194,15 @@ describe("doctor contract command", () => {
       "index",
       "suppression"
     ]);
+    expect(suppressionSchemas["doctor.suppress.prune.json"].schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "command",
+      "configPath",
+      "applied",
+      "removedCount",
+      "removed"
+    ]);
   });
 
   it("keeps the rule catalog digest deterministic", async () => {
@@ -229,7 +243,9 @@ describe("doctor contract command", () => {
       "doctor.suppress.list.json":
         "codex-plugin-doctor suppress list <path> --json",
       "doctor.suppress.remove.json":
-        "codex-plugin-doctor suppress remove <path> --index <n> --json"
+        "codex-plugin-doctor suppress remove <path> --index <n> --json",
+      "doctor.suppress.prune.json":
+        "codex-plugin-doctor suppress prune <path> --apply --json"
     });
 
     const invocations = [
@@ -255,6 +271,10 @@ describe("doctor contract command", () => {
       {
         args: ["suppress", "remove", targetPath, "--index", "0", "--json"],
         kind: "doctor.suppress.remove"
+      },
+      {
+        args: ["suppress", "prune", targetPath, "--apply", "--json"],
+        kind: "doctor.suppress.prune"
       }
     ];
 

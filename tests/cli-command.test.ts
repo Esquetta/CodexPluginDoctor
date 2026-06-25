@@ -1573,6 +1573,154 @@ describe("runCli", () => {
     expect(finalConfig).toBe(originalConfig);
   });
 
+  it("gates suppression lists on expired and invalid records without writing the config", async () => {
+    const expiringFingerprint = "0".repeat(64);
+    const expiredFingerprint = "a".repeat(64);
+    const originalConfig = JSON.stringify(
+      {
+        suppressions: [
+          {
+            fingerprint: expiringFingerprint,
+            reason: "Expires soon.",
+            expiresAt: "2026-08-05"
+          },
+          {
+            fingerprint: expiredFingerprint,
+            reason: "Expired exception.",
+            expiresAt: "2026-07-31"
+          },
+          {
+            reason: "Missing fingerprint.",
+            expiresAt: "2026-09-15",
+            secret: "sk_should_not_escape"
+          }
+        ]
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "suppress",
+        "list",
+        targetPath,
+        "--config",
+        configPath,
+        "--fail-on-expired",
+        "--fail-on-invalid",
+        "--warn-expiring-within-days",
+        "7"
+      ],
+      io,
+      { now: () => new Date("2026-08-01T00:00:00.000Z") }
+    );
+    const finalConfig = await readFile(configPath, "utf8");
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("Total suppressions: 3");
+    expect(stdout.join("")).toContain(`[0] ACTIVE ${expiringFingerprint}`);
+    expect(stdout.join("")).toContain(`[1] EXPIRED ${expiredFingerprint}`);
+    expect(stdout.join("")).toContain("[2] INVALID fingerprint");
+    expect(stderr.join("")).toBe(
+      "Warning: 1 suppression(s) expire within 7 day(s): indexes 0."
+    );
+    expect(stdout.join("")).not.toContain("sk_should_not_escape");
+    expect(finalConfig).toBe(originalConfig);
+  });
+
+  it("prunes expired and invalid suppressions only when apply is set", async () => {
+    const activeFingerprint = "b".repeat(64);
+    const expiredFingerprint = "c".repeat(64);
+    const originalConfig = JSON.stringify(
+      {
+        keep: true,
+        suppressions: [
+          {
+            fingerprint: activeFingerprint,
+            reason: "Active exception.",
+            expiresAt: "2026-12-31"
+          },
+          {
+            fingerprint: expiredFingerprint,
+            reason: "Expired exception.",
+            expiresAt: "2026-07-31",
+            secret: "sk_expired_secret"
+          },
+          {
+            reason: "Missing fingerprint.",
+            expiresAt: "2026-09-15",
+            secret: "ghp_invalid_secret"
+          }
+        ]
+      },
+      null,
+      2
+    );
+    const { targetPath, configPath } = await createSuppressCommandFixture(originalConfig);
+    const dryRunIo = createIo();
+
+    const dryRunExitCode = await runCli(
+      ["suppress", "prune", targetPath, "--config", configPath],
+      dryRunIo.io,
+      { now: () => new Date("2026-08-01T00:00:00.000Z") }
+    );
+    const dryRunConfig = await readFile(configPath, "utf8");
+
+    expect(dryRunExitCode).toBe(0);
+    expect(dryRunIo.stderr).toEqual([]);
+    expect(dryRunIo.stdout.join("")).toContain("Mode: dry-run");
+    expect(dryRunIo.stdout.join("")).toContain("Removed suppressions: 2");
+    expect(dryRunIo.stdout.join("")).not.toContain("sk_expired_secret");
+    expect(dryRunConfig).toBe(originalConfig);
+
+    const applyIo = createIo();
+    const applyExitCode = await runCli(
+      ["suppress", "prune", targetPath, "--config", configPath, "--apply", "--json"],
+      applyIo.io,
+      { now: () => new Date("2026-08-01T00:00:00.000Z") }
+    );
+    const output = JSON.parse(applyIo.stdout.join(""));
+    const writtenConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(applyExitCode).toBe(0);
+    expect(applyIo.stderr).toEqual([]);
+    expect(output).toEqual({
+      schemaVersion: "1.0.0",
+      kind: "doctor.suppress.prune",
+      command: "suppress.prune",
+      configPath: path.resolve(configPath),
+      applied: true,
+      removedCount: 2,
+      removed: [
+        {
+          index: 1,
+          status: "expired",
+          fingerprint: expiredFingerprint,
+          reason: "Expired exception.",
+          expiresAt: "2026-07-31"
+        },
+        {
+          index: 2,
+          status: "invalid",
+          invalidField: "fingerprint"
+        }
+      ]
+    });
+    expect(writtenConfig).toEqual({
+      keep: true,
+      suppressions: [
+        {
+          fingerprint: activeFingerprint,
+          reason: "Active exception.",
+          expiresAt: "2026-12-31"
+        }
+      ]
+    });
+  });
+
   it("removes a suppression by index in JSON mode", async () => {
     const firstFingerprint = "e".repeat(64);
     const removedFingerprint = "f".repeat(64);
@@ -2241,6 +2389,14 @@ describe("runCli", () => {
         message: "Missing path after --config."
       },
       {
+        args: ["suppress", "list", targetPath, "--warn-expiring-within-days"],
+        message: "Missing days after --warn-expiring-within-days."
+      },
+      {
+        args: ["suppress", "list", targetPath, "--warn-expiring-within-days", "-1"],
+        message: "--warn-expiring-within-days must be a non-negative integer."
+      },
+      {
         args: ["suppress", "add", targetPath, "--fingerprint", fingerprint, "--reason", "why"],
         message: "suppress add requires --fingerprint, --reason, and --expires-at together."
       },
@@ -2347,6 +2503,32 @@ describe("runCli", () => {
           configPath
         ],
         message: "Duplicate suppress flag: --config."
+      },
+      {
+        args: [
+          "suppress",
+          "list",
+          targetPath,
+          "--fail-on-expired",
+          "--fail-on-expired",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --fail-on-expired."
+      },
+      {
+        args: [
+          "suppress",
+          "list",
+          targetPath,
+          "--warn-expiring-within-days",
+          "7",
+          "--warn-expiring-within-days",
+          "7",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --warn-expiring-within-days."
       },
       {
         args: [
@@ -2465,6 +2647,18 @@ describe("runCli", () => {
           configPath
         ],
         message: "Duplicate suppress flag: --index."
+      },
+      {
+        args: [
+          "suppress",
+          "prune",
+          targetPath,
+          "--apply",
+          "--apply",
+          "--config",
+          configPath
+        ],
+        message: "Duplicate suppress flag: --apply."
       }
     ]) {
       const { io, stdout, stderr } = createIo();
