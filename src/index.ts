@@ -232,7 +232,9 @@ export {
 } from "./core/dep-audit.js";
 export {
   initGitHooks,
-  type InitGitHooksResult
+  removeGitHooks,
+  type InitGitHooksResult,
+  type RemoveGitHooksResult
 } from "./core/init-git-hooks.js";
 
 export async function runCheck(
