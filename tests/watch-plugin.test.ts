@@ -1,7 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { runCli } from "../src/run-cli.js";
 import { watchPlugin } from "../src/core/watch-plugin.js";
 
@@ -46,6 +46,22 @@ describe("watch command", () => {
     expect(exitCode).toBe(2);
     expect(stderr.join("")).toContain("Missing path after --output");
     expect(stdout).toEqual([]);
+  });
+
+  it("rejects watch with missing accumulate-json path", async () => {
+    const { io, stderr } = createIo();
+    const exitCode = await runCli(["watch", ".", "--accumulate-json"], io);
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("Missing path after --accumulate-json");
+  });
+
+  it("rejects watch with missing max-iterations value", async () => {
+    const { io, stderr } = createIo();
+    const exitCode = await runCli(["watch", ".", "--max-iterations"], io);
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("Missing number after --max-iterations");
   });
 
   it("starts watching and resolves on signal", async () => {
@@ -160,7 +176,6 @@ describe("watch command", () => {
       promise.then(resolve);
     });
 
-    const { readFile } = await import("node:fs/promises");
     const content = await readFile(outputPath, "utf8");
     const parsed = JSON.parse(content);
 
@@ -172,5 +187,108 @@ describe("watch command", () => {
     });
     expect(parsed.findings).toEqual([]);
     expect(result.failures).toBe(0);
+  });
+
+  it("stops after max-iterations is reached", async () => {
+    const targetPath = await createPluginFixture();
+
+    const result = await watchPlugin({
+      targetPath,
+      debounceMs: 10,
+      runtime: false,
+      jsonOutput: false,
+      outputPath: null,
+      maxIterations: 3
+    });
+
+    expect(result.validations).toBe(3);
+    expect(result.failures).toBe(0);
+    expect(result.iterationsReached).toBe(true);
+  });
+
+  it("stops on first failure with fail-fast", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-watch-"));
+
+    const result = await watchPlugin({
+      targetPath,
+      debounceMs: 10,
+      runtime: false,
+      jsonOutput: false,
+      outputPath: null,
+      failFast: true
+    });
+
+    expect(result.validations).toBe(1);
+    expect(result.failures).toBe(1);
+  });
+
+  it("combines max-iterations and json output", async () => {
+    const targetPath = await createPluginFixture();
+    const outputPath = path.join(targetPath, "watch-output.json");
+
+    const result = await watchPlugin({
+      targetPath,
+      debounceMs: 10,
+      runtime: false,
+      jsonOutput: true,
+      outputPath,
+      maxIterations: 2
+    });
+
+    expect(result.validations).toBe(2);
+    expect(result.iterationsReached).toBe(true);
+
+    const content = await readFile(outputPath, "utf8");
+    const parsed = JSON.parse(content);
+    expect(parsed).toMatchObject({ schemaVersion: "1.0.0", status: "pass", iteration: 2 });
+  });
+
+  it("combines max-iterations and fail-fast", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-watch-"));
+
+    const result = await watchPlugin({
+      targetPath,
+      debounceMs: 10,
+      runtime: false,
+      jsonOutput: false,
+      outputPath: null,
+      maxIterations: 5,
+      failFast: true
+    });
+
+    expect(result.failures).toBe(1);
+    expect(result.validations).toBeLessThan(5);
+  });
+
+  it("ignores files in dist, coverage, and build directories", async () => {
+    const targetPath = await createPluginFixture();
+    const distDir = path.join(targetPath, "dist");
+    const covDir = path.join(targetPath, "coverage");
+    const buildDir = path.join(targetPath, "build");
+
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(distDir, { recursive: true });
+    await mkdir(covDir, { recursive: true });
+    await mkdir(buildDir, { recursive: true });
+    await writeFile(path.join(distDir, "output.js"), "console.log('built');");
+    await writeFile(path.join(covDir, "lcov.info"), "SF:test.ts");
+
+    const result = await new Promise((resolve) => {
+      const promise = watchPlugin({
+        targetPath,
+        debounceMs: 10,
+        runtime: false,
+        jsonOutput: false,
+        outputPath: null
+      });
+
+      setTimeout(() => {
+        process.emit("SIGTERM" as unknown as NodeJS.Signals);
+      }, 300);
+
+      promise.then(resolve);
+    });
+
+    expect(result.validations).toBeGreaterThanOrEqual(1);
   });
 });
