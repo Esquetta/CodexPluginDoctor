@@ -271,6 +271,15 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "url": "https://example.com/mcp" }'
   },
   {
+    id: "plugin.security.mcp_binds_all_interfaces",
+    category: "security",
+    defaultSeverity: "warn",
+    summary: "An MCP server listens on `0.0.0.0` instead of `localhost`.",
+    why: "Servers that bind to all interfaces can accept connections from external hosts, which is rarely intended for local MCP development.",
+    fix: "Use `127.0.0.1` or `localhost` in server URLs and transport configuration unless external access is explicitly required.",
+    example: '{ "url": "http://127.0.0.1:3000/mcp" }'
+  },
+  {
     id: "plugin.security.prompt_injection_text",
     category: "security",
     defaultSeverity: "fail",

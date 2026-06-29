@@ -231,3 +231,44 @@ export function renderDepAuditJson(report: DepAuditReport): string {
     2
   );
 }
+
+export function renderDepAuditSarif(report: DepAuditReport): string {
+  const rules = report.vulnerabilities.map((vuln) => ({
+    id: `dep-audit.${vuln.name}`,
+    name: vuln.name,
+    shortDescription: {
+      text: `${vuln.severity} severity vulnerability in ${vuln.name}${vuln.fixAvailable ? " (fix available)" : ""}`
+    },
+    help: {
+      text: vuln.via.length > 0 ? `Via: ${vuln.via.join(", ")}` : "No additional information."
+    }
+  }));
+
+  const results = report.vulnerabilities.map((vuln, index) => ({
+    ruleId: `dep-audit.${vuln.name}`,
+    ruleIndex: index,
+    level: vuln.severity === "critical" || vuln.severity === "high" ? "error" : "warning",
+    message: {
+      text: `${vuln.severity}: ${vuln.name} ${vuln.fixAvailable ? "(fix available)" : "(no fix available)"}`
+    }
+  }));
+
+  const sarif = {
+    version: "2.1.0",
+    $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "codex-plugin-doctor (dep-audit)",
+            informationUri: "https://github.com/Esquetta/CodexPluginDoctor",
+            rules
+          }
+        },
+        results
+      }
+    ]
+  };
+
+  return JSON.stringify(sarif, null, 2);
+}

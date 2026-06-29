@@ -1,4 +1,5 @@
 import type { DoctorConfig } from "../core/doctor-config.js";
+import type { DepAuditReport } from "../core/dep-audit.js";
 import type { SecurityAudit } from "../security/security-audit.js";
 
 export const policyPackNames = ["codex-publish", "mcp-strict", "security"] as const;
@@ -48,4 +49,19 @@ export function applyPolicyToSecurityAudit(
     ...audit,
     status: "fail"
   };
+}
+
+export function applyPolicyToDepAudit(
+  report: DepAuditReport,
+  policy: PolicyPackName | null
+): DepAuditReport {
+  if (!policyFailsOnWarnings(policy)) {
+    return report;
+  }
+
+  if (report.status === "warn") {
+    return { ...report, status: "fail" };
+  }
+
+  return report;
 }

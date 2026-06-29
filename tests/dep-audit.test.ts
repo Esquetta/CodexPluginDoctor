@@ -7,6 +7,7 @@ import {
   buildDepAudit,
   renderDepAudit,
   renderDepAuditJson,
+  renderDepAuditSarif,
   type DepAuditReport,
   type DepAuditVulnerability
 } from "../src/core/dep-audit.js";
@@ -263,6 +264,78 @@ describe("dep-audit", () => {
       } finally {
         process.chdir(originalCwd);
       }
+    });
+
+    it("renders SARIF output for audit deps", async () => {
+      const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(["audit", "deps", targetPath, "--sarif"], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(output).toMatchObject({ version: "2.1.0" });
+      expect(output.runs).toHaveLength(1);
+      expect(output.runs[0].tool.driver.name).toBe("codex-plugin-doctor (dep-audit)");
+      expect(output.runs[0].results).toEqual([]);
+    });
+
+    it("rejects audit deps with both json and sarif flags", async () => {
+      const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+      const { io, stderr } = createIo();
+
+      const exitCode = await runCli(["audit", "deps", targetPath, "--json", "--sarif"], io);
+
+      expect(exitCode).toBe(2);
+      expect(stderr.join("")).toContain("Use either --json or --sarif");
+    });
+
+    it("rejects audit deps with unknown policy", async () => {
+      const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+      const { io, stderr } = createIo();
+
+      const exitCode = await runCli(["audit", "deps", targetPath, "--policy", "invalid"], io);
+
+      expect(exitCode).toBe(2);
+      expect(stderr.join("")).toContain("Unknown policy");
+    });
+
+    it("accepts policy flag for audit deps", async () => {
+      const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(["audit", "deps", targetPath, "--json", "--policy", "security"], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(output).toMatchObject({ status: "pass" });
+    });
+  });
+
+  describe("renderDepAuditSarif", () => {
+    it("renders empty SARIF with no vulnerabilities", () => {
+      const report = buildEmptyReport("/test");
+      const json = JSON.parse(renderDepAuditSarif(report));
+
+      expect(json.version).toBe("2.1.0");
+      expect(json.runs[0].results).toEqual([]);
+      expect(json.runs[0].tool.driver.rules).toEqual([]);
+    });
+
+    it("renders SARIF with vulnerability results", () => {
+      const vulns: DepAuditVulnerability[] = [
+        { name: "lodash", severity: "critical", isDirect: true, fixAvailable: false, via: ["CVE-2021-23337"] },
+        { name: "debug", severity: "low", isDirect: false, fixAvailable: true, via: [] }
+      ];
+      const report = buildReportWithVulns("/test", vulns, "fail");
+      const json = JSON.parse(renderDepAuditSarif(report));
+
+      expect(json.runs[0].results).toHaveLength(2);
+      expect(json.runs[0].results[0].level).toBe("error");
+      expect(json.runs[0].results[1].level).toBe("warning");
+      expect(json.runs[0].results[0].ruleId).toBe("dep-audit.lodash");
     });
   });
 });

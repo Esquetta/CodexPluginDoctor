@@ -204,6 +204,7 @@ export {
   type EcosystemAuditReport
 } from "./audit/ecosystem-audit.js";
 export {
+  applyPolicyToDepAudit,
   applyPolicyToDoctorConfig,
   applyPolicyToSecurityAudit,
   parsePolicyPack,
@@ -227,6 +228,7 @@ export {
   buildDepAudit,
   renderDepAudit,
   renderDepAuditJson,
+  renderDepAuditSarif,
   type DepAuditReport,
   type DepAuditVulnerability
 } from "./core/dep-audit.js";
