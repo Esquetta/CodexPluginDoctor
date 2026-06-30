@@ -36,6 +36,82 @@ async function createTempFilePath(filename: string): Promise<string> {
   return path.join(directory, filename);
 }
 
+async function fileExists(targetPath: string): Promise<boolean> {
+  try {
+    await readFile(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function createPluginWithExternalMcpConfig(): Promise<{
+  targetPath: string;
+  outsideConfigPath: string;
+  markerPath: string;
+}> {
+  const rootDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-external-mcp-"));
+  const targetPath = path.join(rootDirectory, "plugin");
+  const outsideDirectory = path.join(rootDirectory, "outside");
+  const outsideConfigPath = path.join(outsideDirectory, ".mcp.json");
+  const markerPath = path.join(rootDirectory, "runtime-marker.txt");
+  const serverPath = path.join(outsideDirectory, "server.js");
+
+  await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+  await mkdir(path.join(targetPath, "skills", "hello"), { recursive: true });
+  await mkdir(outsideDirectory, { recursive: true });
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify(
+      {
+        name: "external-mcp-config",
+        version: "1.0.0",
+        description: "Fixture package with an external MCP config.",
+        skills: "./skills",
+        mcpServers: "../outside/.mcp.json"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.join(targetPath, "skills", "hello", "SKILL.md"),
+    "---\nname: hello\ndescription: Minimal fixture skill.\n---\n",
+    "utf8"
+  );
+  await writeFile(
+    serverPath,
+    [
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, 'spawned');`,
+      "process.exit(0);"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    outsideConfigPath,
+    JSON.stringify(
+      {
+        mcpServers: {
+          externalLeak: {
+            command: "node",
+            args: [serverPath],
+            env: {
+              OPENAI_API_KEY: "sk-hidden-external-secret-123456"
+            }
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  return { targetPath, outsideConfigPath, markerPath };
+}
+
 async function createSuppressCommandFixture(
   config?: unknown
 ): Promise<{ targetPath: string; configPath: string }> {
@@ -501,6 +577,38 @@ describe("runCli", () => {
     expect(output).toContain('"doctorRuntime"');
     expect(output).toContain('"command": "node"');
     expect(output).toContain(expectedServerPath);
+    expect(unchangedConfig).toEqual({ mcpServers: {} });
+  });
+
+  it("rejects install preview when the manifest MCP config escapes the package root", async () => {
+    const { targetPath } = await createPluginWithExternalMcpConfig();
+    const appData = await createClaudeAppDataFixture({ mcpServers: {} });
+    const configPath = path.join(appData, "Claude", "claude_desktop_config.json");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "compat",
+        targetPath,
+        "--client",
+        "claude-desktop",
+        "--install-preview"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { APPDATA: appData },
+          platform: "win32"
+        }
+      }
+    );
+    const unchangedConfig = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).not.toContain("externalLeak");
+    expect(stderr.join("")).toContain("outside the package root");
     expect(unchangedConfig).toEqual({ mcpServers: {} });
   });
 
@@ -3284,6 +3392,45 @@ describe("runCli", () => {
         expect.objectContaining({
           id: "plugin.runtime.exited_early",
           severity: "fail"
+        })
+      ])
+    );
+  });
+
+  it("does not run runtime probes from an MCP config outside the package root", async () => {
+    const { targetPath, markerPath } = await createPluginWithExternalMcpConfig();
+    const outputPath = await createTempFilePath("runtime-external-mcp.json");
+    const { io } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "check",
+        targetPath,
+        "--json",
+        "--runtime",
+        "--output",
+        outputPath
+      ],
+      io
+    );
+    const writtenReport = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(1);
+    expect(await fileExists(markerPath)).toBe(false);
+    expect(writtenReport.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.path_traversal",
+          severity: "fail"
+        })
+      ])
+    );
+    expect(writtenReport.findings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidence: expect.objectContaining({
+            serverName: "externalLeak"
+          })
         })
       ])
     );

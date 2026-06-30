@@ -56,6 +56,15 @@ function statusFromCheckResult(result: CheckResult): CompatibilityStatus {
   return "pass";
 }
 
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(rootPath, candidatePath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
 export async function readMcpConfigPath(targetPath: string): Promise<string | null> {
   const rootPath = path.resolve(targetPath);
   const directMcpPath = path.join(rootPath, ".mcp.json");
@@ -70,17 +79,25 @@ export async function readMcpConfigPath(targetPath: string): Promise<string | nu
     return null;
   }
 
-  try {
-    const manifest = await readJsonFile<{
-      mcpServers?: unknown;
-    }>(manifestPath);
+  let manifest: { mcpServers?: unknown };
 
-    return typeof manifest.mcpServers === "string"
-      ? path.resolve(rootPath, manifest.mcpServers)
-      : null;
+  try {
+    manifest = await readJsonFile<{ mcpServers?: unknown }>(manifestPath);
   } catch {
     return null;
   }
+
+  if (typeof manifest.mcpServers !== "string") {
+    return null;
+  }
+
+  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+    throw new Error("Manifest MCP config path resolves outside the package root.");
+  }
+
+  return mcpConfigPath;
 }
 
 async function hasCodexManifest(targetPath: string): Promise<boolean> {
@@ -88,7 +105,18 @@ async function hasCodexManifest(targetPath: string): Promise<boolean> {
 }
 
 async function checkGenericMcp(targetPath: string): Promise<CompatibilityResult> {
-  const mcpConfigPath = await readMcpConfigPath(targetPath);
+  let mcpConfigPath: string | null;
+
+  try {
+    mcpConfigPath = await readMcpConfigPath(targetPath);
+  } catch (error) {
+    return {
+      client: "Generic MCP",
+      status: "fail",
+      summary: error instanceof Error ? error.message : "MCP config path is unsafe.",
+      details: ["Keep `.mcp.json` or manifest `mcpServers` references inside the package root."]
+    };
+  }
 
   if (!mcpConfigPath || !(await fileExists(mcpConfigPath))) {
     return {

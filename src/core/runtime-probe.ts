@@ -288,6 +288,15 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(rootPath, candidatePath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
 async function loadMcpServers(
   discoveredPackage: DiscoveredPackage
 ): Promise<Record<string, unknown> | null> {
@@ -298,6 +307,11 @@ async function loadMcpServers(
   }
 
   const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+
+  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+    return null;
+  }
+
   const exists = await fileExists(mcpConfigPath);
 
   if (!exists) {
