@@ -18,6 +18,14 @@ export interface DepAuditReport {
   auditJson: unknown;
 }
 
+export interface DepAuditRecommendation {
+  packageName: string;
+  priority: "critical" | "high" | "moderate" | "low";
+  action: "upgrade_direct" | "replace_direct" | "update_parent" | "review_transitive";
+  summary: string;
+  breakingChangeRisk: "low" | "medium" | "high" | "unknown";
+}
+
 function resolvePackageJson(targetPath: string): string {
   return path.resolve(targetPath, "package.json");
 }
@@ -119,6 +127,78 @@ function computeStatus(vulnerabilities: DepAuditVulnerability[]): DepAuditReport
   return "warn";
 }
 
+function severityRank(severity: DepAuditVulnerability["severity"]): number {
+  return severity === "critical" ? 0 :
+    severity === "high" ? 1 :
+      severity === "moderate" ? 2 : 3;
+}
+
+function remediationRank(vulnerability: DepAuditVulnerability): number {
+  if (vulnerability.isDirect && vulnerability.fixAvailable) {
+    return 0;
+  }
+
+  if (vulnerability.isDirect) {
+    return 1;
+  }
+
+  return vulnerability.fixAvailable ? 2 : 3;
+}
+
+export function buildDepAuditRecommendations(
+  vulnerabilities: DepAuditVulnerability[]
+): DepAuditRecommendation[] {
+  return [...vulnerabilities]
+    .sort((left, right) => {
+      const remediationDelta = remediationRank(left) - remediationRank(right);
+
+      if (remediationDelta !== 0) {
+        return remediationDelta;
+      }
+
+      return severityRank(left.severity) - severityRank(right.severity);
+    })
+    .map((vuln) => {
+      if (vuln.isDirect && vuln.fixAvailable) {
+        return {
+          packageName: vuln.name,
+          priority: vuln.severity,
+          action: "upgrade_direct",
+          summary: `Upgrade direct dependency \`${vuln.name}\` with \`npm update ${vuln.name}\` or an explicit package upgrade.`,
+          breakingChangeRisk: vuln.severity === "critical" ? "high" : "medium"
+        };
+      }
+
+      if (vuln.isDirect) {
+        return {
+          packageName: vuln.name,
+          priority: vuln.severity,
+          action: "replace_direct",
+          summary: `Replace or pin direct dependency \`${vuln.name}\`; npm did not report an automatic fix.`,
+          breakingChangeRisk: "high"
+        };
+      }
+
+      if (vuln.fixAvailable) {
+        return {
+          packageName: vuln.name,
+          priority: vuln.severity,
+          action: "update_parent",
+          summary: `Update the parent dependency for transitive package \`${vuln.name}\`.`,
+          breakingChangeRisk: "medium"
+        };
+      }
+
+      return {
+        packageName: vuln.name,
+        priority: vuln.severity,
+        action: "review_transitive",
+        summary: `Review transitive package \`${vuln.name}\`; npm did not report an automatic fix.`,
+        breakingChangeRisk: "unknown"
+      };
+    });
+}
+
 export async function buildDepAudit(targetPath: string): Promise<DepAuditReport> {
   const resolvedPath = path.resolve(targetPath);
   const packageJsonPath = resolvePackageJson(resolvedPath);
@@ -185,7 +265,10 @@ export async function buildDepAudit(targetPath: string): Promise<DepAuditReport>
   };
 }
 
-export function renderDepAudit(report: DepAuditReport): string {
+export function renderDepAudit(
+  report: DepAuditReport,
+  options: { recommendations?: boolean } = {}
+): string {
   const lines = [
     "Dependency Vulnerability Audit",
     "=============================",
@@ -214,10 +297,27 @@ export function renderDepAudit(report: DepAuditReport): string {
     );
   }
 
+  if (options.recommendations) {
+    const recommendations = buildDepAuditRecommendations(report.vulnerabilities);
+
+    lines.push("Next actions", "------------");
+
+    if (recommendations.length === 0) {
+      lines.push("No remediation actions needed.");
+    }
+
+    for (const [index, recommendation] of recommendations.entries()) {
+      lines.push(`${index + 1}. ${recommendation.summary}`);
+    }
+  }
+
   return lines.join("\n");
 }
 
-export function renderDepAuditJson(report: DepAuditReport): string {
+export function renderDepAuditJson(
+  report: DepAuditReport,
+  options: { recommendations?: boolean } = {}
+): string {
   return JSON.stringify(
     {
       schemaVersion: "1.0.0",
@@ -225,6 +325,9 @@ export function renderDepAuditJson(report: DepAuditReport): string {
       status: report.status,
       totalVulnerabilities: report.totalVulnerabilities,
       vulnerabilities: report.vulnerabilities,
+      ...(options.recommendations
+        ? { recommendations: buildDepAuditRecommendations(report.vulnerabilities) }
+        : {}),
       audit: report.auditJson
     },
     null,

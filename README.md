@@ -237,6 +237,8 @@ codex-plugin-doctor audit --installed --security --compat --cache
 codex-plugin-doctor audit --installed --changed --cache
 codex-plugin-doctor audit deps .
 codex-plugin-doctor audit deps . --json --output dependency-audit.json
+codex-plugin-doctor audit deps . --recommend
+codex-plugin-doctor audit deps . --recommend --json --output dependency-remediation.json
 codex-plugin-doctor watch .
 codex-plugin-doctor watch . --json --output watch-latest.json --debounce-ms 500
 codex-plugin-doctor init-git-hooks .
@@ -302,7 +304,7 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 
 `audit --installed` runs a local ecosystem audit against every discovered Codex plugin in the installed plugin cache. Add `--security` to include security scorecards, `--compat` to include the all-client compatibility matrix, and `--json --output local-audit.json` when you want a shareable machine-readable report. Add `--cache` to reuse unchanged plugin results between runs; add `--changed` to only report plugins whose fingerprint changed since the last cached audit. Use `--cache-file path/to/audit-cache.json` when CI or scripted runs need an explicit cache location.
 
-`audit deps <path>` runs `npm audit --json` for the target package and normalizes dependency vulnerability results into a stable `schemaVersion: "1.0.0"` report. Use `--json --output dependency-audit.json` when CI needs machine-readable status, vulnerability counts, and the raw npm audit payload.
+`audit deps <path>` runs `npm audit --json` for the target package and normalizes dependency vulnerability results into a stable `schemaVersion: "1.0.0"` report. Use `--json --output dependency-audit.json` when CI needs machine-readable status, vulnerability counts, and the raw npm audit payload. Add `--recommend` to include prioritized remediation actions for direct upgrades, direct no-fix packages, transitive parent updates, and manual transitive review.
 
 `watch <path>` continuously validates a plugin package after file changes. Use `--debounce-ms <ms>` to tune noisy repositories, `--runtime` when runtime probes are required, and `--json --output watch-latest.json` when another process should consume the latest validation snapshot.
 

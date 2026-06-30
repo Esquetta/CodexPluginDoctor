@@ -8,6 +8,7 @@ import {
   renderDepAudit,
   renderDepAuditJson,
   renderDepAuditSarif,
+  type DepAuditRecommendation,
   type DepAuditReport,
   type DepAuditVulnerability
 } from "../src/core/dep-audit.js";
@@ -114,6 +115,21 @@ describe("dep-audit", () => {
       expect(output).toContain("Status: WARN");
       expect(output).toContain("LOW");
     });
+
+    it("renders remediation recommendations when requested", () => {
+      const vulns: DepAuditVulnerability[] = [
+        { name: "transitive-only", severity: "moderate", isDirect: false, fixAvailable: true, via: ["parent-pkg"] },
+        { name: "direct-fix", severity: "high", isDirect: true, fixAvailable: true, via: ["CVE-2026-0001"] },
+        { name: "direct-no-fix", severity: "critical", isDirect: true, fixAvailable: false, via: ["CVE-2026-0002"] }
+      ];
+      const report = buildReportWithVulns("/test", vulns, "fail");
+      const output = renderDepAudit(report, { recommendations: true });
+
+      expect(output).toContain("Next actions");
+      expect(output).toContain("1. Upgrade direct dependency `direct-fix` with `npm update direct-fix` or an explicit package upgrade.");
+      expect(output).toContain("2. Replace or pin direct dependency `direct-no-fix`; npm did not report an automatic fix.");
+      expect(output).toContain("3. Update the parent dependency for transitive package `transitive-only`.");
+    });
   });
 
   describe("renderDepAuditJson", () => {
@@ -145,6 +161,32 @@ describe("dep-audit", () => {
         vulnerabilities: []
       });
       expect(json.audit).toBeNull();
+    });
+
+    it("adds remediation recommendations to JSON when requested", () => {
+      const vulns: DepAuditVulnerability[] = [
+        { name: "direct-fix", severity: "high", isDirect: true, fixAvailable: true, via: ["CVE-2026-0001"] },
+        { name: "transitive-no-fix", severity: "low", isDirect: false, fixAvailable: false, via: [] }
+      ];
+      const report = buildReportWithVulns("/test", vulns, "fail");
+      const json = JSON.parse(renderDepAuditJson(report, { recommendations: true }));
+
+      expect(json.recommendations).toEqual<DepAuditRecommendation[]>([
+        {
+          packageName: "direct-fix",
+          priority: "high",
+          action: "upgrade_direct",
+          summary: "Upgrade direct dependency `direct-fix` with `npm update direct-fix` or an explicit package upgrade.",
+          breakingChangeRisk: "medium"
+        },
+        {
+          packageName: "transitive-no-fix",
+          priority: "low",
+          action: "review_transitive",
+          summary: "Review transitive package `transitive-no-fix`; npm did not report an automatic fix.",
+          breakingChangeRisk: "unknown"
+        }
+      ]);
     });
   });
 
@@ -311,6 +353,22 @@ describe("dep-audit", () => {
       expect(exitCode).toBe(0);
       expect(stderr).toEqual([]);
       expect(output).toMatchObject({ status: "pass" });
+    });
+
+    it("adds empty recommendations for audit deps JSON when requested", async () => {
+      const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-dep-audit-"));
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(["audit", "deps", targetPath, "--json", "--recommend"], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(output).toMatchObject({
+        schemaVersion: "1.0.0",
+        status: "pass",
+        recommendations: []
+      });
     });
   });
 

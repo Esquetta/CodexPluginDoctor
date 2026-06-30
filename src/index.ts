@@ -226,9 +226,11 @@ export {
 } from "./core/watch-plugin.js";
 export {
   buildDepAudit,
+  buildDepAuditRecommendations,
   renderDepAudit,
   renderDepAuditJson,
   renderDepAuditSarif,
+  type DepAuditRecommendation,
   type DepAuditReport,
   type DepAuditVulnerability
 } from "./core/dep-audit.js";
