@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -28,7 +29,7 @@ function run(command, commandArgs, options = {}) {
   console.log(`> ${label}`);
   const resolved = resolveCommand(command, commandArgs);
   const result = spawnSync(resolved.command, resolved.args, {
-    cwd: repoRoot,
+    cwd: options.cwd ?? repoRoot,
     encoding: "utf8",
     stdio: options.capture ? "pipe" : "inherit"
   });
@@ -90,6 +91,45 @@ export function assertVersionIsPublishable(
   }
 }
 
+export function assertFreshInstallAudit(version, options = {}) {
+  const commandRunner = options.run ?? run;
+  const tempDirectory =
+    options.tempDirectory ?? mkdtempSync(path.join(os.tmpdir(), "codex-plugin-doctor-release-"));
+
+  try {
+    const packOutput = commandRunner(
+      "npm",
+      ["pack", "--json", "--pack-destination", tempDirectory],
+      { capture: true }
+    );
+    const [{ filename }] = JSON.parse(packOutput);
+    const tarballPath = path.join(tempDirectory, filename);
+
+    commandRunner("npm", ["init", "-y"], { cwd: tempDirectory });
+    commandRunner("npm", ["install", "--no-fund", "--no-audit", tarballPath], {
+      cwd: tempDirectory
+    });
+
+    const installedVersion = commandRunner(
+      "npx",
+      ["--no-install", "codex-plugin-doctor", "--version"],
+      { cwd: tempDirectory, capture: true }
+    );
+
+    if (installedVersion !== version) {
+      throw new Error(
+        `Fresh install resolved ${installedVersion || "no version"} instead of ${version}.`
+      );
+    }
+
+    commandRunner("npm", ["audit", "--audit-level=low"], { cwd: tempDirectory });
+  } finally {
+    if (!options.tempDirectory) {
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  }
+}
+
 function assertTagDoesNotExist(version) {
   const localTag = run("git", ["tag", "--list", `v${version}`], { capture: true });
   const remoteTag = run("git", ["ls-remote", "--tags", "origin", `refs/tags/v${version}`], {
@@ -111,6 +151,7 @@ function main() {
   run("npm", ["test"]);
   run("npm", ["run", "build"]);
   run("npm", ["pack", "--dry-run"]);
+  assertFreshInstallAudit(version);
   run("npm", ["publish", "--dry-run", "--access", "public"]);
   console.log("Release check passed.");
 }
