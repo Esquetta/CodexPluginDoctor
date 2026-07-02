@@ -1253,21 +1253,29 @@ function renderSelfTestReport(
 }
 
 async function resolveLatestNpmVersion(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "npm",
-      ["view", "codex-plugin-doctor", "version"],
-      { shell: process.platform === "win32" },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(stderr.trim() || error.message));
-          return;
-        }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
 
-        resolve(stdout.trim());
-      }
-    );
-  });
+  try {
+    const response = await fetch("https://registry.npmjs.org/codex-plugin-doctor", {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`npm registry returned ${response.status}`);
+    }
+
+    const data = await response.json() as { "dist-tags"?: { latest?: string } };
+    const latestVersion = data["dist-tags"]?.latest;
+
+    if (!latestVersion) {
+      throw new Error("npm registry response did not include dist-tags.latest");
+    }
+
+    return latestVersion;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function uploadGitHubReleaseAsset(args: string[]): Promise<void> {
@@ -1275,7 +1283,6 @@ async function uploadGitHubReleaseAsset(args: string[]): Promise<void> {
     execFile(
       "gh",
       args,
-      { shell: process.platform === "win32" },
       (error, _stdout, stderr) => {
         if (error) {
           reject(new Error(stderr.trim() || error.message));
