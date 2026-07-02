@@ -1099,6 +1099,8 @@ describe("runCli", () => {
     expect(output).toContain("Codex home: PASS");
     expect(output).toContain("npm global prefix: C:\\npm-global");
     expect(output).toContain("Recommended next commands");
+    expect(output).toContain("codex-plugin-doctor doctor --update-check");
+    expect(output).toContain("codex-plugin-doctor doctor snapshot --json");
     expect(output).toContain("codex-plugin-doctor list --installed");
     expect(output).toContain("codex-plugin-doctor check . --runtime --explain");
   });

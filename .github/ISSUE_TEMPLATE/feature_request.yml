@@ -25,6 +25,7 @@ body:
       options:
         - Static validation
         - Runtime MCP probing
+        - Runtime approval or release evidence
         - Reporting
         - CLI UX
         - CI or release workflow
@@ -33,4 +34,4 @@ body:
     id: examples
     attributes:
       label: Examples
-      description: Add links, sample packages, CLI output, or comparable tools if useful.
+      description: Add links, sample packages, CLI output, comparable tools, or the smallest command that would use this feature.

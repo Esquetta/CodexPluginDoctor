@@ -25,6 +25,12 @@ body:
     validations:
       required: true
   - type: textarea
+    id: doctor-snapshot
+    attributes:
+      label: Doctor snapshot
+      description: If possible, paste `codex-plugin-doctor doctor snapshot --json` output with local paths or secrets redacted.
+      render: json
+  - type: textarea
     id: observed
     attributes:
       label: Observed behavior
@@ -47,5 +53,5 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include OS, Node version, package manager, and terminal shell.
+      description: Include OS, Node version, package manager, terminal shell, and whether this came from npm global install, npm link, or source.
       render: text

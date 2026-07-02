@@ -459,7 +459,7 @@ npm run prepare-release
 npm run release-check
 ```
 
-`prepare-release` runs tests, builds the TypeScript output, and performs `npm pack --dry-run`. `release-check` adds release preflight checks for a clean git tree, existing npm versions, existing version tags, tests, build, and pack dry-run.
+`prepare-release` runs tests, builds the TypeScript output, and performs `npm pack --dry-run`. `release-check` adds release preflight checks for a clean git tree, existing npm versions, existing version tags, tests, build, pack dry-run, fresh temp install audit, and publish dry-run.
 
 Related docs:
 

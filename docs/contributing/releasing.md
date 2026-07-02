@@ -74,6 +74,7 @@ Use the stable release path when:
 
 - `npm run release-check` passes.
 - GitHub Actions passes on `main`.
+- the release tarball installs in a fresh temp npm project with `npm audit --audit-level=low` passing.
 - registry install smoke checks pass from a fresh global install.
 - `doctor corpus` passes.
 - `doctor npm codex-plugin-doctor@latest` returns the expected non-plugin package report without crashing or producing malformed JSON.

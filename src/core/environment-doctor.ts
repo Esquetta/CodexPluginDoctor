@@ -189,6 +189,8 @@ export async function renderEnvironmentDoctor(
     "Recommended next commands",
     "-------------------------",
     "codex-plugin-doctor self-test",
+    "codex-plugin-doctor doctor --update-check",
+    "codex-plugin-doctor doctor snapshot --json",
     "codex-plugin-doctor list --installed",
     "codex-plugin-doctor check . --runtime --explain",
     "codex-plugin-doctor compat . --all --scorecard",

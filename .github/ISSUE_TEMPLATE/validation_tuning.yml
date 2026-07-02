@@ -31,8 +31,13 @@ body:
     id: output
     attributes:
       label: CLI output
-      description: Paste relevant text or JSON output.
+      description: Paste relevant text or JSON output. Prefer `--json` output when reporting a false positive or false negative.
       render: text
+  - type: textarea
+    id: expected-rule
+    attributes:
+      label: Expected rule behavior
+      description: Name the rule ID that should change, or say which new finding should appear.
   - type: textarea
     id: recommendation
     attributes:

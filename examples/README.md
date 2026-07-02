@@ -4,6 +4,13 @@ This folder contains manual example packs for local testing. Unlike `tests/fixtu
 
 ## Example Packs
 
+Use the smallest example that matches what you need to prove:
+
+- `codex-doctor-starter` for static manifest and skill validation.
+- `codex-doctor-runtime` for full MCP runtime probing and compatibility scoring.
+- `codex-doctor-risky` for security finding output.
+- `codex-doctor-generic-mcp` for MCP-only packages without a Codex plugin manifest.
+
 ### `codex-doctor-starter`
 
 Minimal valid Codex plugin package with one skill and no runtime MCP server.
@@ -60,6 +67,21 @@ Command:
 codex-plugin-doctor check examples/codex-doctor-risky --ascii
 ```
 
+### `codex-doctor-generic-mcp`
+
+Generic MCP package with a `.mcp.json` file and no Codex plugin manifest.
+
+Expected result:
+
+- `codex-plugin-doctor mcp` passes generic MCP static health checks
+- `codex-plugin-doctor check` still reports the missing Codex plugin manifest
+
+Command:
+
+```bash
+codex-plugin-doctor mcp examples/codex-doctor-generic-mcp
+```
+
 ## Suggested Local Flow
 
 ```bash
@@ -70,4 +92,3 @@ codex-plugin-doctor check examples/codex-doctor-starter
 codex-plugin-doctor check examples/codex-doctor-runtime --json --runtime --verbose-runtime
 codex-plugin-doctor check examples/codex-doctor-risky --ascii
 ```
-
