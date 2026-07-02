@@ -4,6 +4,18 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.36.0] - 2026-07-02
+
+### Added
+
+- added clearer `doctor` next commands for update checks and redacted snapshots
+- expanded example guidance for static, runtime, risky, and generic MCP packages
+- improved issue templates so bug and validation reports ask for the smallest useful evidence
+
+### Changed
+
+- documented the fresh temp install audit now covered by `npm run release-check`
+
 ## [1.28.0] - 2026-06-23
 
 ### Added
