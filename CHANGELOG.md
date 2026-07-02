@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.36.1] - 2026-07-02
+
+### Fixed
+
+- removed shell-based update checks so `doctor --update-check` no longer emits Node `DEP0190` warnings on Windows
+
 ## [1.36.0] - 2026-07-02
 
 ### Added
