@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.37.0] - 2026-07-03
+
+### Added
+
+- added a release-check smoke gate for `doctor --update-check` so Node shell warnings fail before publish
+
+### Changed
+
+- made the full runtime template validation test more stable under loaded release runs
+
 ## [1.36.1] - 2026-07-02
 
 ### Fixed
