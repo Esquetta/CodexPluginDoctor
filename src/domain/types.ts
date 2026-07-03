@@ -42,6 +42,7 @@ export interface CheckResult {
 export interface CheckOptions {
   runtime?: boolean;
   runtimeTranscript?: (line: string) => void;
+  runtimeStartupTimeoutMs?: number;
 }
 
 export interface PluginManifest {

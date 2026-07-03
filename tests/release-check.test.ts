@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   assertFreshInstallAudit,
+  assertUpdateCheckSmoke,
   assertVersionIsPublishable
 } from "../scripts/release-check.mjs";
 
@@ -116,5 +117,32 @@ describe("release check fresh install audit gate", () => {
         tempDirectory
       })
     ).toThrow("Fresh install resolved 1.34.1 instead of 1.35.0.");
+  });
+});
+
+describe("release check update smoke gate", () => {
+  it("accepts a clean update-check smoke output", () => {
+    const run = vi.fn(() =>
+      [
+        "Codex Plugin Doctor Update Check",
+        "Installed: 1.37.0",
+        "Latest: 1.37.0",
+        "Status: UP TO DATE"
+      ].join("\n")
+    );
+
+    assertUpdateCheckSmoke("1.37.0", { run });
+
+    expect(run).toHaveBeenCalledWith(
+      "node",
+      ["dist/cli.js", "doctor", "--update-check"],
+      { capture: true, includeStderr: true }
+    );
+  });
+
+  it("rejects update-check output with a Node shell warning", () => {
+    const run = vi.fn(() => "Status: UP TO DATE\n(node:1) [DEP0190] warning");
+
+    expect(() => assertUpdateCheckSmoke("1.37.0", { run })).toThrow("DEP0190");
   });
 });

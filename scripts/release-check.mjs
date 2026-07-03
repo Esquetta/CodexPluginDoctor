@@ -39,7 +39,12 @@ function run(command, commandArgs, options = {}) {
     throw new Error(stderr ? `${label} failed: ${stderr}` : `${label} failed`);
   }
 
-  return result.stdout?.trim() ?? "";
+  const stdout = result.stdout?.trim() ?? "";
+  const stderr = result.stderr?.trim() ?? "";
+
+  return options.includeStderr && stderr
+    ? [stdout, stderr].filter(Boolean).join("\n")
+    : stdout;
 }
 
 function getPackageVersion() {
@@ -130,6 +135,23 @@ export function assertFreshInstallAudit(version, options = {}) {
   }
 }
 
+export function assertUpdateCheckSmoke(version, options = {}) {
+  const commandRunner = options.run ?? run;
+  const output = commandRunner(
+    "node",
+    ["dist/cli.js", "doctor", "--update-check"],
+    { capture: true, includeStderr: true }
+  );
+
+  if (output.includes("DEP0190")) {
+    throw new Error("Update check emitted Node DEP0190 shell warning.");
+  }
+
+  if (!output.includes(`Installed: ${version}`) || !output.includes("Status:")) {
+    throw new Error("Update check smoke output was incomplete.");
+  }
+}
+
 function assertTagDoesNotExist(version) {
   const localTag = run("git", ["tag", "--list", `v${version}`], { capture: true });
   const remoteTag = run("git", ["ls-remote", "--tags", "origin", `refs/tags/v${version}`], {
@@ -150,6 +172,7 @@ function main() {
   assertTagDoesNotExist(version);
   run("npm", ["test"]);
   run("npm", ["run", "build"]);
+  assertUpdateCheckSmoke(version);
   run("npm", ["pack", "--dry-run"]);
   assertFreshInstallAudit(version);
   run("npm", ["publish", "--dry-run", "--access", "public"]);

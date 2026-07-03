@@ -3012,6 +3012,11 @@ describe("runCli", () => {
     stderr.length = 0;
 
     const checkExitCode = await runCli(["check", targetPath, "--runtime", "--no-animations"], io, {
+      runCheckImpl: (pathToCheck, options) =>
+        runCheck(pathToCheck, {
+          ...options,
+          runtimeStartupTimeoutMs: 2_000
+        }),
       terminalContext: {
         stdoutIsTTY: false,
         stderrIsTTY: false,
@@ -3019,7 +3024,7 @@ describe("runCli", () => {
       }
     });
 
-    expect(checkExitCode).toBe(0);
+    expect(checkExitCode, stdout.join("") || stderr.join("")).toBe(0);
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("prompts/get: pass");
   });

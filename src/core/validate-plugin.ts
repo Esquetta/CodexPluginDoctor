@@ -727,6 +727,7 @@ export async function validatePlugin(
 
   const runtimeResult = options.runtime
     ? await probeRuntime(discoveredPackage, {
+        startupTimeoutMs: options.runtimeStartupTimeoutMs,
         transcript: options.runtimeTranscript
       })
     : null;
