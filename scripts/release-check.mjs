@@ -15,9 +15,15 @@ const allowPublished =
 
 function resolveCommand(command, commandArgs) {
   if (process.platform === "win32" && ["npm", "npx"].includes(command)) {
+    const cliName = command === "npm" ? "npm-cli.js" : "npx-cli.js";
+    const cliPath =
+      command === "npm" && process.env.npm_execpath
+        ? process.env.npm_execpath
+        : path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", cliName);
+
     return {
-      command: `${command}.cmd`,
-      args: commandArgs
+      command: process.execPath,
+      args: [cliPath, ...commandArgs]
     };
   }
 

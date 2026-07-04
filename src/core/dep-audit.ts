@@ -41,13 +41,16 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 async function runNpmAudit(cwd: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const npmCliPath =
+      process.env.npm_execpath ??
+      path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
     const command =
-      process.platform === "win32" && process.env.npm_execpath
+      process.platform === "win32"
         ? process.execPath
         : "npm";
     const args =
-      process.platform === "win32" && process.env.npm_execpath
-        ? [process.env.npm_execpath, "audit", "--json"]
+      process.platform === "win32"
+        ? [npmCliPath, "audit", "--json"]
         : ["audit", "--json"];
 
     execFile(

@@ -57,8 +57,20 @@ function readNpmConfig(name: string): string | null {
 
 function resolveCommand(command: string): string {
   return process.platform === "win32" && command === "npm"
-    ? "npm.cmd"
+    ? process.execPath
     : command;
+}
+
+function resolveArgs(command: string, args: string[]): string[] {
+  if (process.platform !== "win32" || command !== "npm") {
+    return args;
+  }
+
+  const npmCliPath =
+    process.env.npm_execpath ??
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+
+  return [npmCliPath, ...args];
 }
 
 async function runCommand(
@@ -67,7 +79,7 @@ async function runCommand(
   cwd: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveCommand(command), args, {
+    const child = spawn(resolveCommand(command), resolveArgs(command, args), {
       cwd,
       stdio: "inherit"
     });

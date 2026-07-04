@@ -72,10 +72,14 @@ interface CommandSpec {
 }
 
 function npmCommand(args: string[]): CommandSpec {
-  if (process.platform === "win32" && process.env.npm_execpath) {
+  if (process.platform === "win32") {
+    const npmCliPath =
+      process.env.npm_execpath ??
+      path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+
     return {
       command: process.execPath,
-      args: [process.env.npm_execpath, ...args]
+      args: [npmCliPath, ...args]
     };
   }
 
