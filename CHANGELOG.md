@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.38.0] - 2026-07-04
+
+### Added
+
+- added child_process shell risk findings to the security audit
+- added a release-check security self-scan for risky child_process usage before publish
+
+### Changed
+
+- removed remaining Windows shell wrappers from npm-related internal commands
+
 ## [1.37.0] - 2026-07-03
 
 ### Added
