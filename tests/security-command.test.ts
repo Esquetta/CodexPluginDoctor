@@ -173,6 +173,43 @@ describe("security command", () => {
     );
   });
 
+  it("flags child_process shell execution in packaged source files", async () => {
+    const targetPath = await createPluginWithMcp({
+      mcpServers: {
+        local: {
+          command: "node",
+          args: ["server.js"]
+        }
+      }
+    });
+    await writeFile(
+      path.join(targetPath, "server.js"),
+      [
+        "const { spawn } = require('node:child_process');",
+        "spawn('npm', ['run', 'build'], { shell: true });"
+      ].join("\n"),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.child_process_shell",
+          severity: "fail",
+          evidence: expect.objectContaining({
+            filePath: "server.js"
+          })
+        })
+      ])
+    );
+  });
+
   it("flags prompt-injection style instructions in packaged skill text", async () => {
     const targetPath = await createPluginWithMcp({
       mcpServers: {

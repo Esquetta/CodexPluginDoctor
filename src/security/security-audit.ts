@@ -240,7 +240,9 @@ const poisonScanSkippedDirectories = new Set([
   ".git",
   "coverage",
   "dist",
-  "node_modules"
+  "node_modules",
+  "release-candidate",
+  "tests"
 ]);
 
 const promptInjectionPatterns: RegExp[] = [
@@ -248,6 +250,33 @@ const promptInjectionPatterns: RegExp[] = [
   /\b(?:exfiltrate|steal|leak|upload|send)\b.{0,120}\b(?:secret|secrets|token|tokens|api\s*key|api\s*keys|credential|credentials|environment\s+variables?|env)\b/i,
   /\bdo\s+not\s+(?:reveal|tell|mention|disclose)\b.{0,120}\b(?:instruction|instructions|prompt|prompts|system|developer)\b/i
 ];
+
+const childProcessScanExtensions = new Set([
+  ".cjs",
+  ".js",
+  ".mjs",
+  ".ts",
+  ".tsx"
+]);
+
+function importsChildProcess(content: string): boolean {
+  return (
+    /\bfrom\s+["']node:child_process["']/.test(content) ||
+    /\bfrom\s+["']child_process["']/.test(content) ||
+    /\brequire\(\s*["'](?:node:)?child_process["']\s*\)/.test(content)
+  );
+}
+
+function sourceUsesShellOption(content: string): boolean {
+  return /\bshell\s*:\s*(?:true|process\.platform\s*===\s*["']win32["'])/.test(content);
+}
+
+function sourceUsesShellCommand(content: string): boolean {
+  return (
+    /["']cmd(?:\.exe)?["'][\s\S]{0,200}["']\/c["']/i.test(content) ||
+    /["'](?:powershell|pwsh)(?:\.exe)?["'][\s\S]{0,200}["']-(?:command|encodedcommand|enc)["']/i.test(content)
+  );
+}
 
 export function auditMcpServerConfig(
   rootPath: string,
@@ -481,6 +510,81 @@ async function auditPromptPoisoningSurface(rootPath: string): Promise<Finding[]>
   return findings;
 }
 
+async function collectChildProcessScanFiles(
+  rootPath: string,
+  currentPath = rootPath
+): Promise<string[]> {
+  const entries = await readdir(currentPath, { withFileTypes: true });
+  const filePaths: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = path.join(currentPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (poisonScanSkippedDirectories.has(entry.name)) {
+        continue;
+      }
+
+      filePaths.push(...(await collectChildProcessScanFiles(rootPath, entryPath)));
+      continue;
+    }
+
+    if (!entry.isFile() || !childProcessScanExtensions.has(path.extname(entry.name).toLowerCase())) {
+      continue;
+    }
+
+    const details = await stat(entryPath);
+
+    if (details.size <= 512 * 1024) {
+      filePaths.push(entryPath);
+    }
+  }
+
+  return filePaths;
+}
+
+export async function auditChildProcessSourceSurface(rootPath: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+
+  for (const filePath of await collectChildProcessScanFiles(rootPath)) {
+    const content = await readFile(filePath, "utf8");
+
+    if (!importsChildProcess(content)) {
+      continue;
+    }
+
+    const relativeFilePath = relativePackagePath(rootPath, filePath);
+
+    if (sourceUsesShellOption(content)) {
+      findings.push(
+        buildFinding(
+          "fail",
+          "plugin.security.child_process_shell",
+          `The source file \`${relativeFilePath}\` enables child_process shell execution.`,
+          "Shell execution expands command strings through a platform shell, which can turn quoting bugs or user-controlled args into command injection.",
+          "Use `spawn` or `execFile` with an explicit executable and argument array instead of enabling `shell`.",
+          { filePath: relativeFilePath }
+        )
+      );
+    }
+
+    if (sourceUsesShellCommand(content)) {
+      findings.push(
+        buildFinding(
+          "fail",
+          "plugin.security.child_process_shell_command",
+          `The source file \`${relativeFilePath}\` appears to launch a shell command wrapper.`,
+          "Explicit shell wrappers such as `cmd /c` or `powershell -Command` make command execution harder to audit and increase injection risk.",
+          "Launch the concrete executable directly, or use platform-specific executable names such as `npm.cmd` on Windows.",
+          { filePath: relativeFilePath }
+        )
+      );
+    }
+  }
+
+  return findings;
+}
+
 async function auditMcpCommandSurface(
   discoveredPackage: DiscoveredPackage
 ): Promise<Finding[]> {
@@ -595,6 +699,7 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
   const findings = [
     ...validationSecurityFindings,
     ...(await auditMcpCommandSurface(discoveredPackage)),
+    ...(await auditChildProcessSourceSurface(discoveredPackage.rootPath)),
     ...(await auditPromptPoisoningSurface(discoveredPackage.rootPath))
   ];
 

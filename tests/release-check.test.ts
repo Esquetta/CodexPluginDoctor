@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   assertFreshInstallAudit,
+  assertSecuritySelfScan,
   assertUpdateCheckSmoke,
   assertVersionIsPublishable
 } from "../scripts/release-check.mjs";
@@ -144,5 +145,27 @@ describe("release check update smoke gate", () => {
     const run = vi.fn(() => "Status: UP TO DATE\n(node:1) [DEP0190] warning");
 
     expect(() => assertUpdateCheckSmoke("1.37.0", { run })).toThrow("DEP0190");
+  });
+});
+
+describe("release check security self-scan gate", () => {
+  it("accepts a clean child_process self-scan", async () => {
+    await expect(assertSecuritySelfScan({ scan: async () => [] })).resolves.toBeUndefined();
+  });
+
+  it("rejects risky child_process findings before publish", async () => {
+    await expect(
+      assertSecuritySelfScan({
+        scan: async () => [
+          {
+            id: "plugin.security.child_process_shell",
+            severity: "fail",
+            message: "shell enabled",
+            impact: "risk",
+            suggestedFix: "remove shell"
+          }
+        ]
+      })
+    ).rejects.toThrow("Security self-scan found risky child_process usage");
   });
 });

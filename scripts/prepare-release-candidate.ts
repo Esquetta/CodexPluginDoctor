@@ -55,16 +55,21 @@ function readNpmConfig(name: string): string | null {
   return value && value !== "true" ? value : null;
 }
 
+function resolveCommand(command: string): string {
+  return process.platform === "win32" && command === "npm"
+    ? "npm.cmd"
+    : command;
+}
+
 async function runCommand(
   command: string,
   args: string[],
   cwd: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(resolveCommand(command), args, {
       cwd,
-      stdio: "inherit",
-      shell: process.platform === "win32"
+      stdio: "inherit"
     });
 
     child.on("error", reject);

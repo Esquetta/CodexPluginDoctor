@@ -72,10 +72,10 @@ interface CommandSpec {
 }
 
 function npmCommand(args: string[]): CommandSpec {
-  if (process.platform === "win32") {
+  if (process.platform === "win32" && process.env.npm_execpath) {
     return {
-      command: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", "npm", ...args]
+      command: process.execPath,
+      args: [process.env.npm_execpath, ...args]
     };
   }
 

@@ -69,8 +69,8 @@ function readNpmConfigPositional(name) {
 function resolveCommand(command, commandArgs) {
   if (process.platform === "win32" && ["npm", "npx"].includes(command)) {
     return {
-      command: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", command, ...commandArgs]
+      command: `${command}.cmd`,
+      args: commandArgs
     };
   }
 

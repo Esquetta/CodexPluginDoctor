@@ -16,8 +16,8 @@ const allowPublished =
 function resolveCommand(command, commandArgs) {
   if (process.platform === "win32" && ["npm", "npx"].includes(command)) {
     return {
-      command: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", command, ...commandArgs]
+      command: `${command}.cmd`,
+      args: commandArgs
     };
   }
 
@@ -152,6 +152,25 @@ export function assertUpdateCheckSmoke(version, options = {}) {
   }
 }
 
+export async function assertSecuritySelfScan(options = {}) {
+  const scan =
+    options.scan ??
+    (async (targetPath) => {
+      const moduleUrl = pathToFileURL(
+        path.join(repoRoot, "dist", "security", "security-audit.js")
+      ).href;
+      const security = await import(moduleUrl);
+
+      return security.auditChildProcessSourceSurface(targetPath);
+    });
+  const findings = await scan(repoRoot);
+
+  if (findings.length > 0) {
+    const summary = findings.map((finding) => finding.id).join(", ");
+    throw new Error(`Security self-scan found risky child_process usage: ${summary}`);
+  }
+}
+
 function assertTagDoesNotExist(version) {
   const localTag = run("git", ["tag", "--list", `v${version}`], { capture: true });
   const remoteTag = run("git", ["ls-remote", "--tags", "origin", `refs/tags/v${version}`], {
@@ -163,7 +182,7 @@ function assertTagDoesNotExist(version) {
   }
 }
 
-function main() {
+async function main() {
   const version = getPackageVersion();
 
   console.log(`Codex Plugin Doctor release check for ${version}`);
@@ -173,6 +192,7 @@ function main() {
   run("npm", ["test"]);
   run("npm", ["run", "build"]);
   assertUpdateCheckSmoke(version);
+  await assertSecuritySelfScan();
   run("npm", ["pack", "--dry-run"]);
   assertFreshInstallAudit(version);
   run("npm", ["publish", "--dry-run", "--access", "public"]);
@@ -183,11 +203,9 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
 ) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`release-check failed: ${message}`);
     process.exitCode = 1;
-  }
+  });
 }
