@@ -446,6 +446,39 @@ export function auditMcpServerConfig(
   return findings;
 }
 
+const externalUrlPattern = /https?:\/\/[^\s`"'<>)]+/gi;
+
+async function auditSkillExternalReferences(rootPath: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+
+  for (const filePath of await collectPromptPoisoningScanFiles(rootPath)) {
+    const content = await readFile(filePath, "utf8");
+    const matches = content.match(externalUrlPattern);
+
+    if (!matches) {
+      continue;
+    }
+
+    const uniqueUrls = [...new Set(matches)];
+    const relativeFilePath = path.relative(rootPath, filePath).replace(/\\/g, "/");
+
+    for (const url of uniqueUrls.slice(0, 5)) {
+      findings.push(
+        buildFinding(
+          "warn",
+          "plugin.skill.external_http_reference",
+          `The packaged text file \`${relativeFilePath}\` references external URL \`${url}\`.`,
+          "External URLs in skill instructions can lead to link rot, phishing risk, or unauthorized telemetry when an agent follows them.",
+          "Replace the external URL with a local reference, or document the link only in the plugin README where reviewers can see it.",
+          { filePath: relativeFilePath, url }
+        )
+      );
+    }
+  }
+
+  return findings;
+}
+
 async function collectPromptPoisoningScanFiles(
   rootPath: string,
   currentPath = rootPath
@@ -700,7 +733,8 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
     ...validationSecurityFindings,
     ...(await auditMcpCommandSurface(discoveredPackage)),
     ...(await auditChildProcessSourceSurface(discoveredPackage.rootPath)),
-    ...(await auditPromptPoisoningSurface(discoveredPackage.rootPath))
+    ...(await auditPromptPoisoningSurface(discoveredPackage.rootPath)),
+    ...(await auditSkillExternalReferences(discoveredPackage.rootPath))
   ];
 
   return buildSecurityAuditFromFindings(discoveredPackage.rootPath, findings);

@@ -280,6 +280,15 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "url": "http://127.0.0.1:3000/mcp" }'
   },
   {
+    id: "plugin.skill.external_http_reference",
+    category: "skill",
+    defaultSeverity: "warn",
+    summary: "A packaged skill text references an external HTTP/HTTPS URL.",
+    why: "External URLs in skill instructions can lead to link rot, phishing risk, or unauthorized telemetry when an agent follows them.",
+    fix: "Replace the external URL with a local reference, or document the link only in the plugin README where reviewers can see it.",
+    example: "Replace `https://example.com/docs` with a local `docs/setup.md` reference."
+  },
+  {
     id: "plugin.security.prompt_injection_text",
     category: "security",
     defaultSeverity: "fail",

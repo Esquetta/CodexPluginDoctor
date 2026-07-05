@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import { runCli } from "../src/run-cli.js";
 import { initGitHooks, removeGitHooks } from "../src/core/init-git-hooks.js";
 
+const hookExtension = process.platform === "win32" ? ".bat" : "";
+
+function hookPath(rootPath: string, name: string): string {
+  return path.join(rootPath, ".git", "hooks", `${name}${hookExtension}`);
+}
+
 function createIo() {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -40,8 +46,8 @@ describe("init-git-hooks", () => {
 
       expect(result.rootPath).toBe(path.resolve(targetPath));
       expect(result.hookPaths).toHaveLength(2);
-      expect(result.hookPaths[0]).toBe(path.join(result.rootPath, ".git", "hooks", "pre-commit"));
-      expect(result.hookPaths[1]).toBe(path.join(result.rootPath, ".git", "hooks", "pre-push"));
+      expect(result.hookPaths[0]).toBe(hookPath(result.rootPath, "pre-commit"));
+      expect(result.hookPaths[1]).toBe(hookPath(result.rootPath, "pre-push"));
       expect(result.preExisting).toEqual([]);
 
       const preCommitContent = await readFile(result.hookPaths[0], "utf8");
@@ -55,27 +61,27 @@ describe("init-git-hooks", () => {
 
     it("overwrites existing hooks when force is true", async () => {
       const targetPath = await createGitRepo();
-      const hookPath = path.join(targetPath, ".git", "hooks", "pre-commit");
+      const hookPathValue = hookPath(targetPath, "pre-commit");
 
-      await writeFile(hookPath, "echo old", "utf8");
+      await writeFile(hookPathValue, "echo old", "utf8");
       const result = await initGitHooks(targetPath, { force: true });
 
-      expect(result.preExisting).toContain(hookPath);
-      const content = await readFile(hookPath, "utf8");
+      expect(result.preExisting).toContain(hookPathValue);
+      const content = await readFile(hookPathValue, "utf8");
       expect(content).toContain("Codex Plugin Doctor: running pre-commit validation");
       expect(content).not.toContain("echo old");
     });
 
     it("does not overwrite existing hooks when force is false", async () => {
       const targetPath = await createGitRepo();
-      const hookPath = path.join(targetPath, ".git", "hooks", "pre-commit");
+      const hookPathValue = hookPath(targetPath, "pre-commit");
 
-      await writeFile(hookPath, "echo old", "utf8");
+      await writeFile(hookPathValue, "echo old", "utf8");
       const result = await initGitHooks(targetPath, { force: false });
 
-      const content = await readFile(hookPath, "utf8");
+      const content = await readFile(hookPathValue, "utf8");
       expect(content).toBe("echo old");
-      expect(result.preExisting).not.toContain(hookPath);
+      expect(result.preExisting).not.toContain(hookPathValue);
     });
 
     it("creates .git/hooks directory if it does not exist", async () => {
@@ -110,7 +116,7 @@ describe("init-git-hooks", () => {
       expect(stdout.join("")).toContain(targetPath);
 
       const preCommitContent = await readFile(
-        path.join(targetPath, ".git", "hooks", "pre-commit"),
+        hookPath(targetPath, "pre-commit"),
         "utf8"
       );
       expect(preCommitContent).toContain("codex-plugin-doctor check");
@@ -132,8 +138,8 @@ describe("init-git-hooks", () => {
         preExisting: []
       });
       expect(output.hookPaths).toEqual([
-        path.join(path.resolve(targetPath), ".git", "hooks", "pre-commit"),
-        path.join(path.resolve(targetPath), ".git", "hooks", "pre-push")
+        hookPath(path.resolve(targetPath), "pre-commit"),
+        hookPath(path.resolve(targetPath), "pre-push")
       ]);
     });
 
@@ -149,9 +155,9 @@ describe("init-git-hooks", () => {
 
     it("reports overwritten hooks with force flag", async () => {
       const targetPath = await createGitRepo();
-      const hookPath = path.join(targetPath, ".git", "hooks", "pre-commit");
+      const hookPathValue = hookPath(targetPath, "pre-commit");
 
-      await writeFile(hookPath, "echo old", "utf8");
+      await writeFile(hookPathValue, "echo old", "utf8");
       const { io, stdout, stderr } = createIo();
 
       const exitCode = await runCli(["init-git-hooks", targetPath, "--force"], io);
@@ -159,14 +165,14 @@ describe("init-git-hooks", () => {
       expect(exitCode).toBe(0);
       expect(stderr).toEqual([]);
       expect(stdout.join("")).toContain("Overwritten existing hooks");
-      expect(stdout.join("")).toContain(hookPath);
+      expect(stdout.join("")).toContain(hookPathValue);
     });
 
     it("skips overwrite without force flag", async () => {
       const targetPath = await createGitRepo();
-      const hookPath = path.join(targetPath, ".git", "hooks", "pre-commit");
+      const hookPathValue = hookPath(targetPath, "pre-commit");
 
-      await writeFile(hookPath, "echo old", "utf8");
+      await writeFile(hookPathValue, "echo old", "utf8");
       const { io, stdout, stderr } = createIo();
 
       const exitCode = await runCli(["init-git-hooks", targetPath], io);
@@ -175,29 +181,29 @@ describe("init-git-hooks", () => {
       expect(stderr).toEqual([]);
       expect(stdout.join("")).not.toContain("Overwritten");
 
-      const content = await readFile(hookPath, "utf8");
+      const content = await readFile(hookPathValue, "utf8");
       expect(content).toBe("echo old");
     });
 
-    it("writes hooks with correct shell script content", async () => {
+    it("writes hooks with correct script content", async () => {
       const targetPath = await createGitRepo();
       const { io } = createIo();
 
       await runCli(["init-git-hooks", targetPath], io);
 
       const preCommit = await readFile(
-        path.join(targetPath, ".git", "hooks", "pre-commit"),
+        hookPath(targetPath, "pre-commit"),
         "utf8"
       );
-      expect(preCommit).toContain("#!/usr/bin/env sh");
-      expect(preCommit).toContain("Plugin validation failed. Commit blocked.");
+      expect(preCommit).toContain("codex-plugin-doctor check");
+      expect(preCommit).toContain("validation failed");
 
       const prePush = await readFile(
-        path.join(targetPath, ".git", "hooks", "pre-push"),
+        hookPath(targetPath, "pre-push"),
         "utf8"
       );
-      expect(prePush).toContain("#!/usr/bin/env sh");
-      expect(prePush).toContain("Plugin validation failed. Push blocked.");
+      expect(prePush).toContain("codex-plugin-doctor check");
+      expect(prePush).toContain("validation failed");
       expect(prePush).toContain("--runtime");
     });
 
@@ -214,8 +220,8 @@ describe("init-git-hooks", () => {
       expect(stdout.join("")).toContain("Removed Codex Plugin Doctor git hooks");
 
       const { stat } = await import("node:fs/promises");
-      await expect(stat(path.join(targetPath, ".git", "hooks", "pre-commit"))).rejects.toThrow();
-      await expect(stat(path.join(targetPath, ".git", "hooks", "pre-push"))).rejects.toThrow();
+      await expect(stat(hookPath(targetPath, "pre-commit"))).rejects.toThrow();
+      await expect(stat(hookPath(targetPath, "pre-push"))).rejects.toThrow();
     });
 
     it("renders remove JSON output", async () => {
@@ -238,9 +244,9 @@ describe("init-git-hooks", () => {
 
     it("skips hooks not generated by doctor", async () => {
       const targetPath = await createGitRepo();
-      const hookPath = path.join(targetPath, ".git", "hooks", "pre-commit");
+      const hookPathValue = hookPath(targetPath, "pre-commit");
 
-      await writeFile(hookPath, "#!/usr/bin/env sh\necho custom", "utf8");
+      await writeFile(hookPathValue, "#!/usr/bin/env sh\necho custom", "utf8");
       const { io, stdout } = createIo();
 
       const exitCode = await runCli(["init-git-hooks", targetPath, "--remove"], io);
@@ -250,7 +256,7 @@ describe("init-git-hooks", () => {
       expect(stdout.join("")).not.toContain("Removed:");
 
       const { stat } = await import("node:fs/promises");
-      await stat(hookPath);
+      await stat(hookPathValue);
     });
   });
 

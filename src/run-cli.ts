@@ -268,7 +268,7 @@ const defaultIo: CliIo = {
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path> [--json|--markdown] [--output <path>]|runtime-policy <path> [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus|runtime-plan <path> [--json|--markdown] [--output <path>]|runtime-policy <path> [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
   io.writeStderr(
     "Suppression governance: codex-plugin-doctor suppress list <path> [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]\n       codex-plugin-doctor suppress prune <path> [--apply] [--json]"
@@ -3169,6 +3169,8 @@ export async function runCli(
   const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
     ? null
     : normalizedFlags[runtimeApprovalDigestIndex + 1];
+  const changedSinceIndex = normalizedFlags.indexOf("--changed-since");
+  const changedSinceRef = changedSinceIndex === -1 ? null : normalizedFlags[changedSinceIndex + 1];
 
   if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
     io.writeStderr("Missing path after --output.");
@@ -3202,6 +3204,16 @@ export async function runCli(
 
   if (historyIndex !== -1 && (!historyPath || historyPath.startsWith("--"))) {
     io.writeStderr("Missing path after --history.");
+    return 2;
+  }
+
+  if (changedSinceIndex !== -1 && (!changedSinceRef || changedSinceRef.startsWith("--"))) {
+    io.writeStderr("Missing ref after --changed-since.");
+    return 2;
+  }
+
+  if (changedSinceIndex !== -1 && checkInstalled) {
+    io.writeStderr("--changed-since requires a single package target.");
     return 2;
   }
 
@@ -3346,6 +3358,82 @@ export async function runCli(
     : null;
 
   renderer?.start("Validating package");
+
+  if (changedSinceRef) {
+    const { execFile } = await import("node:child_process");
+
+    try {
+      const gitOutput = await new Promise<string>((resolve, reject) => {
+        execFile(
+          "git",
+          ["diff", "--name-only", `${changedSinceRef}...HEAD`],
+          { cwd: path.resolve(targetPath) },
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(new Error(stderr.trim() || error.message));
+              return;
+            }
+            resolve(stdout);
+          }
+        );
+      });
+
+      const changedFiles = gitOutput.split("\n").filter(Boolean);
+
+      if (changedFiles.length === 0) {
+        io.writeStdout("No changed files since the given ref.");
+        return 0;
+      }
+
+      const changedDirs = new Set<string>();
+
+      for (const file of changedFiles) {
+        const dir = path.dirname(file);
+        changedDirs.add(dir);
+      }
+
+      let allPassed = true;
+      let validatedCount = 0;
+
+      for (const dir of changedDirs) {
+        const pluginRoot = path.resolve(targetPath, dir);
+        const manifestPath = path.join(pluginRoot, ".codex-plugin", "plugin.json");
+
+        try {
+          await (await import("node:fs/promises")).stat(manifestPath);
+        } catch {
+          continue;
+        }
+
+        const pluginResult = applyDoctorConfig(
+          await runCheckImpl(pluginRoot, {
+            runtime: effectiveRuntimeProbeEnabled
+          }),
+          applyPolicyToDoctorConfig(
+            applyCheckProfile(await loadDoctorConfig(pluginRoot, configPath), checkProfile),
+            policy
+          )
+        );
+
+        io.writeStdout(`\n${pluginResult.targetPath}: ${pluginResult.status.toUpperCase()}`);
+        validatedCount += 1;
+
+        if (pluginResult.status !== "pass") {
+          allPassed = false;
+          for (const finding of pluginResult.findings) {
+            io.writeStdout(`  ${finding.severity === "fail" ? "FAIL" : "WARN"}  ${finding.id}: ${finding.message}`);
+          }
+        }
+      }
+
+      io.writeStdout(`\n\nValidated ${validatedCount} changed plugins.`);
+      return allPassed ? 0 : 1;
+    } catch (error) {
+      io.writeStderr(`--changed-since requires a git repository. ${(error as Error).message}`);
+      return 2;
+    }
+  }
+
   const result = applyDoctorConfig(
     await runCheckImpl(targetPath, {
       runtime: effectiveRuntimeProbeEnabled,

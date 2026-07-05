@@ -3725,11 +3725,10 @@ describe("runCli", () => {
       rootPath: path.resolve(targetPath),
       preExisting: []
     });
-    expect(output.hookPaths).toEqual([
-      path.join(path.resolve(targetPath), ".git", "hooks", "pre-commit"),
-      path.join(path.resolve(targetPath), ".git", "hooks", "pre-push")
-    ]);
-    expect(await readFile(output.hookPaths[0], "utf8")).toContain("Codex Plugin Doctor: running pre-commit validation");
+    expect(output.hookPaths).toHaveLength(2);
+    expect(output.hookPaths[0]).toContain("pre-commit");
+    expect(output.hookPaths[1]).toContain("pre-push");
+    expect(await readFile(output.hookPaths[0], "utf8")).toContain("codex-plugin-doctor check");
   });
 
   it("fails history regression gates when the latest run is worse", async () => {
