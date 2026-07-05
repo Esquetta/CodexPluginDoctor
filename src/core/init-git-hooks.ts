@@ -117,7 +117,9 @@ export interface RemoveGitHooksResult {
 export async function removeGitHooks(targetPath: string): Promise<RemoveGitHooksResult> {
   const rootPath = path.resolve(targetPath);
   const hooksDir = path.join(rootPath, ".git", "hooks");
-  const hookNames = [`pre-commit${hookExtension}`, `pre-push${hookExtension}`, "pre-commit", "pre-push"];
+  const hookNames = Array.from(
+    new Set([`pre-commit${hookExtension}`, `pre-push${hookExtension}`, "pre-commit", "pre-push"])
+  );
   const removed: string[] = [];
   const skipped: string[] = [];
 
