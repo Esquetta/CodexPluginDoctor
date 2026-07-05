@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: Esquetta/CodexPluginDoctor@v1.39.0
         with:
-          version: "1.38.0"
+          version: "1.39.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -53,7 +53,7 @@ Use SARIF when repository security tooling should ingest validation findings.
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     sarif: "true"
 ```
@@ -67,7 +67,7 @@ Use artifact and summary controls when the workflow needs custom retention or wa
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -104,7 +104,7 @@ Use review bundle artifacts when a pull request or release workflow should prese
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -152,7 +152,7 @@ The composite action can also append history directly:
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -174,7 +174,7 @@ The composite action can pass profiles directly:
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     profile: publish
 ```
@@ -186,7 +186,7 @@ Use policy presets when a workflow should apply one of the opinionated release g
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     path: .
     policy: codex-publish
 ```
@@ -200,7 +200,7 @@ Use installed-cache mode only in environments where Codex plugins are already av
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -213,7 +213,7 @@ Pin both the action ref and npm package version for reproducible CI:
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.39.0
   with:
-    version: "1.38.0"
+    version: "1.39.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.
