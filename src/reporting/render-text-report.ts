@@ -107,9 +107,12 @@ export function renderTextReport(
         const rule = findRuleDefinition(finding.id);
 
         if (rule) {
+          lines.push(`  Problem: ${rule.summary}`);
+          lines.push(`  Rule: ${rule.category}, ${rule.defaultSeverity}`);
           lines.push(`  Why: ${rule.why}`);
           lines.push(`  Fix detail: ${rule.fix}`);
           lines.push(`  Example: ${rule.example}`);
+          lines.push(`  Learn more: codex-plugin-doctor explain ${finding.id}`);
         }
       }
     }

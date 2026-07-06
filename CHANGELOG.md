@@ -4,6 +4,24 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.40.0] - 2026-07-06
+
+### Added
+
+- expanded `check --explain` text output with problem summaries, rule metadata, examples, and direct `explain <finding-id>` follow-up commands
+
+## [1.39.0] - 2026-07-05
+
+### Added
+
+- added external URL warnings for packaged skill instructions
+- added `--changed-since` validation for changed plugin package directories
+- added cross-platform git hook generation for local validation workflows
+
+### Fixed
+
+- de-duplicated git hook removal candidates on non-Windows platforms
+
 ## [1.38.0] - 2026-07-04
 
 ### Added

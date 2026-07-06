@@ -2887,9 +2887,12 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toEqual([]);
     expect(output).toContain("plugin.manifest.missing");
+    expect(output).toContain("Problem: The target directory is missing `.codex-plugin/plugin.json`.");
+    expect(output).toContain("Rule: package, fail");
     expect(output).toContain("Why: Codex needs the plugin manifest as the package entry point.");
     expect(output).toContain("Fix detail: Run the doctor against a plugin package root");
     expect(output).toContain('Example: { "name": "my-plugin"');
+    expect(output).toContain("Learn more: codex-plugin-doctor explain plugin.manifest.missing");
   });
 
   it("turns warnings into a blocking result when failOnWarnings is enabled", async () => {
