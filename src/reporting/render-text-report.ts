@@ -74,6 +74,20 @@ export function renderTextReport(
   const failures = result.findings.filter((finding) => finding.severity === "fail");
   const warnings = result.findings.filter((finding) => finding.severity === "warn");
 
+  if (explain) {
+    const nextActions = Array.from(
+      new Set([...failures, ...warnings].map((finding) => finding.suggestedFix))
+    ).slice(0, 5);
+
+    if (nextActions.length > 0) {
+      lines.push("", "Next Actions", "------------");
+
+      for (const [index, action] of nextActions.entries()) {
+        lines.push(`${index + 1}. ${action}`);
+      }
+    }
+  }
+
   const appendSection = (
     title: string,
     items: typeof result.findings,

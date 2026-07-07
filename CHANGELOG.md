@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.41.0] - 2026-07-07
+
+### Added
+
+- added a deduplicated `Next Actions` summary to `check --explain` text reports
+
 ## [1.40.0] - 2026-07-06
 
 ### Added
