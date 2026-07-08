@@ -55,6 +55,18 @@ export function buildMarkdownReport(
   }
 
   if (result.findings.length > 0) {
+    const nextActions = Array.from(
+      new Set(result.findings.map((finding) => finding.suggestedFix))
+    ).slice(0, 5);
+
+    if (nextActions.length > 0) {
+      lines.push("", "## Next Actions", "");
+
+      for (const [index, action] of nextActions.entries()) {
+        lines.push(`${index + 1}. ${action}`);
+      }
+    }
+
     lines.push("", "## Findings", "");
 
     for (const finding of result.findings) {
