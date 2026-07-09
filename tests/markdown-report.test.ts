@@ -40,7 +40,8 @@ describe("buildMarkdownReport", () => {
           severity: "fail",
           message: "Missing manifest.",
           impact: "Codex cannot load the package.",
-          suggestedFix: "Create `.codex-plugin/plugin.json`."
+          suggestedFix: "Create `.codex-plugin/plugin.json`.",
+          fingerprint: "a".repeat(64)
         },
         {
           id: "plugin.manifest.name.missing",
@@ -65,5 +66,9 @@ describe("buildMarkdownReport", () => {
     expect(report).toContain("2. Shorten the manifest description.");
     expect(report).not.toContain("3. Create `.codex-plugin/plugin.json`.");
     expect(report.indexOf("## Next Actions")).toBeLessThan(report.indexOf("## Findings"));
+    expect(report).toContain("## Recommended Commands");
+    expect(report).toContain('- `codex-plugin-doctor doctor recommend "example"`');
+    expect(report).toContain('- `codex-plugin-doctor fix "example" --dry-run`');
+    expect(report).toContain('- `codex-plugin-doctor suppress add "example"`');
   });
 });

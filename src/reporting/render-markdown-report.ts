@@ -1,6 +1,7 @@
 import type { CheckResult } from "../domain/types.js";
 import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
 import { formatFindingFingerprintLine } from "./finding-fingerprint.js";
+import { buildRecommendedCommands } from "./recommended-commands.js";
 
 export function buildMarkdownReport(
   result: CheckResult,
@@ -105,6 +106,16 @@ export function buildMarkdownReport(
       lines.push(`- Reason: ${finding.suppression.reason}`);
       lines.push(`- Expires: ${finding.suppression.expiresAt}`);
       lines.push("");
+    }
+  }
+
+  const recommendedCommands = buildRecommendedCommands(result);
+
+  if (recommendedCommands.length > 0) {
+    lines.push("", "## Recommended Commands", "");
+
+    for (const command of recommendedCommands) {
+      lines.push(`- \`${command}\``);
     }
   }
 

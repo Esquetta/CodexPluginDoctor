@@ -2,6 +2,7 @@ import type { CheckResult } from "../domain/types.js";
 import { findRuleDefinition } from "../rules/rule-catalog.js";
 import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
 import { formatFindingFingerprintLine } from "./finding-fingerprint.js";
+import { buildRecommendedCommands } from "./recommended-commands.js";
 
 function getCounts(result: CheckResult) {
   const failCount = result.findings.filter(
@@ -157,6 +158,16 @@ export function renderTextReport(
     lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
     lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
     lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
+  }
+
+  const recommendedCommands = buildRecommendedCommands(result);
+
+  if (recommendedCommands.length > 0) {
+    lines.push("", "Recommended Commands", "--------------------");
+
+    for (const command of recommendedCommands) {
+      lines.push(`- ${command}`);
+    }
   }
 
   return lines.join("\n");
