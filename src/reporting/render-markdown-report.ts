@@ -36,8 +36,16 @@ export function buildMarkdownReport(
     );
   }
 
+  if (result.baselineSummary) {
+    lines.push(
+      `| Baseline New | ${result.baselineSummary.new} |`,
+      `| Baseline Matched | ${result.baselineSummary.matched} |`,
+      `| Baseline Resolved | ${result.baselineSummary.resolved} |`
+    );
+  }
+
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
-    lines.push("", "No findings.");
+    lines.push("", result.baselineSummary ? "No new findings." : "No findings.");
     return lines.join("\n");
   }
 

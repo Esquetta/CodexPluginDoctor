@@ -77,12 +77,22 @@ node dist/cli.js security ./path/to/plugin --policy security
 node dist/cli.js check ./path/to/plugin --profile publish
 ```
 
+### Gradual Adoption Baseline
+
+```bash
+node dist/cli.js baseline create ./path/to/plugin --output .codex-doctor-baseline.json
+node dist/cli.js check ./path/to/plugin --baseline .codex-doctor-baseline.json
+```
+
+Commit and review the baseline. Baseline gating keeps existing fingerprinted findings visible while failing only on new active findings; regenerate it only when the accepted set intentionally changes.
+
 ## Rollout Advice
 
 - Start with structural validation on every pull request.
 - Enable runtime probing after command-based fixtures or local server behavior are stable.
 - Keep warn-level heuristics visible in PR summaries even when they do not block merges.
 - Preserve artifacts even on failed validations so maintainers can inspect JSON, Markdown, and SARIF evidence from the failing run.
+- Review baseline changes like policy changes; do not regenerate the file automatically in CI.
 - Use one stable package path in CI so report history stays comparable over time.
 
 ## Current Repository Behavior

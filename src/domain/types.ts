@@ -37,6 +37,14 @@ export interface CheckResult {
   suppressedFindings?: SuppressedFinding[];
   suppressionSummary?: SuppressionSummary;
   runtimeScorecard?: RuntimeScorecard;
+  baselinedFindings?: Finding[];
+  baselineSummary?: BaselineSummary;
+}
+
+export interface BaselineSummary {
+  matched: number;
+  new: number;
+  resolved: number;
 }
 
 export interface CheckOptions {
@@ -70,6 +78,7 @@ export interface JsonReportSummary {
     warn: number;
     total: number;
   };
+  baseline?: BaselineSummary;
 }
 
 export interface JsonReport {
@@ -79,6 +88,7 @@ export interface JsonReport {
   findings: Finding[];
   suppressedFindings?: SuppressedFinding[];
   suppressionSummary?: SuppressionSummary;
+  baselinedFindings?: Finding[];
 }
 
 export type RuntimeCapabilityStatus =

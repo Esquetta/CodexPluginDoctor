@@ -55,6 +55,12 @@ export function renderTextReport(
     );
   }
 
+  if (result.baselineSummary) {
+    lines.push(
+      `Baseline: ${result.baselineSummary.new} new, ${result.baselineSummary.matched} matched, ${result.baselineSummary.resolved} resolved`
+    );
+  }
+
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     if (result.runtimeScorecard) {
       lines.push("", "Runtime Scorecard", "----------------");
@@ -68,7 +74,7 @@ export function renderTextReport(
       lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
     }
 
-    lines.push("", "No findings.");
+    lines.push("", result.baselineSummary ? "No new findings." : "No findings.");
     return lines.join("\n");
   }
 

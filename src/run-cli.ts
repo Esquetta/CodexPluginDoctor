@@ -20,6 +20,12 @@ import {
   summarizeValidationHistory
 } from "./core/validation-history.js";
 import {
+  applyValidationBaseline,
+  buildValidationBaseline,
+  readValidationBaseline,
+  writeValidationBaseline
+} from "./core/validation-baseline.js";
+import {
   buildCompatibilityMatrix,
   type CompatibilityMatrix,
   matrixExitCode
@@ -272,6 +278,9 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(
     "Suppression governance: codex-plugin-doctor suppress list <path> [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]\n       codex-plugin-doctor suppress prune <path> [--apply] [--json]"
+  );
+  io.writeStderr(
+    "Baseline gating: codex-plugin-doctor baseline create <path> --output <path> [--runtime]\n       codex-plugin-doctor check <path> --baseline <path>"
   );
 }
 
@@ -1355,6 +1364,36 @@ export async function runCli(
     });
 
     io.writeStdout(renderInstalledPlugins(installedPlugins));
+    return 0;
+  }
+
+  if (command === "baseline") {
+    if (maybePath !== "create") {
+      io.writeStderr("Usage: codex-plugin-doctor baseline create <path> --output <path> [--runtime]");
+      return 2;
+    }
+
+    const targetPath = remainingArgs[0];
+    const baselineFlags = remainingArgs.slice(1);
+    const outputIndex = baselineFlags.indexOf("--output");
+    const outputPath = outputIndex === -1 ? null : baselineFlags[outputIndex + 1];
+
+    if (!targetPath || targetPath.startsWith("--")) {
+      io.writeStderr("Missing target path for baseline create.");
+      return 2;
+    }
+
+    if (!outputPath || outputPath.startsWith("--")) {
+      io.writeStderr("baseline create requires --output <path>.");
+      return 2;
+    }
+
+    const result = await (options.runCheckImpl ?? runCheck)(targetPath, {
+      runtime: baselineFlags.includes("--runtime")
+    });
+    const baseline = buildValidationBaseline(result);
+    await writeValidationBaseline(outputPath, baseline);
+    io.writeStdout(`Baseline created: ${path.resolve(outputPath)}\nFindings: ${baseline.findings.length}`);
     return 0;
   }
 
@@ -3171,6 +3210,8 @@ export async function runCli(
     : normalizedFlags[runtimeApprovalDigestIndex + 1];
   const changedSinceIndex = normalizedFlags.indexOf("--changed-since");
   const changedSinceRef = changedSinceIndex === -1 ? null : normalizedFlags[changedSinceIndex + 1];
+  const baselineIndex = normalizedFlags.indexOf("--baseline");
+  const baselinePath = baselineIndex === -1 ? null : normalizedFlags[baselineIndex + 1];
 
   if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
     io.writeStderr("Missing path after --output.");
@@ -3217,6 +3258,21 @@ export async function runCli(
     return 2;
   }
 
+  if (baselineIndex !== -1 && (!baselinePath || baselinePath.startsWith("--"))) {
+    io.writeStderr("Missing path after --baseline.");
+    return 2;
+  }
+
+  if (baselinePath && checkInstalled) {
+    io.writeStderr("Baseline gating requires a single package target.");
+    return 2;
+  }
+
+  if (baselinePath && changedSinceRef) {
+    io.writeStderr("Use either --baseline or --changed-since, not both.");
+    return 2;
+  }
+
   if (
     runtimeApprovalDigestIndex !== -1 &&
     (!runtimeApprovalDigest || runtimeApprovalDigest.startsWith("--"))
@@ -3248,6 +3304,17 @@ export async function runCli(
   if (checkInstalled && requireRuntimeApproval) {
     io.writeStderr("Runtime approval gating requires a single package target, not --installed.");
     return 2;
+  }
+
+  let baseline = null;
+
+  if (baselinePath) {
+    try {
+      baseline = await readValidationBaseline(baselinePath);
+    } catch (error) {
+      io.writeStderr(`Invalid baseline file: ${(error as Error).message}`);
+      return 2;
+    }
   }
 
   const outputPolicy = determineOutputPolicy({
@@ -3434,7 +3501,11 @@ export async function runCli(
     }
   }
 
-  const result = applyDoctorConfig(
+  const doctorConfig = applyPolicyToDoctorConfig(
+    applyCheckProfile(await loadDoctorConfig(targetPath, configPath), checkProfile),
+    policy
+  );
+  const configuredResult = applyDoctorConfig(
     await runCheckImpl(targetPath, {
       runtime: effectiveRuntimeProbeEnabled,
       runtimeTranscript:
@@ -3442,11 +3513,13 @@ export async function runCli(
           ? (line) => io.writeStderr(line)
           : undefined
     }),
-    applyPolicyToDoctorConfig(
-      applyCheckProfile(await loadDoctorConfig(targetPath, configPath), checkProfile),
-      policy
-    )
+    doctorConfig
   );
+  const result = baseline
+    ? applyValidationBaseline(configuredResult, baseline, {
+        failOnWarnings: doctorConfig.failOnWarnings
+      })
+    : configuredResult;
   if (renderer) {
     if (result.status === "fail") {
       renderer.stopFailure("Validation failed");

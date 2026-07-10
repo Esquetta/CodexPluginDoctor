@@ -288,6 +288,8 @@ codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
 codex-plugin-doctor check . --config .codex-doctor.json
+codex-plugin-doctor baseline create . --output .codex-doctor-baseline.json
+codex-plugin-doctor check . --baseline .codex-doctor-baseline.json
 codex-plugin-doctor check . --history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl
 codex-plugin-doctor history validation-history.jsonl --json
@@ -335,6 +337,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 `check --badge-json` emits Shields endpoint-compatible JSON such as `{"schemaVersion":1,"label":"doctor","message":"PASS","color":"brightgreen"}`. `check --badge-markdown` emits a static shields.io Markdown badge for README or release notes. Badge output is intentionally limited to single package checks, not `check --installed`.
 
 `check --history <path>` appends a compact JSONL validation snapshot after a single package check. `history <path>` reads the JSONL file and compares the latest run to the previous run, including status, finding-count deltas, and whether the latest run regressed. Add `history --json` for automation output or `history --fail-on-regression` when CI should fail after a worse latest run.
+
+`baseline create <path> --output <path>` records the current fingerprinted findings for gradual CI adoption. A later `check <path> --baseline <path>` keeps matched findings visible in baseline metadata but gates only new active findings; reports summarize new, matched, and resolved counts. Commit the baseline for review and regenerate it deliberately after accepted findings change.
 
 `fix --dry-run` renders safe automatic fix plans without changing files. `fix --interactive --backup` shows the same numbered plan, then applies everything after `yes` or only selected action numbers such as `1,3`. `fix --apply --backup` applies supported safe fixes, such as manifest defaults and missing skills directories, after creating backups.
 

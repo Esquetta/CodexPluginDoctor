@@ -26,7 +26,8 @@ export function buildJsonReport(
         fail: failCount,
         warn: warnCount,
         total: result.findings.length
-      }
+      },
+      ...(result.baselineSummary ? { baseline: result.baselineSummary } : {})
     },
     findings: result.findings,
     ...(result.suppressedFindings
@@ -34,6 +35,9 @@ export function buildJsonReport(
       : {}),
     ...(result.suppressionSummary
       ? { suppressionSummary: result.suppressionSummary }
+      : {}),
+    ...(result.baselinedFindings
+      ? { baselinedFindings: result.baselinedFindings }
       : {})
   };
 }
