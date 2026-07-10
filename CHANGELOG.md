@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.44.0] - 2026-07-10
+
+### Added
+
+- added fingerprint-based validation baselines for gradual CI adoption
+- added new, matched, and resolved baseline summaries to text, Markdown, and JSON reports
+
 ## [1.43.0] - 2026-07-09
 
 ### Added
