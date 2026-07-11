@@ -240,6 +240,17 @@ export {
   type InitGitHooksResult,
   type RemoveGitHooksResult
 } from "./core/init-git-hooks.js";
+export {
+  generateCompletion,
+  type CompletionShell
+} from "./core/shell-completion.js";
+export {
+  validateConfigFile,
+  renderConfigValidation,
+  renderConfigValidationJson,
+  type ConfigValidationFinding,
+  type ConfigValidationReport
+} from "./core/config-validate.js";
 
 export async function runCheck(
   targetPath: string,
