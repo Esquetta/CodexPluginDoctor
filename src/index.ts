@@ -251,6 +251,12 @@ export {
   type ConfigValidationFinding,
   type ConfigValidationReport
 } from "./core/config-validate.js";
+export {
+  buildReleaseCheck,
+  renderReleaseCheck,
+  renderReleaseCheckJson,
+  type ReleaseCheckReport
+} from "./core/release-check.js";
 
 export async function runCheck(
   targetPath: string,
