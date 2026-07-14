@@ -287,6 +287,10 @@ codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
+codex-plugin-doctor release check .
+codex-plugin-doctor release check . --json
+codex-plugin-doctor release check . --runtime
+codex-plugin-doctor release check . --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
 codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor baseline create . --output .codex-doctor-baseline.json
 codex-plugin-doctor check . --baseline .codex-doctor-baseline.json
@@ -463,7 +467,9 @@ npm run prepare-release
 npm run release-check
 ```
 
-`prepare-release` runs tests, builds the TypeScript output, and performs `npm pack --dry-run`. `release-check` adds release preflight checks for a clean git tree, existing npm versions, existing version tags, tests, build, pack dry-run, fresh temp install audit, and publish dry-run.
+`prepare-release` runs tests, builds the TypeScript output, and performs `npm pack --dry-run`. `release-check` adds release preflight checks for a clean git tree, existing npm versions, existing version tags, package/lockfile/changelog version consistency, tests, build, pack dry-run, fresh temp install audit, and publish dry-run.
+
+For plugin packages, `codex-plugin-doctor release check .` performs static readiness checks by default. Runtime probing executes package-local MCP servers and therefore requires an explicit `--runtime`; protected workflows can also require the approved runtime-plan digest.
 
 Related docs:
 

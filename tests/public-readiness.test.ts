@@ -41,6 +41,7 @@ describe("public repository readiness", () => {
     expect(packageJson.scripts?.["release-check"]).toBe("node scripts/release-check.mjs");
     expect(releaseCheck).toContain("npm view codex-plugin-doctor@<version> version");
     expect(releaseCheck).toContain("npm pack --dry-run");
+    expect(releaseCheck).toContain("assertReleaseMetadataSync");
     expect(releaseCheck).toContain(
       'run("npm", ["publish", "--dry-run", "--access", "public"]);'
     );

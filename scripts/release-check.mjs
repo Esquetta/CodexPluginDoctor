@@ -177,6 +177,15 @@ export async function assertSecuritySelfScan(options = {}) {
   }
 }
 
+async function assertReleaseMetadataSync() {
+  const moduleUrl = pathToFileURL(
+    path.join(repoRoot, "dist", "core", "release-check.js")
+  ).href;
+  const releaseCheck = await import(moduleUrl);
+
+  await releaseCheck.assertReleaseMetadataSync(repoRoot);
+}
+
 function assertTagDoesNotExist(version) {
   const localTag = run("git", ["tag", "--list", `v${version}`], { capture: true });
   const remoteTag = run("git", ["ls-remote", "--tags", "origin", `refs/tags/v${version}`], {
@@ -197,6 +206,7 @@ async function main() {
   assertTagDoesNotExist(version);
   run("npm", ["test"]);
   run("npm", ["run", "build"]);
+  await assertReleaseMetadataSync();
   assertUpdateCheckSmoke(version);
   await assertSecuritySelfScan();
   run("npm", ["pack", "--dry-run"]);

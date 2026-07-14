@@ -252,9 +252,13 @@ export {
   type ConfigValidationReport
 } from "./core/config-validate.js";
 export {
+  assertReleaseMetadataSync,
   buildReleaseCheck,
+  buildReleaseMetadataCheck,
   renderReleaseCheck,
   renderReleaseCheckJson,
+  type BuildReleaseCheckOptions,
+  type ReleaseMetadataCheck,
   type ReleaseCheckReport
 } from "./core/release-check.js";
 

@@ -57,6 +57,22 @@ node dist/cli.js check ./path/to/plugin --markdown --output codex-plugin-doctor-
 node dist/cli.js check ./path/to/plugin --json --runtime --output codex-plugin-doctor-runtime-report.json
 ```
 
+### Release Readiness
+
+```bash
+codex-plugin-doctor release check ./path/to/plugin
+codex-plugin-doctor release check ./path/to/plugin --json
+```
+
+Release readiness is static by default and checks validation, security, dependencies, compatibility, trust, and Node package release metadata. If `package.json` exists, its version must match the root package version in `package-lock.json`; when `CHANGELOG.md` exists, it must include a section for that version. Non-Node plugin packages without `package.json` skip the metadata check.
+
+Runtime probing executes package-local MCP servers and must be enabled explicitly:
+
+```bash
+codex-plugin-doctor release check ./path/to/plugin --runtime
+codex-plugin-doctor release check ./path/to/plugin --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
+```
+
 ### SARIF Artifact
 
 ```bash

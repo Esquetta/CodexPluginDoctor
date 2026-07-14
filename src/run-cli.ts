@@ -3175,7 +3175,7 @@ export async function runCli(
     const subCommand = maybePath;
 
     if (subCommand !== "check") {
-      io.writeStderr("Usage: codex-plugin-doctor release check <path> [--json]");
+      io.writeStderr("Usage: codex-plugin-doctor release check <path> [--json] [--runtime] [--require-runtime-approval --runtime-approval-digest <digest>]");
       return 2;
     }
 
@@ -3184,10 +3184,44 @@ export async function runCli(
       ? remainingArgs
       : remainingArgs.slice(1);
     const jsonOutput = releaseFlags.includes("--json");
+    const runtimeProbeEnabled = releaseFlags.includes("--runtime");
+    const requireRuntimeApproval = releaseFlags.includes("--require-runtime-approval");
+    const runtimeApprovalDigestIndex = releaseFlags.indexOf("--runtime-approval-digest");
+    const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
+      ? null
+      : releaseFlags[runtimeApprovalDigestIndex + 1];
+
+    if (requireRuntimeApproval && !runtimeProbeEnabled) {
+      io.writeStderr("Runtime approval requires --runtime.");
+      return 2;
+    }
+
+    if (
+      runtimeApprovalDigestIndex !== -1 &&
+      (!runtimeApprovalDigest || runtimeApprovalDigest.startsWith("--"))
+    ) {
+      io.writeStderr("Missing digest after --runtime-approval-digest.");
+      return 2;
+    }
+
+    if (requireRuntimeApproval) {
+      const runtimePlan = await buildDoctorRuntimePlan(targetPath);
+      const approval = evaluateRuntimeApproval(runtimePlan, {
+        required: true,
+        approvedDigest: runtimeApprovalDigest
+      });
+
+      if (!runtimeApprovalPassed(approval)) {
+        io.writeStderr(`${approval.message}\nCurrent runtime plan digest: ${runtimePlan.digest}`);
+        return 1;
+      }
+    }
 
     const report = await buildReleaseCheck(targetPath, {
       env: terminalContext.env,
-      platform: terminalContext.platform
+      platform: terminalContext.platform,
+      runtime: runtimeProbeEnabled,
+      runCheck: options.runCheckImpl
     });
     const output = jsonOutput
       ? renderReleaseCheckJson(report)
