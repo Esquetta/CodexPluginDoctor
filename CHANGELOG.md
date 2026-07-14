@@ -4,6 +4,26 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.46.1] - 2026-07-14
+
+### Fixed
+
+- made `release check` runtime probing opt-in and protected explicit probes with the existing runtime-plan approval digest
+- added package, lockfile, and changelog version consistency checks to CLI and repository release readiness
+
+## [1.46.0] - 2026-07-12
+
+### Added
+
+- added `release check` for combined validation, security, dependency, compatibility, and trust readiness
+
+## [1.45.0] - 2026-07-11
+
+### Added
+
+- added Bash, Zsh, and Fish shell completion generation
+- added `.codex-doctor.json` configuration validation
+
 ## [1.44.0] - 2026-07-10
 
 ### Added
