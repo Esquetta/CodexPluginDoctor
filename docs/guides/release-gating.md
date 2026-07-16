@@ -55,7 +55,10 @@ node dist/cli.js check ./path/to/plugin --markdown --output codex-plugin-doctor-
 
 ```bash
 node dist/cli.js check ./path/to/plugin --json --runtime --output codex-plugin-doctor-runtime-report.json
+node dist/cli.js check ./path/to/plugin --json --runtime --sandbox docker --output codex-plugin-doctor-runtime-report.json
 ```
+
+Docker mode currently supports Node.js stdio MCP servers. It uses a read-only package mount and container filesystem, no network, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed and does not fall back to native execution.
 
 ### Release Readiness
 
@@ -71,7 +74,11 @@ Runtime probing executes package-local MCP servers and must be enabled explicitl
 ```bash
 codex-plugin-doctor release check ./path/to/plugin --runtime
 codex-plugin-doctor release check ./path/to/plugin --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
+codex-plugin-doctor doctor runtime-plan ./path/to/plugin --sandbox docker --json
+codex-plugin-doctor release check ./path/to/plugin --runtime --sandbox docker --require-runtime-approval --runtime-approval-digest sha256:<approved-docker-plan-digest>
 ```
+
+Generate the approval digest with the same sandbox backend used by the release check. The digest changes when the Docker image or execution boundary changes. Preserve the plan and signed release evidence as CI artifacts.
 
 ### SARIF Artifact
 
@@ -106,6 +113,7 @@ Commit and review the baseline. Baseline gating keeps existing fingerprinted fin
 
 - Start with structural validation on every pull request.
 - Enable runtime probing after command-based fixtures or local server behavior are stable.
+- Require Docker mode for untrusted local Node.js stdio probes; keep native mode for explicitly trusted code.
 - Keep warn-level heuristics visible in PR summaries even when they do not block merges.
 - Preserve artifacts even on failed validations so maintainers can inspect JSON, Markdown, and SARIF evidence from the failing run.
 - Review baseline changes like policy changes; do not regenerate the file automatically in CI.

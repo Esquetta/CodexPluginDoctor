@@ -79,6 +79,7 @@ Runtime MCP validation with `--runtime`:
 - runtime capability scorecard
 - redacted verbose transcript with `--verbose-runtime`
 - optional runtime approval gating with a precomputed `doctor runtime-plan` digest
+- optional Docker isolation for local Node.js stdio servers with `--sandbox docker`
 
 Output formats:
 
@@ -216,8 +217,10 @@ codex-plugin-doctor doctor perf . --max-total-ms 2500 --max-stage-ms validation=
 codex-plugin-doctor doctor runtime-plan .
 codex-plugin-doctor doctor runtime-plan . --json --output runtime-plan.json
 codex-plugin-doctor doctor runtime-plan . --markdown --output runtime-plan.md
+codex-plugin-doctor doctor runtime-plan . --sandbox docker --json
 codex-plugin-doctor doctor runtime-policy .
 codex-plugin-doctor doctor runtime-policy . --json --output runtime-policy.json
+codex-plugin-doctor doctor runtime-policy . --sandbox docker --json
 codex-plugin-doctor doctor review-bundle . --output review-bundle --sign-key-env CODEX_PLUGIN_DOCTOR_SIGNING_KEY
 codex-plugin-doctor doctor review-bundle verify review-bundle --target . --sign-key-env CODEX_PLUGIN_DOCTOR_SIGNING_KEY
 codex-plugin-doctor doctor review-bundle diff --before old-review-bundle --after review-bundle
@@ -287,10 +290,13 @@ codex-plugin-doctor check . --ascii
 codex-plugin-doctor check . --no-animations
 codex-plugin-doctor check . --runtime
 codex-plugin-doctor check . --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
+codex-plugin-doctor check . --runtime --sandbox docker
+codex-plugin-doctor check . --runtime --sandbox docker --require-runtime-approval --runtime-approval-digest sha256:<approved-docker-plan-digest>
 codex-plugin-doctor release check .
 codex-plugin-doctor release check . --json
 codex-plugin-doctor release check . --runtime
 codex-plugin-doctor release check . --runtime --require-runtime-approval --runtime-approval-digest sha256:<approved-plan-digest>
+codex-plugin-doctor release check . --runtime --sandbox docker --require-runtime-approval --runtime-approval-digest sha256:<approved-docker-plan-digest>
 codex-plugin-doctor check . --config .codex-doctor.json
 codex-plugin-doctor baseline create . --output .codex-doctor-baseline.json
 codex-plugin-doctor check . --baseline .codex-doctor-baseline.json
@@ -303,6 +309,8 @@ codex-plugin-doctor fix . --interactive --backup
 codex-plugin-doctor fix . --apply --backup
 codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
+
+Docker runtime mode supports local Node.js stdio MCP servers. It uses a digest-pinned image, no network, read-only container and package filesystems, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed without native fallback. The Docker daemon, base image, and host kernel remain trusted boundaries. Generate approval digests with the same `--sandbox docker` backend used for execution. See [Runtime Approval And Sandboxing](./docs/security/runtime-approval-and-sandboxing.md).
 
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 

@@ -1,35 +1,44 @@
 # Runtime Approval And Sandboxing
 
-## Current Position
+## Execution Model
 
-Codex Plugin Doctor does not claim hard OS, VM, or container sandboxing for plugin-local MCP servers.
+Runtime probing remains opt-in. Static validation and security checks run before any MCP process starts; a fail-level static finding prevents runtime execution.
 
-The current control model is safer-by-default execution approval:
+Native probing preserves the existing host execution behavior:
 
-- static validation and security checks run before runtime probing
-- `doctor runtime-plan <path>` shows the runtime command plan without starting servers
-- the plan includes a stable digest for review and CI approval
-- `check --runtime --require-runtime-approval --runtime-approval-digest <digest>` refuses to start runtime probes when the current plan changed
-- release evidence records runtime approval status in the signed artifact
+```bash
+codex-plugin-doctor check ./plugin --runtime
+```
 
-## Why This Boundary Exists
+Docker probing is explicit and currently supports local Node.js stdio servers:
 
-Runtime probing is useful because it catches real MCP protocol failures that static config checks cannot see. It is also higher risk because a package-local MCP server can execute local code.
+```bash
+codex-plugin-doctor check ./plugin --runtime --sandbox docker
+```
 
-The approval digest makes the execution boundary explicit. A reviewer can inspect the command, args, cwd, probe methods, and risk reasons before allowing a CI or release job to start the server.
+The Docker launch uses a digest-pinned Node image, no network, a read-only root filesystem and package mount, dropped Linux capabilities, `no-new-privileges`, an unprivileged user, bounded CPU/memory/PIDs, and a 16 MiB writable `/tmp`.
 
-## What This Is Not
+## Approval Digest
 
-Runtime approval is not a security sandbox. It does not isolate filesystem, network, process, or credential access once the approved command is started.
+Generate and review the plan for the same backend that will execute:
 
-Use runtime approval as a gate before execution, not as a containment layer after execution.
+```bash
+codex-plugin-doctor doctor runtime-plan ./plugin --sandbox docker --json
+codex-plugin-doctor check ./plugin --runtime --sandbox docker \
+  --require-runtime-approval \
+  --runtime-approval-digest sha256:<approved-plan-digest>
+```
 
-## Future Sandbox Direction
+The digest binds the command plan and effective execution fields, including backend, immutable image, network mode, and package mount mode. Changing those fields invalidates the prior approval. Docker isolation never changes a `deny` policy decision into `allow`.
 
-A future sandbox mode should be additive and explicit, for example:
+Signed release evidence includes the effective execution object only when runtime is requested. That object is part of the signed payload; verification fails if it is modified.
 
-- `--sandbox docker` for containerized CI probing
-- restricted environment variables by default
-- read-only package mounts where possible
-- network policy controls for remote MCP servers
-- clear evidence fields showing which sandbox mode was used
+## Failure And Cleanup
+
+Docker mode fails closed without native fallback when Docker or its daemon is unavailable, the pinned image cannot start, the command is unsupported, the working directory escapes the package, or cleanup cannot be confirmed. Success, timeout, and post-spawn crash paths force-remove the uniquely named container. Raw Docker stderr, host environment values, and host paths are not copied into findings.
+
+## Security Boundary
+
+Docker mode reduces exposure; it is not a complete trust boundary. The Docker daemon and pinned base image remain trusted components, kernel/container escape risks are outside this tool, and denial-of-service within configured limits is still possible. Remote HTTP MCP servers are not routed through this local Node stdio sandbox.
+
+Native mode does not isolate filesystem, network, process, or credential access. Use it only for code you already trust.
