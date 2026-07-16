@@ -4,6 +4,42 @@
 
 Codex Plugin Doctor is feature-rich enough that the next meaningful quality step is not more synthetic fixtures. It is disciplined evaluation against real or realistic plugin packages.
 
+The external corpus command turns that review into a deterministic, offline gate:
+
+```bash
+codex-plugin-doctor doctor corpus --manifest ../private-corpus/corpus.json
+codex-plugin-doctor doctor corpus --manifest ../private-corpus/corpus.json --json --output corpus-report.json
+```
+
+It performs static validation only. It does not download packages, install dependencies, or start MCP servers. Snapshot paths are relative to the manifest, so private corpora can remain outside the repository.
+
+## Manifest
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "targets": [
+    {
+      "id": "healthy-01",
+      "profile": "healthy",
+      "sourceType": "local-snapshot",
+      "disclosure": "anonymized",
+      "path": "packages/healthy-01",
+      "mode": "codex-plugin",
+      "contentDigest": "sha256:<64 lowercase hex characters>",
+      "expectedStatus": "pass",
+      "reviews": []
+    }
+  ]
+}
+```
+
+Allowed profiles are `healthy`, `broken`, and `edge-case`. Allowed source types are `public-package`, `local-snapshot`, and `derived-fixture`. Modes are `codex-plugin` and `generic-mcp`. Every target must use `disclosure: "anonymized"`; absolute paths, unknown fields, runtime options, malformed digests, and duplicate IDs or review keys are rejected.
+
+Finding reviews use exact `findingId` plus the 64-character finding `fingerprint` and one classification: `true_positive`, `false_positive`, or `unclear`. A case passes only when the content digest and expected status match, every expected true positive is present, disputed findings are absent, and no actual finding remains unreviewed.
+
+Reports contain sanitized IDs, classifications, statuses, and digests. They do not contain resolved snapshot or manifest paths.
+
 This workflow defines how to:
 
 - select external-like plugin packages
@@ -74,7 +110,7 @@ For each finding, classify it as:
 - `true_positive`
 - `false_positive`
 - `unclear`
-- `missing_expected_finding`
+- record a missing expected finding as a failed corpus expectation
 
 ### 4. Tuning Output
 
@@ -104,10 +140,7 @@ Turn the session into:
 Every evaluation should capture:
 
 - package name or anonymized label
-- source type:
-  - internal
-  - public example
-  - customer-like
+- source type: `public-package`, `local-snapshot`, or `derived-fixture`
 - commands run
 - output summary
 - finding review table

@@ -196,6 +196,7 @@ codex-plugin-doctor doctor contract
 codex-plugin-doctor doctor contract --json --output output-contract.json
 codex-plugin-doctor doctor corpus
 codex-plugin-doctor doctor corpus --json --output validation-corpus.json
+codex-plugin-doctor doctor corpus --manifest ../private-corpus/corpus.json --json
 codex-plugin-doctor doctor npm <published-plugin-package>
 codex-plugin-doctor doctor npm <published-plugin-package> --json --output npm-preinstall.json
 codex-plugin-doctor doctor attest .
@@ -311,6 +312,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 ```
 
 Docker runtime mode supports local Node.js stdio MCP servers. It uses a digest-pinned image, no network, read-only container and package filesystems, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed without native fallback and rejects package roots containing commas. The Docker daemon, base image, and host kernel remain trusted boundaries. Generate approval digests with the same `--sandbox docker` backend used for execution. See [Runtime Approval And Sandboxing](./docs/security/runtime-approval-and-sandboxing.md).
+
+External corpus evaluation is static and offline. `doctor corpus --manifest <corpus.json>` validates anonymized local snapshots using stable content digests and exact finding fingerprints without downloading dependencies or starting target servers. Reports omit manifest and package paths and fail on digest drift, missing expected findings, present disputed findings, or unreviewed findings. See [Real-World Validation](./docs/guides/real-world-validation.md).
 
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 
@@ -447,7 +450,6 @@ docs/                 Public architecture, guides, rules, security, and contribu
 examples/             Manual plugin packs for local CLI testing
 src/                  CLI, validation logic, runtime probing, reports
 tests/                Fixture-based regression tests
-validation-sessions/  Real-world validation waves and tuning notes
 ```
 
 ## Validation Evidence
@@ -455,7 +457,6 @@ validation-sessions/  Real-world validation waves and tuning notes
 The validator is tuned against local fixtures and real marketplace-style plugin packages. See:
 
 - [Real-World Validation Workflow](./docs/guides/real-world-validation.md)
-- [Validation Sessions](./validation-sessions/README.md)
 - [Examples](./examples/README.md)
 - [Rule Catalog](./docs/rules/catalog.md)
 

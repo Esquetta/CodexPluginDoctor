@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved design for `v1.47.0`. The release adds two independent, backward-compatible capabilities:
+Shipped in `v1.47.0` as two independent, backward-compatible capabilities:
 
 - Docker-isolated runtime probing for supported local Node.js stdio MCP servers
 - offline evaluation of local real-world package snapshots through a corpus manifest
@@ -119,7 +119,7 @@ The content digest reuses the stable package fingerprint algorithm already used 
 - `false_positive` must be absent; its presence fails the case.
 - `unclear` remains unresolved and fails the case while present.
 - `missing_expected_finding` is generated when an expected true positive is absent.
-- any actual finding without a review entry is treated as `unclear`.
+- any actual finding without a review entry is treated as `unreviewed` and fails the case.
 
 Unlike the bundled corpus's historical subset comparison, manifest evaluation rejects unexpected findings. Duplicate finding IDs are distinguished by their stable fingerprints.
 
@@ -156,7 +156,7 @@ Confirmed real-world defects become minimal independently authored test fixtures
 - successful native and Docker probes produce equivalent MCP protocol results
 - success and failure paths leave no container behind
 
-Docker argument and error behavior receive deterministic unit tests. A Docker-backed integration test runs when Docker is available, with a local Docker Desktop smoke test required before release.
+Docker argument and error behavior have deterministic unit tests. Docker-backed integration tests cover isolation, protocol success, timeout cleanup, and post-spawn crash cleanup. CI fails if Docker is unavailable; local runs may skip only when Docker is absent and the explicit required gate is not enabled.
 
 ### Corpus Acceptance
 

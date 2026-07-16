@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 async function readText(path: string): Promise<string> {
@@ -63,5 +63,7 @@ describe("public repository readiness", () => {
     expect(docsReadme).not.toContain("superpowers");
     expect(releasing).toContain("npm run release-check");
     expect(releasing).toContain("npm run verify-release-sync");
+    await expect(access("validation-sessions")).rejects.toThrow();
+    expect(`${readme}\n${docsReadme}`).not.toMatch(/validation-sessions|internal only/i);
   });
 });
