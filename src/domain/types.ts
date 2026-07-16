@@ -37,6 +37,7 @@ export interface CheckResult {
   suppressedFindings?: SuppressedFinding[];
   suppressionSummary?: SuppressionSummary;
   runtimeScorecard?: RuntimeScorecard;
+  runtimeExecution?: RuntimeExecutionEvidence;
   baselinedFindings?: Finding[];
   baselineSummary?: BaselineSummary;
 }
@@ -51,6 +52,7 @@ export interface CheckOptions {
   runtime?: boolean;
   runtimeTranscript?: (line: string) => void;
   runtimeStartupTimeoutMs?: number;
+  runtimeSandbox?: RuntimeSandboxMode;
 }
 
 export interface PluginManifest {
@@ -112,4 +114,14 @@ export interface RuntimeScorecard {
 export interface RuntimeProbeResult {
   findings: Finding[];
   scorecard: RuntimeScorecard;
+  execution?: RuntimeExecutionEvidence;
+}
+
+export type RuntimeSandboxMode = "docker";
+
+export interface RuntimeExecutionEvidence {
+  backend: "native" | "docker";
+  image: string | null;
+  network: "host" | "none";
+  packageMount: "host" | "read_only";
 }
