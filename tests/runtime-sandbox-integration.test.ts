@@ -18,6 +18,13 @@ const dockerAvailable = spawnSync(
   ["version", "--format", "{{.Server.Version}}"],
   { encoding: "utf8" }
 ).status === 0;
+const dockerRequired =
+  process.env.CI === "true" ||
+  process.env.CODEX_PLUGIN_DOCTOR_REQUIRE_DOCKER === "1";
+
+if (!dockerAvailable && dockerRequired) {
+  throw new Error("Docker integration tests are required, but the Docker daemon is unavailable.");
+}
 
 async function dockerContainers(): Promise<string[]> {
   const { stdout } = await execFileAsync(
@@ -33,7 +40,12 @@ async function dockerContainers(): Promise<string[]> {
     .sort();
 }
 
-async function createRuntimeFixture(mode: "success" | "timeout"): Promise<{
+async function expectNoNewDoctorContainers(before: string[]): Promise<void> {
+  const after = await dockerContainers();
+  expect(after.filter((name) => !before.includes(name))).toEqual([]);
+}
+
+async function createRuntimeFixture(mode: "success" | "timeout" | "crash"): Promise<{
   rootPath: string;
   discoveredPackage: DiscoveredPackage;
 }> {
@@ -55,6 +67,7 @@ async function createRuntimeFixture(mode: "success" | "timeout"): Promise<{
     '  }',
     '  if (message.method === "tools/list") {',
     '    if (mode === "timeout") return;',
+    '    if (mode === "crash") process.exit(17);',
     '    reply(message.id, { tools: [{',
     '      name: "ping",',
     '      description: "Return sandbox health.",',
@@ -187,7 +200,7 @@ describe.runIf(dockerAvailable)("Docker runtime integration", () => {
         network: "none",
         packageMount: "read_only"
       });
-      expect(await dockerContainers()).toEqual(before);
+      await expectNoNewDoctorContainers(before);
     } finally {
       await rm(fixture.rootPath, { recursive: true, force: true });
     }
@@ -211,7 +224,31 @@ describe.runIf(dockerAvailable)("Docker runtime integration", () => {
           })
         ])
       );
-      expect(await dockerContainers()).toEqual(before);
+      await expectNoNewDoctorContainers(before);
+    } finally {
+      await rm(fixture.rootPath, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("force-removes the container after a post-spawn crash", async () => {
+    const before = await dockerContainers();
+    const fixture = await createRuntimeFixture("crash");
+
+    try {
+      const result = await probeRuntime(fixture.discoveredPackage, {
+        sandbox: "docker",
+        startupTimeoutMs: 2_000
+      });
+
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "plugin.runtime.exited_early",
+            severity: "fail"
+          })
+        ])
+      );
+      await expectNoNewDoctorContainers(before);
     } finally {
       await rm(fixture.rootPath, { recursive: true, force: true });
     }

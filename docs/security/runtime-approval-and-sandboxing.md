@@ -37,6 +37,8 @@ Signed release evidence includes the effective execution object only when runtim
 
 Docker mode fails closed without native fallback when Docker or its daemon is unavailable, the pinned image cannot start, the command is unsupported, the working directory escapes the package, or cleanup cannot be confirmed. Success, timeout, and post-spawn crash paths force-remove the uniquely named container. Raw Docker stderr, host environment values, and host paths are not copied into findings.
 
+Package roots containing commas are rejected because Docker bind-mount argument parsing cannot represent them safely in this launch mode.
+
 ## Security Boundary
 
 Docker mode reduces exposure; it is not a complete trust boundary. The Docker daemon and pinned base image remain trusted components, kernel/container escape risks are outside this tool, and denial-of-service within configured limits is still possible. Remote HTTP MCP servers are not routed through this local Node stdio sandbox.
