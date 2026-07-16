@@ -66,6 +66,54 @@ describe("doctor runtime-policy command", () => {
     expect(output.recommendation.actions.join("\n")).toContain("Do not start runtime probes");
   });
 
+  it("selects Docker without weakening a deny recommendation", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "runtime-policy",
+        "examples/codex-doctor-risky",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      io
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.execution).toMatchObject({
+      backend: "docker",
+      network: "none",
+      packageMount: "read_only"
+    });
+    expect(output.recommendation.decision).toBe("deny");
+  });
+
+  it.each([{ sandboxValue: [] }, { sandboxValue: ["native"] }])(
+    "rejects a missing or unknown runtime-policy sandbox value",
+    async ({ sandboxValue }) => {
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(
+        [
+          "doctor",
+          "runtime-policy",
+          "examples/codex-doctor-runtime",
+          "--sandbox",
+          ...sandboxValue
+        ],
+        io
+      );
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain("Expected --sandbox docker");
+    }
+  );
+
   it("writes runtime policy JSON to an output path", async () => {
     const outputPath = path.join(
       await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-policy-")),

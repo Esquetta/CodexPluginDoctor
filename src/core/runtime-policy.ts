@@ -1,4 +1,5 @@
 import { packageVersion } from "../version.js";
+import type { RuntimeExecutionEvidence, RuntimeSandboxMode } from "../domain/types.js";
 import {
   buildDoctorRuntimePlan,
   type DoctorRuntimePlan,
@@ -22,6 +23,7 @@ export interface DoctorRuntimePolicyReport {
   status: "pass" | "warn" | "fail";
   exitCode: 0 | 1;
   runtimeExecution: "not_started";
+  execution: RuntimeExecutionEvidence;
   planDigest: string;
   recommendation: RuntimePolicyRecommendation;
   summary: {
@@ -152,9 +154,10 @@ function buildRecommendation(
 
 export async function buildDoctorRuntimePolicyReport(
   targetPath: string,
-  generatedAt = new Date().toISOString()
+  generatedAt = new Date().toISOString(),
+  options: { sandbox?: RuntimeSandboxMode } = {}
 ): Promise<DoctorRuntimePolicyReport> {
-  const plan = await buildDoctorRuntimePlan(targetPath, generatedAt);
+  const plan = await buildDoctorRuntimePlan(targetPath, generatedAt, options);
   const servers = plan.servers.map((server) => ({
     name: server.name,
     decision: serverDecision(server),
@@ -185,6 +188,7 @@ export async function buildDoctorRuntimePolicyReport(
     status,
     exitCode: status === "fail" ? 1 : 0,
     runtimeExecution: "not_started",
+    execution: plan.execution,
     planDigest: plan.digest,
     recommendation,
     summary: {

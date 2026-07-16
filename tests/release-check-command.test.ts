@@ -252,6 +252,52 @@ describe("release-check command", () => {
       expect(runCheckImpl).not.toHaveBeenCalled();
     });
 
+    it("accepts the Docker-bound digest for release approval", async () => {
+      const planIo = createIo();
+      await runCli(
+        [
+          "doctor",
+          "runtime-plan",
+          "tests/fixtures/valid-plugin-with-mcp",
+          "--sandbox",
+          "docker",
+          "--json"
+        ],
+        planIo.io
+      );
+      const plan = JSON.parse(planIo.stdout.join(""));
+      const { io, stderr } = createIo();
+      const runCheckImpl = vi.fn(async (targetPath: string) => ({
+        targetPath,
+        status: "pass" as const,
+        exitCode: 0 as const,
+        findings: []
+      }));
+
+      await runCli(
+        [
+          "release",
+          "check",
+          "tests/fixtures/valid-plugin-with-mcp",
+          "--runtime",
+          "--sandbox",
+          "docker",
+          "--require-runtime-approval",
+          "--runtime-approval-digest",
+          plan.digest,
+          "--json"
+        ],
+        io,
+        { runCheckImpl }
+      );
+
+      expect(stderr).toEqual([]);
+      expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+        runtime: true,
+        runtimeSandbox: "docker"
+      });
+    }, 30000);
+
     it("fails release readiness when package and lockfile versions differ", async () => {
       const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-release-metadata-"));
       await cp("tests/fixtures/valid-plugin-with-mcp", targetPath, { recursive: true });

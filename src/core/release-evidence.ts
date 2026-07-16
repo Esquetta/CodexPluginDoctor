@@ -35,7 +35,11 @@ import {
   type RuntimeApprovalReport
 } from "./runtime-plan.js";
 import type { CompatibilityEnvironment } from "../compatibility/compatibility-matrix.js";
-import type { CheckResult } from "../domain/types.js";
+import type {
+  CheckResult,
+  RuntimeExecutionEvidence,
+  RuntimeSandboxMode
+} from "../domain/types.js";
 import { packageVersion } from "../version.js";
 
 const execFileAsync = promisify(execFile);
@@ -90,6 +94,7 @@ export interface DoctorReleaseEvidenceReport {
     }>;
   };
   runtimeApproval: RuntimeApprovalReport;
+  execution?: RuntimeExecutionEvidence;
   package: DoctorReleaseEvidencePackageMetadata;
   git: DoctorReleaseEvidenceGitMetadata;
   attestation: DoctorAttestation;
@@ -150,6 +155,8 @@ export interface BuildDoctorReleaseEvidenceOptions {
   allowUntagged?: boolean;
   requireRuntimeApproval?: boolean;
   runtimeApprovalDigest?: string | null;
+  runtime?: boolean;
+  sandbox?: RuntimeSandboxMode;
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string) => Promise<CheckResult>;
   performanceThresholds?: DoctorPerformanceThresholdOptions;
@@ -400,7 +407,11 @@ export async function buildDoctorReleaseEvidenceReport(
     buildTrustScore(rootPath, { securityAudit: security }),
     readPackageMetadata(rootPath),
     readGitMetadata(rootPath),
-    buildDoctorRuntimePlan(rootPath)
+    buildDoctorRuntimePlan(
+      rootPath,
+      new Date().toISOString(),
+      options.sandbox ? { sandbox: options.sandbox } : {}
+    )
   ]);
   const normalizedPackageMetadata = {
     name: packageMetadata.name ?? attestation.subject.name,
@@ -440,6 +451,7 @@ export async function buildDoctorReleaseEvidenceReport(
     git,
     releaseGates,
     runtimeApproval,
+    ...(options.runtime ? { execution: runtimePlan.execution } : {}),
     attestation,
     attestationVerification,
     corpus,

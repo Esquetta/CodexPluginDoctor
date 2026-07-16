@@ -164,13 +164,13 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.runtime.plan.json",
     command: "codex-plugin-doctor doctor runtime-plan <path> --json",
     outputKind: "doctor.runtime.plan",
-    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "digest", "summary", "servers", "findings"]
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "execution", "digest", "summary", "servers", "findings"]
   },
   {
     id: "doctor.runtime.policy.json",
     command: "codex-plugin-doctor doctor runtime-policy <path> --json",
     outputKind: "doctor.runtime.policy",
-    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "planDigest", "recommendation", "summary", "servers"]
+    required: ["schemaVersion", "kind", "generatedAt", "version", "targetPath", "status", "exitCode", "runtimeExecution", "execution", "planDigest", "recommendation", "summary", "servers"]
   },
   {
     id: "doctor.review.bundle.json",

@@ -165,6 +165,23 @@ describe("doctor contract command", () => {
       expect(surface.schema.required).toContain("schemaVersion");
     }
 
+    const runtimePlanSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.runtime.plan.json"
+    );
+    const runtimePolicySchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.runtime.policy.json"
+    );
+    const releaseEvidenceSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.release.evidence.json"
+    );
+
+    expect(runtimePlanSchema.schemaVersion).toBe("1.0.0");
+    expect(runtimePlanSchema.schema.required).toContain("execution");
+    expect(runtimePolicySchema.schemaVersion).toBe("1.0.0");
+    expect(runtimePolicySchema.schema.required).toContain("execution");
+    expect(releaseEvidenceSchema.schemaVersion).toBe("1.0.0");
+    expect(releaseEvidenceSchema.schema.required).not.toContain("execution");
+
     const suppressionSchemas = Object.fromEntries(
       output.schemas
         .filter((surface: { id: string }) => surface.id.startsWith("doctor.suppress."))

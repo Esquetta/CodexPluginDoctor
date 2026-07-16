@@ -278,7 +278,10 @@ const defaultIo: CliIo = {
 
 class CliUsageError extends Error {}
 
-function parseRuntimeSandbox(flags: string[]): RuntimeSandboxMode | null {
+function parseRuntimeSandbox(
+  flags: string[],
+  options: { requireRuntime?: boolean } = { requireRuntime: true }
+): RuntimeSandboxMode | null {
   const index = flags.indexOf("--sandbox");
 
   if (index === -1) {
@@ -291,7 +294,7 @@ function parseRuntimeSandbox(flags: string[]): RuntimeSandboxMode | null {
     throw new CliUsageError("Expected --sandbox docker.");
   }
 
-  if (!flags.includes("--runtime")) {
+  if (options.requireRuntime !== false && !flags.includes("--runtime")) {
     throw new CliUsageError("--sandbox docker requires --runtime.");
   }
 
@@ -1375,11 +1378,13 @@ export async function runCli(
     (command === "check" &&
       !args.includes("--installed") &&
       !args.includes("--changed-since")) ||
-    (command === "release" && maybePath === "check");
+    (command === "release" && maybePath === "check") ||
+    (command === "doctor" &&
+      ["runtime-plan", "runtime-policy", "release-evidence"].includes(maybePath ?? ""));
 
   if (args.includes("--sandbox") && !runtimeSandboxSupported) {
     io.writeStderr(
-      "--sandbox is supported only by single-package check and release check."
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, and release-evidence."
     );
     return 2;
   }
@@ -1539,6 +1544,14 @@ export async function runCli(
       const markdownOutput = runtimePlanFlags.includes("--markdown");
       const outputIndex = runtimePlanFlags.indexOf("--output");
       const outputPath = outputIndex === -1 ? null : runtimePlanFlags[outputIndex + 1];
+      let runtimeSandbox: RuntimeSandboxMode | null;
+
+      try {
+        runtimeSandbox = parseRuntimeSandbox(runtimePlanFlags, { requireRuntime: false });
+      } catch (error) {
+        io.writeStderr((error as CliUsageError).message);
+        return 2;
+      }
 
       if (!targetPath) {
         io.writeStderr("Missing target path for runtime plan.");
@@ -1555,7 +1568,11 @@ export async function runCli(
         return 2;
       }
 
-      const plan = await buildDoctorRuntimePlan(targetPath);
+      const plan = await buildDoctorRuntimePlan(
+        targetPath,
+        new Date().toISOString(),
+        runtimeSandbox ? { sandbox: runtimeSandbox } : {}
+      );
       const renderedPlan = jsonOutput
         ? renderDoctorRuntimePlanJson(plan)
         : markdownOutput
@@ -1582,6 +1599,14 @@ export async function runCli(
       const jsonOutput = runtimePolicyFlags.includes("--json");
       const outputIndex = runtimePolicyFlags.indexOf("--output");
       const outputPath = outputIndex === -1 ? null : runtimePolicyFlags[outputIndex + 1];
+      let runtimeSandbox: RuntimeSandboxMode | null;
+
+      try {
+        runtimeSandbox = parseRuntimeSandbox(runtimePolicyFlags, { requireRuntime: false });
+      } catch (error) {
+        io.writeStderr((error as CliUsageError).message);
+        return 2;
+      }
 
       if (!targetPath) {
         io.writeStderr("Missing target path for runtime policy.");
@@ -1593,7 +1618,11 @@ export async function runCli(
         return 2;
       }
 
-      const report = await buildDoctorRuntimePolicyReport(targetPath);
+      const report = await buildDoctorRuntimePolicyReport(
+        targetPath,
+        new Date().toISOString(),
+        runtimeSandbox ? { sandbox: runtimeSandbox } : {}
+      );
       const renderedReport = jsonOutput
         ? renderDoctorRuntimePolicyJson(report)
         : renderDoctorRuntimePolicy(report);
@@ -1794,6 +1823,15 @@ export async function runCli(
         const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
           ? null
           : assetFlags[runtimeApprovalDigestIndex + 1];
+        const runtime = assetFlags.includes("--runtime");
+        let runtimeSandbox: RuntimeSandboxMode | null;
+
+        try {
+          runtimeSandbox = parseRuntimeSandbox(assetFlags);
+        } catch (error) {
+          io.writeStderr((error as CliUsageError).message);
+          return 2;
+        }
 
         if (!targetPath) {
           io.writeStderr("Missing target path for release evidence asset.");
@@ -1865,6 +1903,8 @@ export async function runCli(
           allowUntagged,
           requireRuntimeApproval,
           runtimeApprovalDigest,
+          runtime,
+          ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
           environment: {
             env: terminalContext.env,
             platform: terminalContext.platform
@@ -1988,6 +2028,15 @@ export async function runCli(
       const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
         ? null
         : evidenceFlags[runtimeApprovalDigestIndex + 1];
+      const runtime = evidenceFlags.includes("--runtime");
+      let runtimeSandbox: RuntimeSandboxMode | null;
+
+      try {
+        runtimeSandbox = parseRuntimeSandbox(evidenceFlags);
+      } catch (error) {
+        io.writeStderr((error as CliUsageError).message);
+        return 2;
+      }
 
       if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
         io.writeStderr("Missing path after --output.");
@@ -2038,6 +2087,8 @@ export async function runCli(
         allowUntagged,
         requireRuntimeApproval,
         runtimeApprovalDigest,
+        runtime,
+        ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
         environment: {
           env: terminalContext.env,
           platform: terminalContext.platform
@@ -3249,7 +3300,11 @@ export async function runCli(
     }
 
     if (requireRuntimeApproval) {
-      const runtimePlan = await buildDoctorRuntimePlan(targetPath);
+      const runtimePlan = await buildDoctorRuntimePlan(
+        targetPath,
+        new Date().toISOString(),
+        runtimeSandbox ? { sandbox: runtimeSandbox } : {}
+      );
       const approval = evaluateRuntimeApproval(runtimePlan, {
         required: true,
         approvedDigest: runtimeApprovalDigest
@@ -3483,7 +3538,11 @@ export async function runCli(
   const runCheckImpl = options.runCheckImpl ?? runCheck;
 
   if (!checkInstalled && effectiveRuntimeProbeEnabled && requireRuntimeApproval) {
-    const runtimePlan = await buildDoctorRuntimePlan(targetPath);
+    const runtimePlan = await buildDoctorRuntimePlan(
+      targetPath,
+      new Date().toISOString(),
+      runtimeSandbox ? { sandbox: runtimeSandbox } : {}
+    );
     const approval = evaluateRuntimeApproval(runtimePlan, {
       required: true,
       approvedDigest: runtimeApprovalDigest

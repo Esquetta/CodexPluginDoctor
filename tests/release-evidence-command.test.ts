@@ -76,6 +76,7 @@ describe("doctor release-evidence command", () => {
         planDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
       })
     );
+    expect(output.execution).toBeUndefined();
     expect(output.attestation.signature.status).toBe("signed");
     expect(output.attestation.signature.keyHint).toBe("env:DOCTOR_SIGNING_KEY");
     expect(output.attestationVerification.status).toBe("pass");
@@ -99,6 +100,63 @@ describe("doctor release-evidence command", () => {
       })
     );
     expect(typeof output.git.tag === "string" || output.git.tag === null).toBe(true);
+  });
+
+  it("records Docker execution and approval only when runtime is requested", async () => {
+    const planIo = createIo();
+    await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "examples/codex-doctor-runtime",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      planIo.io
+    );
+    const dockerPlan = JSON.parse(planIo.stdout.join(""));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--runtime",
+        "--sandbox",
+        "docker",
+        "--require-runtime-approval",
+        "--runtime-approval-digest",
+        dockerPlan.digest,
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged",
+        "--max-total-ms",
+        "5000"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.execution).toEqual(dockerPlan.execution);
+    expect(output.runtimeApproval).toMatchObject({
+      status: "approved",
+      planDigest: dockerPlan.digest,
+      approvedDigest: dockerPlan.digest
+    });
   });
 
   it("fails release readiness when a performance threshold is exceeded", async () => {
@@ -653,6 +711,66 @@ describe("doctor release-evidence command", () => {
     ]);
     expect(evidence.kind).toBe("doctor.release.evidence");
     expect(evidence.evidenceSignature.status).toBe("signed");
+  });
+
+  it("binds release evidence assets to the selected Docker execution", async () => {
+    const planIo = createIo();
+    await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "examples/codex-doctor-runtime",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      planIo.io
+    );
+    const dockerPlan = JSON.parse(planIo.stdout.join(""));
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-docker-")),
+      "release-evidence.json"
+    );
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "asset",
+        "examples/codex-doctor-runtime",
+        "--tag",
+        "v1.1.0",
+        "--output",
+        outputPath,
+        "--runtime",
+        "--sandbox",
+        "docker",
+        "--require-runtime-approval",
+        "--runtime-approval-digest",
+        dockerPlan.digest,
+        "--json",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const evidence = JSON.parse(await readFile(outputPath, "utf8"));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(evidence.execution).toEqual(dockerPlan.execution);
+    expect(evidence.runtimeApproval.planDigest).toBe(dockerPlan.digest);
   });
 
   it("uploads the release evidence asset when requested", async () => {

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
 
@@ -68,6 +68,66 @@ describe("doctor runtime-plan command", () => {
 
     expect(secondOutput.digest).toBe(firstOutput.digest);
   });
+
+  it("binds the selected sandbox execution to the approval digest", async () => {
+    const native = createIo();
+    const docker = createIo();
+
+    await runCli(
+      ["doctor", "runtime-plan", "examples/codex-doctor-runtime", "--json"],
+      native.io
+    );
+    await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "examples/codex-doctor-runtime",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      docker.io
+    );
+
+    const nativePlan = JSON.parse(native.stdout.join(""));
+    const dockerPlan = JSON.parse(docker.stdout.join(""));
+
+    expect(dockerPlan.digest).not.toBe(nativePlan.digest);
+    expect(nativePlan.execution).toEqual({
+      backend: "native",
+      image: null,
+      network: "host",
+      packageMount: "host"
+    });
+    expect(dockerPlan.execution).toEqual({
+      backend: "docker",
+      image: expect.stringMatching(/@sha256:[a-f0-9]{64}$/),
+      network: "none",
+      packageMount: "read_only"
+    });
+  });
+
+  it.each([{ sandboxValue: [] }, { sandboxValue: ["native"] }])(
+    "rejects a missing or unknown runtime-plan sandbox value",
+    async ({ sandboxValue }) => {
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(
+        [
+          "doctor",
+          "runtime-plan",
+          "examples/codex-doctor-runtime",
+          "--sandbox",
+          ...sandboxValue
+        ],
+        io
+      );
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain("Expected --sandbox docker");
+    }
+  );
 
   it("writes the runtime plan JSON to an output path", async () => {
     const outputPath = path.join(
@@ -154,6 +214,53 @@ describe("doctor runtime-plan command", () => {
     expect(stderr).toEqual([]);
     expect(output.summary.runtimeProbeEnabled).toBe(true);
     expect(output.summary.status).toBe("pass");
+  });
+
+  it("uses the Docker-bound digest for runtime check approval", async () => {
+    const planIo = createIo();
+    await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "examples/codex-doctor-runtime",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      planIo.io
+    );
+    const plan = JSON.parse(planIo.stdout.join(""));
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: [],
+      runtimeExecution: plan.execution
+    }));
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "examples/codex-doctor-runtime",
+        "--runtime",
+        "--sandbox",
+        "docker",
+        "--require-runtime-approval",
+        "--runtime-approval-digest",
+        plan.digest,
+        "--json"
+      ],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      runtimeSandbox: "docker"
+    });
   });
 
   it("refuses runtime checks when the approval digest does not match", async () => {

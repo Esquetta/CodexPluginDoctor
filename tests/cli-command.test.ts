@@ -3550,8 +3550,7 @@ describe("runCli", () => {
     const exitCode = await runCli(
       [
         "doctor",
-        "runtime-plan",
-        "tests/fixtures/runtime-valid",
+        "clients",
         "--sandbox",
         "docker"
       ],
@@ -3560,7 +3559,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stderr.join("")).toContain(
-      "--sandbox is supported only by single-package check and release check"
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, and release-evidence"
     );
   });
 

@@ -9,6 +9,8 @@ import {
   type SecurityAudit
 } from "../security/security-audit.js";
 import type { Finding } from "../domain/types.js";
+import type { RuntimeExecutionEvidence, RuntimeSandboxMode } from "../domain/types.js";
+import { DOCKER_RUNTIME_IMAGE } from "./runtime-sandbox.js";
 
 type RuntimePlanStatus = "pass" | "warn" | "fail";
 type RuntimePlanRiskLevel = "low" | "medium" | "high";
@@ -35,6 +37,7 @@ export interface DoctorRuntimePlan {
   status: RuntimePlanStatus;
   exitCode: 0 | 1;
   runtimeExecution: "not_started";
+  execution: RuntimeExecutionEvidence;
   digest: string;
   summary: {
     serverCount: number;
@@ -119,6 +122,7 @@ function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest
     schemaVersion: plan.schemaVersion,
     kind: "doctor.runtime.plan.digest.v1",
     version: plan.version,
+    execution: plan.execution,
     status: plan.status,
     summary: plan.summary,
     servers: plan.servers,
@@ -138,11 +142,20 @@ function buildRuntimePlanDigest(
 
 export async function buildDoctorRuntimePlan(
   targetPath: string,
-  generatedAt = new Date().toISOString()
+  generatedAt = new Date().toISOString(),
+  options: { sandbox?: RuntimeSandboxMode } = {}
 ): Promise<DoctorRuntimePlan> {
   const rootPath = path.resolve(targetPath);
   const discoveredPackage = await discoverPackage(rootPath);
   const security = await buildSecurityAudit(rootPath);
+  const execution: RuntimeExecutionEvidence = options.sandbox === "docker"
+    ? {
+        backend: "docker",
+        image: DOCKER_RUNTIME_IMAGE,
+        network: "none",
+        packageMount: "read_only"
+      }
+    : { backend: "native", image: null, network: "host", packageMount: "host" };
 
   if (!discoveredPackage?.manifest.mcpServers) {
     const partialPlan = {
@@ -153,6 +166,7 @@ export async function buildDoctorRuntimePlan(
       status: security.status,
       exitCode: (security.status === "fail" ? 1 : 0) as 0 | 1,
       runtimeExecution: "not_started" as const,
+      execution,
       summary: {
         serverCount: 0,
         executableServerCount: 0,
@@ -228,6 +242,7 @@ export async function buildDoctorRuntimePlan(
         : "pass" as const,
     exitCode: (highRiskServerCount > 0 ? 1 : 0) as 0 | 1,
     runtimeExecution: "not_started" as const,
+    execution,
     summary: {
       serverCount: servers.length,
       executableServerCount: servers.filter((server) => server.command).length,
