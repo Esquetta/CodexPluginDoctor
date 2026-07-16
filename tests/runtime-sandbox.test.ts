@@ -348,6 +348,51 @@ describe("Docker runtime launch policy", () => {
     expect(JSON.stringify(result.findings)).not.toContain("top-secret");
   });
 
+  it("does not clean up a Docker container when the child errors before spawn", async () => {
+    const child = new FakeChildProcess();
+    childProcessMocks.spawn.mockImplementation(() => {
+      queueMicrotask(() =>
+        child.emit("error", new Error("spawn exposed HOST_SECRET=top-secret"))
+      );
+      return child;
+    });
+    childProcessMocks.execFile.mockImplementation(
+      (
+        _file: string,
+        _args: string[],
+        _options: object,
+        callback: (error: Error | null, stdout: string, stderr: string) => void
+      ) => {
+        queueMicrotask(() =>
+          callback(
+            new Error("cleanup exposed HOST_SECRET=top-secret"),
+            "",
+            "daemon exposed HOST_SECRET=top-secret"
+          )
+        );
+      }
+    );
+
+    const result = await probeRuntime(runtimePackage(), { sandbox: "docker" });
+
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.startup.failed",
+          severity: "fail"
+        })
+      ])
+    );
+    expect(result.findings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.runtime.sandbox.cleanup_failed"
+        })
+      ])
+    );
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+  });
+
   it("tolerates Docker not-found after an --rm container exits", async () => {
     childProcessMocks.spawn.mockImplementation(() => createProtocolChild());
     childProcessMocks.execFile.mockImplementation(

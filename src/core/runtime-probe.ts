@@ -1053,7 +1053,7 @@ async function probeCommandServer(input: {
       }
 
       void (async () => {
-        const cleanupFinding = launch.containerName
+        const cleanupFinding = launch.containerName && runtimeExecuted
           ? await cleanupDockerContainer(launch.containerName)
           : null;
 
