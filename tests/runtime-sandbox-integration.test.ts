@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -45,11 +45,17 @@ async function expectNoNewDoctorContainers(before: string[]): Promise<void> {
   expect(after.filter((name) => !before.includes(name))).toEqual([]);
 }
 
+async function createDockerReadableTempDirectory(prefix: string): Promise<string> {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), prefix));
+  await chmod(rootPath, 0o755);
+  return rootPath;
+}
+
 async function createRuntimeFixture(mode: "success" | "timeout" | "crash"): Promise<{
   rootPath: string;
   discoveredPackage: DiscoveredPackage;
 }> {
-  const rootPath = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-docker-runtime-"));
+  const rootPath = await createDockerReadableTempDirectory("codex-doctor-docker-runtime-");
   const serverSource = [
     'import readline from "node:readline";',
     'const mode = process.argv[2] ?? "success";',
@@ -123,7 +129,7 @@ async function createRuntimeFixture(mode: "success" | "timeout" | "crash"): Prom
 
 describe.runIf(dockerAvailable)("Docker runtime integration", () => {
   it("enforces the configured filesystem, environment, network, and tmp boundaries", async () => {
-    const rootPath = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-docker-isolation-"));
+    const rootPath = await createDockerReadableTempDirectory("codex-doctor-docker-isolation-");
     const containerName = "codex-doctor-integration-isolation-" + process.pid;
     const isolationSource = [
       'import fs from "node:fs";',
