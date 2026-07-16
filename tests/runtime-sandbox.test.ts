@@ -95,6 +95,21 @@ describe("Docker runtime launch policy", () => {
     ).toThrow("Runtime cwd escapes the package root.");
   });
 
+  it("allows an in-root cwd whose basename begins with two dots", () => {
+    const packageRoot = path.join(os.tmpdir(), "plugin");
+    const cwd = path.join(packageRoot, "..cache");
+    const launch = buildRuntimeLaunch({
+      sandbox: "docker",
+      packageRoot,
+      cwd,
+      command: "node",
+      args: [],
+      containerName: "codex-doctor-test"
+    });
+
+    expect(launch.args).toContain("/workspace/..cache");
+  });
+
   it("rejects package mount paths containing commas", () => {
     expect(() =>
       buildRuntimeLaunch({

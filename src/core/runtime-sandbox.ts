@@ -36,7 +36,11 @@ export function buildRuntimeLaunch(input: RuntimeLaunchInput): RuntimeLaunchSpec
 
   const relativeCwd = path.relative(input.packageRoot, input.cwd);
 
-  if (relativeCwd.startsWith("..") || path.isAbsolute(relativeCwd)) {
+  if (
+    relativeCwd === ".." ||
+    relativeCwd.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeCwd)
+  ) {
     throw new RuntimeSandboxError("Runtime cwd escapes the package root.");
   }
 
