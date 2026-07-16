@@ -141,6 +141,7 @@ const classifications = new Set<FindingReviewClassification>([
   "unclear"
 ]);
 const sha256Digest = /^sha256:[a-f0-9]{64}$/;
+const findingFingerprint = /^[a-f0-9]{64}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -180,6 +181,12 @@ function parseReview(value: unknown, targetId: string, index: number): ExternalC
 
   if (typeof classification !== "string" || !classifications.has(classification as FindingReviewClassification)) {
     throw new ExternalCorpusManifestError(`Corpus target ${targetId} review ${index} has an unsupported classification.`);
+  }
+
+  if (!findingFingerprint.test(fingerprint)) {
+    throw new ExternalCorpusManifestError(
+      `Corpus target ${targetId} review ${index} fingerprint must be a sha256 fingerprint.`
+    );
   }
 
   return {
@@ -234,6 +241,17 @@ async function parseTarget(
     throw new ExternalCorpusManifestError(`Corpus target ${id} reviews must be an array.`);
   }
 
+  const reviews = value.reviews.map((review, reviewIndex) => parseReview(review, id, reviewIndex));
+  const reviewKeySet = new Set<string>();
+
+  for (const review of reviews) {
+    const key = `${review.findingId}:${review.fingerprint}`;
+    if (reviewKeySet.has(key)) {
+      throw new ExternalCorpusManifestError(`Corpus target ${id} contains a duplicate finding review.`);
+    }
+    reviewKeySet.add(key);
+  }
+
   const resolvedPath = path.resolve(manifestDirectory, targetPath);
 
   try {
@@ -253,7 +271,7 @@ async function parseTarget(
     mode: value.mode as ExternalCorpusMode,
     contentDigest: value.contentDigest,
     expectedStatus: value.expectedStatus as ExternalCorpusTarget["expectedStatus"],
-    reviews: value.reviews.map((review, reviewIndex) => parseReview(review, id, reviewIndex)),
+    reviews,
     resolvedPath
   };
 }

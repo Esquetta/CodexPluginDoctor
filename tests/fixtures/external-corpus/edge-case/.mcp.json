@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "edgeCase": {
+      "command": "node",
+      "args": ["server.js"]
+    }
+  }
+}

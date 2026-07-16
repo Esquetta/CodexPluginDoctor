@@ -33,7 +33,7 @@ async function createManifest(
       expectedStatus: "pass",
       reviews: [{
         findingId: "plugin.example",
-        fingerprint: "finding-fingerprint",
+        fingerprint: "a".repeat(64),
         classification: "true_positive"
       }]
     }]
@@ -104,6 +104,14 @@ describe("external corpus manifest", () => {
     await expect(loadExternalCorpusManifest(manifestPath)).rejects.toThrow("duplicated");
   });
 
+  it("rejects duplicate finding reviews", async () => {
+    const { manifestPath } = await createManifest((manifest) => {
+      const reviews = firstTarget(manifest).reviews as Record<string, unknown>[];
+      reviews.push({ ...reviews[0] });
+    });
+    await expect(loadExternalCorpusManifest(manifestPath)).rejects.toThrow("duplicate finding review");
+  });
+
   it("rejects missing target directories", async () => {
     const { manifestPath } = await createManifest((manifest) => {
       firstTarget(manifest).path = "missing";
@@ -123,13 +131,16 @@ async function createEvaluationManifest(options: {
     fingerprint: string;
     classification: "true_positive" | "false_positive" | "unclear";
   }>;
+  mode?: "codex-plugin" | "generic-mcp";
 } = {}): Promise<{ manifestPath: string; targetPath: string }> {
   const fixture = options.fixture ?? "broken";
   const root = await mkdtemp(path.join(os.tmpdir(), "doctor-corpus-evaluation-"));
   const targetPath = path.join(root, "snapshot");
   await cp(path.join(fixtureRoot, fixture), targetPath, { recursive: true });
   const fingerprint = await buildPackageFingerprint(targetPath);
-  const result = await validatePlugin(targetPath);
+  const result = options.mode === "generic-mcp"
+    ? await (await import("../src/mcp/generic-mcp-doctor.js")).buildGenericMcpDoctor(targetPath)
+    : await validatePlugin(targetPath);
   const manifestPath = path.join(root, "corpus.json");
   await writeFile(manifestPath, JSON.stringify({
     schemaVersion: "1.0.0",
@@ -139,7 +150,7 @@ async function createEvaluationManifest(options: {
       sourceType: "derived-fixture",
       disclosure: "anonymized",
       path: "snapshot",
-      mode: "codex-plugin",
+      mode: options.mode ?? "codex-plugin",
       contentDigest: options.digest ?? fingerprint.digest,
       expectedStatus: options.expectedStatus ?? result.status,
       reviews: options.reviews ?? result.findings.map((finding) => ({
@@ -179,7 +190,7 @@ describe("external corpus evaluation", () => {
     const { manifestPath } = await createEvaluationManifest({
       reviews: [{
         findingId: "plugin.manifest.missing",
-        fingerprint: "different-fingerprint",
+        fingerprint: "0".repeat(64),
         classification: "true_positive"
       }]
     });
@@ -230,7 +241,7 @@ describe("external corpus evaluation", () => {
         },
         {
           findingId: finding.id,
-          fingerprint: "different-fingerprint",
+          fingerprint: "0".repeat(64),
           classification: "true_positive"
         }
       ]
@@ -262,5 +273,18 @@ describe("external corpus evaluation", () => {
         cases: [{ profile: fixture === "edge-case" ? "edge-case" : "healthy" }]
       });
     }
+  });
+
+  it("evaluates a generic MCP snapshot without exposing local paths", async () => {
+    const { manifestPath, targetPath } = await createEvaluationManifest({
+      fixture: "edge-case",
+      mode: "generic-mcp"
+    });
+    const report = await buildExternalValidationCorpusReport(manifestPath);
+    expect(report).toMatchObject({
+      summary: { status: "pass", runtimeCases: 0 },
+      cases: [{ mode: "generic-mcp", expectationMatched: true }]
+    });
+    expect(JSON.stringify(report)).not.toContain(targetPath);
   });
 });
