@@ -75,6 +75,18 @@ describe("init-git-hooks", () => {
       ]);
     });
 
+    it("reports a bounded error when a linked worktree commondir is missing", async () => {
+      const commonRoot = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-common-"));
+      const worktreeRoot = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-worktree-"));
+      const worktreeGitDir = path.join(commonRoot, ".git", "worktrees", "feature");
+      await mkdir(worktreeGitDir, { recursive: true });
+      await writeFile(path.join(worktreeRoot, ".git"), `gitdir: ${worktreeGitDir}\n`, "utf8");
+
+      await expect(initGitHooks(worktreeRoot)).rejects.toMatchObject({
+        message: "Invalid linked-worktree commondir file."
+      });
+    });
+
     it("overwrites existing hooks when force is true", async () => {
       const targetPath = await createGitRepo();
       const hookPathValue = hookPath(targetPath, "pre-commit");

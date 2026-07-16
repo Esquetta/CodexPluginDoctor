@@ -110,14 +110,28 @@ async function resolveHooksDirectory(rootPath: string): Promise<string> {
     return path.join(dotGitPath, "hooks");
   }
 
-  const gitFile = (await readFile(dotGitPath, "utf8")).trim();
+  let gitFile: string;
+
+  try {
+    gitFile = (await readFile(dotGitPath, "utf8")).trim();
+  } catch {
+    throw new Error("Invalid linked-worktree .git file.");
+  }
+
   const match = /^gitdir:\s*(.+)$/i.exec(gitFile);
   if (!match) {
     throw new Error("Invalid linked-worktree .git file.");
   }
 
   const worktreeGitDir = path.resolve(rootPath, match[1]);
-  const commonDirValue = (await readFile(path.join(worktreeGitDir, "commondir"), "utf8")).trim();
+  let commonDirValue: string;
+
+  try {
+    commonDirValue = (await readFile(path.join(worktreeGitDir, "commondir"), "utf8")).trim();
+  } catch {
+    throw new Error("Invalid linked-worktree commondir file.");
+  }
+
   if (!commonDirValue) {
     throw new Error("Invalid linked-worktree commondir file.");
   }
