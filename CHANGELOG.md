@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.47.0] - 2026-07-16
+
+### Added
+
+- added opt-in Docker isolation for supported local Node.js stdio MCP runtime probes, with a digest-pinned image, no network, read-only filesystems, dropped capabilities, bounded resources, and verified cleanup
+- added offline external corpus manifests with strict schema validation, stable package digests, exact finding-fingerprint reviews, sanitized reports, and release-gating exit codes
+
+### Changed
+
+- run static validation and security checks before native or Docker runtime processes can start
+- bind runtime execution backend and sandbox controls to approval digests, signed release evidence, and verification
+- keep private validation snapshots outside the public repository while preserving a contributor-facing real-world validation workflow
+
 ## [1.46.1] - 2026-07-14
 
 ### Fixed
