@@ -145,6 +145,12 @@ const publicSchemaDefinitions: Array<{
     required: ["schemaVersion", "kind", "generatedAt", "version", "summary", "cases"]
   },
   {
+    id: "doctor.validation.corpus.external.json",
+    command: "codex-plugin-doctor doctor corpus --manifest <corpus.json> --json",
+    outputKind: "doctor.validation.corpus",
+    required: ["schemaVersion", "kind", "corpusType", "generatedAt", "version", "summary", "cases"]
+  },
+  {
     id: "doctor.recommendations.json",
     command: "codex-plugin-doctor doctor recommend <path> --json",
     required: ["schemaVersion", "generatedAt", "targetPath", "status", "summary", "actions"]

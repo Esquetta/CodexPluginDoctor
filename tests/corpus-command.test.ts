@@ -1,9 +1,11 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
+import { buildPackageFingerprint } from "../src/core/attestation.js";
+import { validatePlugin } from "../src/core/validate-plugin.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -21,6 +23,38 @@ function createIo() {
       }
     }
   };
+}
+
+async function createExternalManifest(options: { digestDrift?: boolean } = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "doctor-corpus-command-"));
+  const targetPath = path.join(root, "snapshot");
+  await cp(path.resolve("tests", "fixtures", "external-corpus", "broken"), targetPath, {
+    recursive: true
+  });
+  const [fingerprint, result] = await Promise.all([
+    buildPackageFingerprint(targetPath),
+    validatePlugin(targetPath)
+  ]);
+  const manifestPath = path.join(root, "corpus.json");
+  await writeFile(manifestPath, JSON.stringify({
+    schemaVersion: "1.0.0",
+    targets: [{
+      id: "broken-01",
+      profile: "broken",
+      sourceType: "derived-fixture",
+      disclosure: "anonymized",
+      path: "snapshot",
+      mode: "codex-plugin",
+      contentDigest: options.digestDrift ? `sha256:${"0".repeat(64)}` : fingerprint.digest,
+      expectedStatus: result.status,
+      reviews: result.findings.map((finding) => ({
+        findingId: finding.id,
+        fingerprint: finding.fingerprint,
+        classification: "true_positive"
+      }))
+    }]
+  }), "utf8");
+  return { manifestPath, root };
 }
 
 describe("doctor corpus command", () => {
@@ -143,5 +177,57 @@ describe("doctor corpus command", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join("")).toContain("Missing path after --output.");
+  });
+
+  it("runs an external manifest without exposing local paths", async () => {
+    const { manifestPath, root } = await createExternalManifest();
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli(["doctor", "corpus", "--manifest", manifestPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      kind: "doctor.validation.corpus",
+      corpusType: "external",
+      summary: { status: "pass" }
+    });
+    expect(JSON.stringify(output)).not.toContain(root);
+  });
+
+  it("writes external corpus JSON to an output path", async () => {
+    const { manifestPath, root } = await createExternalManifest();
+    const outputPath = path.join(root, "report.json");
+    const { io, stderr } = createIo();
+    const exitCode = await runCli([
+      "doctor", "corpus", "--manifest", manifestPath, "--output", outputPath
+    ], io);
+    const output = JSON.parse(await readFile(outputPath, "utf8"));
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.corpusType).toBe("external");
+  });
+
+  it("returns exit 1 for an external expectation mismatch", async () => {
+    const { manifestPath } = await createExternalManifest({ digestDrift: true });
+    const { io, stderr } = createIo();
+    expect(await runCli(["doctor", "corpus", "--manifest", manifestPath, "--json"], io)).toBe(1);
+    expect(stderr).toEqual([]);
+  });
+
+  it("returns exit 2 for an invalid external manifest", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "doctor-corpus-invalid-"));
+    const manifestPath = path.join(root, "corpus.json");
+    await writeFile(manifestPath, "{}", "utf8");
+    const { io, stdout, stderr } = createIo();
+    expect(await runCli(["doctor", "corpus", "--manifest", manifestPath], io)).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("schemaVersion");
+  });
+
+  it("requires a path after --manifest", async () => {
+    const { io, stdout, stderr } = createIo();
+    expect(await runCli(["doctor", "corpus", "--manifest", "--json"], io)).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Missing path after --manifest.");
   });
 });

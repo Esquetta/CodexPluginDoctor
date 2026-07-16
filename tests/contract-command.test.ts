@@ -110,6 +110,11 @@ describe("doctor contract command", () => {
           command: "codex-plugin-doctor doctor attest <path> --json"
         }),
         expect.objectContaining({
+          id: "doctor.validation.corpus.external.json",
+          command: "codex-plugin-doctor doctor corpus --manifest <corpus.json> --json",
+          outputKind: "doctor.validation.corpus"
+        }),
+        expect.objectContaining({
           id: "doctor.attestation.verification.json",
           command: "codex-plugin-doctor doctor attest verify <attestation.json> --target <path> --json",
           outputKind: "doctor.attestation.verification"

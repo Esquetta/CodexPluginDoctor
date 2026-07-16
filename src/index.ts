@@ -86,6 +86,21 @@ export {
   type PackageFingerprint
 } from "./core/attestation.js";
 export {
+  buildExternalValidationCorpusReport,
+  ExternalCorpusManifestError,
+  loadExternalCorpusManifest,
+  type BuildExternalValidationCorpusOptions,
+  type ExternalCorpusCaseResult,
+  type ExternalCorpusClassificationCounts,
+  type ExternalCorpusFindingReview,
+  type ExternalCorpusManifest,
+  type ExternalCorpusMode,
+  type ExternalCorpusProfile,
+  type ExternalCorpusSourceType,
+  type ExternalValidationCorpusReport,
+  type FindingReviewClassification
+} from "./core/external-validation-corpus.js";
+export {
   buildDoctorOutputContract,
   renderDoctorOutputContract,
   renderDoctorOutputContractJson,

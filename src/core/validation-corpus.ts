@@ -9,6 +9,7 @@ import { validatePlugin } from "./validate-plugin.js";
 import { matrixExitCode } from "../compatibility/compatibility-matrix.js";
 import { buildGenericMcpDoctor } from "../mcp/generic-mcp-doctor.js";
 import { packageVersion } from "../version.js";
+import type { ExternalValidationCorpusReport } from "./external-validation-corpus.js";
 
 type ValidationStatus = "pass" | "warn" | "fail";
 
@@ -50,6 +51,7 @@ export interface ValidationCorpusCaseResult {
 export interface DoctorValidationCorpusReport {
   schemaVersion: "1.0.0";
   kind: "doctor.validation.corpus";
+  corpusType?: "bundled";
   generatedAt: string;
   version: string;
   summary: {
@@ -227,12 +229,14 @@ export async function buildDoctorValidationCorpusReport(
   };
 }
 
-export function renderDoctorValidationCorpusJson(report: DoctorValidationCorpusReport): string {
+export function renderDoctorValidationCorpusJson(
+  report: DoctorValidationCorpusReport | ExternalValidationCorpusReport
+): string {
   return JSON.stringify(report, null, 2);
 }
 
 export function renderDoctorValidationCorpusReport(
-  report: DoctorValidationCorpusReport,
+  report: DoctorValidationCorpusReport | ExternalValidationCorpusReport,
   options: { outputPath?: string | null } = {}
 ): string {
   const lines = [
@@ -253,9 +257,21 @@ export function renderDoctorValidationCorpusReport(
   lines.push("", "Cases", "-----");
 
   for (const caseResult of report.cases) {
+    const actual = caseResult.actual;
+    let status: ValidationStatus;
+    let findingCount: number;
+
+    if ("status" in actual) {
+      status = actual.status;
+      findingCount = actual.findings.length;
+    } else {
+      status = actual.validationStatus;
+      findingCount = actual.findingIds.length;
+    }
+
     lines.push(
       `${caseResult.id}: ${caseResult.expectationMatched ? "PASS" : "FAIL"} ` +
-      `(${caseResult.actual.validationStatus.toUpperCase()}, ${caseResult.actual.findingIds.length} findings)`
+      `(${status.toUpperCase()}, ${findingCount} findings)`
     );
   }
 
