@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,6 +57,22 @@ describe("init-git-hooks", () => {
       const prePushContent = await readFile(result.hookPaths[1], "utf8");
       expect(prePushContent).toContain("Codex Plugin Doctor: running pre-push validation");
       expect(prePushContent).toContain("codex-plugin-doctor check . --profile ci --runtime");
+    });
+
+    it("creates hooks in the common git directory for a linked worktree", async () => {
+      const commonRoot = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-common-"));
+      const worktreeRoot = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-worktree-"));
+      const worktreeGitDir = path.join(commonRoot, ".git", "worktrees", "feature");
+      await mkdir(worktreeGitDir, { recursive: true });
+      await writeFile(path.join(worktreeRoot, ".git"), `gitdir: ${worktreeGitDir}\n`, "utf8");
+      await writeFile(path.join(worktreeGitDir, "commondir"), "../..\n", "utf8");
+
+      const result = await initGitHooks(worktreeRoot);
+
+      expect(result.hookPaths).toEqual([
+        hookPath(commonRoot, "pre-commit"),
+        hookPath(commonRoot, "pre-push")
+      ]);
     });
 
     it("overwrites existing hooks when force is true", async () => {
@@ -144,13 +160,21 @@ describe("init-git-hooks", () => {
     });
 
     it("uses current directory when no path given", async () => {
+      const targetPath = await createGitRepo();
+      const originalCwd = process.cwd();
       const { io, stdout, stderr } = createIo();
-      const exitCode = await runCli(["init-git-hooks", "--json"], io);
-      const output = JSON.parse(stdout.join(""));
 
-      expect(exitCode).toBe(0);
-      expect(stderr).toEqual([]);
-      expect(output).toMatchObject({ kind: "doctor.git.hooks" });
+      try {
+        process.chdir(targetPath);
+        const exitCode = await runCli(["init-git-hooks", "--json"], io);
+        const output = JSON.parse(stdout.join(""));
+
+        expect(exitCode).toBe(0);
+        expect(stderr).toEqual([]);
+        expect(output).toMatchObject({ kind: "doctor.git.hooks" });
+      } finally {
+        process.chdir(originalCwd);
+      }
     });
 
     it("reports overwritten hooks with force flag", async () => {
