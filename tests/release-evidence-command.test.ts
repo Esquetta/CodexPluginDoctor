@@ -1,7 +1,7 @@
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
 import { renderDoctorReleaseEvidenceJson } from "../src/core/release-evidence.js";
@@ -117,6 +117,13 @@ describe("doctor release-evidence command", () => {
     );
     const dockerPlan = JSON.parse(planIo.stdout.join(""));
     const { io, stdout, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: [],
+      runtimeExecution: dockerPlan.execution
+    }));
 
     const exitCode = await runCli(
       [
@@ -144,7 +151,8 @@ describe("doctor release-evidence command", () => {
           stderrIsTTY: false,
           env: { DOCTOR_SIGNING_KEY: "release-secret" },
           platform: "win32"
-        }
+        },
+        runCheckImpl
       }
     );
     const output = JSON.parse(stdout.join(""));
@@ -156,6 +164,10 @@ describe("doctor release-evidence command", () => {
       status: "approved",
       planDigest: dockerPlan.digest,
       approvedDigest: dockerPlan.digest
+    });
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      runtimeSandbox: "docker"
     });
   });
 
@@ -584,6 +596,35 @@ describe("doctor release-evidence command", () => {
     expect(stderr.join("")).toContain("Missing target path. Use --target <path>.");
   });
 
+  it("rejects sandbox flags on release evidence verification", async () => {
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-verify-sandbox-")),
+      "release-evidence.json"
+    );
+    await writeFile(outputPath, JSON.stringify({ kind: "doctor.release.evidence" }), "utf8");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--sandbox",
+        "docker",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("--sandbox is supported only");
+  });
+
   it("fails release evidence verification when top-level release metadata is tampered", async () => {
     const outputPath = path.join(
       await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-tampered-")),
@@ -653,6 +694,87 @@ describe("doctor release-evidence command", () => {
         })
       ])
     );
+  });
+
+  it("fails release evidence verification when execution evidence is tampered", async () => {
+    const planIo = createIo();
+    await runCli(
+      ["doctor", "runtime-plan", "examples/codex-doctor-runtime", "--sandbox", "docker", "--json"],
+      planIo.io
+    );
+    const dockerPlan = JSON.parse(planIo.stdout.join(""));
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-execution-tamper-")),
+      "release-evidence.json"
+    );
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: [],
+      runtimeExecution: dockerPlan.execution
+    }));
+
+    await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "examples/codex-doctor-runtime",
+        "--runtime",
+        "--sandbox",
+        "docker",
+        "--require-runtime-approval",
+        "--runtime-approval-digest",
+        dockerPlan.digest,
+        "--output",
+        outputPath,
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY",
+        "--allow-dirty",
+        "--allow-untagged"
+      ],
+      createIo().io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        },
+        runCheckImpl
+      }
+    );
+    const artifact = JSON.parse(await readFile(outputPath, "utf8"));
+    artifact.execution.network = "host";
+    await writeFile(outputPath, JSON.stringify(artifact), "utf8");
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "release-evidence",
+        "verify",
+        outputPath,
+        "--json",
+        "--target",
+        "examples/codex-doctor-runtime",
+        "--sign-key-env",
+        "DOCTOR_SIGNING_KEY"
+      ],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        }
+      }
+    );
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(output.summary.evidenceSignature).toBe("fail");
   });
 
   it("creates a GitHub Release evidence asset plan without uploading by default", async () => {
@@ -732,6 +854,13 @@ describe("doctor release-evidence command", () => {
       "release-evidence.json"
     );
     const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: [],
+      runtimeExecution: dockerPlan.execution
+    }));
 
     const exitCode = await runCli(
       [
@@ -762,7 +891,8 @@ describe("doctor release-evidence command", () => {
           stderrIsTTY: false,
           env: { DOCTOR_SIGNING_KEY: "release-secret" },
           platform: "win32"
-        }
+        },
+        runCheckImpl
       }
     );
     const evidence = JSON.parse(await readFile(outputPath, "utf8"));
@@ -771,6 +901,10 @@ describe("doctor release-evidence command", () => {
     expect(stderr).toEqual([]);
     expect(evidence.execution).toEqual(dockerPlan.execution);
     expect(evidence.runtimeApproval.planDigest).toBe(dockerPlan.digest);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      runtimeSandbox: "docker"
+    });
   });
 
   it("uploads the release evidence asset when requested", async () => {

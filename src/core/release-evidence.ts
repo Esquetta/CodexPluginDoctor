@@ -36,10 +36,12 @@ import {
 } from "./runtime-plan.js";
 import type { CompatibilityEnvironment } from "../compatibility/compatibility-matrix.js";
 import type {
+  CheckOptions,
   CheckResult,
   RuntimeExecutionEvidence,
   RuntimeSandboxMode
 } from "../domain/types.js";
+import { validatePlugin } from "./validate-plugin.js";
 import { packageVersion } from "../version.js";
 
 const execFileAsync = promisify(execFile);
@@ -158,7 +160,7 @@ export interface BuildDoctorReleaseEvidenceOptions {
   runtime?: boolean;
   sandbox?: RuntimeSandboxMode;
   environment?: CompatibilityEnvironment;
-  runCheck?: (targetPath: string) => Promise<CheckResult>;
+  runCheck?: (targetPath: string, options?: CheckOptions) => Promise<CheckResult>;
   performanceThresholds?: DoctorPerformanceThresholdOptions;
 }
 
@@ -333,6 +335,7 @@ function buildReleaseEvidenceSigningPayload(
     git: report.git,
     releaseGates: report.releaseGates,
     runtimeApproval: report.runtimeApproval,
+    ...(report.execution ? { execution: report.execution } : {}),
     attestation: {
       version: report.attestation.version,
       subject: report.attestation.subject,
@@ -384,6 +387,13 @@ export async function buildDoctorReleaseEvidenceReport(
 ): Promise<DoctorReleaseEvidenceReport> {
   const rootPath = path.resolve(targetPath);
   const security = await buildSecurityAudit(rootPath);
+  const runCheck = options.runCheck ?? validatePlugin;
+  const checkOptions: CheckOptions = options.runtime
+    ? {
+        runtime: true,
+        ...(options.sandbox ? { runtimeSandbox: options.sandbox } : {})
+      }
+    : {};
   const [
     attestation,
     corpus,
@@ -401,7 +411,7 @@ export async function buildDoctorReleaseEvidenceReport(
     buildDoctorValidationCorpusReport({ environment: options.environment }),
     buildDoctorPerformanceReport(rootPath, {
       environment: options.environment,
-      runCheck: options.runCheck,
+      runCheck: (pathToCheck) => runCheck(pathToCheck, checkOptions),
       thresholds: options.performanceThresholds
     }),
     buildTrustScore(rootPath, { securityAudit: security }),

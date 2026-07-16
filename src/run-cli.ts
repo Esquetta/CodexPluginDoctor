@@ -1380,7 +1380,10 @@ export async function runCli(
       !args.includes("--changed-since")) ||
     (command === "release" && maybePath === "check") ||
     (command === "doctor" &&
-      ["runtime-plan", "runtime-policy", "release-evidence"].includes(maybePath ?? ""));
+      (
+        ["runtime-plan", "runtime-policy"].includes(maybePath ?? "") ||
+        (maybePath === "release-evidence" && remainingArgs[0] !== "verify")
+      ));
 
   if (args.includes("--sandbox") && !runtimeSandboxSupported) {
     io.writeStderr(
@@ -1909,9 +1912,7 @@ export async function runCli(
             env: terminalContext.env,
             platform: terminalContext.platform
           },
-          runCheck: options.runCheckImpl
-            ? (pathToCheck) => options.runCheckImpl!(pathToCheck)
-            : undefined,
+          runCheck: options.runCheckImpl ?? runCheck,
           performanceThresholds: parsedThresholds.thresholds
         });
         await writeFile(resolvedOutputPath, renderDoctorReleaseEvidenceJson(evidence), "utf8");
@@ -2093,9 +2094,7 @@ export async function runCli(
           env: terminalContext.env,
           platform: terminalContext.platform
         },
-        runCheck: options.runCheckImpl
-          ? (pathToCheck) => options.runCheckImpl!(pathToCheck)
-          : undefined,
+        runCheck: options.runCheckImpl ?? runCheck,
         performanceThresholds: parsedThresholds.thresholds
       });
       const reportJson = renderDoctorReleaseEvidenceJson(report);
