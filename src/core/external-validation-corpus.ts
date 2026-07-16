@@ -1,7 +1,11 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
+import { buildGenericMcpDoctor } from "../mcp/generic-mcp-doctor.js";
+import { packageVersion } from "../version.js";
+import { buildPackageFingerprint } from "./attestation.js";
 import { readJsonFile } from "./read-json-file.js";
+import { validatePlugin } from "./validate-plugin.js";
 
 export type ExternalCorpusProfile = "healthy" | "broken" | "edge-case";
 export type ExternalCorpusSourceType =
@@ -43,6 +47,64 @@ export interface LoadedExternalCorpusTarget extends ExternalCorpusTarget {
 
 export interface LoadedExternalCorpusManifest extends ExternalCorpusManifest {
   targets: LoadedExternalCorpusTarget[];
+}
+
+export interface ExternalCorpusReportedFinding {
+  findingId: string;
+  fingerprint: string;
+  classification: FindingReviewClassification | "unreviewed";
+}
+
+export interface ExternalCorpusCaseResult {
+  id: string;
+  profile: ExternalCorpusProfile;
+  sourceType: ExternalCorpusSourceType;
+  disclosure: "anonymized";
+  mode: ExternalCorpusMode;
+  expected: {
+    status: ExternalCorpusTarget["expectedStatus"];
+    contentDigest: string;
+    findings: ExternalCorpusFindingReview[];
+  };
+  actual: {
+    status: ExternalCorpusTarget["expectedStatus"];
+    contentDigest: string;
+    findings: ExternalCorpusReportedFinding[];
+  };
+  digestMatched: boolean;
+  classificationCounts: ExternalCorpusClassificationCounts;
+  expectationMatched: boolean;
+}
+
+export interface ExternalCorpusClassificationCounts {
+  truePositive: number;
+  falsePositive: number;
+  unclear: number;
+  missingExpectedFinding: number;
+}
+
+export interface ExternalValidationCorpusReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.validation.corpus";
+  corpusType: "external";
+  generatedAt: string;
+  version: string;
+  summary: {
+    status: "pass" | "fail";
+    caseCount: number;
+    passedExpectations: number;
+    failedExpectations: number;
+    runtimeCases: 0;
+    classificationCounts: ExternalCorpusClassificationCounts;
+  };
+  cases: ExternalCorpusCaseResult[];
+}
+
+export interface BuildExternalValidationCorpusOptions {
+  environment?: {
+    env?: NodeJS.ProcessEnv;
+    platform?: NodeJS.Platform;
+  };
 }
 
 export class ExternalCorpusManifestError extends Error {
@@ -235,4 +297,142 @@ export async function loadExternalCorpusManifest(
   }
 
   return { schemaVersion: "1.0.0", targets };
+}
+
+function findingKey(findingId: string, fingerprint: string): string {
+  return `${findingId}:${fingerprint}`;
+}
+
+function emptyClassificationCounts(): ExternalCorpusClassificationCounts {
+  return {
+    truePositive: 0,
+    falsePositive: 0,
+    unclear: 0,
+    missingExpectedFinding: 0
+  };
+}
+
+function addClassificationCounts(
+  total: ExternalCorpusClassificationCounts,
+  value: ExternalCorpusClassificationCounts
+): ExternalCorpusClassificationCounts {
+  return {
+    truePositive: total.truePositive + value.truePositive,
+    falsePositive: total.falsePositive + value.falsePositive,
+    unclear: total.unclear + value.unclear,
+    missingExpectedFinding: total.missingExpectedFinding + value.missingExpectedFinding
+  };
+}
+
+async function evaluateExternalCorpusTarget(
+  target: LoadedExternalCorpusTarget,
+  options: BuildExternalValidationCorpusOptions
+): Promise<ExternalCorpusCaseResult> {
+  const report = target.mode === "generic-mcp"
+    ? await buildGenericMcpDoctor(target.resolvedPath, options.environment)
+    : await validatePlugin(target.resolvedPath);
+  const packageFingerprint = await buildPackageFingerprint(target.resolvedPath);
+  const findings = report.findings.map((finding) => {
+    if (!finding.fingerprint) {
+      throw new ExternalCorpusManifestError(
+        `Corpus target ${target.id} produced a finding without a fingerprint.`
+      );
+    }
+
+    return {
+      findingId: finding.id,
+      fingerprint: finding.fingerprint
+    };
+  });
+  const reviewsByKey = new Map(
+    target.reviews.map((review) => [
+      findingKey(review.findingId, review.fingerprint),
+      review
+    ])
+  );
+  const actualKeys = new Set(
+    findings.map((finding) => findingKey(finding.findingId, finding.fingerprint))
+  );
+  const missingExpectedFinding = target.reviews.filter((review) =>
+    review.classification === "true_positive" &&
+    !actualKeys.has(findingKey(review.findingId, review.fingerprint))
+  ).length;
+  const classifiedFindings: ExternalCorpusReportedFinding[] = findings
+    .map((finding) => ({
+      ...finding,
+      classification: reviewsByKey.get(
+        findingKey(finding.findingId, finding.fingerprint)
+      )?.classification ?? "unreviewed" as const
+    }))
+    .sort((left, right) => findingKey(left.findingId, left.fingerprint)
+      .localeCompare(findingKey(right.findingId, right.fingerprint)));
+  const classificationCounts = {
+    truePositive: classifiedFindings.filter((finding) => finding.classification === "true_positive").length,
+    falsePositive: classifiedFindings.filter((finding) => finding.classification === "false_positive").length,
+    unclear: classifiedFindings.filter((finding) => finding.classification === "unclear").length,
+    missingExpectedFinding
+  };
+  const digestMatched = packageFingerprint.digest === target.contentDigest;
+  const expectationMatched =
+    digestMatched &&
+    report.status === target.expectedStatus &&
+    classificationCounts.falsePositive === 0 &&
+    classificationCounts.unclear === 0 &&
+    classificationCounts.missingExpectedFinding === 0 &&
+    classifiedFindings.every((finding) => finding.classification !== "unreviewed");
+
+  return {
+    id: target.id,
+    profile: target.profile,
+    sourceType: target.sourceType,
+    disclosure: target.disclosure,
+    mode: target.mode,
+    expected: {
+      status: target.expectedStatus,
+      contentDigest: target.contentDigest,
+      findings: [...target.reviews].sort((left, right) =>
+        findingKey(left.findingId, left.fingerprint)
+          .localeCompare(findingKey(right.findingId, right.fingerprint)))
+    },
+    actual: {
+      status: report.status,
+      contentDigest: packageFingerprint.digest,
+      findings: classifiedFindings
+    },
+    digestMatched,
+    classificationCounts,
+    expectationMatched
+  };
+}
+
+export async function buildExternalValidationCorpusReport(
+  manifestPath: string,
+  options: BuildExternalValidationCorpusOptions = {}
+): Promise<ExternalValidationCorpusReport> {
+  const manifest = await loadExternalCorpusManifest(manifestPath);
+  const cases = await Promise.all(
+    manifest.targets.map((target) => evaluateExternalCorpusTarget(target, options))
+  );
+  const failedExpectations = cases.filter((result) => !result.expectationMatched).length;
+  const classificationCounts = cases.reduce(
+    (total, result) => addClassificationCounts(total, result.classificationCounts),
+    emptyClassificationCounts()
+  );
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.validation.corpus",
+    corpusType: "external",
+    generatedAt: new Date().toISOString(),
+    version: packageVersion,
+    summary: {
+      status: failedExpectations === 0 ? "pass" : "fail",
+      caseCount: cases.length,
+      passedExpectations: cases.length - failedExpectations,
+      failedExpectations,
+      runtimeCases: 0,
+      classificationCounts
+    },
+    cases
+  };
 }
