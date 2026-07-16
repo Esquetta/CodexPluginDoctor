@@ -199,7 +199,7 @@ async function collectFileEntries(rootPath: string, currentPath = rootPath): Pro
   );
 }
 
-async function buildPackageFingerprint(rootPath: string): Promise<PackageFingerprint> {
+export async function buildPackageFingerprint(rootPath: string): Promise<PackageFingerprint> {
   const files = await collectFileEntries(rootPath);
   const bytes = files.reduce((total, file) => total + file.size, 0);
   const digest = sha256(stableStringify(files));
