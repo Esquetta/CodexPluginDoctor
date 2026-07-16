@@ -725,19 +725,25 @@ export async function validatePlugin(
     };
   }
 
-  const runtimeResult = options.runtime
-    ? await probeRuntime(discoveredPackage, {
-        startupTimeoutMs: options.runtimeStartupTimeoutMs,
-        transcript: options.runtimeTranscript
-      })
-    : null;
-
-  const findings = [
+  const staticFindings = [
     ...validateRequiredManifestFields(discoveredPackage),
     ...(await validateSkillsDirectory(discoveredPackage)),
     ...(await validateSkillDefinitions(discoveredPackage)),
-    ...(await validateMcpConfig(discoveredPackage)),
-    ...(runtimeResult ? runtimeResult.findings : [])
+    ...(await validateMcpConfig(discoveredPackage))
+  ];
+  const staticFailed = staticFindings.some(
+    (finding) => finding.severity === "fail"
+  );
+  const runtimeResult =
+    options.runtime && !staticFailed
+      ? await probeRuntime(discoveredPackage, {
+          startupTimeoutMs: options.runtimeStartupTimeoutMs,
+          transcript: options.runtimeTranscript
+        })
+      : null;
+  const findings = [
+    ...staticFindings,
+    ...(runtimeResult?.findings ?? [])
   ];
 
   const fingerprintedFindings = withFindingFingerprints(

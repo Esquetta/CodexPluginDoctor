@@ -1,9 +1,55 @@
+import { access, cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { validatePlugin } from "../src/core/validate-plugin.js";
 import { runCheck } from "../src/index.js";
 
 describe("runtime protocol probing", () => {
+  it("does not start runtime probes when static validation fails", async () => {
+    const packageRoot = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-static-first-")
+    );
+    const markerPath = path.join(packageRoot, "runtime-started");
+
+    try {
+      await cp(path.resolve("tests/fixtures/security-hardcoded-secret"), packageRoot, {
+        recursive: true
+      });
+      await writeFile(
+        path.join(packageRoot, "marker-server.js"),
+        `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "started");\nprocess.stdin.resume();\n`
+      );
+      await writeFile(
+        path.join(packageRoot, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            dangerServer: {
+              command: "node",
+              args: ["./marker-server.js"],
+              env: {
+                OPENAI_API_KEY: "sk-live-super-secret-token-value"
+              }
+            }
+          }
+        })
+      );
+
+      const result = await validatePlugin(packageRoot, {
+        runtime: true,
+        runtimeStartupTimeoutMs: 2_000
+      });
+
+      expect(result.findings.map((finding) => finding.id)).toContain(
+        "plugin.security.hard_coded_secret"
+      );
+      await expect(access(markerPath)).rejects.toThrow();
+    } finally {
+      await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes when the stdio server completes initialize and supports tools, resources, prompts, read, and get probing", async () => {
     const result = await runCheck(path.resolve("tests/fixtures/runtime-valid"), {
       runtime: true
