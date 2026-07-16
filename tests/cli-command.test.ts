@@ -3469,6 +3469,101 @@ describe("runCli", () => {
     expect(writtenReport.findings).toEqual([]);
   });
 
+  it("passes the Docker sandbox to a single-package runtime check", async () => {
+    const { io } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/runtime-valid",
+        "--runtime",
+        "--sandbox",
+        "docker",
+        "--json"
+      ],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      runtimeSandbox: "docker"
+    });
+  });
+
+  it("requires --runtime when the Docker sandbox is requested", async () => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    const exitCode = await runCli(
+      ["check", "tests/fixtures/runtime-valid", "--sandbox", "docker"],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("--sandbox docker requires --runtime");
+    expect(runCheckImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown runtime sandbox modes", async () => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/runtime-valid",
+        "--runtime",
+        "--sandbox",
+        "native"
+      ],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain("Expected --sandbox docker");
+    expect(runCheckImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects the Docker sandbox on unsupported command paths", async () => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(
+      [
+        "doctor",
+        "runtime-plan",
+        "tests/fixtures/runtime-valid",
+        "--sandbox",
+        "docker"
+      ],
+      io
+    );
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain(
+      "--sandbox is supported only by single-package check and release check"
+    );
+  });
+
   it("writes a markdown summary when --markdown is requested", async () => {
     const outputPath = await createTempFilePath("report.md");
     const { io } = createIo();

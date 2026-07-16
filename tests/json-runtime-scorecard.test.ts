@@ -22,5 +22,25 @@ describe("runtime scorecard", () => {
       promptsList: "pass",
       promptGet: "pass"
     });
+    expect(report.summary.runtimeExecution).toEqual({
+      backend: "native",
+      image: null,
+      network: "host",
+      packageMount: "host"
+    });
+  });
+
+  it("omits runtime execution evidence when no runtime ran", () => {
+    const report = buildJsonReport(
+      {
+        targetPath: "/test/plugin",
+        status: "pass",
+        exitCode: 0,
+        findings: []
+      },
+      { runtimeProbeEnabled: false }
+    );
+
+    expect(report.summary).not.toHaveProperty("runtimeExecution");
   });
 });

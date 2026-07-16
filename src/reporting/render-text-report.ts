@@ -61,6 +61,13 @@ export function renderTextReport(
     );
   }
 
+  if (result.runtimeExecution) {
+    lines.push(
+      `Runtime backend: ${result.runtimeExecution.backend.toUpperCase()}`,
+      `Runtime isolation: network=${result.runtimeExecution.network}, package=${result.runtimeExecution.packageMount}`
+    );
+  }
+
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     if (result.runtimeScorecard) {
       lines.push("", "Runtime Scorecard", "----------------");

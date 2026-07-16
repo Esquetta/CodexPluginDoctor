@@ -738,6 +738,7 @@ export async function validatePlugin(
     options.runtime && !staticFailed
       ? await probeRuntime(discoveredPackage, {
           startupTimeoutMs: options.runtimeStartupTimeoutMs,
+          sandbox: options.runtimeSandbox,
           transcript: options.runtimeTranscript
         })
       : null;
@@ -763,7 +764,10 @@ export async function validatePlugin(
       status: "pass",
       exitCode: 0,
       findings: [],
-      ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {})
+      ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {}),
+      ...(runtimeResult?.execution
+        ? { runtimeExecution: runtimeResult.execution }
+        : {})
     };
   }
 
@@ -772,6 +776,9 @@ export async function validatePlugin(
     status: hasFailures ? "fail" : "warn",
     exitCode: hasFailures ? 1 : 0,
     findings: fingerprintedFindings,
-    ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {})
+    ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {}),
+    ...(runtimeResult?.execution
+      ? { runtimeExecution: runtimeResult.execution }
+      : {})
   };
 }

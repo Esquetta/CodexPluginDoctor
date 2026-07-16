@@ -135,6 +135,88 @@ describe("release-check command", () => {
       expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), { runtime: true });
     }, 30000);
 
+    it("passes the Docker sandbox to release validation", async () => {
+      const { io } = createIo();
+      const runCheckImpl = vi.fn(async (targetPath: string) => ({
+        targetPath,
+        status: "pass" as const,
+        exitCode: 0 as const,
+        findings: []
+      }));
+
+      await runCli(
+        [
+          "release",
+          "check",
+          "tests/fixtures/valid-plugin-with-mcp",
+          "--runtime",
+          "--sandbox",
+          "docker",
+          "--json"
+        ],
+        io,
+        { runCheckImpl }
+      );
+
+      expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+        runtime: true,
+        runtimeSandbox: "docker"
+      });
+    }, 30000);
+
+    it("requires --runtime when the Docker sandbox is requested", async () => {
+      const { io, stderr } = createIo();
+      const runCheckImpl = vi.fn(async (targetPath: string) => ({
+        targetPath,
+        status: "pass" as const,
+        exitCode: 0 as const,
+        findings: []
+      }));
+
+      const exitCode = await runCli(
+        [
+          "release",
+          "check",
+          "tests/fixtures/valid-plugin-with-mcp",
+          "--sandbox",
+          "docker"
+        ],
+        io,
+        { runCheckImpl }
+      );
+
+      expect(exitCode).toBe(2);
+      expect(stderr.join("")).toContain("--sandbox docker requires --runtime");
+      expect(runCheckImpl).not.toHaveBeenCalled();
+    });
+
+    it("rejects unknown runtime sandbox modes", async () => {
+      const { io, stderr } = createIo();
+      const runCheckImpl = vi.fn(async (targetPath: string) => ({
+        targetPath,
+        status: "pass" as const,
+        exitCode: 0 as const,
+        findings: []
+      }));
+
+      const exitCode = await runCli(
+        [
+          "release",
+          "check",
+          "tests/fixtures/valid-plugin-with-mcp",
+          "--runtime",
+          "--sandbox",
+          "native"
+        ],
+        io,
+        { runCheckImpl }
+      );
+
+      expect(exitCode).toBe(2);
+      expect(stderr.join("")).toContain("Expected --sandbox docker");
+      expect(runCheckImpl).not.toHaveBeenCalled();
+    });
+
     it("requires --runtime when runtime approval is requested", async () => {
       const { io, stderr } = createIo();
 

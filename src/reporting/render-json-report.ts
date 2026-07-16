@@ -22,6 +22,9 @@ export function buildJsonReport(
       ...(result.runtimeScorecard
         ? { runtimeScorecard: result.runtimeScorecard }
         : {}),
+      ...(result.runtimeExecution
+        ? { runtimeExecution: result.runtimeExecution }
+        : {}),
       findingCounts: {
         fail: failCount,
         warn: warnCount,

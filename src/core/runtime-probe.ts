@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
@@ -7,9 +8,16 @@ import type {
   DiscoveredPackage,
   Finding,
   FindingEvidence,
+  RuntimeExecutionEvidence,
   RuntimeProbeResult,
+  RuntimeSandboxMode,
   RuntimeScorecard
 } from "../domain/types.js";
+import {
+  buildRuntimeLaunch,
+  DOCKER_RUNTIME_STARTUP_TIMEOUT_MS,
+  RuntimeSandboxError
+} from "./runtime-sandbox.js";
 import {
   formatRequestTranscript as formatRequestTranscriptForLog,
   formatResponseTranscript as formatResponseTranscriptForLog
@@ -21,6 +29,7 @@ const METHOD_NOT_FOUND = -32601;
 const MAX_TOOL_CALL_CONTENT_LENGTH = 4096;
 const MAX_RESOURCE_READ_CONTENT_LENGTH = 4096;
 const MAX_PROMPT_GET_CONTENT_LENGTH = 4096;
+const DOCKER_CLEANUP_TIMEOUT_MS = 5_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -53,6 +62,31 @@ type PendingRequest = {
   reject: (finding: Finding) => void;
   timer: NodeJS.Timeout;
 };
+
+type RuntimeLaunch = {
+  command: string;
+  args: string[];
+  cwd: string;
+  containerName: string | null;
+  evidence: RuntimeExecutionEvidence;
+};
+
+function buildNativeRuntimeLaunch(input: {
+  command: string;
+  args: string[];
+  cwd: string;
+}): RuntimeLaunch {
+  return {
+    ...input,
+    containerName: null,
+    evidence: {
+      backend: "native",
+      image: null,
+      network: "host",
+      packageMount: "host"
+    }
+  };
+}
 
 function createRuntimeScorecard(): RuntimeScorecard {
   return {
@@ -123,6 +157,35 @@ function withRuntimeEvidence(finding: Finding, serverName: string): Finding {
       ...(finding.evidence ?? {})
     }
   };
+}
+
+function cleanupDockerContainer(containerName: string): Promise<Finding | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "docker",
+      ["rm", "-f", containerName],
+      {
+        encoding: "utf8",
+        timeout: DOCKER_CLEANUP_TIMEOUT_MS,
+        windowsHide: true
+      },
+      (error, _stdout, stderr) => {
+        if (!error || /no such container/i.test(stderr)) {
+          resolve(null);
+          return;
+        }
+
+        resolve(
+          buildFailure(
+            "plugin.runtime.sandbox.cleanup_failed",
+            "The Docker runtime container could not be removed after probing.",
+            "A leftover runtime container weakens cleanup guarantees and may continue consuming local resources.",
+            "Verify the Docker daemon is available, then remove the codex-doctor container before retrying."
+          )
+        );
+      }
+    );
+  });
 }
 
 function isPlainObject(value: unknown): value is JsonObject {
@@ -895,24 +958,70 @@ function collectOversizedPromptGetWarnings(
 
 async function probeCommandServer(input: {
   serverName: string;
+  packageRoot: string;
   command: string;
   args: string[];
   cwd: string;
   startupTimeoutMs: number;
+  sandbox?: RuntimeSandboxMode;
   transcript?: (line: string) => void;
 }): Promise<RuntimeProbeResult> {
-  const { serverName, command, args, cwd, startupTimeoutMs, transcript } = input;
+  const {
+    serverName,
+    packageRoot,
+    command,
+    args,
+    cwd,
+    startupTimeoutMs,
+    sandbox,
+    transcript
+  } = input;
+  let launch: RuntimeLaunch;
+
+  try {
+    launch = sandbox === "docker"
+      ? buildRuntimeLaunch({
+          sandbox,
+          packageRoot,
+          command,
+          args,
+          cwd,
+          containerName: `codex-doctor-${randomUUID()}`
+        })
+      : buildNativeRuntimeLaunch({ command, args, cwd });
+  } catch (error) {
+    const scorecard = createRuntimeScorecard();
+    scorecard.initialize = "fail";
+
+    return {
+      findings: [
+        withRuntimeEvidence(
+          buildFailure(
+            "plugin.runtime.startup.failed",
+            `The MCP server \`${serverName}\` could not be started in the requested runtime backend.`,
+            "The configured stdio server is not supported by the selected runtime backend, so runtime validation cannot proceed.",
+            error instanceof RuntimeSandboxError
+              ? error.message
+              : "Verify the runtime command and selected sandbox before retrying."
+          ),
+          serverName
+        )
+      ],
+      scorecard
+    };
+  }
 
   return new Promise((resolve) => {
     const scorecard = createRuntimeScorecard();
     const warnings: Finding[] = [];
     let settled = false;
+    let runtimeExecuted = false;
     let stderrPreview = "";
     let finalizeRequested = false;
     let nextRequestId = 1;
 
-    const child = spawn(command, args, {
-      cwd,
+    const child = spawn(launch.command, launch.args, {
+      cwd: launch.cwd,
       stdio: ["pipe", "pipe", "pipe"]
     });
 
@@ -943,13 +1052,23 @@ async function probeCommandServer(input: {
         child.kill("SIGTERM");
       }
 
-      resolve({
-        findings: [
-          ...warnings.map((warning) => withRuntimeEvidence(warning, serverName)),
-          ...(finding ? [withRuntimeEvidence(finding, serverName)] : [])
-        ],
-        scorecard
-      });
+      void (async () => {
+        const cleanupFinding = launch.containerName
+          ? await cleanupDockerContainer(launch.containerName)
+          : null;
+
+        resolve({
+          findings: [
+            ...warnings.map((warning) => withRuntimeEvidence(warning, serverName)),
+            ...(finding ? [withRuntimeEvidence(finding, serverName)] : []),
+            ...(cleanupFinding
+              ? [withRuntimeEvidence(cleanupFinding, serverName)]
+              : [])
+          ],
+          scorecard,
+          ...(runtimeExecuted ? { execution: launch.evidence } : {})
+        });
+      })();
     };
 
     const sendRequest = (
@@ -961,10 +1080,14 @@ async function probeCommandServer(input: {
         const id = nextRequestId++;
         transcript?.(formatRequestTranscriptForLog(method, params));
 
+        const requestTimeoutMs =
+          launch.evidence.backend === "docker" && method === "initialize"
+            ? DOCKER_RUNTIME_STARTUP_TIMEOUT_MS
+            : startupTimeoutMs;
         const timer = setTimeout(() => {
           pendingRequests.delete(id);
           requestReject(timeoutFinding);
-        }, startupTimeoutMs);
+        }, requestTimeoutMs);
 
         pendingRequests.set(id, {
           method,
@@ -1042,6 +1165,10 @@ async function probeCommandServer(input: {
       stderrPreview += chunk.toString();
     });
 
+    child.on("spawn", () => {
+      runtimeExecuted = true;
+    });
+
     stdoutReader.on("line", (line) => {
       if (settled) {
         return;
@@ -1098,7 +1225,9 @@ async function probeCommandServer(input: {
           "plugin.runtime.startup.failed",
           `The MCP server \`${serverName}\` could not be started.`,
           "The configured stdio server could not be launched, so runtime validation cannot proceed.",
-          `Verify the command \`${command}\` is installed and executable from \`${cwd}\`.`
+          launch.evidence.backend === "docker"
+            ? "Verify Docker is installed and the Docker daemon is available."
+            : `Verify the command \`${command}\` is installed and executable from \`${cwd}\`.`
         )
       );
     });
@@ -1117,9 +1246,11 @@ async function probeCommandServer(input: {
           "plugin.runtime.exited_early",
           `The MCP server \`${serverName}\` exited before the startup probe completed.`,
           "A server that exits immediately is unlikely to remain available for Codex during normal use.",
-          stderrPreview.trim().length > 0
+          launch.evidence.backend !== "docker" && stderrPreview.trim().length > 0
             ? `Inspect the startup error output: ${stderrPreview.trim()}`
-            : `Keep the \`${serverName}\` process running after startup and inspect its command or arguments.`
+            : launch.evidence.backend === "docker"
+              ? "Verify Docker can start the pinned runtime image and keep the server process running."
+              : `Keep the \`${serverName}\` process running after startup and inspect its command or arguments.`
         )
       );
     });
@@ -1480,9 +1611,11 @@ async function probeCommandServer(input: {
           "plugin.runtime.protocol.unhandled",
           `The MCP server \`${serverName}\` triggered an unexpected protocol probe failure.`,
           "Unexpected probe failures reduce confidence in runtime validation results.",
-          stderrPreview.trim().length > 0
+          launch.evidence.backend !== "docker" && stderrPreview.trim().length > 0
             ? `Inspect stderr for details: ${stderrPreview.trim()}`
-            : "Inspect the server output and protocol implementation for unexpected runtime errors."
+            : launch.evidence.backend === "docker"
+              ? "Inspect Docker availability and the server protocol implementation without exposing raw runtime output."
+              : "Inspect the server output and protocol implementation for unexpected runtime errors."
         )
       );
     });
@@ -1493,6 +1626,7 @@ export async function probeRuntime(
   discoveredPackage: DiscoveredPackage,
   options: {
     startupTimeoutMs?: number;
+    sandbox?: RuntimeSandboxMode;
     transcript?: (line: string) => void;
   } = {}
 ): Promise<RuntimeProbeResult> {
@@ -1508,6 +1642,7 @@ export async function probeRuntime(
 
   const findings: Finding[] = [];
   let scorecard = createRuntimeScorecard();
+  let execution: RuntimeExecutionEvidence | undefined;
 
   for (const [serverName, config] of Object.entries(servers)) {
     if (!isPlainObject(config)) {
@@ -1530,14 +1665,17 @@ export async function probeRuntime(
 
     const result = await probeCommandServer({
       serverName,
+      packageRoot: discoveredPackage.rootPath,
       command,
       args,
       cwd,
       startupTimeoutMs,
+      sandbox: options.sandbox,
       transcript: options.transcript
     });
 
     scorecard = result.scorecard;
+    execution = result.execution ?? execution;
 
     if (result.findings.length > 0) {
       findings.push(...result.findings);
@@ -1546,6 +1684,7 @@ export async function probeRuntime(
 
   return {
     findings,
-    scorecard
+    scorecard,
+    ...(execution ? { execution } : {})
   };
 }

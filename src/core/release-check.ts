@@ -5,7 +5,11 @@ import { buildSecurityAudit } from "../security/security-audit.js";
 import { buildDepAudit } from "./dep-audit.js";
 import { buildCompatibilityMatrix } from "../compatibility/compatibility-matrix.js";
 import { buildTrustScore } from "../security/trust-score.js";
-import type { CheckOptions, CheckResult } from "../domain/types.js";
+import type {
+  CheckOptions,
+  CheckResult,
+  RuntimeSandboxMode
+} from "../domain/types.js";
 import type { SecurityAudit } from "../security/security-audit.js";
 import type { DepAuditReport } from "./dep-audit.js";
 import type { CompatibilityMatrix } from "../compatibility/compatibility-matrix.js";
@@ -38,6 +42,7 @@ export interface BuildReleaseCheckOptions {
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
   runtime?: boolean;
+  runtimeSandbox?: RuntimeSandboxMode;
   runCheck?: (targetPath: string, options: CheckOptions) => Promise<CheckResult>;
 }
 
@@ -167,7 +172,8 @@ export async function buildReleaseCheck(
 
   const runtimeProbeEnabled = options.runtime ?? false;
   const validationResult = await (options.runCheck ?? validatePlugin)(resolvedPath, {
-    runtime: runtimeProbeEnabled
+    runtime: runtimeProbeEnabled,
+    ...(options.runtimeSandbox ? { runtimeSandbox: options.runtimeSandbox } : {})
   });
   const securityResult = await buildSecurityAudit(resolvedPath);
   const depResult = await buildDepAudit(resolvedPath);

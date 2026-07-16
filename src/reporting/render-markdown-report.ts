@@ -44,6 +44,14 @@ export function buildMarkdownReport(
     );
   }
 
+  if (result.runtimeExecution) {
+    lines.push(
+      "",
+      `Runtime backend: ${result.runtimeExecution.backend.toUpperCase()}`,
+      `Runtime isolation: network=${result.runtimeExecution.network}, package=${result.runtimeExecution.packageMount}`
+    );
+  }
+
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     lines.push("", result.baselineSummary ? "No new findings." : "No findings.");
     return lines.join("\n");

@@ -17,6 +17,30 @@ describe("renderTextReport", () => {
     expect(output).toContain("Summary: 0 fail, 1 warn, 1 total");
     expect(output).toContain("! plugin.heuristic.description.too_long");
     expect(output).toContain("Suggested fix: Shorten the manifest description");
+    expect(output).not.toContain("Runtime backend:");
+    expect(output).not.toContain("Runtime isolation:");
+  });
+
+  it("renders effective Docker runtime execution evidence", () => {
+    const result: CheckResult = {
+      targetPath: "/test/plugin",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeExecution: {
+        backend: "docker",
+        image: "node:22-bookworm-slim@sha256:test",
+        network: "none",
+        packageMount: "read_only"
+      }
+    };
+
+    const output = renderTextReport(result);
+
+    expect(output).toContain("Runtime backend: DOCKER");
+    expect(output).toContain(
+      "Runtime isolation: network=none, package=read_only"
+    );
   });
 
   it("renders an ASCII-safe summary when requested", async () => {

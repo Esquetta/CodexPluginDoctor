@@ -15,6 +15,30 @@ describe("buildMarkdownReport", () => {
     expect(report).toContain("# Codex Plugin Doctor Report");
     expect(report).toContain("Status | WARN");
     expect(report).toContain("plugin.heuristic.description.too_long");
+    expect(report).not.toContain("Runtime backend:");
+    expect(report).not.toContain("Runtime isolation:");
+  });
+
+  it("renders effective Docker runtime execution evidence", () => {
+    const result: CheckResult = {
+      targetPath: "/test/plugin",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeExecution: {
+        backend: "docker",
+        image: "node:22-bookworm-slim@sha256:test",
+        network: "none",
+        packageMount: "read_only"
+      }
+    };
+
+    const report = buildMarkdownReport(result, { runtimeProbeEnabled: true });
+
+    expect(report).toContain("Runtime backend: DOCKER");
+    expect(report).toContain(
+      "Runtime isolation: network=none, package=read_only"
+    );
   });
 
   it("renders finding evidence when present", async () => {

@@ -75,6 +75,7 @@ export interface JsonReportSummary {
   exitCode: 0 | 1;
   runtimeProbeEnabled: boolean;
   runtimeScorecard?: RuntimeScorecard;
+  runtimeExecution?: RuntimeExecutionEvidence;
   findingCounts: {
     fail: number;
     warn: number;

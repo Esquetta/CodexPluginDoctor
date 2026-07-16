@@ -169,6 +169,7 @@ import {
   initPluginTemplates,
   isInitPluginTemplate
 } from "./core/init-plugin.js";
+import type { RuntimeSandboxMode } from "./domain/types.js";
 import { runCheck } from "./index.js";
 import {
   buildGenericMcpDoctor,
@@ -274,6 +275,28 @@ const defaultIo: CliIo = {
     }
   }
 };
+
+class CliUsageError extends Error {}
+
+function parseRuntimeSandbox(flags: string[]): RuntimeSandboxMode | null {
+  const index = flags.indexOf("--sandbox");
+
+  if (index === -1) {
+    return null;
+  }
+
+  const value = flags[index + 1];
+
+  if (value !== "docker") {
+    throw new CliUsageError("Expected --sandbox docker.");
+  }
+
+  if (!flags.includes("--runtime")) {
+    throw new CliUsageError("--sandbox docker requires --runtime.");
+  }
+
+  return value;
+}
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
@@ -1348,6 +1371,18 @@ export async function runCli(
   options: RunCliOptions = {}
 ): Promise<number> {
   const [command, maybePath, ...remainingArgs] = args;
+  const runtimeSandboxSupported =
+    (command === "check" &&
+      !args.includes("--installed") &&
+      !args.includes("--changed-since")) ||
+    (command === "release" && maybePath === "check");
+
+  if (args.includes("--sandbox") && !runtimeSandboxSupported) {
+    io.writeStderr(
+      "--sandbox is supported only by single-package check and release check."
+    );
+    return 2;
+  }
 
   if (command === "--version" || command === "-v" || command === "version") {
     io.writeStdout(packageVersion);
@@ -3185,6 +3220,15 @@ export async function runCli(
       : remainingArgs.slice(1);
     const jsonOutput = releaseFlags.includes("--json");
     const runtimeProbeEnabled = releaseFlags.includes("--runtime");
+    let runtimeSandbox: RuntimeSandboxMode | null;
+
+    try {
+      runtimeSandbox = parseRuntimeSandbox(releaseFlags);
+    } catch (error) {
+      io.writeStderr((error as CliUsageError).message);
+      return 2;
+    }
+
     const requireRuntimeApproval = releaseFlags.includes("--require-runtime-approval");
     const runtimeApprovalDigestIndex = releaseFlags.indexOf("--runtime-approval-digest");
     const runtimeApprovalDigest = runtimeApprovalDigestIndex === -1
@@ -3221,6 +3265,7 @@ export async function runCli(
       env: terminalContext.env,
       platform: terminalContext.platform,
       runtime: runtimeProbeEnabled,
+      ...(runtimeSandbox ? { runtimeSandbox } : {}),
       runCheck: options.runCheckImpl
     });
     const output = jsonOutput
@@ -3276,6 +3321,15 @@ export async function runCli(
       : maybePath && maybePath.startsWith("--")
         ? [maybePath, ...remainingArgs]
       : remainingArgs;
+
+  let runtimeSandbox: RuntimeSandboxMode | null;
+
+  try {
+    runtimeSandbox = parseRuntimeSandbox(normalizedFlags);
+  } catch (error) {
+    io.writeStderr((error as CliUsageError).message);
+    return 2;
+  }
 
   const jsonOutput = normalizedFlags.includes("--json");
   const markdownOutput = normalizedFlags.includes("--markdown");
@@ -3606,10 +3660,10 @@ export async function runCli(
   const configuredResult = applyDoctorConfig(
     await runCheckImpl(targetPath, {
       runtime: effectiveRuntimeProbeEnabled,
-      runtimeTranscript:
-        effectiveRuntimeProbeEnabled && verboseRuntime
-          ? (line) => io.writeStderr(line)
-          : undefined
+      ...(runtimeSandbox ? { runtimeSandbox } : {}),
+      ...(effectiveRuntimeProbeEnabled && verboseRuntime
+        ? { runtimeTranscript: (line: string) => io.writeStderr(line) }
+        : {})
     }),
     doctorConfig
   );
