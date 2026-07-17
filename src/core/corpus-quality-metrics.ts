@@ -498,3 +498,92 @@ export async function buildCorpusQualityMetricsReport(
   };
 }
 
+function formatMetric(value: number | null): string {
+  return value === null ? "N/A" : `${(value * 100).toFixed(2)}%`;
+}
+
+function metricLabel(metric: keyof CorpusMetricValues): string {
+  if (metric === "falsePositiveRate") return "False-positive rate";
+  return metric[0].toUpperCase() + metric.slice(1);
+}
+
+export function renderCorpusQualityMetricsJson(report: CorpusQualityMetricsReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function renderCorpusQualityMetricsText(
+  report: CorpusQualityMetricsReport,
+  options: { outputPath?: string | null } = {}
+): string {
+  const lines = [
+    "Doctor Corpus Quality Metrics",
+    "=============================",
+    `Version: ${report.version}`,
+    `Status: ${report.status.toUpperCase()}`,
+    `Targets: ${report.summary.targetCount}`,
+    `Precision: ${formatMetric(report.summary.precision)}`,
+    `Recall: ${formatMetric(report.summary.recall)}`,
+    `False-positive rate: ${formatMetric(report.summary.falsePositiveRate)}`,
+    `TP: ${report.summary.truePositives}  FP: ${report.summary.falsePositives}  FN: ${report.summary.falseNegatives}`
+  ];
+  if (options.outputPath) lines.push(`Output: ${options.outputPath}`);
+  const failed = report.thresholdChecks.filter((check) => !check.passed);
+  lines.push("", "Failed thresholds", "-----------------");
+  if (failed.length === 0) {
+    lines.push("None.");
+  } else {
+    for (const check of failed) {
+      lines.push(
+        `${metricLabel(check.metric)}: ${formatMetric(check.actual)} ${check.operator} ${formatMetric(check.threshold)} required`
+      );
+    }
+  }
+  lines.push("", "Targets", "-------");
+  for (const target of report.targets) {
+    lines.push(
+      `${target.id}: ${target.complete ? "COMPLETE" : "INCOMPLETE"} ` +
+      `(precision ${formatMetric(target.metrics.precision)}, recall ${formatMetric(target.metrics.recall)})`
+    );
+  }
+  return lines.join("\n");
+}
+
+export function renderCorpusQualityMetricsMarkdown(report: CorpusQualityMetricsReport): string {
+  const lines = [
+    "# Doctor Corpus Quality Metrics",
+    "",
+    `- Version: ${report.version}`,
+    `- Status: ${report.status.toUpperCase()}`,
+    `- Targets: ${report.summary.targetCount}`,
+    "",
+    "| Metric | Value |",
+    "| --- | ---: |",
+    `| Precision | ${formatMetric(report.summary.precision)} |`,
+    `| Recall | ${formatMetric(report.summary.recall)} |`,
+    `| False-positive rate | ${formatMetric(report.summary.falsePositiveRate)} |`,
+    `| True positives | ${report.summary.truePositives} |`,
+    `| False positives | ${report.summary.falsePositives} |`,
+    `| False negatives | ${report.summary.falseNegatives} |`,
+    "",
+    "## Failed Thresholds",
+    ""
+  ];
+  const failed = report.thresholdChecks.filter((check) => !check.passed);
+  if (failed.length === 0) {
+    lines.push("None.");
+  } else {
+    for (const check of failed) {
+      lines.push(
+        `- ${metricLabel(check.metric)}: ${formatMetric(check.actual)} ${check.operator} ${formatMetric(check.threshold)} required`
+      );
+    }
+  }
+  lines.push("", "## Targets", "", "| Target | Review | Precision | Recall |", "| --- | --- | ---: | ---: |");
+  for (const target of report.targets) {
+    lines.push(
+      `| ${target.id} | ${target.complete ? "complete" : "incomplete"} | ` +
+      `${formatMetric(target.metrics.precision)} | ${formatMetric(target.metrics.recall)} |`
+    );
+  }
+  return lines.join("\n");
+}

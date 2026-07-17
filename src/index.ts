@@ -101,6 +101,27 @@ export {
   type FindingReviewClassification
 } from "./core/external-validation-corpus.js";
 export {
+  buildCorpusQualityMetricsReport,
+  CorpusMetricsManifestError,
+  loadCorpusMetricsManifest,
+  reconcileCorpusMetricFindings,
+  renderCorpusQualityMetricsJson,
+  renderCorpusQualityMetricsMarkdown,
+  renderCorpusQualityMetricsText,
+  type BuildCorpusMetricsOptions,
+  type CorpusMetricCounts,
+  type CorpusMetricFinding,
+  type CorpusMetricFindingReview,
+  type CorpusMetricReconciliation,
+  type CorpusMetricsManifest,
+  type CorpusMetricSource,
+  type CorpusMetricThresholdCheck,
+  type CorpusMetricThresholds,
+  type CorpusMetricValues,
+  type CorpusQualityMetricsReport,
+  type CorpusQualityMetricsTargetResult
+} from "./core/corpus-quality-metrics.js";
+export {
   buildDoctorOutputContract,
   renderDoctorOutputContract,
   renderDoctorOutputContractJson,
