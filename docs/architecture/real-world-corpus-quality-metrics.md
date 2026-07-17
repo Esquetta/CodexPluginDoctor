@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned for `v1.48.0` as an additive quality-measurement layer over the external corpus workflow introduced in `v1.47.0`.
+Shipped in `v1.48.0` as an additive quality-measurement layer over the external corpus workflow introduced in `v1.47.0`.
 
 ## Purpose
 

@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.48.0] - 2026-07-17
+
+### Added
+
+- added `doctor corpus metrics --manifest` for deterministic precision, recall, and reviewed emitted-finding false-positive measurements
+- added optional precision, recall, and false-positive thresholds with text, Markdown, JSON, and file output
+- added a public `doctor.validation.corpus.metrics` output contract with sanitized per-target outcomes and immutable source provenance
+
+### Security
+
+- reject metrics snapshots outside the manifest directory, unsafe public IDs, credential-bearing source URLs, mutable source revisions, digest drift, and incomplete reviews
+- evaluate quality gates with unrounded metrics while serializing stable six-decimal values
+- keep external snapshots, local paths, source contents, raw evidence, and reviewer notes out of public reports and packages
+
 ## [1.47.0] - 2026-07-16
 
 ### Added
