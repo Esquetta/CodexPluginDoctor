@@ -2201,7 +2201,9 @@ export async function runCli(
             io.writeStderr(error.message);
             return 2;
           }
-          throw error;
+          const message = error instanceof Error ? error.message : "Unknown error";
+          io.writeStderr(`Corpus metrics analysis failed: ${message}`);
+          return 2;
         }
 
         const rendered = jsonOutput

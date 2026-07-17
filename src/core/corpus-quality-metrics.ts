@@ -163,6 +163,7 @@ const classifications = new Set<FindingReviewClassification>([
 const sha256Digest = /^sha256:[a-f0-9]{64}$/;
 const fingerprintPattern = /^[a-f0-9]{64}$/;
 const immutableRevision = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
+const publicSafeId = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -212,7 +213,7 @@ function parseSource(value: unknown, targetId: string): CorpusMetricSource | und
   } catch {
     throw new CorpusMetricsManifestError(`Metrics target ${targetId} source repository must use HTTPS.`);
   }
-  if (parsed.protocol !== "https:") {
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new CorpusMetricsManifestError(`Metrics target ${targetId} source repository must use HTTPS.`);
   }
   if (!immutableRevision.test(revision)) {
@@ -257,6 +258,9 @@ async function parseTarget(
   if (!isRecord(value)) throw new CorpusMetricsManifestError(`Metrics target ${index} must be an object.`);
   rejectUnknownKeys(value, targetKeys, `Metrics target ${index}`);
   const id = requireString(value.id, `Metrics target ${index} id`);
+  if (!publicSafeId.test(id)) {
+    throw new CorpusMetricsManifestError(`Metrics target ${index} id must be public-safe.`);
+  }
   const targetPath = requireString(value.path, `Metrics target ${id} path`);
   if (typeof value.profile !== "string" || !profiles.has(value.profile as ExternalCorpusProfile)) {
     throw new CorpusMetricsManifestError(`Metrics target ${id} has an unsupported profile.`);
@@ -341,13 +345,22 @@ function roundMetric(value: number | null): number | null {
   return value === null ? null : Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function calculateMetrics(counts: Pick<CorpusMetricCounts, "truePositives" | "falsePositives" | "falseNegatives">): CorpusMetricValues {
+function calculateRawMetrics(counts: Pick<CorpusMetricCounts, "truePositives" | "falsePositives" | "falseNegatives">): CorpusMetricValues {
   const precisionDenominator = counts.truePositives + counts.falsePositives;
   const recallDenominator = counts.truePositives + counts.falseNegatives;
   return {
-    precision: roundMetric(precisionDenominator === 0 ? null : counts.truePositives / precisionDenominator),
-    recall: roundMetric(recallDenominator === 0 ? null : counts.truePositives / recallDenominator),
-    falsePositiveRate: roundMetric(precisionDenominator === 0 ? null : counts.falsePositives / precisionDenominator)
+    precision: precisionDenominator === 0 ? null : counts.truePositives / precisionDenominator,
+    recall: recallDenominator === 0 ? null : counts.truePositives / recallDenominator,
+    falsePositiveRate: precisionDenominator === 0 ? null : counts.falsePositives / precisionDenominator
+  };
+}
+
+function calculateMetrics(counts: Pick<CorpusMetricCounts, "truePositives" | "falsePositives" | "falseNegatives">): CorpusMetricValues {
+  const raw = calculateRawMetrics(counts);
+  return {
+    precision: roundMetric(raw.precision),
+    recall: roundMetric(raw.recall),
+    falsePositiveRate: roundMetric(raw.falsePositiveRate)
   };
 }
 
@@ -471,8 +484,12 @@ export async function buildCorpusQualityMetricsReport(
   };
   const counts = targets.reduce((total, target) => addCounts(total, target.counts), emptyCounts);
   const metrics = calculateMetrics(counts);
+  const rawMetrics = calculateRawMetrics(counts);
   const completeTargets = targets.filter((target) => target.complete).length;
-  const thresholdChecks = buildThresholdChecks(metrics, thresholds);
+  const thresholdChecks = buildThresholdChecks(rawMetrics, thresholds).map((check) => ({
+    ...check,
+    actual: metrics[check.metric]
+  }));
   const incomplete = completeTargets !== targets.length;
   const failedThreshold = thresholdChecks.some((check) => !check.passed);
   const status = incomplete ? "incomplete" : failedThreshold ? "fail" : "pass";

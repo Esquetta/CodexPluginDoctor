@@ -138,6 +138,19 @@ describe("doctor corpus metrics command", () => {
     );
   });
 
+  it("returns exit 2 when metrics analysis cannot complete", async () => {
+    const { io, stderr } = createIo();
+    const exitCode = await runCli([
+      "doctor", "corpus", "metrics", "--manifest", "corpus.json"
+    ], io, {
+      buildCorpusMetricsReportImpl: async () => {
+        throw new Error("analysis unavailable");
+      }
+    });
+    expect(exitCode).toBe(2);
+    expect(stderr.join("\n")).toContain("Corpus metrics analysis failed: analysis unavailable");
+  });
+
   it.each([
     [["doctor", "corpus", "metrics"], "requires --manifest"],
     [["doctor", "corpus", "metrics", "--manifest"], "Missing path after --manifest"],

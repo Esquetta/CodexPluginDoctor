@@ -84,6 +84,12 @@ describe("corpus metrics manifest", () => {
     ["non-HTTPS source", (m: Record<string, unknown>) => {
       (firstTarget(m).source as Record<string, unknown>).repository = "http://example.com/repo";
     }],
+    ["credential-bearing source", (m: Record<string, unknown>) => {
+      (firstTarget(m).source as Record<string, unknown>).repository = "https://user:secret@example.com/repo";
+    }],
+    ["source query", (m: Record<string, unknown>) => {
+      (firstTarget(m).source as Record<string, unknown>).repository = "https://example.com/repo?token=secret";
+    }],
     ["mutable revision", (m: Record<string, unknown>) => {
       (firstTarget(m).source as Record<string, unknown>).revision = "main";
     }],
@@ -92,6 +98,9 @@ describe("corpus metrics manifest", () => {
     }],
     ["invalid digest", (m: Record<string, unknown>) => {
       firstTarget(m).contentDigest = "sha256:nope";
+    }],
+    ["unsafe public id", (m: Record<string, unknown>) => {
+      firstTarget(m).id = "C:\\Users\\private";
     }]
   ])("rejects %s", async (_label, mutate) => {
     const { manifestPath } = await createMetricsManifest(mutate);
@@ -220,5 +229,27 @@ describe("corpus metrics report", () => {
       buildFingerprint: async () => ({ digest })
     });
     expect(incompleteReport).toMatchObject({ status: "incomplete", exitCode: 2 });
+  });
+
+  it("evaluates thresholds with unrounded metric values", async () => {
+    const fixture = await createMetricsManifest((manifest) => {
+      const target = firstTarget(manifest);
+      target.reviews = [
+        { findingId: "rule.one", fingerprint: "1".repeat(64), classification: "true_positive" },
+        { findingId: "rule.two", fingerprint: "2".repeat(64), classification: "true_positive" },
+        { findingId: "rule.fp", fingerprint: "3".repeat(64), classification: "false_positive" }
+      ];
+      manifest.thresholds = { minPrecision: 0.6666668 };
+    });
+    const result = await buildCorpusQualityMetricsReport(fixture.manifestPath, {
+      analyzeTarget: async () => ({ findings: [
+        { findingId: "rule.one", fingerprint: "1".repeat(64) },
+        { findingId: "rule.two", fingerprint: "2".repeat(64) },
+        { findingId: "rule.fp", fingerprint: "3".repeat(64) }
+      ] }),
+      buildFingerprint: async () => ({ digest })
+    });
+    expect(result.summary.precision).toBe(0.666667);
+    expect(result).toMatchObject({ status: "fail", exitCode: 1 });
   });
 });
