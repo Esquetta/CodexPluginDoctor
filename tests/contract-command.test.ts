@@ -115,6 +115,11 @@ describe("doctor contract command", () => {
           outputKind: "doctor.validation.corpus"
         }),
         expect.objectContaining({
+          id: "doctor.validation.corpus.metrics.json",
+          command: "codex-plugin-doctor doctor corpus metrics --manifest <corpus.json> --json",
+          outputKind: "doctor.validation.corpus.metrics"
+        }),
+        expect.objectContaining({
           id: "doctor.attestation.verification.json",
           command: "codex-plugin-doctor doctor attest verify <attestation.json> --target <path> --json",
           outputKind: "doctor.attestation.verification"
@@ -161,6 +166,22 @@ describe("doctor contract command", () => {
         })
       ])
     );
+
+    const corpusMetricsSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.validation.corpus.metrics.json"
+    );
+    expect(corpusMetricsSchema.schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "version",
+      "status",
+      "exitCode",
+      "summary",
+      "thresholds",
+      "thresholdChecks",
+      "targets"
+    ]);
 
     for (const surface of output.schemas) {
       expect(surface.schema).toMatchObject({

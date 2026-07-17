@@ -197,6 +197,8 @@ codex-plugin-doctor doctor contract --json --output output-contract.json
 codex-plugin-doctor doctor corpus
 codex-plugin-doctor doctor corpus --json --output validation-corpus.json
 codex-plugin-doctor doctor corpus --manifest ../private-corpus/corpus.json --json
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json --markdown
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json --json --min-precision 0.90 --min-recall 0.85 --max-false-positive-rate 0.10
 codex-plugin-doctor doctor npm <published-plugin-package>
 codex-plugin-doctor doctor npm <published-plugin-package> --json --output npm-preinstall.json
 codex-plugin-doctor doctor attest .
@@ -314,6 +316,8 @@ codex-plugin-doctor check . --json --runtime --verbose-runtime
 Docker runtime mode supports local Node.js stdio MCP servers. It uses a digest-pinned image, no network, read-only container and package filesystems, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed without native fallback and rejects package roots containing commas. The Docker daemon, base image, and host kernel remain trusted boundaries. Generate approval digests with the same `--sandbox docker` backend used for execution. See [Runtime Approval And Sandboxing](./docs/security/runtime-approval-and-sandboxing.md).
 
 External corpus evaluation is static and offline. `doctor corpus --manifest <corpus.json>` validates anonymized local snapshots using stable content digests and exact finding fingerprints without downloading dependencies or starting target servers. Reports omit manifest and package paths and fail on digest drift, missing expected findings, present disputed findings, or unreviewed findings. See [Real-World Validation](./docs/guides/real-world-validation.md).
+
+`doctor corpus metrics --manifest <corpus.json>` measures reviewed true positives, false positives, and false negatives as precision, recall, and emitted-finding false-positive share. Optional thresholds make the measurement release-gating; incomplete reviews and digest drift return exit `2` instead of producing a favorable score. The dedicated metrics manifest stays offline, requires contained snapshot paths, and may record immutable HTTPS Git provenance without fetching it.
 
 `self-test` runs the bundled runtime-complete sample through static validation, runtime MCP probes, and the compatibility scorecard. It is the fastest post-install check after `npm install -g codex-plugin-doctor`.
 

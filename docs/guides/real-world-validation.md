@@ -40,6 +40,33 @@ Finding reviews use exact `findingId` plus the 64-character finding `fingerprint
 
 Reports contain sanitized IDs, classifications, statuses, and digests. They do not contain resolved snapshot or manifest paths.
 
+## Quality Metrics
+
+Use the dedicated metrics command when the goal is to measure reviewed finding accuracy rather than require every disputed finding to disappear:
+
+```bash
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json \
+  --json --output metrics.json \
+  --min-precision 0.90 \
+  --min-recall 0.85 \
+  --max-false-positive-rate 0.10
+```
+
+The metrics manifest is a separate strict contract. Target paths must remain beneath its directory. Optional source provenance uses an HTTPS repository URL and an immutable 40- or 64-character lowercase hexadecimal Git revision; Doctor records this metadata but never fetches it. Third-party snapshots stay outside the public repository.
+
+Metrics use exact finding ID and fingerprint pairs:
+
+```text
+precision = TP / (TP + FP)
+recall = TP / (TP + FN)
+falsePositiveRate = FP / (TP + FP)
+```
+
+`falsePositiveRate` is the false-positive share among reviewed emitted findings, not a population-wide statistical rate. A zero denominator produces `null`. Unreviewed or unclear findings, digest drift, malformed manifests, and invalid paths return exit `2`; complete measurements below an explicit threshold return exit `1`; complete measurements that satisfy configured thresholds return exit `0`.
+
+JSON reports use `kind: "doctor.validation.corpus.metrics"` and omit resolved paths, usernames, source contents, raw evidence, and reviewer notes. Text and Markdown renderers present the aggregate scorecard, threshold failures, and sanitized per-target summaries.
+
 This workflow defines how to:
 
 - select external-like plugin packages
