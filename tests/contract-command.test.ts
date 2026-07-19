@@ -120,6 +120,11 @@ describe("doctor contract command", () => {
           outputKind: "doctor.validation.corpus.metrics"
         }),
         expect.objectContaining({
+          id: "doctor.validation.corpus.metrics.diff.json",
+          command: "codex-plugin-doctor doctor corpus metrics diff --before <metrics.json> --after <metrics.json> --json",
+          outputKind: "doctor.validation.corpus.metrics.diff"
+        }),
+        expect.objectContaining({
           id: "doctor.attestation.verification.json",
           command: "codex-plugin-doctor doctor attest verify <attestation.json> --target <path> --json",
           outputKind: "doctor.attestation.verification"
@@ -175,6 +180,7 @@ describe("doctor contract command", () => {
       "kind",
       "generatedAt",
       "version",
+      "corpusDigest",
       "status",
       "exitCode",
       "summary",
