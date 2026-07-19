@@ -101,15 +101,22 @@ export {
   type FindingReviewClassification
 } from "./core/external-validation-corpus.js";
 export {
+  buildCorpusQualityMetricsDiffReport,
   buildCorpusQualityMetricsReport,
+  CorpusMetricsDiffError,
   CorpusMetricsManifestError,
   loadCorpusMetricsManifest,
   reconcileCorpusMetricFindings,
+  renderCorpusQualityMetricsDiffJson,
+  renderCorpusQualityMetricsDiffMarkdown,
+  renderCorpusQualityMetricsDiffText,
   renderCorpusQualityMetricsJson,
   renderCorpusQualityMetricsMarkdown,
   renderCorpusQualityMetricsText,
+  type BuildCorpusMetricsDiffOptions,
   type BuildCorpusMetricsOptions,
   type CorpusMetricCounts,
+  type CorpusMetricCountDeltas,
   type CorpusMetricFinding,
   type CorpusMetricFindingReview,
   type CorpusMetricReconciliation,
@@ -118,6 +125,9 @@ export {
   type CorpusMetricThresholdCheck,
   type CorpusMetricThresholds,
   type CorpusMetricValues,
+  type CorpusMetricValueComparison,
+  type CorpusQualityMetricsDiffReport,
+  type CorpusQualityMetricsDiffTarget,
   type CorpusQualityMetricsReport,
   type CorpusQualityMetricsTargetResult
 } from "./core/corpus-quality-metrics.js";

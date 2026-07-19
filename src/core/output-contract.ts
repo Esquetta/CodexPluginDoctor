@@ -159,11 +159,31 @@ const publicSchemaDefinitions: Array<{
       "kind",
       "generatedAt",
       "version",
+      "corpusDigest",
       "status",
       "exitCode",
       "summary",
       "thresholds",
       "thresholdChecks",
+      "targets"
+    ]
+  },
+  {
+    id: "doctor.validation.corpus.metrics.diff.json",
+    command: "codex-plugin-doctor doctor corpus metrics diff --before <metrics.json> --after <metrics.json> --json",
+    outputKind: "doctor.validation.corpus.metrics.diff",
+    required: [
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "version",
+      "corpusDigest",
+      "status",
+      "exitCode",
+      "failOnRegression",
+      "summary",
+      "before",
+      "after",
       "targets"
     ]
   },

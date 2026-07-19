@@ -93,8 +93,13 @@ import {
   ExternalCorpusManifestError
 } from "./core/external-validation-corpus.js";
 import {
+  buildCorpusQualityMetricsDiffReport,
   buildCorpusQualityMetricsReport,
+  CorpusMetricsDiffError,
   CorpusMetricsManifestError,
+  renderCorpusQualityMetricsDiffJson,
+  renderCorpusQualityMetricsDiffMarkdown,
+  renderCorpusQualityMetricsDiffText,
   renderCorpusQualityMetricsJson,
   renderCorpusQualityMetricsMarkdown,
   renderCorpusQualityMetricsText,
@@ -266,6 +271,7 @@ export interface RunCliOptions {
   now?: () => Date;
   releaseAssetUploadImpl?: (args: string[]) => Promise<void>;
   resolveLatestVersion?: () => Promise<string>;
+  buildCorpusMetricsDiffReportImpl?: typeof buildCorpusQualityMetricsDiffReport;
   buildCorpusMetricsReportImpl?: typeof buildCorpusQualityMetricsReport;
 }
 
@@ -318,6 +324,9 @@ function parseRuntimeSandbox(
 function printUsage(io: CliIo): void {
   io.writeStderr(
             "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--runtime --sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--runtime --sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime --sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime --sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+  );
+  io.writeStderr(
+    "Corpus quality regression: codex-plugin-doctor doctor corpus metrics diff --before <metrics.json> --after <metrics.json> [--fail-on-regression] [--json|--markdown] [--output <path>]"
   );
   io.writeStderr(
     "Suppression governance: codex-plugin-doctor suppress list <path> [--fail-on-expired] [--fail-on-invalid] [--warn-expiring-within-days <days>]\n       codex-plugin-doctor suppress prune <path> [--apply] [--json]"
@@ -2125,6 +2134,67 @@ export async function runCli(
     if (maybePath === "corpus") {
       if (remainingArgs[0] === "metrics") {
         const metricsArgs = remainingArgs.slice(1);
+        if (metricsArgs[0] === "diff") {
+          const diffArgs = metricsArgs.slice(1);
+          const jsonOutput = diffArgs.includes("--json");
+          const markdownOutput = diffArgs.includes("--markdown");
+          const failOnRegression = diffArgs.includes("--fail-on-regression");
+          const valueOptions = new Map<string, string>();
+          const valueFlags = new Set(["--before", "--after", "--output"]);
+          const booleanFlags = new Set(["--json", "--markdown", "--fail-on-regression"]);
+
+          for (let index = 0; index < diffArgs.length; index += 1) {
+            const argument = diffArgs[index];
+            if (booleanFlags.has(argument)) continue;
+            if (!valueFlags.has(argument)) {
+              io.writeStderr(`Unknown corpus metrics diff argument: ${argument}.`);
+              return 2;
+            }
+            const value = diffArgs[index + 1];
+            if (!value || value.startsWith("--")) {
+              io.writeStderr(`Missing path after ${argument}.`);
+              return 2;
+            }
+            valueOptions.set(argument, value);
+            index += 1;
+          }
+
+          const beforePath = valueOptions.get("--before");
+          const afterPath = valueOptions.get("--after");
+          const outputPath = valueOptions.get("--output") ?? null;
+          if (!beforePath || !afterPath) {
+            io.writeStderr("Corpus metrics diff requires --before <metrics.json> and --after <metrics.json>.");
+            return 2;
+          }
+          if (jsonOutput && markdownOutput) {
+            io.writeStderr("Use either --json or --markdown, not both.");
+            return 2;
+          }
+
+          let report;
+          try {
+            const builder = options.buildCorpusMetricsDiffReportImpl ?? buildCorpusQualityMetricsDiffReport;
+            report = await builder(beforePath, afterPath, { failOnRegression });
+          } catch (error) {
+            if (error instanceof CorpusMetricsDiffError) {
+              io.writeStderr(error.message);
+              return 2;
+            }
+            const message = error instanceof Error ? error.message : "Unknown error";
+            io.writeStderr(`Corpus metrics diff failed: ${message}`);
+            return 2;
+          }
+
+          const rendered = jsonOutput
+            ? renderCorpusQualityMetricsDiffJson(report)
+            : markdownOutput
+              ? renderCorpusQualityMetricsDiffMarkdown(report)
+              : renderCorpusQualityMetricsDiffText(report, { outputPath });
+          if (outputPath) await writeFile(outputPath, rendered, "utf8");
+          io.writeStdout(rendered);
+          return report.exitCode;
+        }
+
         const jsonOutput = metricsArgs.includes("--json");
         const markdownOutput = metricsArgs.includes("--markdown");
         const valueOptions = new Map<string, string>();

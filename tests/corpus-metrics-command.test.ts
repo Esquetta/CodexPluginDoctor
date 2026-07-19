@@ -31,6 +31,7 @@ const report: CorpusQualityMetricsReport = {
   kind: "doctor.validation.corpus.metrics",
   generatedAt: "2026-07-17T00:00:00.000Z",
   version: "1.48.0",
+  corpusDigest: `sha256:${"a".repeat(64)}`,
   status: "fail",
   exitCode: 1,
   summary: {
