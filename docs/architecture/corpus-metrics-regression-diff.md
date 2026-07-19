@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned for `v1.49.0` as an additive comparison layer over the corpus quality metrics shipped in `v1.48.0`.
+Shipped in `v1.49.0` as an additive comparison layer over the corpus quality metrics shipped in `v1.48.0`.
 
 ## Purpose
 
