@@ -174,13 +174,21 @@ describe("corpus metrics reconciliation", () => {
 describe("corpus metrics report", () => {
   it("uses CLI threshold overrides and keeps local paths out of output", async () => {
     const { manifestPath, root, targetPath } = await createMetricsManifest();
-    const report = await buildCorpusQualityMetricsReport(manifestPath, {
+    const equivalent = await createMetricsManifest();
+    const buildOptions = {
       thresholds: { minPrecision: 1, minRecall: 1, maxFalsePositiveRate: 0 },
       analyzeTarget: async () => ({
         findings: [{ findingId: "plugin.manifest.missing_field", fingerprint: tpFingerprint }]
       }),
       buildFingerprint: async () => ({ digest })
+    };
+    const report = await buildCorpusQualityMetricsReport(manifestPath, {
+      ...buildOptions
     });
+    const equivalentReport = await buildCorpusQualityMetricsReport(
+      equivalent.manifestPath,
+      buildOptions
+    );
 
     expect(report).toMatchObject({
       kind: "doctor.validation.corpus.metrics",
@@ -197,6 +205,8 @@ describe("corpus metrics report", () => {
         falsePositiveRate: 0
       }
     });
+    expect(report.corpusDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(report.corpusDigest).toBe(equivalentReport.corpusDigest);
     expect(JSON.stringify(report)).not.toContain(root);
     expect(JSON.stringify(report)).not.toContain(targetPath);
   });

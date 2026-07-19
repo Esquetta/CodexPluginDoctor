@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -115,6 +116,7 @@ export interface CorpusQualityMetricsReport {
   kind: "doctor.validation.corpus.metrics";
   generatedAt: string;
   version: string;
+  corpusDigest: string;
   status: "pass" | "fail" | "incomplete";
   exitCode: 0 | 1 | 2;
   summary: CorpusMetricCounts & CorpusMetricValues & {
@@ -125,6 +127,63 @@ export interface CorpusQualityMetricsReport {
   thresholds: CorpusMetricThresholds;
   thresholdChecks: CorpusMetricThresholdCheck[];
   targets: CorpusQualityMetricsTargetResult[];
+}
+
+export interface CorpusMetricCountDeltas {
+  truePositives: number;
+  falsePositives: number;
+  falseNegatives: number;
+  resolvedFalsePositives: number;
+  unreviewed: number;
+  unclear: number;
+}
+
+export interface CorpusMetricValueComparison {
+  before: number | null;
+  after: number | null;
+  delta: number | null;
+}
+
+export interface CorpusQualityMetricsDiffTarget {
+  id: string;
+  regressed: boolean;
+  counts: CorpusMetricCountDeltas;
+  precision: CorpusMetricValueComparison;
+  recall: CorpusMetricValueComparison;
+  falsePositiveRate: CorpusMetricValueComparison;
+}
+
+export interface CorpusQualityMetricsDiffReport {
+  schemaVersion: "1.0.0";
+  kind: "doctor.validation.corpus.metrics.diff";
+  generatedAt: string;
+  version: string;
+  corpusDigest: string;
+  status: "pass" | "fail";
+  exitCode: 0 | 1;
+  failOnRegression: boolean;
+  summary: {
+    comparable: true;
+    regression: boolean;
+    changedTargets: number;
+    precisionBefore: number | null;
+    precisionAfter: number | null;
+    precisionDelta: number | null;
+    recallBefore: number | null;
+    recallAfter: number | null;
+    recallDelta: number | null;
+    falsePositiveRateBefore: number | null;
+    falsePositiveRateAfter: number | null;
+    falsePositiveRateDelta: number | null;
+    counts: CorpusMetricCountDeltas;
+  };
+  before: { version: string; targetCount: number };
+  after: { version: string; targetCount: number };
+  targets: CorpusQualityMetricsDiffTarget[];
+}
+
+export interface BuildCorpusMetricsDiffOptions {
+  failOnRegression?: boolean;
 }
 
 export interface BuildCorpusMetricsOptions {
@@ -141,6 +200,13 @@ export class CorpusMetricsManifestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CorpusMetricsManifestError";
+  }
+}
+
+export class CorpusMetricsDiffError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CorpusMetricsDiffError";
   }
 }
 
@@ -345,6 +411,27 @@ function roundMetric(value: number | null): number | null {
   return value === null ? null : Math.round(value * 1_000_000) / 1_000_000;
 }
 
+function buildCorpusDigest(manifest: LoadedCorpusMetricsManifest): string {
+  const identity = manifest.targets
+    .map((target) => ({
+      id: target.id,
+      profile: target.profile,
+      sourceType: target.sourceType,
+      mode: target.mode,
+      contentDigest: target.contentDigest,
+      reviews: target.reviews
+        .map((review) => ({
+          findingId: review.findingId,
+          fingerprint: review.fingerprint,
+          classification: review.classification
+        }))
+        .sort((left, right) => findingKey(left.findingId, left.fingerprint)
+          .localeCompare(findingKey(right.findingId, right.fingerprint)))
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return `sha256:${createHash("sha256").update(JSON.stringify(identity)).digest("hex")}`;
+}
+
 function calculateRawMetrics(counts: Pick<CorpusMetricCounts, "truePositives" | "falsePositives" | "falseNegatives">): CorpusMetricValues {
   const precisionDenominator = counts.truePositives + counts.falsePositives;
   const recallDenominator = counts.truePositives + counts.falseNegatives;
@@ -500,6 +587,7 @@ export async function buildCorpusQualityMetricsReport(
     kind: "doctor.validation.corpus.metrics",
     generatedAt: new Date().toISOString(),
     version: packageVersion,
+    corpusDigest: buildCorpusDigest(manifest),
     status,
     exitCode,
     summary: {
@@ -601,6 +689,308 @@ export function renderCorpusQualityMetricsMarkdown(report: CorpusQualityMetricsR
       `| ${target.id} | ${target.complete ? "complete" : "incomplete"} | ` +
       `${formatMetric(target.metrics.precision)} | ${formatMetric(target.metrics.recall)} |`
     );
+  }
+  return lines.join("\n");
+}
+
+const reportSizeLimit = 5 * 1024 * 1024;
+const countKeys: Array<keyof CorpusMetricCounts> = [
+  "truePositives",
+  "falsePositives",
+  "falseNegatives",
+  "resolvedFalsePositives",
+  "unreviewed",
+  "unclear"
+];
+
+interface ComparableMetricsReport {
+  version: string;
+  corpusDigest: string;
+  summary: CorpusMetricCounts & { targetCount: number };
+  targets: Array<{ id: string; counts: CorpusMetricCounts }>;
+}
+
+function requireNonNegativeInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new CorpusMetricsDiffError(`${label} must be a non-negative integer.`);
+  }
+  return value as number;
+}
+
+function parseCounts(value: unknown, label: string): CorpusMetricCounts {
+  if (!isRecord(value)) throw new CorpusMetricsDiffError(`${label} is invalid.`);
+  return Object.fromEntries(countKeys.map((key) => [
+    key,
+    requireNonNegativeInteger(value[key], `${label}.${key}`)
+  ])) as unknown as CorpusMetricCounts;
+}
+
+function metricsMatchCounts(value: unknown, counts: CorpusMetricCounts): boolean {
+  if (!isRecord(value)) return false;
+  const expected = calculateMetrics(counts);
+  return value.precision === expected.precision &&
+    value.recall === expected.recall &&
+    value.falsePositiveRate === expected.falsePositiveRate;
+}
+
+async function loadComparableMetricsReport(
+  reportPath: string,
+  label: "Before" | "After"
+): Promise<ComparableMetricsReport> {
+  let fileStat;
+  try {
+    fileStat = await stat(path.resolve(reportPath));
+  } catch {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report could not be read.`);
+  }
+  if (!fileStat.isFile() || fileStat.size > reportSizeLimit) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report must be a file no larger than 5 MiB.`);
+  }
+
+  let value: unknown;
+  try {
+    value = await readJsonFile<unknown>(path.resolve(reportPath));
+  } catch {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report could not be read as JSON.`);
+  }
+  if (!isRecord(value) || value.schemaVersion !== "1.0.0" ||
+      value.kind !== "doctor.validation.corpus.metrics") {
+    throw new CorpusMetricsDiffError(`${label} file is not a supported corpus metrics report.`);
+  }
+  if (typeof value.version !== "string" || value.version.length === 0) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report version is invalid.`);
+  }
+  if (typeof value.corpusDigest !== "string" || !sha256Digest.test(value.corpusDigest)) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report is missing a valid corpusDigest.`);
+  }
+  if (!isRecord(value.summary) || !Array.isArray(value.targets)) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report structure is invalid.`);
+  }
+  if (value.status === "incomplete" || value.summary.incompleteTargets !== 0 ||
+      value.summary.unreviewed !== 0 || value.summary.unclear !== 0) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report must be complete.`);
+  }
+  if ((value.status !== "pass" && value.status !== "fail") ||
+      (value.status === "pass" ? value.exitCode !== 0 : value.exitCode !== 1)) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report status is invalid.`);
+  }
+
+  const targetCount = requireNonNegativeInteger(value.summary.targetCount, `${label} summary.targetCount`);
+  const summaryCounts = parseCounts(value.summary, `${label} summary`);
+  if (targetCount === 0 || targetCount !== value.targets.length ||
+      value.summary.completeTargets !== targetCount || !metricsMatchCounts(value.summary, summaryCounts)) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report is internally inconsistent.`);
+  }
+
+  const ids = new Set<string>();
+  const targets = value.targets.map((target, index) => {
+    if (!isRecord(target) || typeof target.id !== "string" || !publicSafeId.test(target.id) ||
+        target.complete !== true || target.digestMatched !== true) {
+      throw new CorpusMetricsDiffError(`${label} corpus metrics target ${index} is invalid or incomplete.`);
+    }
+    if (ids.has(target.id)) {
+      throw new CorpusMetricsDiffError(`${label} corpus metrics report contains duplicate target IDs.`);
+    }
+    ids.add(target.id);
+    const counts = parseCounts(target.counts, `${label} target ${target.id} counts`);
+    if (!metricsMatchCounts(target.metrics, counts)) {
+      throw new CorpusMetricsDiffError(`${label} corpus metrics report is internally inconsistent.`);
+    }
+    return { id: target.id, counts };
+  });
+
+  const summedCounts = targets.reduce((total, target) => addCounts(total, target.counts), {
+    truePositives: 0,
+    falsePositives: 0,
+    falseNegatives: 0,
+    resolvedFalsePositives: 0,
+    unreviewed: 0,
+    unclear: 0
+  });
+  if (countKeys.some((key) => summedCounts[key] !== summaryCounts[key])) {
+    throw new CorpusMetricsDiffError(`${label} corpus metrics report is internally inconsistent.`);
+  }
+
+  return {
+    version: value.version,
+    corpusDigest: value.corpusDigest,
+    summary: { ...summaryCounts, targetCount },
+    targets
+  };
+}
+
+function subtractCounts(after: CorpusMetricCounts, before: CorpusMetricCounts): CorpusMetricCountDeltas {
+  return Object.fromEntries(countKeys.map((key) => [key, after[key] - before[key]])) as unknown as CorpusMetricCountDeltas;
+}
+
+function compareMetric(before: number | null, after: number | null): CorpusMetricValueComparison {
+  return {
+    before: roundMetric(before),
+    after: roundMetric(after),
+    delta: before === null || after === null ? null : roundMetric(after - before)
+  };
+}
+
+function metricRegressed(
+  precision: CorpusMetricValueComparison,
+  recall: CorpusMetricValueComparison,
+  falsePositiveRate: CorpusMetricValueComparison
+): boolean {
+  return (precision.delta !== null && precision.delta < 0) ||
+    (recall.delta !== null && recall.delta < 0) ||
+    (falsePositiveRate.delta !== null && falsePositiveRate.delta > 0);
+}
+
+export async function buildCorpusQualityMetricsDiffReport(
+  beforePath: string,
+  afterPath: string,
+  options: BuildCorpusMetricsDiffOptions = {}
+): Promise<CorpusQualityMetricsDiffReport> {
+  const [before, after] = await Promise.all([
+    loadComparableMetricsReport(beforePath, "Before"),
+    loadComparableMetricsReport(afterPath, "After")
+  ]);
+  const beforeIds = before.targets.map((target) => target.id).sort();
+  const afterIds = after.targets.map((target) => target.id).sort();
+  if (before.corpusDigest !== after.corpusDigest || JSON.stringify(beforeIds) !== JSON.stringify(afterIds)) {
+    throw new CorpusMetricsDiffError("Corpus metrics reports describe different corpus identities.");
+  }
+
+  const afterTargets = new Map(after.targets.map((target) => [target.id, target]));
+  const targets = before.targets.map((beforeTarget) => {
+    const afterTarget = afterTargets.get(beforeTarget.id)!;
+    const beforeMetrics = calculateRawMetrics(beforeTarget.counts);
+    const afterMetrics = calculateRawMetrics(afterTarget.counts);
+    const precision = compareMetric(beforeMetrics.precision, afterMetrics.precision);
+    const recall = compareMetric(beforeMetrics.recall, afterMetrics.recall);
+    const falsePositiveRate = compareMetric(
+      beforeMetrics.falsePositiveRate,
+      afterMetrics.falsePositiveRate
+    );
+    return {
+      id: beforeTarget.id,
+      regressed: metricRegressed(precision, recall, falsePositiveRate),
+      counts: subtractCounts(afterTarget.counts, beforeTarget.counts),
+      precision,
+      recall,
+      falsePositiveRate
+    };
+  });
+  const changedTargets = targets.filter((target) =>
+    countKeys.some((key) => target.counts[key] !== 0)).length;
+  const beforeMetrics = calculateRawMetrics(before.summary);
+  const afterMetrics = calculateRawMetrics(after.summary);
+  const precision = compareMetric(beforeMetrics.precision, afterMetrics.precision);
+  const recall = compareMetric(beforeMetrics.recall, afterMetrics.recall);
+  const falsePositiveRate = compareMetric(beforeMetrics.falsePositiveRate, afterMetrics.falsePositiveRate);
+  const regression = metricRegressed(precision, recall, falsePositiveRate);
+  const failOnRegression = options.failOnRegression === true;
+  const failed = failOnRegression && regression;
+
+  return {
+    schemaVersion: "1.0.0",
+    kind: "doctor.validation.corpus.metrics.diff",
+    generatedAt: new Date().toISOString(),
+    version: packageVersion,
+    corpusDigest: before.corpusDigest,
+    status: failed ? "fail" : "pass",
+    exitCode: failed ? 1 : 0,
+    failOnRegression,
+    summary: {
+      comparable: true,
+      regression,
+      changedTargets,
+      precisionBefore: precision.before,
+      precisionAfter: precision.after,
+      precisionDelta: precision.delta,
+      recallBefore: recall.before,
+      recallAfter: recall.after,
+      recallDelta: recall.delta,
+      falsePositiveRateBefore: falsePositiveRate.before,
+      falsePositiveRateAfter: falsePositiveRate.after,
+      falsePositiveRateDelta: falsePositiveRate.delta,
+      counts: subtractCounts(after.summary, before.summary)
+    },
+    before: { version: before.version, targetCount: before.summary.targetCount },
+    after: { version: after.version, targetCount: after.summary.targetCount },
+    targets
+  };
+}
+
+function formatDelta(value: number | null): string {
+  if (value === null) return "N/A";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(2)} pp`;
+}
+
+export function renderCorpusQualityMetricsDiffJson(report: CorpusQualityMetricsDiffReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function renderCorpusQualityMetricsDiffText(
+  report: CorpusQualityMetricsDiffReport,
+  options: { outputPath?: string | null } = {}
+): string {
+  const lines = [
+    "Doctor Corpus Metrics Diff",
+    "==========================",
+    `Status: ${report.status.toUpperCase()}`,
+    `Before version: ${report.before.version}`,
+    `After version: ${report.after.version}`,
+    `Regression: ${report.summary.regression ? "yes" : "no"}`,
+    `Precision delta: ${formatDelta(report.summary.precisionDelta)}`,
+    `Recall delta: ${formatDelta(report.summary.recallDelta)}`,
+    `False-positive rate delta: ${formatDelta(report.summary.falsePositiveRateDelta)}`,
+    `Changed targets: ${report.summary.changedTargets}`
+  ];
+  if (options.outputPath) lines.push(`Output: ${options.outputPath}`);
+  lines.push("", "Target Changes", "--------------");
+  const changed = report.targets.filter((target) => countKeys.some((key) => target.counts[key] !== 0));
+  if (changed.length === 0) {
+    lines.push("None.");
+  } else {
+    for (const target of changed) {
+      lines.push(
+        `${target.id}: ${target.regressed ? "REGRESSED" : "CHANGED"} ` +
+        `(precision ${formatDelta(target.precision.delta)}, recall ${formatDelta(target.recall.delta)}, ` +
+        `false-positive rate ${formatDelta(target.falsePositiveRate.delta)})`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+export function renderCorpusQualityMetricsDiffMarkdown(report: CorpusQualityMetricsDiffReport): string {
+  const lines = [
+    "# Doctor Corpus Metrics Diff",
+    "",
+    `- Status: ${report.status.toUpperCase()}`,
+    `- Before version: ${report.before.version}`,
+    `- After version: ${report.after.version}`,
+    `- Regression: ${report.summary.regression ? "yes" : "no"}`,
+    "",
+    "| Metric | Before | After | Delta |",
+    "| --- | ---: | ---: | ---: |",
+    `| Precision | ${formatMetric(report.summary.precisionBefore)} | ${formatMetric(report.summary.precisionAfter)} | ${formatDelta(report.summary.precisionDelta)} |`,
+    `| Recall | ${formatMetric(report.summary.recallBefore)} | ${formatMetric(report.summary.recallAfter)} | ${formatDelta(report.summary.recallDelta)} |`,
+    `| False-positive rate | ${formatMetric(report.summary.falsePositiveRateBefore)} | ${formatMetric(report.summary.falsePositiveRateAfter)} | ${formatDelta(report.summary.falsePositiveRateDelta)} |`,
+    "",
+    "## Target Changes",
+    "",
+    "| Target | Result | Precision | Recall | False-positive rate |",
+    "| --- | --- | ---: | ---: | ---: |"
+  ];
+  const changed = report.targets.filter((target) => countKeys.some((key) => target.counts[key] !== 0));
+  if (changed.length === 0) {
+    lines.push("| None | unchanged | 0.00 pp | 0.00 pp | 0.00 pp |");
+  } else {
+    for (const target of changed) {
+      lines.push(
+        `| ${target.id} | ${target.regressed ? "regressed" : "changed"} | ` +
+        `${formatDelta(target.precision.delta)} | ${formatDelta(target.recall.delta)} | ` +
+        `${formatDelta(target.falsePositiveRate.delta)} |`
+      );
+    }
   }
   return lines.join("\n");
 }
