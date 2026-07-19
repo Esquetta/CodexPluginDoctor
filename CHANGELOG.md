@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.49.0] - 2026-07-19
+
+### Added
+
+- added `doctor corpus metrics diff --before --after` for deterministic precision, recall, and reviewed false-positive share comparisons
+- added `--fail-on-regression` so CI can block precision or recall decreases and false-positive share increases
+- added stable `corpusDigest` identities and a public `doctor.validation.corpus.metrics.diff` output contract
+
+### Security
+
+- reject incomplete, oversized, internally inconsistent, malformed, and different-corpus report pairs with exit `2`
+- recompute comparisons from integer finding counts instead of trusting rounded display metrics
+- keep input report paths, private corpus paths, source contents, evidence, and reviewer notes out of diff reports
+
 ## [1.48.0] - 2026-07-17
 
 ### Added
