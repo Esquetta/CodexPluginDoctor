@@ -67,6 +67,26 @@ falsePositiveRate = FP / (TP + FP)
 
 JSON reports use `kind: "doctor.validation.corpus.metrics"` and omit resolved paths, usernames, source contents, raw evidence, and reviewer notes. Text and Markdown renderers present the aggregate scorecard, threshold failures, and sanitized per-target summaries.
 
+## Regression Comparison
+
+Preserve the JSON report from a trusted baseline run, then compare it with the next run:
+
+```bash
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json \
+  --json --output metrics-before.json
+codex-plugin-doctor doctor corpus metrics --manifest ../private-corpus/metrics.json \
+  --json --output metrics-after.json
+codex-plugin-doctor doctor corpus metrics diff \
+  --before metrics-before.json \
+  --after metrics-after.json \
+  --fail-on-regression \
+  --markdown --output metrics-diff.md
+```
+
+Each metrics report contains a `corpusDigest` derived from public-safe target metadata, expected content digests, and review classifications. Diff requires identical digests so a changed corpus cannot be mistaken for a validator improvement or regression. Reports created before this field was introduced must be regenerated.
+
+The diff recalculates precision, recall, and false-positive share from integer counts rather than subtracting rounded display values. With `--fail-on-regression`, precision or recall decreases and false-positive share increases return exit `1`. Invalid, incomplete, oversized, internally inconsistent, or non-comparable reports return exit `2`. The comparison is offline and omits input paths and private corpus material.
+
 This workflow defines how to:
 
 - select external-like plugin packages

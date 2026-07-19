@@ -113,6 +113,7 @@ The JSON report uses a new additive contract:
   "schemaVersion": "1.0.0",
   "kind": "doctor.validation.corpus.metrics",
   "generatedAt": "2026-07-17T00:00:00.000Z",
+  "corpusDigest": "sha256:<64 lowercase hex characters>",
   "summary": {
     "status": "pass",
     "targetCount": 3,
@@ -135,6 +136,8 @@ The JSON report uses a new additive contract:
 ```
 
 Metric values are rounded to six decimal places in serialized output. Gate evaluation uses the unrounded values. Target output includes only public-safe IDs, profile/source type, digest status, aggregate counts, metrics, and fingerprint-based review outcomes. It excludes resolved paths, usernames, source contents, raw evidence, and private notes.
+
+`corpusDigest` binds public-safe target metadata, expected content digests, and reviewed finding keys and classifications into one stable identity. It excludes resolved paths and allows later reports to prove that they measured the same corpus composition.
 
 Text and Markdown output show the aggregate scorecard first, failed thresholds second, and per-target details last. Output order follows manifest target order; finding outcomes sort by finding ID and fingerprint.
 
