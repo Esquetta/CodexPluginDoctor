@@ -15,6 +15,8 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("json-path:");
     expect(actionMetadata).toContain("sarif-path:");
     expect(actionMetadata).toContain("validation-corpus-path:");
+    expect(actionMetadata).toContain("corpus-metrics-path:");
+    expect(actionMetadata).toContain("corpus-metrics-diff-path:");
     expect(actionMetadata).toContain("output-contract-path:");
     expect(actionMetadata).toContain("action-manifest-path:");
     expect(actionMetadata).toContain("review-bundle-path:");
@@ -39,6 +41,9 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("json:");
     expect(actionMetadata).toContain("markdown:");
     expect(actionMetadata).toContain("corpus:");
+    expect(actionMetadata).toContain("corpus-metrics-manifest:");
+    expect(actionMetadata).toContain("corpus-metrics-baseline:");
+    expect(actionMetadata).toContain("corpus-metrics-fail-on-regression:");
     expect(actionMetadata).toContain("contract:");
     expect(actionMetadata).toContain("review-bundle:");
     expect(actionMetadata).toContain("review-bundle-dir:");
@@ -58,6 +63,9 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("doctor.github.action.manifest");
     expect(actionMetadata).toContain('doctor_version="$(codex-plugin-doctor --version)"');
     expect(actionMetadata).toContain('run_doctor "validation corpus" doctor corpus --json --output "$validation_corpus_path"');
+    expect(actionMetadata).toContain('run_doctor "corpus metrics" doctor corpus metrics --manifest "$CORPUS_METRICS_MANIFEST_INPUT" --json --output "$corpus_metrics_path"');
+    expect(actionMetadata).toContain('corpus_metrics_diff_args=(doctor corpus metrics diff --before "$CORPUS_METRICS_BASELINE_INPUT" --after "$corpus_metrics_path" --json --output "$corpus_metrics_diff_path")');
+    expect(actionMetadata).toContain("corpus_metrics_diff_args+=(--fail-on-regression)");
     expect(actionMetadata).toContain('run_doctor "output contract" doctor contract --json --output "$output_contract_path"');
     expect(actionMetadata).toContain('review_bundle_args=(doctor review-bundle "${{ inputs.path }}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")');
     expect(actionMetadata).toContain('doctor review-bundle verify "$review_bundle_path" --target "${{ inputs.path }}" --sign-key-env "$signing_key_env" --json --output "$review_bundle_verification_path"');
@@ -66,6 +74,8 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"');
     expect(actionMetadata).toContain('echo "status=$status"');
     expect(actionMetadata).toContain('echo "validation-corpus-path=$validation_corpus_path"');
+    expect(actionMetadata).toContain('echo "corpus-metrics-path=$corpus_metrics_path"');
+    expect(actionMetadata).toContain('echo "corpus-metrics-diff-path=$corpus_metrics_diff_path"');
     expect(actionMetadata).toContain('echo "output-contract-path=$output_contract_path"');
     expect(actionMetadata).toContain('echo "action-manifest-path=$action_manifest_path"');
     expect(actionMetadata).toContain('echo "review-bundle-path=$review_bundle_path"');
@@ -101,6 +111,11 @@ describe("GitHub Action metadata", () => {
     expect(actionUsage).toContain("corpus:");
     expect(actionUsage).toContain("contract:");
     expect(actionUsage).toContain("validation-corpus.json");
+    expect(actionUsage).toContain("corpus-metrics.json");
+    expect(actionUsage).toContain("corpus-metrics-diff.json");
+    expect(actionUsage).toContain("corpus-metrics-manifest:");
+    expect(actionUsage).toContain("corpus-metrics-baseline:");
+    expect(actionUsage).toContain('corpus-metrics-fail-on-regression: "true"');
     expect(actionUsage).toContain("output-contract.json");
     expect(actionUsage).toContain("codex-plugin-doctor-action-manifest.json");
     expect(actionUsage).toContain("action-manifest-path");

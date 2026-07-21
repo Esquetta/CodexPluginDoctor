@@ -70,6 +70,18 @@ inputs:
     description: Write bundled validation corpus JSON into the output directory.
     required: false
     default: "false"
+  corpus-metrics-manifest:
+    description: Optional path to a private corpus metrics manifest to evaluate.
+    required: false
+    default: ""
+  corpus-metrics-baseline:
+    description: Optional path to a previous corpus metrics JSON report for regression comparison.
+    required: false
+    default: ""
+  corpus-metrics-fail-on-regression:
+    description: Fail when corpus precision or recall decreases, or false-positive share increases.
+    required: false
+    default: "false"
   contract:
     description: Write public output contract JSON into the output directory.
     required: false
@@ -118,6 +130,12 @@ outputs:
   validation-corpus-path:
     description: Path to the generated validation corpus JSON report when corpus is enabled.
     value: ${{ steps.run-doctor.outputs.validation-corpus-path }}
+  corpus-metrics-path:
+    description: Path to the generated corpus quality metrics JSON report when configured.
+    value: ${{ steps.run-doctor.outputs.corpus-metrics-path }}
+  corpus-metrics-diff-path:
+    description: Path to the generated corpus quality regression JSON report when a baseline is configured.
+    value: ${{ steps.run-doctor.outputs.corpus-metrics-diff-path }}
   output-contract-path:
     description: Path to the generated output contract JSON report when contract is enabled.
     value: ${{ steps.run-doctor.outputs.output-contract-path }}
@@ -141,6 +159,10 @@ runs:
     - name: Run Codex Plugin Doctor
       id: run-doctor
       shell: bash
+      env:
+        CORPUS_METRICS_MANIFEST_INPUT: ${{ inputs['corpus-metrics-manifest'] }}
+        CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
+        CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
       run: |
         set -euo pipefail
 
@@ -149,6 +171,8 @@ runs:
         json_path="$report_dir/codex-plugin-doctor-report.json"
         sarif_path="$report_dir/codex-plugin-doctor.sarif"
         validation_corpus_path="$report_dir/validation-corpus.json"
+        corpus_metrics_path="$report_dir/corpus-metrics.json"
+        corpus_metrics_diff_path="$report_dir/corpus-metrics-diff.json"
         output_contract_path="$report_dir/output-contract.json"
         action_manifest_path="$report_dir/codex-plugin-doctor-action-manifest.json"
         review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
@@ -235,6 +259,28 @@ runs:
           run_doctor "validation corpus" doctor corpus --json --output "$validation_corpus_path"
         fi
 
+        if [[ -z "$CORPUS_METRICS_MANIFEST_INPUT" ]]; then
+          if [[ -n "$CORPUS_METRICS_BASELINE_INPUT" || "$CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT" == "true" ]]; then
+            echo "Corpus metrics baseline and regression gating require corpus-metrics-manifest."
+            record_status 2
+          fi
+        elif [[ -z "$CORPUS_METRICS_BASELINE_INPUT" && "$CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT" == "true" ]]; then
+          echo "corpus-metrics-fail-on-regression requires corpus-metrics-baseline."
+          record_status 2
+        else
+          run_doctor "corpus metrics" doctor corpus metrics --manifest "$CORPUS_METRICS_MANIFEST_INPUT" --json --output "$corpus_metrics_path"
+
+          if [[ -n "$CORPUS_METRICS_BASELINE_INPUT" && -f "$corpus_metrics_path" ]]; then
+            corpus_metrics_diff_args=(doctor corpus metrics diff --before "$CORPUS_METRICS_BASELINE_INPUT" --after "$corpus_metrics_path" --json --output "$corpus_metrics_diff_path")
+
+            if [[ "$CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT" == "true" ]]; then
+              corpus_metrics_diff_args+=(--fail-on-regression)
+            fi
+
+            run_doctor "corpus metrics regression" "${corpus_metrics_diff_args[@]}"
+          fi
+        fi
+
         if [[ "${{ inputs.contract }}" == "true" ]]; then
           run_doctor "output contract" doctor contract --json --output "$output_contract_path"
         fi
@@ -282,6 +328,8 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_MARKDOWN="${{ inputs.markdown }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SARIF="${{ inputs.sarif }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS="${{ inputs.corpus }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS="$([[ -n "$CORPUS_METRICS_MANIFEST_INPUT" ]] && echo true || echo false)"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF="$([[ -n "$CORPUS_METRICS_BASELINE_INPUT" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT="${{ inputs.contract }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${{ inputs['review-bundle'] }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${{ inputs['review-bundle-verify'] }}"
@@ -289,6 +337,8 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_JSON_PATH="$json_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_SARIF_PATH="$sarif_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_PATH="$validation_corpus_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_PATH="$corpus_metrics_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF_PATH="$corpus_metrics_diff_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH="$output_contract_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
@@ -318,6 +368,8 @@ runs:
             json: report("json", "CODEX_PLUGIN_DOCTOR_ACTION_JSON", "CODEX_PLUGIN_DOCTOR_ACTION_JSON_PATH"),
             sarif: report("sarif", "CODEX_PLUGIN_DOCTOR_ACTION_SARIF", "CODEX_PLUGIN_DOCTOR_ACTION_SARIF_PATH"),
             corpus: report("corpus", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_PATH"),
+            corpusMetrics: report("corpusMetrics", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_PATH"),
+            corpusMetricsDiff: report("corpusMetricsDiff", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF_PATH"),
             contract: report("contract", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
@@ -340,6 +392,8 @@ runs:
           echo "json-path=$json_path"
           echo "sarif-path=$sarif_path"
           echo "validation-corpus-path=$validation_corpus_path"
+          echo "corpus-metrics-path=$corpus_metrics_path"
+          echo "corpus-metrics-diff-path=$corpus_metrics_diff_path"
           echo "output-contract-path=$output_contract_path"
           echo "action-manifest-path=$action_manifest_path"
           echo "review-bundle-path=$review_bundle_path"
