@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.50.0] - 2026-07-21
+
+### Added
+
+- added GitHub Action inputs for private corpus metrics manifests, retained baselines, and opt-in regression failure gates
+- added public-safe `corpus-metrics.json` and `corpus-metrics-diff.json` artifact outputs and Action output paths
+- added corpus metrics and regression report entries to the generated GitHub Action artifact manifest
+
+### Security
+
+- pass corpus metrics paths through step environment variables instead of interpolating them into the shell script
+- keep snapshots, manifest contents, local paths, source material, evidence, and review notes out of uploaded quality reports
+- reject incomplete corpus quality gate input combinations with exit `2`
+
 ## [1.49.0] - 2026-07-19
 
 ### Added
