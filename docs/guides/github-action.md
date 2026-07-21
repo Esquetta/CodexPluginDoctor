@@ -90,6 +90,8 @@ The action also exposes these workflow outputs for follow-up steps:
 - `json-path`
 - `sarif-path`
 - `validation-corpus-path`
+- `corpus-metrics-path`
+- `corpus-metrics-diff-path`
 - `output-contract-path`
 - `action-manifest-path`
 - `review-bundle-path`
@@ -129,6 +131,32 @@ The CLI can produce badge output for release notes, README automation, or a stat
 ```
 
 `--badge-json` follows the Shields endpoint schema with `schemaVersion`, `label`, `message`, and `color`. `--badge-markdown` emits a static shields.io Markdown image link.
+
+## Corpus Quality Gates
+
+Use a private corpus metrics manifest to measure reviewed precision, recall, and false-positive share in CI. The action writes only the public-safe metrics report into its artifact directory; snapshots, manifest contents, local paths, and review notes are not copied.
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v1.49.0
+  with:
+    version: "1.49.0"
+    path: .
+    corpus-metrics-manifest: ../private-corpus/metrics.json
+```
+
+This writes `corpus-metrics.json`. To compare the result with a retained report and fail the job on regression:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v1.49.0
+  with:
+    version: "1.49.0"
+    path: .
+    corpus-metrics-manifest: ../private-corpus/metrics.json
+    corpus-metrics-baseline: .doctor-baselines/corpus-metrics.json
+    corpus-metrics-fail-on-regression: "true"
+```
+
+The comparison writes `corpus-metrics-diff.json`. Reports must have the same `corpusDigest`; changed corpus composition is rejected as non-comparable rather than reported as a validator regression. `corpus-metrics-fail-on-regression` requires both a manifest and baseline.
 
 ## History Artifacts
 
