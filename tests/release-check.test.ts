@@ -6,7 +6,8 @@ import {
   assertFreshInstallAudit,
   assertSecuritySelfScan,
   assertUpdateCheckSmoke,
-  assertVersionIsPublishable
+  assertVersionIsPublishable,
+  parsePackedTarballFilename
 } from "../scripts/release-check.mjs";
 
 describe("release check registry version gate", () => {
@@ -50,6 +51,18 @@ describe("release check registry version gate", () => {
 });
 
 describe("release check fresh install audit gate", () => {
+  it("reads npm pack metadata from npm 10 through npm 12", () => {
+    const metadata = { filename: "codex-plugin-doctor-1.50.0.tgz" };
+
+    expect(parsePackedTarballFilename(JSON.stringify([metadata]))).toBe(metadata.filename);
+    expect(
+      parsePackedTarballFilename(JSON.stringify({ "codex-plugin-doctor": metadata }))
+    ).toBe(metadata.filename);
+    expect(() => parsePackedTarballFilename("null")).toThrow(
+      "npm pack did not return tarball metadata."
+    );
+  });
+
   it("installs the packed tarball in a fresh project and audits it", () => {
     const tempDirectory = path.join("tmp", "release-check-temp");
     const run = vi.fn((command: string, args: string[]) => {

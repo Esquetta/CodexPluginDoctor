@@ -113,7 +113,7 @@ export function assertFreshInstallAudit(version, options = {}) {
       ["pack", "--json", "--pack-destination", tempDirectory],
       { capture: true }
     );
-    const [{ filename }] = JSON.parse(packOutput);
+    const filename = parsePackedTarballFilename(packOutput);
     const tarballPath = path.join(tempDirectory, filename);
 
     commandRunner("npm", ["init", "-y"], { cwd: tempDirectory });
@@ -139,6 +139,24 @@ export function assertFreshInstallAudit(version, options = {}) {
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   }
+}
+
+export function parsePackedTarballFilename(packOutput) {
+  const parsed = JSON.parse(packOutput);
+  const entries = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object"
+      ? Object.values(parsed)
+      : [];
+  const metadata = entries.find(
+    (entry) => entry && typeof entry === "object" && typeof entry.filename === "string"
+  );
+
+  if (!metadata) {
+    throw new Error("npm pack did not return tarball metadata.");
+  }
+
+  return metadata.filename;
 }
 
 export function assertUpdateCheckSmoke(version, options = {}) {
