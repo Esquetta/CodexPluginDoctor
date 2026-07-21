@@ -12,6 +12,10 @@ This changelog groups the shipped work into product-level release blocks instead
 - added public-safe `corpus-metrics.json` and `corpus-metrics-diff.json` artifact outputs and Action output paths
 - added corpus metrics and regression report entries to the generated GitHub Action artifact manifest
 
+### Fixed
+
+- support both npm 10/11 array and npm 12 keyed-object metadata from `npm pack --json`
+
 ### Security
 
 - pass corpus metrics paths through step environment variables instead of interpolating them into the shell script
