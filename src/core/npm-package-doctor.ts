@@ -55,7 +55,7 @@ export interface BuildDoctorNpmPackageReportOptions {
   environment?: CompatibilityEnvironment;
 }
 
-interface NpmPackEntry {
+export interface NpmPackEntry {
   filename?: string;
   name?: string;
   version?: string;
@@ -64,6 +64,24 @@ interface NpmPackEntry {
   shasum?: string;
   size?: number;
   unpackedSize?: number;
+}
+
+export function parseNpmPackOutput(stdout: string): NpmPackEntry[] {
+  const parsed = JSON.parse(stdout) as unknown;
+
+  if (Array.isArray(parsed)) {
+    return parsed.filter(
+      (entry): entry is NpmPackEntry => typeof entry === "object" && entry !== null
+    );
+  }
+
+  if (typeof parsed === "object" && parsed !== null) {
+    return Object.values(parsed).filter(
+      (entry): entry is NpmPackEntry => typeof entry === "object" && entry !== null
+    );
+  }
+
+  return [];
 }
 
 interface CommandSpec {
@@ -208,8 +226,8 @@ async function packNpmPackage(packageSpec: string, destinationPath: string): Pro
       maxBuffer: 10 * 1024 * 1024
     }
   );
-  const packEntries = JSON.parse(stdout) as NpmPackEntry[];
-  const metadata = packEntries[0];
+  const packEntries = parseNpmPackOutput(stdout);
+  const metadata = packEntries.find((entry) => typeof entry.filename === "string");
 
   if (!metadata?.filename) {
     throw new Error(`npm pack did not return a tarball for ${packageSpec}`);

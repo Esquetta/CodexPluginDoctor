@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
+import { parseNpmPackOutput } from "../src/core/npm-package-doctor.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -87,6 +88,25 @@ async function createPackedPluginFixture(): Promise<string> {
 }
 
 describe("doctor npm command", () => {
+  it("normalizes npm pack JSON from npm 10 through npm 12", () => {
+    const entry = {
+      name: "doctor-npm-fixture",
+      version: "1.2.3",
+      filename: "doctor-npm-fixture-1.2.3.tgz"
+    };
+
+    expect(parseNpmPackOutput(JSON.stringify([entry]))).toEqual([entry]);
+    expect(
+      parseNpmPackOutput(JSON.stringify({ "doctor-npm-fixture": entry }))
+    ).toEqual([entry]);
+  });
+
+  it("rejects non-record npm pack JSON shapes", () => {
+    expect(parseNpmPackOutput("null")).toEqual([]);
+    expect(parseNpmPackOutput('"unexpected"')).toEqual([]);
+    expect(parseNpmPackOutput("[null, 1]")).toEqual([]);
+  });
+
   it("packs an npm package and reports preinstall plugin risk as JSON", async () => {
     const packageRoot = await createPackedPluginFixture();
     const { io, stdout, stderr } = createIo();
