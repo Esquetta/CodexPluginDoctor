@@ -95,36 +95,38 @@ describe("runtime protocol probing", () => {
     });
   });
 
-  it("rejects a negotiated protocol version that is not date-like", async () => {
-    const packageRoot = await mkdtemp(
-      path.join(os.tmpdir(), "codex-plugin-doctor-invalid-protocol-version-")
-    );
+  it.each(["latest", "2025-02-30", "2025-99-99"])(
+    "rejects an invalid negotiated protocol version: %s",
+    async (protocolVersion) => {
+      const packageRoot = await mkdtemp(
+        path.join(os.tmpdir(), "codex-plugin-doctor-invalid-protocol-version-")
+      );
 
-    try {
-      await mkdir(path.join(packageRoot, ".codex-plugin"));
-      await writeFile(
-        path.join(packageRoot, ".codex-plugin", "plugin.json"),
-        JSON.stringify({
-          name: "runtime-invalid-protocol-version",
-          version: "1.0.0",
-          description: "Fixture generated for malformed protocol-version coverage.",
-          mcpServers: "./.mcp.json"
-        })
-      );
-      await writeFile(
-        path.join(packageRoot, ".mcp.json"),
-        JSON.stringify({
-          mcpServers: {
-            mockServer: {
-              command: "node",
-              args: ["./mock-server.js"]
+      try {
+        await mkdir(path.join(packageRoot, ".codex-plugin"));
+        await writeFile(
+          path.join(packageRoot, ".codex-plugin", "plugin.json"),
+          JSON.stringify({
+            name: "runtime-invalid-protocol-version",
+            version: "1.0.0",
+            description: "Fixture generated for malformed protocol-version coverage.",
+            mcpServers: "./.mcp.json"
+          })
+        );
+        await writeFile(
+          path.join(packageRoot, ".mcp.json"),
+          JSON.stringify({
+            mcpServers: {
+              mockServer: {
+                command: "node",
+                args: ["./mock-server.js"]
+              }
             }
-          }
-        })
-      );
-      await writeFile(
-        path.join(packageRoot, "mock-server.js"),
-        `import readline from "node:readline";
+          })
+        );
+        await writeFile(
+          path.join(packageRoot, "mock-server.js"),
+          `import readline from "node:readline";
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 rl.on("line", (line) => {
   const message = JSON.parse(line);
@@ -133,7 +135,7 @@ rl.on("line", (line) => {
       jsonrpc: "2.0",
       id: message.id,
       result: {
-        protocolVersion: "latest",
+        protocolVersion: ${JSON.stringify(protocolVersion)},
         capabilities: {},
         serverInfo: { name: "invalid-protocol-version", version: "1.0.0" }
       }
@@ -141,33 +143,34 @@ rl.on("line", (line) => {
   }
 });
 `
-      );
+        );
 
-      const result = await runCheck(packageRoot, { runtime: true });
+        const result = await runCheck(packageRoot, { runtime: true });
 
-      expect(result.status).toBe("fail");
-      expect(result.findings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ id: "plugin.runtime.initialize.invalid" })
-        ])
-      );
-      expect(result.runtimeScorecard?.conformance).toMatchObject({
-        protocolVersion: null,
-        profile: null,
-        capabilityConsistency: "skipped",
-        taskDeclarations: "skipped",
-        tasksList: "skipped",
-        schemaDialect: "skipped"
-      });
-    } finally {
-      await rm(packageRoot, {
-        recursive: true,
-        force: true,
-        maxRetries: 3,
-        retryDelay: 100
-      });
+        expect(result.status).toBe("fail");
+        expect(result.findings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: "plugin.runtime.initialize.invalid" })
+          ])
+        );
+        expect(result.runtimeScorecard?.conformance).toMatchObject({
+          protocolVersion: null,
+          profile: null,
+          capabilityConsistency: "skipped",
+          taskDeclarations: "skipped",
+          tasksList: "skipped",
+          schemaDialect: "skipped"
+        });
+      } finally {
+        await rm(packageRoot, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 100
+        });
+      }
     }
-  });
+  );
 
   it("records legacy conformance when tools are unsupported without sending task methods", async () => {
     const result = await runCheck(
