@@ -190,6 +190,21 @@ describe("MCP 2025-11 conformance", () => {
     expect(result.findings.map((finding) => finding.id)).toEqual(ids);
   });
 
+  it.each([
+    ["omitted", {}, "pass", []],
+    ["canonical", { $schema: "https://json-schema.org/draft/2020-12/schema" }, "pass", []],
+    ["canonical trailing hash", { $schema: "https://json-schema.org/draft/2020-12/schema#" }, "pass", []],
+    ["malformed", { $schema: "not a URI" }, "fail", ["mcp.conformance.schema.dialect_invalid"]],
+    ["unsupported", { $schema: "https://json-schema.org/draft/2019-09/schema" }, "warn", ["mcp.conformance.schema.dialect_unsupported"]]
+  ] as const)("handles %s output schema dialects", (_caseName, outputSchema, expectedStatus, ids) => {
+    const result = evaluateMcpConformance(
+      observe({ tools: [{ name: "schema-tool", inputSchema: {}, outputSchema }] })
+    );
+
+    expect(result.scorecard.schemaDialect).toBe(expectedStatus);
+    expect(result.findings.map((finding) => finding.id)).toEqual(ids);
+  });
+
   it("rejects non-object schema containers and non-string schema dialects", () => {
     const result = evaluateMcpConformance(
       observe({
