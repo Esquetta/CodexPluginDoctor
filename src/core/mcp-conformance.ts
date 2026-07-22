@@ -292,20 +292,22 @@ function statusForFindings(findings: Finding[]): RuntimeCapabilityStatus {
   return "pass";
 }
 
-function overallStatus(scorecard: RuntimeConformanceScorecard): "pass" | "warn" | "fail" {
+function overallStatus(
+  scorecard: RuntimeConformanceScorecard,
+  findings: Finding[]
+): "pass" | "warn" | "fail" {
   const statuses = [
-    scorecard.protocolVersion,
     scorecard.capabilityConsistency,
     scorecard.taskDeclarations,
     scorecard.tasksList,
     scorecard.schemaDialect
   ];
 
-  if (statuses.includes("fail")) {
+  if (statuses.includes("fail") || findings.some((finding) => finding.severity === "fail")) {
     return "fail";
   }
 
-  if (statuses.includes("warn")) {
+  if (statuses.includes("warn") || findings.some((finding) => finding.severity === "warn")) {
     return "warn";
   }
 
@@ -318,7 +320,7 @@ export function evaluateMcpConformance(
   const profile = classifyProtocolVersion(observation.protocolVersion);
   const findings: Finding[] = [];
   const scorecard: RuntimeConformanceScorecard = {
-    protocolVersion: "pass",
+    protocolVersion: observation.protocolVersion,
     profile,
     capabilityConsistency: "skipped",
     taskDeclarations: "skipped",
@@ -338,11 +340,10 @@ export function evaluateMcpConformance(
         { protocolVersion: observation.protocolVersion }
       )
     );
-    scorecard.protocolVersion = "warn";
   }
 
   if (profile === "legacy") {
-    scorecard.overall = overallStatus(scorecard);
+    scorecard.overall = overallStatus(scorecard, findings);
     return { findings, scorecard };
   }
 
@@ -362,7 +363,7 @@ export function evaluateMcpConformance(
   collectSchemaFindings(observation, schemaFindings);
   findings.push(...schemaFindings);
   scorecard.schemaDialect = statusForFindings(schemaFindings);
-  scorecard.overall = overallStatus(scorecard);
+  scorecard.overall = overallStatus(scorecard, findings);
 
   return { findings, scorecard };
 }

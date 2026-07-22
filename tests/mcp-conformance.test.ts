@@ -70,7 +70,7 @@ describe("MCP 2025-11 conformance", () => {
       "mcp.conformance.protocol.unknown_newer"
     ]);
     expect(result.scorecard).toMatchObject({
-      protocolVersion: "warn",
+      protocolVersion: "2026-01-01",
       overall: "warn"
     });
   });

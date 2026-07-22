@@ -119,7 +119,7 @@ export type McpConformanceProfile =
   | "future-compatible";
 
 export interface RuntimeConformanceScorecard {
-  protocolVersion: RuntimeCapabilityStatus;
+  protocolVersion: string | null;
   profile: McpConformanceProfile;
   capabilityConsistency: RuntimeCapabilityStatus;
   taskDeclarations: RuntimeCapabilityStatus;
