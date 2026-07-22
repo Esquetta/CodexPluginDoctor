@@ -10,6 +10,7 @@ import type {
 } from "../domain/types.js";
 
 type JsonObject = Record<string, unknown>;
+type TaskToolsCallCapabilityState = "present-valid" | "missing" | "malformed";
 
 const LATEST_PROTOCOL_VERSION = "2025-11-25";
 const LEGACY_PROTOCOL_VERSIONS = new Set([
@@ -70,64 +71,68 @@ function addTaskCapabilityFailure(findings: Finding[], field: string): void {
   );
 }
 
-function hasTaskToolsCallCapability(capabilities: unknown, findings: Finding[]): boolean {
+function getTaskToolsCallCapabilityState(
+  capabilities: unknown,
+  findings: Finding[]
+): TaskToolsCallCapabilityState {
   if (!isPlainObject(capabilities)) {
     addTaskCapabilityFailure(findings, "capabilities");
-    return false;
+    return "malformed";
   }
 
   const tasks = capabilities.tasks;
   if (tasks === undefined) {
-    return false;
+    return "missing";
   }
 
   if (!isPlainObject(tasks)) {
     addTaskCapabilityFailure(findings, "capabilities.tasks");
-    return false;
+    return "malformed";
   }
 
   for (const key of ["list", "cancel"] as const) {
     if (tasks[key] !== undefined && !isPlainObject(tasks[key])) {
       addTaskCapabilityFailure(findings, `capabilities.tasks.${key}`);
+      return "malformed";
     }
   }
 
   const requests = tasks.requests;
   if (requests === undefined) {
-    return false;
+    return "missing";
   }
 
   if (!isPlainObject(requests)) {
     addTaskCapabilityFailure(findings, "capabilities.tasks.requests");
-    return false;
+    return "malformed";
   }
 
   const tools = requests.tools;
   if (tools === undefined) {
-    return false;
+    return "missing";
   }
 
   if (!isPlainObject(tools)) {
     addTaskCapabilityFailure(findings, "capabilities.tasks.requests.tools");
-    return false;
+    return "malformed";
   }
 
   const call = tools.call;
   if (call === undefined) {
-    return false;
+    return "missing";
   }
 
   if (!isPlainObject(call)) {
     addTaskCapabilityFailure(findings, "capabilities.tasks.requests.tools.call");
-    return false;
+    return "malformed";
   }
 
-  return true;
+  return "present-valid";
 }
 
 function collectTaskDeclarationFindings(
   observation: McpConformanceObservation,
-  taskCallSupported: boolean,
+  taskCallCapabilityState: TaskToolsCallCapabilityState,
   findings: Finding[]
 ): void {
   for (const tool of observation.tools) {
@@ -169,7 +174,7 @@ function collectTaskDeclarationFindings(
       continue;
     }
 
-    if (taskSupport !== "forbidden" && !taskCallSupported) {
+    if (taskSupport !== "forbidden" && taskCallCapabilityState === "missing") {
       findings.push(
         buildFinding(
           "mcp.conformance.tasks.capability_mismatch",
@@ -348,12 +353,15 @@ export function evaluateMcpConformance(
   }
 
   const capabilityFindings: Finding[] = [];
-  const taskCallSupported = hasTaskToolsCallCapability(observation.capabilities, capabilityFindings);
+  const taskCallCapabilityState = getTaskToolsCallCapabilityState(
+    observation.capabilities,
+    capabilityFindings
+  );
   findings.push(...capabilityFindings);
   scorecard.capabilityConsistency = statusForFindings(capabilityFindings);
 
   const declarationFindings: Finding[] = [];
-  collectTaskDeclarationFindings(observation, taskCallSupported, declarationFindings);
+  collectTaskDeclarationFindings(observation, taskCallCapabilityState, declarationFindings);
   findings.push(...declarationFindings);
   scorecard.taskDeclarations = statusForFindings(declarationFindings);
 

@@ -120,6 +120,25 @@ describe("MCP 2025-11 conformance", () => {
     expect(result.scorecard.capabilityConsistency).toBe("fail");
   });
 
+  it("does not duplicate malformed task capability findings for task-enabled tools", () => {
+    const result = evaluateMcpConformance(
+      observe({
+        capabilities: { tasks: { requests: { tools: { call: true } } } },
+        tools: [
+          { name: "required-tool", inputSchema: {}, execution: { taskSupport: "required" } },
+          { name: "optional-tool", inputSchema: {}, execution: { taskSupport: "optional" } }
+        ]
+      })
+    );
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "mcp.conformance.tasks.capability_invalid",
+        evidence: { field: "capabilities.tasks.requests.tools.call" }
+      })
+    ]);
+  });
+
   it.each([
     [undefined, "pass", []],
     ["forbidden", "pass", []],
