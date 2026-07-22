@@ -340,6 +340,30 @@ rl.on("line", (line) => {
     });
   });
 
+  it("probes declared tasks/list when tools/list is invalid", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-invalid-tools-and-tasks"),
+      { runtime: true, runtimeStartupTimeoutMs: 2_000 }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining([
+        "plugin.runtime.tools_list.invalid",
+        "mcp.conformance.tasks_list.invalid"
+      ])
+    );
+    expect(result.runtimeScorecard?.conformance).toEqual({
+      protocolVersion: "2025-11-25",
+      profile: "2025-11-25",
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "fail",
+      schemaDialect: "skipped",
+      overall: "fail"
+    });
+  });
+
   it("skips conformance when a parseable tool has an invalid input schema", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/runtime-invalid-tool-schema"),

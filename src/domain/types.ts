@@ -147,6 +147,7 @@ export interface McpConformanceObservation {
   capabilities: unknown;
   tools: McpToolObservation[];
   tasksList?: TasksListObservation;
+  skipToolDerivedChecks?: boolean;
 }
 
 export interface McpConformanceResult {

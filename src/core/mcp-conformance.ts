@@ -351,25 +351,29 @@ export function evaluateMcpConformance(
     return { findings, scorecard };
   }
 
-  const capabilityFindings: Finding[] = [];
-  const taskCallCapabilityState = getTaskToolsCallCapabilityState(
-    observation.capabilities,
-    capabilityFindings
-  );
-  findings.push(...capabilityFindings);
-  scorecard.capabilityConsistency = statusForFindings(capabilityFindings);
+  if (!observation.skipToolDerivedChecks) {
+    const capabilityFindings: Finding[] = [];
+    const taskCallCapabilityState = getTaskToolsCallCapabilityState(
+      observation.capabilities,
+      capabilityFindings
+    );
+    findings.push(...capabilityFindings);
+    scorecard.capabilityConsistency = statusForFindings(capabilityFindings);
 
-  const declarationFindings: Finding[] = [];
-  collectTaskDeclarationFindings(observation, taskCallCapabilityState, declarationFindings);
-  findings.push(...declarationFindings);
-  scorecard.taskDeclarations = statusForFindings(declarationFindings);
+    const declarationFindings: Finding[] = [];
+    collectTaskDeclarationFindings(observation, taskCallCapabilityState, declarationFindings);
+    findings.push(...declarationFindings);
+    scorecard.taskDeclarations = statusForFindings(declarationFindings);
+  }
 
   scorecard.tasksList = collectTasksListFinding(observation.tasksList, findings);
 
-  const schemaFindings: Finding[] = [];
-  collectSchemaFindings(observation, schemaFindings);
-  findings.push(...schemaFindings);
-  scorecard.schemaDialect = statusForFindings(schemaFindings);
+  if (!observation.skipToolDerivedChecks) {
+    const schemaFindings: Finding[] = [];
+    collectSchemaFindings(observation, schemaFindings);
+    findings.push(...schemaFindings);
+    scorecard.schemaDialect = statusForFindings(schemaFindings);
+  }
   scorecard.overall = overallStatus(scorecard, findings);
 
   return { findings, scorecard };

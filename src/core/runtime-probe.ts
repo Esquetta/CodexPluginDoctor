@@ -1594,7 +1594,6 @@ async function probeCommandServer(input: {
       }
 
       const tasksList =
-        canEvaluateConformance &&
         supportsTasksListProbe(result.protocolVersion, result.capabilities)
           ? await observeTasksList()
           : {
@@ -1603,12 +1602,13 @@ async function probeCommandServer(input: {
               pageCount: 0
             };
 
-      if (canEvaluateConformance) {
+      if (canEvaluateConformance || tasksList.status !== "skipped") {
         const conformance = evaluateMcpConformance({
           protocolVersion: result.protocolVersion,
           capabilities: result.capabilities,
           tools: tools satisfies McpToolObservation[],
-          tasksList
+          tasksList,
+          skipToolDerivedChecks: !canEvaluateConformance
         });
         scorecard.conformance = conformance.scorecard;
         warnings.push(...conformance.findings);
