@@ -277,6 +277,37 @@ rl.on("line", (line) => {
     expect(result.runtimeScorecard?.conformance?.tasksList).toBe("pass");
   });
 
+  it("bounds repeated shared cursors and task pagination at 100 pages", async () => {
+    const transcript: string[] = [];
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-pagination-bounds"),
+      {
+        runtime: true,
+        runtimeStartupTimeoutMs: 2_000,
+        runtimeTranscript: (line) => transcript.push(line)
+      }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(
+      result.findings.filter(
+        (finding) => finding.id === "plugin.runtime.tools_list.invalid"
+      )
+    ).toHaveLength(1);
+    expect(
+      result.findings.filter(
+        (finding) => finding.id === "mcp.conformance.tasks_list.invalid"
+      )
+    ).toHaveLength(1);
+    expect(result.runtimeScorecard?.conformance?.tasksList).toBe("fail");
+    expect(
+      transcript.filter((line) => line.startsWith("-> tools/list"))
+    ).toHaveLength(2);
+    expect(
+      transcript.filter((line) => line.startsWith("-> tasks/list"))
+    ).toHaveLength(100);
+  });
+
   it("fails when tools/list returns invalid tool definitions", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/runtime-invalid-tools"),

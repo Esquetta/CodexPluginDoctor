@@ -1,0 +1,6 @@
+{
+  "name": "runtime-pagination-bounds",
+  "version": "1.0.0",
+  "description": "Runtime fixture for MCP pagination bound coverage.",
+  "mcpServers": "./.mcp.json"
+}
