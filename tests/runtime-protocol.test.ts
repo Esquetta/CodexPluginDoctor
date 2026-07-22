@@ -1,4 +1,4 @@
-import { access, cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -85,6 +85,138 @@ describe("runtime protocol probing", () => {
         })
       ])
     );
+    expect(result.runtimeScorecard?.conformance).toMatchObject({
+      protocolVersion: null,
+      profile: null,
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped"
+    });
+  });
+
+  it("rejects a negotiated protocol version that is not date-like", async () => {
+    const packageRoot = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-invalid-protocol-version-")
+    );
+
+    try {
+      await mkdir(path.join(packageRoot, ".codex-plugin"));
+      await writeFile(
+        path.join(packageRoot, ".codex-plugin", "plugin.json"),
+        JSON.stringify({
+          name: "runtime-invalid-protocol-version",
+          version: "1.0.0",
+          description: "Fixture generated for malformed protocol-version coverage.",
+          mcpServers: "./.mcp.json"
+        })
+      );
+      await writeFile(
+        path.join(packageRoot, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            mockServer: {
+              command: "node",
+              args: ["./mock-server.js"]
+            }
+          }
+        })
+      );
+      await writeFile(
+        path.join(packageRoot, "mock-server.js"),
+        `import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        protocolVersion: "latest",
+        capabilities: {},
+        serverInfo: { name: "invalid-protocol-version", version: "1.0.0" }
+      }
+    }) + "\\n");
+  }
+});
+`
+      );
+
+      const result = await runCheck(packageRoot, { runtime: true });
+
+      expect(result.status).toBe("fail");
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "plugin.runtime.initialize.invalid" })
+        ])
+      );
+      expect(result.runtimeScorecard?.conformance).toMatchObject({
+        protocolVersion: null,
+        profile: null,
+        capabilityConsistency: "skipped",
+        taskDeclarations: "skipped",
+        tasksList: "skipped",
+        schemaDialect: "skipped"
+      });
+    } finally {
+      await rm(packageRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100
+      });
+    }
+  });
+
+  it("records legacy conformance when tools are unsupported without sending task methods", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-legacy"),
+      { runtime: true }
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.findings.map((finding) => finding.id)).toEqual([
+      "plugin.runtime.tools.unsupported"
+    ]);
+    expect(result.runtimeScorecard?.conformance).toEqual({
+      protocolVersion: "2025-06-18",
+      profile: "legacy",
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped",
+      overall: "pass"
+    });
+  });
+
+  it("warns only for a newer protocol and keeps conformance evidence at the observed method", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-future"),
+      { runtime: true }
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "mcp.conformance.protocol.unknown_newer",
+        severity: "warn",
+        evidence: {
+          serverName: "futureConformanceServer",
+          method: "initialize",
+          protocolVersion: "2026-01-01"
+        }
+      })
+    ]);
+    expect(result.runtimeScorecard?.conformance).toEqual({
+      protocolVersion: "2026-01-01",
+      profile: "future-compatible",
+      capabilityConsistency: "pass",
+      taskDeclarations: "pass",
+      tasksList: "skipped",
+      schemaDialect: "pass",
+      overall: "warn"
+    });
   });
 
   it("fails when tools/list returns invalid tool definitions", async () => {

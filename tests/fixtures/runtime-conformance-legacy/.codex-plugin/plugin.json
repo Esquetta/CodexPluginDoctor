@@ -1,0 +1,6 @@
+{
+  "name": "runtime-conformance-legacy",
+  "version": "1.0.0",
+  "description": "Legacy runtime conformance fixture without tools capability.",
+  "mcpServers": "./.mcp.json"
+}

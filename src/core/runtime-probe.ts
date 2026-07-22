@@ -8,11 +8,13 @@ import type {
   DiscoveredPackage,
   Finding,
   FindingEvidence,
+  McpToolObservation,
   RuntimeExecutionEvidence,
   RuntimeProbeResult,
   RuntimeSandboxMode,
   RuntimeScorecard
 } from "../domain/types.js";
+import { evaluateMcpConformance } from "./mcp-conformance.js";
 import {
   buildRuntimeLaunch,
   DOCKER_RUNTIME_STARTUP_TIMEOUT_MS,
@@ -34,6 +36,13 @@ const DOCKER_CLEANUP_TIMEOUT_MS = 5_000;
 type JsonObject = Record<string, unknown>;
 
 type ToolDefinition = {
+  name: string;
+  inputSchema: unknown;
+  outputSchema?: unknown;
+  execution?: unknown;
+};
+
+type CallableToolDefinition = {
   name: string;
   inputSchema: JsonObject;
 };
@@ -97,7 +106,16 @@ function createRuntimeScorecard(): RuntimeScorecard {
     resourceRead: "unsupported",
     resourceTemplatesList: "unsupported",
     promptsList: "unsupported",
-    promptGet: "unsupported"
+    promptGet: "unsupported",
+    conformance: {
+      protocolVersion: null,
+      profile: null,
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped",
+      overall: "pass"
+    }
   };
 }
 
@@ -136,6 +154,19 @@ function buildWarning(
 }
 
 function methodForRuntimeFinding(id: string): string {
+  if (
+    id.startsWith("mcp.conformance.protocol.") ||
+    id.startsWith("mcp.conformance.tasks.capability_")
+  ) {
+    return "initialize";
+  }
+  if (
+    id.startsWith("mcp.conformance.tasks.task_support_") ||
+    id.startsWith("mcp.conformance.schema.")
+  ) {
+    return "tools/list";
+  }
+  if (id.startsWith("mcp.conformance.tasks_list.")) return "tasks/list";
   if (id.includes(".initialize.")) return "initialize";
   if (id.includes(".tools_list.")) return "tools/list";
   if (id.includes(".tool_call.")) return "tools/call";
@@ -152,9 +183,9 @@ function withRuntimeEvidence(finding: Finding, serverName: string): Finding {
   return {
     ...finding,
     evidence: {
+      ...(finding.evidence ?? {}),
       serverName,
-      method: methodForRuntimeFinding(finding.id),
-      ...(finding.evidence ?? {})
+      method: methodForRuntimeFinding(finding.id)
     }
   };
 }
@@ -457,15 +488,16 @@ function extractToolsPage(
     if (
       !isPlainObject(tool) ||
       typeof tool.name !== "string" ||
-      !isPlainObject(tool.inputSchema) ||
-      tool.inputSchema.type !== "object"
+      !("inputSchema" in tool)
     ) {
       return null;
     }
 
     parsedTools.push({
       name: tool.name,
-      inputSchema: tool.inputSchema
+      inputSchema: tool.inputSchema,
+      ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+      ...(tool.execution === undefined ? {} : { execution: tool.execution })
     });
   }
 
@@ -634,7 +666,7 @@ function extractPromptsPage(
   };
 }
 
-function isDestructiveTool(tool: ToolDefinition): boolean {
+function isDestructiveTool(tool: Pick<ToolDefinition, "name">): boolean {
   return /(delete|remove|drop|destroy|erase|wipe|purge|send|deploy|refund|payment|charge|merge|push)/i.test(
     tool.name
   );
@@ -690,7 +722,7 @@ function buildSchemaValue(
 }
 
 function buildToolArguments(
-  tool: ToolDefinition
+  tool: CallableToolDefinition
 ): Record<string, unknown> | undefined {
   const schemaValue = buildSchemaValue(tool.inputSchema);
 
@@ -703,23 +735,42 @@ function buildToolArguments(
 
 function findCallableTool(
   tools: ToolDefinition[]
-): { tool: ToolDefinition; args: Record<string, unknown> } | null {
+): { tool: CallableToolDefinition; args: Record<string, unknown> } | null {
   for (const tool of tools) {
     if (isDestructiveTool(tool)) {
       continue;
     }
 
-    const args = buildToolArguments(tool);
+    if (!isPlainObject(tool.inputSchema) || tool.inputSchema.type !== "object") {
+      continue;
+    }
+
+    const callableTool: CallableToolDefinition = {
+      name: tool.name,
+      inputSchema: tool.inputSchema
+    };
+
+    const args = buildToolArguments(callableTool);
 
     if (args !== undefined) {
       return {
-        tool,
+        tool: callableTool,
         args
       };
     }
   }
 
   return null;
+}
+
+function hasValidToolInputSchemas(tools: ToolDefinition[]): boolean {
+  return tools.every(
+    (tool) => isPlainObject(tool.inputSchema) && tool.inputSchema.type === "object"
+  );
+}
+
+function isProtocolVersion(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function buildPromptArguments(
@@ -1291,6 +1342,7 @@ async function probeCommandServer(input: {
 
       if (
         typeof result.protocolVersion !== "string" ||
+        !isProtocolVersion(result.protocolVersion) ||
         !isPlainObject(result.capabilities) ||
         !isPlainObject(result.serverInfo) ||
         typeof result.serverInfo.name !== "string" ||
@@ -1311,10 +1363,13 @@ async function probeCommandServer(input: {
       scorecard.initialize = "pass";
       sendNotification("notifications/initialized");
 
+      let tools: ToolDefinition[] = [];
+      let toolTerminalFinding: Finding | null = null;
+
       if (!hasToolsCapability(initializeResponse)) {
         scorecard.toolsList = "unsupported";
         scorecard.toolsCall = "unsupported";
-        settle(
+        warnings.push(
           buildWarning(
             "plugin.runtime.tools.unsupported",
             `The MCP server \`${serverName}\` does not advertise tools capability.`,
@@ -1322,55 +1377,59 @@ async function probeCommandServer(input: {
             "Expose `capabilities.tools` during initialize if this server is expected to provide tools."
           )
         );
-        return;
-      }
+      } else {
+        const listedTools = await fetchPaginated<ToolDefinition>({
+          method: "tools/list",
+          timeoutFinding: buildFailure(
+            "plugin.runtime.tools_list.timeout",
+            `The MCP server \`${serverName}\` did not answer the tools/list request in time.`,
+            "A server that cannot return its tool catalog in time will feel broken or invisible in Codex.",
+            "Inspect the tool discovery path and reduce latency before returning the tool list."
+          ),
+          extractPage: extractToolsPage
+        });
 
-      const tools = await fetchPaginated<ToolDefinition>({
-        method: "tools/list",
-        timeoutFinding: buildFailure(
-          "plugin.runtime.tools_list.timeout",
-          `The MCP server \`${serverName}\` did not answer the tools/list request in time.`,
-          "A server that cannot return its tool catalog in time will feel broken or invisible in Codex.",
-          "Inspect the tool discovery path and reduce latency before returning the tool list."
-        ),
-        extractPage: extractToolsPage
-      });
-
-      if (!tools) {
-        scorecard.toolsList = "fail";
-        settle(
-          buildFailure(
+        if (!listedTools) {
+          scorecard.toolsList = "fail";
+          toolTerminalFinding = buildFailure(
             "plugin.runtime.tools_list.invalid",
             `The MCP server \`${serverName}\` returned an invalid tools/list result.`,
             "Codex cannot safely consume malformed tool definitions from `tools/list`.",
             "Return a `tools` array where every tool has a string `name` and an object-shaped `inputSchema` with `type: \"object\"`."
-          )
-        );
-        return;
-      }
+          );
+        } else {
+          tools = listedTools;
 
-      scorecard.toolsList = "pass";
+          if (!hasValidToolInputSchemas(tools)) {
+            scorecard.toolsList = "fail";
+            toolTerminalFinding = buildFailure(
+              "plugin.runtime.tools_list.invalid",
+              `The MCP server \`${serverName}\` returned an invalid tools/list result.`,
+              "Codex cannot safely consume malformed tool definitions from `tools/list`.",
+              "Return a `tools` array where every tool has a string `name` and an object-shaped `inputSchema` with `type: \"object\"`."
+            );
+          } else {
+            scorecard.toolsList = "pass";
+          }
+        }
 
-      const callableTool = findCallableTool(tools);
+        const callableTool = toolTerminalFinding ? null : findCallableTool(tools);
 
-      if (!callableTool) {
-        scorecard.toolsCall = "skipped";
-        settle(
-          buildWarning(
+        if (!toolTerminalFinding && !callableTool) {
+          scorecard.toolsCall = "skipped";
+          toolTerminalFinding = buildWarning(
             "plugin.runtime.tool_call.skipped",
             `The MCP server \`${serverName}\` does not expose a safely callable tool for probing.`,
             "The validator confirmed tool discovery but could not safely perform a non-destructive `tools/call` probe.",
             "Expose at least one non-destructive tool with a JSON schema the validator can generate arguments for."
-          )
-        );
-        return;
-      } else {
-        const toolCallResponse = await sendRequest(
-          "tools/call",
-          {
-            name: callableTool.tool.name,
-            arguments: callableTool.args
-          },
+          );
+        } else if (callableTool) {
+          const toolCallResponse = await sendRequest(
+            "tools/call",
+            {
+              name: callableTool.tool.name,
+              arguments: callableTool.args
+            },
             buildFailure(
               "plugin.runtime.tool_call.timeout",
               `The MCP server \`${serverName}\` did not answer the tools/call request in time.`,
@@ -1380,26 +1439,44 @@ async function probeCommandServer(input: {
             )
         );
 
-        if (isErrorResponse(toolCallResponse) || !isValidCallToolResult(toolCallResponse)) {
-          scorecard.toolsCall = "fail";
-          settle(
-            buildFailure(
+          if (isErrorResponse(toolCallResponse) || !isValidCallToolResult(toolCallResponse)) {
+            scorecard.toolsCall = "fail";
+            toolTerminalFinding = buildFailure(
               "plugin.runtime.tool_call.invalid",
               `The MCP server \`${serverName}\` returned an invalid tools/call result.`,
               "Codex cannot safely consume malformed tool call results from the server.",
               "Return a CallToolResult with a `content` array containing valid MCP content blocks.",
               { toolName: callableTool.tool.name }
-            )
-          );
-          return;
-        }
+            );
+          }
 
-        scorecard.toolsCall = "pass";
-        warnings.push(
-          ...collectOversizedToolCallWarnings(toolCallResponse, {
-            toolName: callableTool.tool.name
-          })
-        );
+          if (!toolTerminalFinding) {
+            scorecard.toolsCall = "pass";
+            warnings.push(
+              ...collectOversizedToolCallWarnings(toolCallResponse, {
+                toolName: callableTool.tool.name
+              })
+            );
+          }
+        }
+      }
+
+      const conformance = evaluateMcpConformance({
+        protocolVersion: result.protocolVersion,
+        capabilities: result.capabilities,
+        tools: tools satisfies McpToolObservation[],
+        tasksList: {
+          status: "skipped",
+          itemCount: 0,
+          pageCount: 0
+        }
+      });
+      scorecard.conformance = conformance.scorecard;
+      warnings.push(...conformance.findings);
+
+      if (toolTerminalFinding) {
+        settle(toolTerminalFinding);
+        return;
       }
 
       if (!hasResourcesCapability(initializeResponse)) {

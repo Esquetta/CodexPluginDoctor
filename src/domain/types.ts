@@ -120,7 +120,7 @@ export type McpConformanceProfile =
 
 export interface RuntimeConformanceScorecard {
   protocolVersion: string | null;
-  profile: McpConformanceProfile;
+  profile: McpConformanceProfile | null;
   capabilityConsistency: RuntimeCapabilityStatus;
   taskDeclarations: RuntimeCapabilityStatus;
   tasksList: RuntimeCapabilityStatus;

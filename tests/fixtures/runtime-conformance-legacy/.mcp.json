@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "legacyConformanceServer": {
+      "command": "node",
+      "args": ["./mock-server.js"]
+    }
+  }
+}
