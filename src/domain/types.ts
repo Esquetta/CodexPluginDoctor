@@ -110,6 +110,48 @@ export interface RuntimeScorecard {
   resourceTemplatesList: RuntimeCapabilityStatus;
   promptsList: RuntimeCapabilityStatus;
   promptGet: RuntimeCapabilityStatus;
+  conformance?: RuntimeConformanceScorecard;
+}
+
+export type McpConformanceProfile =
+  | "legacy"
+  | "2025-11-25"
+  | "future-compatible";
+
+export interface RuntimeConformanceScorecard {
+  protocolVersion: RuntimeCapabilityStatus;
+  profile: McpConformanceProfile;
+  capabilityConsistency: RuntimeCapabilityStatus;
+  taskDeclarations: RuntimeCapabilityStatus;
+  tasksList: RuntimeCapabilityStatus;
+  schemaDialect: RuntimeCapabilityStatus;
+  overall: "pass" | "warn" | "fail";
+}
+
+export interface McpToolObservation {
+  name: string;
+  inputSchema: unknown;
+  outputSchema?: unknown;
+  execution?: unknown;
+}
+
+export interface TasksListObservation {
+  status: "pass" | "fail" | "skipped";
+  itemCount: number;
+  pageCount: number;
+  failure?: "timeout" | "invalid";
+}
+
+export interface McpConformanceObservation {
+  protocolVersion: string;
+  capabilities: unknown;
+  tools: McpToolObservation[];
+  tasksList?: TasksListObservation;
+}
+
+export interface McpConformanceResult {
+  findings: Finding[];
+  scorecard: RuntimeConformanceScorecard;
 }
 
 export interface RuntimeProbeResult {
