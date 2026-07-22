@@ -1417,6 +1417,7 @@ async function probeCommandServer(input: {
           tools = listedTools;
 
           if (!hasValidToolInputSchemas(tools)) {
+            canEvaluateConformance = false;
             scorecard.toolsList = "fail";
             toolTerminalFinding = buildFailure(
               "plugin.runtime.tools_list.invalid",

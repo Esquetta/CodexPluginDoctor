@@ -254,6 +254,31 @@ rl.on("line", (line) => {
     });
   });
 
+  it("skips conformance when a parseable tool has an invalid input schema", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-invalid-tool-schema"),
+      {
+        runtime: true
+      }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "plugin.runtime.tools_list.invalid" })
+      ])
+    );
+    expect(result.runtimeScorecard?.conformance).toEqual({
+      protocolVersion: null,
+      profile: null,
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped",
+      overall: "skipped"
+    });
+  });
+
   it("fails when tools/call returns an invalid result payload", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/runtime-invalid-call"),
