@@ -93,7 +93,6 @@ function getTaskToolsCallCapabilityState(
   for (const key of ["list", "cancel"] as const) {
     if (tasks[key] !== undefined && !isPlainObject(tasks[key])) {
       addTaskCapabilityFailure(findings, `capabilities.tasks.${key}`);
-      return "malformed";
     }
   }
 

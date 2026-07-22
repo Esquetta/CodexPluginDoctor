@@ -139,6 +139,24 @@ describe("MCP 2025-11 conformance", () => {
     ]);
   });
 
+  it.each(["list", "cancel"] as const)(
+    "reports a missing task call capability alongside a malformed tasks.%s sibling capability",
+    (siblingCapability) => {
+      const result = evaluateMcpConformance(
+        observe({
+          capabilities: { tasks: { [siblingCapability]: true, requests: { tools: {} } } },
+          tools: [{ name: "task-tool", inputSchema: {}, execution: { taskSupport: "required" } }]
+        })
+      );
+
+      expect(result.findings.map((finding) => finding.id)).toEqual([
+        "mcp.conformance.tasks.capability_invalid",
+        "mcp.conformance.tasks.capability_mismatch"
+      ]);
+      expect(result.scorecard.taskDeclarations).toBe("fail");
+    }
+  );
+
   it.each([
     [undefined, "pass", []],
     ["forbidden", "pass", []],
