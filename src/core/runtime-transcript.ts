@@ -110,6 +110,10 @@ export function formatRequestTranscript(
     return `-> ${method}`;
   }
 
+  if (method === "tasks/list" && params.cursor !== undefined) {
+    return '-> tasks/list {"cursor":"[CURSOR]"}';
+  }
+
   return `-> ${method} ${JSON.stringify(sanitizeTranscriptValue(params))}`;
 }
 
@@ -177,6 +181,12 @@ export function formatResponseTranscript(
     case "prompts/list":
       return `<- prompts/list ${JSON.stringify({
         prompts: Array.isArray(result.prompts) ? result.prompts.length : 0,
+        nextCursor:
+          typeof result.nextCursor === "string" ? "[CURSOR]" : undefined
+      })}`;
+    case "tasks/list":
+      return `<- tasks/list ${JSON.stringify({
+        tasks: Array.isArray(result.tasks) ? result.tasks.length : 0,
         nextCursor:
           typeof result.nextCursor === "string" ? "[CURSOR]" : undefined
       })}`;

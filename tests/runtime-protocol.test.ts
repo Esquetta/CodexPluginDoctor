@@ -222,6 +222,61 @@ rl.on("line", (line) => {
     });
   });
 
+  it("observes paginated tasks/list metadata without retaining private task data", async () => {
+    const transcript: string[] = [];
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-tasks-valid"),
+      { runtime: true, runtimeTranscript: (line) => transcript.push(line) }
+    );
+
+    expect(result.status).toBe("pass");
+    expect(result.findings).toEqual([]);
+    expect(result.runtimeScorecard?.conformance?.tasksList).toBe("pass");
+    expect(JSON.stringify(result)).not.toContain("private-task");
+    expect(transcript).toContain(
+      '<- tasks/list {"tasks":1,"nextCursor":"[CURSOR]"}'
+    );
+    expect(transcript).toContain('<- tasks/list {"tasks":1}');
+    expect(transcript.join("\n")).not.toContain("private-task");
+    expect(transcript.join("\n")).not.toContain("working");
+    expect(transcript.join("\n")).not.toContain("private-task-cursor");
+  });
+
+  it("fails task-list conformance when tasks/list returns a non-array", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-tasks-invalid"),
+      { runtime: true }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings.filter((finding) => finding.id === "mcp.conformance.tasks_list.invalid")).toHaveLength(1);
+    expect(result.runtimeScorecard?.conformance?.tasksList).toBe("fail");
+  });
+
+  it("fails task-list conformance when tasks/list times out", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-tasks-timeout"),
+      { runtime: true, runtimeStartupTimeoutMs: 500 }
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.findings.filter((finding) => finding.id === "mcp.conformance.tasks_list.timeout")).toHaveLength(1);
+    expect(result.runtimeScorecard?.conformance?.tasksList).toBe("fail");
+  });
+
+  it("probes tasks/list without tools and preserves the existing no-tools warning", async () => {
+    const result = await runCheck(
+      path.resolve("tests/fixtures/runtime-conformance-tasks-list-only"),
+      { runtime: true }
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.findings.map((finding) => finding.id)).toEqual([
+      "plugin.runtime.tools.unsupported"
+    ]);
+    expect(result.runtimeScorecard?.conformance?.tasksList).toBe("pass");
+  });
+
   it("fails when tools/list returns invalid tool definitions", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/runtime-invalid-tools"),

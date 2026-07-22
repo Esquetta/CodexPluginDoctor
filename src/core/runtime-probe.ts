@@ -12,7 +12,8 @@ import type {
   RuntimeExecutionEvidence,
   RuntimeProbeResult,
   RuntimeSandboxMode,
-  RuntimeScorecard
+  RuntimeScorecard,
+  TasksListObservation
 } from "../domain/types.js";
 import { evaluateMcpConformance } from "./mcp-conformance.js";
 import {
@@ -32,6 +33,7 @@ const MAX_TOOL_CALL_CONTENT_LENGTH = 4096;
 const MAX_RESOURCE_READ_CONTENT_LENGTH = 4096;
 const MAX_PROMPT_GET_CONTENT_LENGTH = 4096;
 const DOCKER_CLEANUP_TIMEOUT_MS = 5_000;
+const MAX_RUNTIME_PAGINATION_PAGES = 100;
 
 type JsonObject = Record<string, unknown>;
 
@@ -459,6 +461,17 @@ function hasPromptsCapability(message: JsonObject): boolean {
   const capabilities = getCapabilities(message);
 
   return capabilities !== null && isPlainObject(capabilities.prompts);
+}
+
+function supportsTasksListProbe(
+  protocolVersion: string,
+  capabilities: JsonObject
+): boolean {
+  if (protocolVersion < MCP_PROTOCOL_VERSION || !isPlainObject(capabilities.tasks)) {
+    return false;
+  }
+
+  return isPlainObject(capabilities.tasks.list);
 }
 
 function getNextCursor(result: JsonObject): string | null {
@@ -1190,8 +1203,14 @@ async function probeCommandServer(input: {
     }): Promise<T[] | null> => {
       let cursor: string | null = null;
       const items: T[] = [];
+      const seenCursors = new Set<string>();
+      let pageCount = 0;
 
       do {
+        if (pageCount >= MAX_RUNTIME_PAGINATION_PAGES) {
+          return null;
+        }
+
         const response = await sendRequest(
           input.method,
           cursor ? { cursor } : undefined,
@@ -1216,10 +1235,106 @@ async function probeCommandServer(input: {
         }
 
         items.push(...page.items);
+        pageCount += 1;
+
+        if (page.nextCursor && seenCursors.has(page.nextCursor)) {
+          return null;
+        }
+
+        if (page.nextCursor) {
+          seenCursors.add(page.nextCursor);
+        }
+
         cursor = page.nextCursor;
       } while (cursor);
 
       return items;
+    };
+
+    const observeTasksList = async (): Promise<TasksListObservation> => {
+      let cursor: string | null = null;
+      const seenCursors = new Set<string>();
+      let itemCount = 0;
+      let pageCount = 0;
+
+      try {
+        do {
+          if (pageCount >= MAX_RUNTIME_PAGINATION_PAGES) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          const response = await sendRequest(
+            "tasks/list",
+            cursor ? { cursor } : undefined,
+            buildFailure(
+              "mcp.conformance.tasks_list.timeout",
+              `The MCP server \`${serverName}\` did not answer the tasks/list request in time.`,
+              "Codex cannot safely inspect task discovery when the server does not complete tasks/list.",
+              "Reduce tasks/list latency and verify pagination completes."
+            )
+          );
+
+          if (isErrorResponse(response) || !isPlainObject(response.result)) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          const tasks = response.result.tasks;
+          const nextCursor = getNextCursor(response.result);
+
+          if (
+            !Array.isArray(tasks) ||
+            !tasks.every(isPlainObject) ||
+            nextCursor === "__invalid__"
+          ) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          itemCount += tasks.length;
+          pageCount += 1;
+
+          if (nextCursor && seenCursors.has(nextCursor)) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          if (nextCursor) {
+            seenCursors.add(nextCursor);
+          }
+
+          cursor = nextCursor;
+        } while (cursor);
+      } catch (error) {
+        return {
+          status: "fail",
+          itemCount,
+          pageCount,
+          failure:
+            isFinding(error) && error.id === "mcp.conformance.tasks_list.timeout"
+              ? "timeout"
+              : "invalid"
+        };
+      }
+
+      return { status: "pass", itemCount, pageCount };
     };
 
     child.stderr?.on("data", (chunk: Buffer | string) => {
@@ -1478,16 +1593,22 @@ async function probeCommandServer(input: {
         }
       }
 
+      const tasksList =
+        canEvaluateConformance &&
+        supportsTasksListProbe(result.protocolVersion, result.capabilities)
+          ? await observeTasksList()
+          : {
+              status: "skipped" as const,
+              itemCount: 0,
+              pageCount: 0
+            };
+
       if (canEvaluateConformance) {
         const conformance = evaluateMcpConformance({
           protocolVersion: result.protocolVersion,
           capabilities: result.capabilities,
           tools: tools satisfies McpToolObservation[],
-          tasksList: {
-            status: "skipped",
-            itemCount: 0,
-            pageCount: 0
-          }
+          tasksList
         });
         scorecard.conformance = conformance.scorecard;
         warnings.push(...conformance.findings);

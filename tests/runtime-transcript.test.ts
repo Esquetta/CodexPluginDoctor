@@ -40,4 +40,24 @@ describe("runtime transcript sanitization", () => {
 
     expect(transcript).toContain("\"message\":\"[REDACTED]\"");
   });
+
+  it("summarizes tasks/list responses without task data or cursor values", () => {
+    const transcript = formatResponseTranscript("tasks/list", {
+      jsonrpc: "2.0",
+      result: {
+        tasks: [
+          {
+            taskId: "private-task-id",
+            status: "working",
+            statusMessage: "private task text"
+          }
+        ],
+        nextCursor: "private-task-cursor"
+      }
+    });
+
+    expect(transcript).toBe('<- tasks/list {"tasks":1,"nextCursor":"[CURSOR]"}');
+    expect(transcript).not.toContain("private-task");
+    expect(transcript).not.toContain("working");
+  });
 });
