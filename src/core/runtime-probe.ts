@@ -114,7 +114,7 @@ function createRuntimeScorecard(): RuntimeScorecard {
       taskDeclarations: "skipped",
       tasksList: "skipped",
       schemaDialect: "skipped",
-      overall: "pass"
+      overall: "skipped"
     }
   };
 }
@@ -1379,6 +1379,7 @@ async function probeCommandServer(input: {
 
       let tools: ToolDefinition[] = [];
       let toolTerminalFinding: Finding | null = null;
+      let canEvaluateConformance = true;
 
       if (!hasToolsCapability(initializeResponse)) {
         scorecard.toolsList = "unsupported";
@@ -1404,6 +1405,7 @@ async function probeCommandServer(input: {
         });
 
         if (!listedTools) {
+          canEvaluateConformance = false;
           scorecard.toolsList = "fail";
           toolTerminalFinding = buildFailure(
             "plugin.runtime.tools_list.invalid",
@@ -1475,18 +1477,20 @@ async function probeCommandServer(input: {
         }
       }
 
-      const conformance = evaluateMcpConformance({
-        protocolVersion: result.protocolVersion,
-        capabilities: result.capabilities,
-        tools: tools satisfies McpToolObservation[],
-        tasksList: {
-          status: "skipped",
-          itemCount: 0,
-          pageCount: 0
-        }
-      });
-      scorecard.conformance = conformance.scorecard;
-      warnings.push(...conformance.findings);
+      if (canEvaluateConformance) {
+        const conformance = evaluateMcpConformance({
+          protocolVersion: result.protocolVersion,
+          capabilities: result.capabilities,
+          tools: tools satisfies McpToolObservation[],
+          tasksList: {
+            status: "skipped",
+            itemCount: 0,
+            pageCount: 0
+          }
+        });
+        scorecard.conformance = conformance.scorecard;
+        warnings.push(...conformance.findings);
+      }
 
       if (toolTerminalFinding) {
         settle(toolTerminalFinding);

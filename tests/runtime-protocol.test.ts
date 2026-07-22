@@ -243,6 +243,15 @@ rl.on("line", (line) => {
         })
       ])
     );
+    expect(result.runtimeScorecard?.conformance).toEqual({
+      protocolVersion: null,
+      profile: null,
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped",
+      overall: "skipped"
+    });
   });
 
   it("fails when tools/call returns an invalid result payload", async () => {

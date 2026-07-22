@@ -125,7 +125,7 @@ export interface RuntimeConformanceScorecard {
   taskDeclarations: RuntimeCapabilityStatus;
   tasksList: RuntimeCapabilityStatus;
   schemaDialect: RuntimeCapabilityStatus;
-  overall: "pass" | "warn" | "fail";
+  overall: "pass" | "warn" | "fail" | "skipped";
 }
 
 export interface McpToolObservation {
