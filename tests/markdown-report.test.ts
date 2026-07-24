@@ -2,10 +2,88 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCheck } from "../src/index.js";
-import type { CheckResult } from "../src/domain/types.js";
+import type { CheckResult, RuntimeScorecard } from "../src/domain/types.js";
 import { buildMarkdownReport } from "../src/reporting/render-markdown-report.js";
 
 describe("buildMarkdownReport", () => {
+  const runtimeScorecard: RuntimeScorecard = {
+    initialize: "pass",
+    toolsList: "pass",
+    toolsCall: "pass",
+    resourcesList: "pass",
+    resourceRead: "pass",
+    resourceTemplatesList: "pass",
+    promptsList: "pass",
+    promptGet: "pass",
+    conformance: {
+      protocolVersion: "2025-11-25",
+      profile: "2025-11-25",
+      capabilityConsistency: "pass",
+      taskDeclarations: "pass",
+      tasksList: "pass",
+      schemaDialect: "pass",
+      overall: "pass"
+    }
+  };
+
+  function expectRuntimeScorecardWithConformance(report: string) {
+    expect(report).toContain("## Runtime Scorecard");
+    expect(report).toContain("| initialize | PASS |");
+    expect(report).toContain("| prompts/get | PASS |");
+    expect(report).toContain("## MCP Conformance");
+    expect(report).toContain("| Protocol version | 2025-11-25 |");
+    expect(report).toContain("| Profile | 2025-11-25 |");
+    expect(report).toContain("| Capability consistency | PASS |");
+    expect(report).toContain("| Task declarations | PASS |");
+    expect(report).toContain("| Tasks list | PASS |");
+    expect(report).toContain("| Schema dialect | PASS |");
+    expect(report).toContain("| Overall | PASS |");
+    expect(report).not.toContain("private-task-id");
+  }
+
+  it("renders runtime scorecard and MCP Conformance before no-findings output", () => {
+    const report = buildMarkdownReport(
+      {
+        targetPath: "example",
+        status: "pass",
+        exitCode: 0,
+        findings: [],
+        runtimeScorecard
+      },
+      { runtimeProbeEnabled: true }
+    );
+
+    expectRuntimeScorecardWithConformance(report);
+    expect(report.indexOf("## Runtime Scorecard")).toBeLessThan(
+      report.indexOf("No findings.")
+    );
+  });
+
+  it("renders one MCP Conformance section alongside findings", () => {
+    const report = buildMarkdownReport(
+      {
+        targetPath: "example",
+        status: "fail",
+        exitCode: 1,
+        runtimeScorecard,
+        findings: [
+          {
+            id: "plugin.manifest.missing",
+            severity: "fail",
+            message: "Missing manifest.",
+            impact: "Codex cannot load the package.",
+            suggestedFix: "Create `.codex-plugin/plugin.json`."
+          }
+        ]
+      },
+      { runtimeProbeEnabled: true }
+    );
+
+    expectRuntimeScorecardWithConformance(report);
+    expect(report.match(/## MCP Conformance/g)).toHaveLength(1);
+    expect(report).toContain("## Findings");
+  });
+
   it("renders a CI-friendly markdown summary", async () => {
     const targetPath = path.resolve("tests/fixtures/heuristic-long-plugin-description");
     const result = await runCheck(targetPath);

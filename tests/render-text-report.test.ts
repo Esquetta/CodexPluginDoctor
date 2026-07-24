@@ -2,10 +2,80 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCheck } from "../src/index.js";
-import type { CheckResult } from "../src/domain/types.js";
+import type { CheckResult, RuntimeScorecard } from "../src/domain/types.js";
 import { renderTextReport } from "../src/reporting/render-text-report.js";
 
 describe("renderTextReport", () => {
+  const runtimeScorecard: RuntimeScorecard = {
+    initialize: "pass",
+    toolsList: "pass",
+    toolsCall: "pass",
+    resourcesList: "pass",
+    resourceRead: "pass",
+    resourceTemplatesList: "pass",
+    promptsList: "pass",
+    promptGet: "pass",
+    conformance: {
+      protocolVersion: "2025-11-25",
+      profile: "2025-11-25",
+      capabilityConsistency: "pass",
+      taskDeclarations: "pass",
+      tasksList: "pass",
+      schemaDialect: "pass",
+      overall: "pass"
+    }
+  };
+
+  function expectRuntimeScorecardWithConformance(output: string) {
+    expect(output).toContain("Runtime Scorecard\n----------------");
+    expect(output).toContain("initialize: pass");
+    expect(output).toContain("prompts/get: pass");
+    expect(output).toContain("MCP Conformance\n---------------");
+    expect(output).toContain("Protocol version: 2025-11-25");
+    expect(output).toContain("Profile: 2025-11-25");
+    expect(output).toContain("Capability consistency: pass");
+    expect(output).toContain("Task declarations: pass");
+    expect(output).toContain("Tasks list: pass");
+    expect(output).toContain("Schema dialect: pass");
+    expect(output).toContain("Overall: pass");
+    expect(output).not.toContain("private-task-id");
+  }
+
+  it("renders runtime operations and MCP Conformance without findings", () => {
+    const output = renderTextReport({
+      targetPath: "example",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeScorecard
+    });
+
+    expectRuntimeScorecardWithConformance(output);
+    expect(output).toContain("No findings.");
+  });
+
+  it("renders one MCP Conformance section alongside findings", () => {
+    const output = renderTextReport({
+      targetPath: "example",
+      status: "fail",
+      exitCode: 1,
+      runtimeScorecard,
+      findings: [
+        {
+          id: "plugin.manifest.missing",
+          severity: "fail",
+          message: "Missing manifest.",
+          impact: "Codex cannot load the package.",
+          suggestedFix: "Create `.codex-plugin/plugin.json`."
+        }
+      ]
+    });
+
+    expectRuntimeScorecardWithConformance(output);
+    expect(output.match(/MCP Conformance/g)).toHaveLength(1);
+    expect(output).toContain("Failures");
+  });
+
   it("renders a rich unicode summary for warn results", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/heuristic-long-plugin-description")

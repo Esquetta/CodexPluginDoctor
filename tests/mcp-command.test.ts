@@ -83,7 +83,8 @@ describe("mcp command", () => {
       ["mcp", "tests/fixtures/runtime-conformance-tasks-valid", "--runtime", "--json"],
       io
     );
-    const output = JSON.parse(stdout.join(""));
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
 
     expect(exitCode).toBe(0);
     expect(stderr).toEqual([]);
@@ -93,6 +94,9 @@ describe("mcp command", () => {
       overall: "pass"
     });
     expect(output.runtimeExecution).toMatchObject({ backend: "native" });
+    expect(serialized).not.toContain("private-task-id");
+    expect(serialized).not.toContain("private task text");
+    expect(serialized).not.toContain("private-task-cursor");
   });
 
   it("fingerprints runtime conformance failures and makes them fail the MCP report", async () => {

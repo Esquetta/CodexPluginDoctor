@@ -203,6 +203,12 @@ describe("doctor contract command", () => {
     const runtimePolicySchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.runtime.policy.json"
     );
+    const checkSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.check.json"
+    );
+    const mcpSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.mcp.json"
+    );
     const releaseEvidenceSchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.release.evidence.json"
     );
@@ -213,6 +219,52 @@ describe("doctor contract command", () => {
     expect(runtimePolicySchema.schema.required).toContain("execution");
     expect(releaseEvidenceSchema.schemaVersion).toBe("1.0.0");
     expect(releaseEvidenceSchema.schema.required).not.toContain("execution");
+    expect(checkSchema.schema.required).toEqual([
+      "schemaVersion",
+      "generatedAt",
+      "summary",
+      "findings"
+    ]);
+    expect(mcpSchema.schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "targetPath",
+      "status",
+      "serverCount",
+      "findings",
+      "security",
+      "compatibility"
+    ]);
+    expect(checkSchema.schema.properties.summary.properties.runtimeScorecard.properties.conformance)
+      .toMatchObject({
+        type: "object",
+        properties: {
+          protocolVersion: { type: ["string", "null"] },
+          profile: { type: ["string", "null"] },
+          capabilityConsistency: { type: "string" },
+          taskDeclarations: { type: "string" },
+          tasksList: { type: "string" },
+          schemaDialect: { type: "string" },
+          overall: { type: "string" }
+        }
+      });
+    expect(mcpSchema.schema.properties.runtimeScorecard.properties.conformance)
+      .toMatchObject({
+        type: "object",
+        properties: {
+          protocolVersion: { type: ["string", "null"] },
+          profile: { type: ["string", "null"] },
+          capabilityConsistency: { type: "string" },
+          taskDeclarations: { type: "string" },
+          tasksList: { type: "string" },
+          schemaDialect: { type: "string" },
+          overall: { type: "string" }
+        }
+      });
+    expect(mcpSchema.schema.properties.runtimeScorecard.description).toBe(
+      "Present only when codex-plugin-doctor mcp <path> --runtime is used."
+    );
 
     const suppressionSchemas = Object.fromEntries(
       output.schemas

@@ -3,6 +3,41 @@ import { formatFindingEvidenceLine } from "./format-finding-evidence.js";
 import { formatFindingFingerprintLine } from "./finding-fingerprint.js";
 import { buildRecommendedCommands } from "./recommended-commands.js";
 
+function appendRuntimeScorecard(lines: string[], result: CheckResult) {
+  if (!result.runtimeScorecard) {
+    return;
+  }
+
+  lines.push("", "## Runtime Scorecard", "");
+  lines.push("| Operation | Status |");
+  lines.push("| --- | --- |");
+  lines.push(`| initialize | ${result.runtimeScorecard.initialize.toUpperCase()} |`);
+  lines.push(`| tools/list | ${result.runtimeScorecard.toolsList.toUpperCase()} |`);
+  lines.push(`| tools/call | ${result.runtimeScorecard.toolsCall.toUpperCase()} |`);
+  lines.push(`| resources/list | ${result.runtimeScorecard.resourcesList.toUpperCase()} |`);
+  lines.push(`| resources/read | ${result.runtimeScorecard.resourceRead.toUpperCase()} |`);
+  lines.push(`| resources/templates/list | ${result.runtimeScorecard.resourceTemplatesList.toUpperCase()} |`);
+  lines.push(`| prompts/list | ${result.runtimeScorecard.promptsList.toUpperCase()} |`);
+  lines.push(`| prompts/get | ${result.runtimeScorecard.promptGet.toUpperCase()} |`);
+
+  const conformance = result.runtimeScorecard.conformance;
+
+  if (!conformance) {
+    return;
+  }
+
+  lines.push("", "## MCP Conformance", "");
+  lines.push("| Check | Status |");
+  lines.push("| --- | --- |");
+  lines.push(`| Protocol version | ${conformance.protocolVersion ?? "unavailable"} |`);
+  lines.push(`| Profile | ${conformance.profile ?? "unavailable"} |`);
+  lines.push(`| Capability consistency | ${conformance.capabilityConsistency.toUpperCase()} |`);
+  lines.push(`| Task declarations | ${conformance.taskDeclarations.toUpperCase()} |`);
+  lines.push(`| Tasks list | ${conformance.tasksList.toUpperCase()} |`);
+  lines.push(`| Schema dialect | ${conformance.schemaDialect.toUpperCase()} |`);
+  lines.push(`| Overall | ${conformance.overall.toUpperCase()} |`);
+}
+
 export function buildMarkdownReport(
   result: CheckResult,
   options: { runtimeProbeEnabled: boolean }
@@ -52,23 +87,11 @@ export function buildMarkdownReport(
     );
   }
 
+  appendRuntimeScorecard(lines, result);
+
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
     lines.push("", result.baselineSummary ? "No new findings." : "No findings.");
     return lines.join("\n");
-  }
-
-  if (result.runtimeScorecard) {
-    lines.push("", "## Runtime Scorecard", "");
-    lines.push("| Operation | Status |");
-    lines.push("| --- | --- |");
-    lines.push(`| initialize | ${result.runtimeScorecard.initialize.toUpperCase()} |`);
-    lines.push(`| tools/list | ${result.runtimeScorecard.toolsList.toUpperCase()} |`);
-    lines.push(`| tools/call | ${result.runtimeScorecard.toolsCall.toUpperCase()} |`);
-    lines.push(`| resources/list | ${result.runtimeScorecard.resourcesList.toUpperCase()} |`);
-    lines.push(`| resources/read | ${result.runtimeScorecard.resourceRead.toUpperCase()} |`);
-    lines.push(`| resources/templates/list | ${result.runtimeScorecard.resourceTemplatesList.toUpperCase()} |`);
-    lines.push(`| prompts/list | ${result.runtimeScorecard.promptsList.toUpperCase()} |`);
-    lines.push(`| prompts/get | ${result.runtimeScorecard.promptGet.toUpperCase()} |`);
   }
 
   if (result.findings.length > 0) {
