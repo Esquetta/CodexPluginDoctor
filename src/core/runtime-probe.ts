@@ -393,21 +393,7 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
   );
 }
 
-async function loadMcpServers(
-  discoveredPackage: DiscoveredPackage
-): Promise<Record<string, unknown> | null> {
-  const { manifest, rootPath } = discoveredPackage;
-
-  if (!manifest.mcpServers) {
-    return null;
-  }
-
-  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
-
-  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
-    return null;
-  }
-
+async function loadMcpServers(mcpConfigPath: string): Promise<Record<string, unknown> | null> {
   const exists = await fileExists(mcpConfigPath);
 
   if (!exists) {
@@ -1841,14 +1827,43 @@ async function probeCommandServer(input: {
 
 export async function probeRuntime(
   discoveredPackage: DiscoveredPackage,
-  options: {
-    startupTimeoutMs?: number;
-    sandbox?: RuntimeSandboxMode;
-    transcript?: (line: string) => void;
-  } = {}
+  options: RuntimeProbeOptions = {}
 ): Promise<RuntimeProbeResult> {
+  const { manifest, rootPath } = discoveredPackage;
+
+  if (!manifest.mcpServers) {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  return probeRuntimeConfig(rootPath, manifest.mcpServers, options);
+}
+
+export interface RuntimeProbeOptions {
+  startupTimeoutMs?: number;
+  sandbox?: RuntimeSandboxMode;
+  transcript?: (line: string) => void;
+}
+
+export async function probeRuntimeConfig(
+  rootPath: string,
+  mcpConfigPath: string,
+  options: RuntimeProbeOptions = {}
+): Promise<RuntimeProbeResult> {
+  const resolvedRootPath = path.resolve(rootPath);
+  const resolvedMcpConfigPath = path.resolve(resolvedRootPath, mcpConfigPath);
   const startupTimeoutMs = options.startupTimeoutMs ?? 400;
-  const servers = await loadMcpServers(discoveredPackage);
+
+  if (!isPathWithinRoot(resolvedRootPath, resolvedMcpConfigPath)) {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  const servers = await loadMcpServers(resolvedMcpConfigPath);
 
   if (!servers) {
     return {
@@ -1877,12 +1892,12 @@ export async function probeRuntime(
       : [];
     const cwd =
       typeof config.cwd === "string"
-        ? path.resolve(discoveredPackage.rootPath, config.cwd)
-        : discoveredPackage.rootPath;
+        ? path.resolve(resolvedRootPath, config.cwd)
+        : resolvedRootPath;
 
     const result = await probeCommandServer({
       serverName,
-      packageRoot: discoveredPackage.rootPath,
+      packageRoot: resolvedRootPath,
       command,
       args,
       cwd,

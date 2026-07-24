@@ -8,7 +8,13 @@ import {
   readMcpConfigPath
 } from "../compatibility/compatibility-matrix.js";
 import { readJsonFile } from "../core/read-json-file.js";
-import type { Finding, FindingEvidence } from "../domain/types.js";
+import { probeRuntimeConfig } from "../core/runtime-probe.js";
+import type {
+  Finding,
+  FindingEvidence,
+  RuntimeExecutionEvidence,
+  RuntimeScorecard
+} from "../domain/types.js";
 import {
   formatFindingFingerprintLine,
   withFindingFingerprints
@@ -28,6 +34,13 @@ export interface GenericMcpDoctorReport {
   findings: Finding[];
   security: SecurityAudit;
   compatibility: CompatibilityMatrix;
+  runtimeScorecard?: RuntimeScorecard;
+  runtimeExecution?: RuntimeExecutionEvidence;
+}
+
+export interface GenericMcpDoctorOptions {
+  runtime?: boolean;
+  runtimeStartupTimeoutMs?: number;
 }
 
 function buildFinding(
@@ -162,14 +175,14 @@ function buildStaticMcpFindings(
 }
 
 function mergeReportStatus(
-  staticFindings: Finding[],
+  findings: Finding[],
   security: SecurityAudit
 ): "pass" | "warn" | "fail" {
-  if (staticFindings.some((finding) => finding.severity === "fail") || security.status === "fail") {
+  if (findings.some((finding) => finding.severity === "fail") || security.status === "fail") {
     return "fail";
   }
 
-  if (staticFindings.some((finding) => finding.severity === "warn") || security.status === "warn") {
+  if (findings.some((finding) => finding.severity === "warn") || security.status === "warn") {
     return "warn";
   }
 
@@ -178,7 +191,8 @@ function mergeReportStatus(
 
 export async function buildGenericMcpDoctor(
   targetPath: string,
-  environment: CompatibilityEnvironment = {}
+  environment: CompatibilityEnvironment = {},
+  options: GenericMcpDoctorOptions = {}
 ): Promise<GenericMcpDoctorReport> {
   const rootPath = path.resolve(targetPath);
   const compatibility = await buildCompatibilityMatrix(rootPath, environment);
@@ -236,11 +250,22 @@ export async function buildGenericMcpDoctor(
       ? auditMcpServerConfig(rootPath, parsedConfig)
       : []
   );
-  const fingerprintedStaticFindings = withFindingFingerprints(
-    staticFindings,
+  const runtimeResult =
+    options.runtime &&
+    mcpConfigPath !== null &&
+    parsedConfig !== null &&
+    isPathWithinRoot(rootPath, mcpConfigPath) &&
+    !staticFindings.some((finding) => finding.severity === "fail") &&
+    security.status !== "fail"
+      ? await probeRuntimeConfig(rootPath, mcpConfigPath, {
+          startupTimeoutMs: options.runtimeStartupTimeoutMs
+        })
+      : null;
+  const fingerprintedFindings = withFindingFingerprints(
+    [...staticFindings, ...(runtimeResult?.findings ?? [])],
     rootPath
   );
-  const status = mergeReportStatus(fingerprintedStaticFindings, security);
+  const status = mergeReportStatus(fingerprintedFindings, security);
 
   return {
     targetPath: rootPath,
@@ -248,9 +273,11 @@ export async function buildGenericMcpDoctor(
     exitCode: status === "fail" ? 1 : 0,
     mcpConfigPath,
     serverCount,
-    findings: [...fingerprintedStaticFindings, ...security.findings],
+    findings: [...fingerprintedFindings, ...security.findings],
     security,
-    compatibility
+    compatibility,
+    ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {}),
+    ...(runtimeResult?.execution ? { runtimeExecution: runtimeResult.execution } : {})
   };
 }
 
@@ -280,6 +307,12 @@ export function renderGenericMcpDoctor(report: GenericMcpDoctorReport): string {
       .map((result) => `${result.client}=${result.status}`)
       .join(", ")}`
   ];
+
+  if (report.runtimeScorecard?.conformance) {
+    lines.push(
+      `Runtime conformance: ${report.runtimeScorecard.conformance.overall.toUpperCase()}`
+    );
+  }
 
   if (report.findings.length === 0) {
     lines.push("", "No findings.");

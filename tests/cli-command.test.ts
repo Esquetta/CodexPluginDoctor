@@ -200,6 +200,19 @@ async function createWindsurfHomeFixture(config?: unknown): Promise<string> {
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
+  it("documents the runtime opt-in for both MCP command aliases", async () => {
+    for (const args of [["mcp"], ["doctor", "mcp"]]) {
+      const { io, stdout, stderr } = createIo();
+
+      const exitCode = await runCli(args, io);
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain(
+        "codex-plugin-doctor mcp <path> [--runtime] [--json] [--output <path>]"
+      );
+    }
+  });
   it("runs a bundled self-test against the doctor runtime sample", async () => {
     const { io, stdout, stderr } = createIo();
     const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-self-test-"));
