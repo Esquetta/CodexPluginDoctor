@@ -172,13 +172,14 @@ Findings caused by malformed data or declared-but-broken behavior are failures. 
 1. Start the configured MCP server using the existing approved runtime path.
 2. Send `initialize` and validate the response using existing rules.
 3. Select a conformance profile from the negotiated protocol version.
-4. Run existing capability-directed tools, resources, and prompts probes.
-5. Collect tool declarations without changing tool-call behavior.
-6. If safely declared, send one bounded `tasks/list` request.
+4. If tools are declared, send `tools/list` and validate the returned tool declarations.
+5. If a safely callable tool is available, send one bounded, non-destructive `tools/call` request.
+6. If safely declared for the negotiated profile, send one bounded `tasks/list` request.
 7. Immediately reduce the task response to shape status, count, and pagination status; discard payload records.
-8. Evaluate all normalized observations in the conformance module.
-9. Merge findings and conformance scorecard fields into the existing runtime result.
-10. Render additive text, Markdown, JSON, and contract output.
+8. Evaluate the normalized conformance observations.
+9. Run the remaining capability-directed resource and prompt probes.
+10. Merge findings and conformance scorecard fields into the existing runtime result.
+11. Render additive text, Markdown, JSON, and contract output.
 
 ## Security And Privacy
 

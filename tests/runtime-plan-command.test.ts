@@ -58,8 +58,8 @@ describe("doctor runtime-plan command", () => {
     expect(output.servers[0].probeMethods).toEqual([
       "initialize",
       "tools/list",
-      "tasks/list:declared-2025-11-only",
       "tools/call:safe-only",
+      "tasks/list:declared-2025-11-only",
       "resources/list",
       "resources/read:first-resource-only",
       "resources/templates/list",
