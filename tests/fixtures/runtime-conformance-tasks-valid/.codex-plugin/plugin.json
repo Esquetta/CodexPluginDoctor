@@ -1,0 +1,6 @@
+{
+  "name": "runtime-conformance-tasks-valid",
+  "version": "1.0.0",
+  "description": "Runtime fixture for safe tasks/list observation.",
+  "mcpServers": "./.mcp.json"
+}

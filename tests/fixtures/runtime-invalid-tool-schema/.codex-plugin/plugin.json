@@ -1,0 +1,6 @@
+{
+  "name": "runtime-invalid-tool-schema",
+  "version": "1.0.0",
+  "description": "Fixture with a parseable tool that has an invalid input schema.",
+  "mcpServers": "./.mcp.json"
+}

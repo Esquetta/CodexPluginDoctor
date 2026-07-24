@@ -1,0 +1,6 @@
+{
+  "name": "runtime-invalid-tools-and-tasks",
+  "version": "1.0.0",
+  "description": "Runtime fixture for independent tasks/list probing.",
+  "mcpServers": "./.mcp.json"
+}

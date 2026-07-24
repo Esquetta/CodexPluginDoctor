@@ -1,0 +1,6 @@
+{
+  "name": "runtime-conformance-tasks-timeout",
+  "version": "1.0.0",
+  "description": "Runtime fixture for tasks/list timeout observation.",
+  "mcpServers": "./.mcp.json"
+}

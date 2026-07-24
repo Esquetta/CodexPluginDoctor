@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -67,12 +67,122 @@ describe("mcp command", () => {
     expect(output.serverCount).toBe(1);
     expect(output.mcpConfigPath).toBe(path.join(targetPath, ".mcp.json"));
     expect(output.security.status).toBe("pass");
+    expect(output.runtimeScorecard).toBeUndefined();
     expect(output.compatibility.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ client: "Codex", status: "skipped" }),
         expect.objectContaining({ client: "Generic MCP", status: "pass" })
       ])
     );
+  });
+
+  it("runs explicit runtime conformance for a valid task-capable MCP config", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["mcp", "tests/fixtures/runtime-conformance-tasks-valid", "--runtime", "--json"],
+      io
+    );
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.runtimeScorecard.conformance).toMatchObject({
+      profile: "2025-11-25",
+      tasksList: "pass",
+      overall: "pass"
+    });
+    expect(output.runtimeExecution).toMatchObject({ backend: "native" });
+    expect(serialized).not.toContain("private-task-id");
+    expect(serialized).not.toContain("private task text");
+    expect(serialized).not.toContain("private-task-cursor");
+  });
+
+  it("fingerprints runtime conformance failures and makes them fail the MCP report", async () => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(
+      ["mcp", "tests/fixtures/runtime-conformance-tasks-invalid", "--runtime"],
+      io
+    );
+    const output = stdout.join("");
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output).toContain("Status: FAIL");
+    expect(output).toContain("Runtime conformance: FAIL");
+    expect(output).toMatch(/mcp\.conformance\.tasks_list\.invalid[\s\S]*Fingerprint: [a-f0-9]{64}/);
+  });
+
+  it("preserves the worst runtime scorecard when a later server passes", async () => {
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        failing: {
+          command: process.execPath,
+          args: [path.resolve("tests/fixtures/runtime-conformance-tasks-invalid/mock-server.js")]
+        },
+        passing: {
+          command: process.execPath,
+          args: [path.resolve("tests/fixtures/runtime-conformance-tasks-valid/mock-server.js")]
+        }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--runtime", "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.runtimeScorecard.conformance).toMatchObject({
+      profile: "2025-11-25",
+      tasksList: "fail",
+      overall: "fail"
+    });
+  });
+
+  const symlinkIt = process.platform === "win32" ? it.skip : it;
+
+  symlinkIt("does not execute an MCP config reached through a symlink escape", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-root-"));
+    const externalPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-external-"));
+    const markerPath = path.join(externalPath, "runtime-started");
+    const serverPath = path.join(externalPath, "server.js");
+    const externalConfigPath = path.join(externalPath, ".mcp.json");
+
+    await writeFile(
+      serverPath,
+      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(markerPath)}, "started");\nprocess.stdin.resume();\n`,
+      "utf8"
+    );
+    await writeFile(
+      externalConfigPath,
+      JSON.stringify({
+        mcpServers: {
+          external: {
+            command: process.execPath,
+            args: [serverPath]
+          }
+        }
+      }),
+      "utf8"
+    );
+    await symlink(externalConfigPath, path.join(targetPath, ".mcp.json"), "file");
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--runtime", "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "mcp.config.path_outside_root" })
+      ])
+    );
+    await expect(access(markerPath)).rejects.toThrow();
   });
 
   it("fails a standalone MCP package with unsafe server commands", async () => {

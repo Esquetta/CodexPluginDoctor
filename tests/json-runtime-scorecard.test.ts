@@ -20,7 +20,16 @@ describe("runtime scorecard", () => {
       resourceRead: "pass",
       resourceTemplatesList: "pass",
       promptsList: "pass",
-      promptGet: "pass"
+      promptGet: "pass",
+      conformance: {
+        protocolVersion: "2025-11-25",
+        profile: "2025-11-25",
+        capabilityConsistency: "pass",
+        taskDeclarations: "pass",
+        tasksList: "skipped",
+        schemaDialect: "pass",
+        overall: "pass"
+      }
     });
     expect(report.summary.runtimeExecution).toEqual({
       backend: "native",

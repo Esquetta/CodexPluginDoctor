@@ -45,16 +45,88 @@ export interface DoctorOutputContract {
   schemas: OutputContractSchema[];
 }
 
+const runtimeCapabilityStatusSchema = {
+  type: "string",
+  enum: ["pass", "fail", "warn", "skipped", "unsupported"]
+};
+
+const runtimeConformanceSchema = {
+  type: "object",
+  properties: {
+    protocolVersion: {
+      type: ["string", "null"]
+    },
+    profile: {
+      type: ["string", "null"],
+      enum: ["legacy", "2025-11-25", "future-compatible", null]
+    },
+    capabilityConsistency: runtimeCapabilityStatusSchema,
+    taskDeclarations: runtimeCapabilityStatusSchema,
+    tasksList: runtimeCapabilityStatusSchema,
+    schemaDialect: runtimeCapabilityStatusSchema,
+    overall: {
+      type: "string",
+      enum: ["pass", "warn", "fail", "skipped"]
+    }
+  },
+  required: [
+    "protocolVersion",
+    "profile",
+    "capabilityConsistency",
+    "taskDeclarations",
+    "tasksList",
+    "schemaDialect",
+    "overall"
+  ],
+  additionalProperties: false
+};
+
+const runtimeScorecardSchema = {
+  type: "object",
+  properties: {
+    initialize: runtimeCapabilityStatusSchema,
+    toolsList: runtimeCapabilityStatusSchema,
+    toolsCall: runtimeCapabilityStatusSchema,
+    resourcesList: runtimeCapabilityStatusSchema,
+    resourceRead: runtimeCapabilityStatusSchema,
+    resourceTemplatesList: runtimeCapabilityStatusSchema,
+    promptsList: runtimeCapabilityStatusSchema,
+    promptGet: runtimeCapabilityStatusSchema,
+    conformance: runtimeConformanceSchema
+  },
+  required: [
+    "initialize",
+    "toolsList",
+    "toolsCall",
+    "resourcesList",
+    "resourceRead",
+    "resourceTemplatesList",
+    "promptsList",
+    "promptGet"
+  ],
+  additionalProperties: false
+};
+
 const publicSchemaDefinitions: Array<{
   id: string;
   command: string;
   outputKind?: string;
   required?: string[];
+  properties?: Record<string, unknown>;
 }> = [
   {
     id: "doctor.check.json",
     command: "codex-plugin-doctor check <path> --json",
-    required: ["schemaVersion", "generatedAt", "summary", "findings"]
+    required: ["schemaVersion", "generatedAt", "summary", "findings"],
+    properties: {
+      summary: {
+        type: "object",
+        properties: {
+          runtimeScorecard: runtimeScorecardSchema
+        },
+        additionalProperties: true
+      }
+    }
   },
   {
     id: "doctor.installed.check.json",
@@ -76,7 +148,13 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.mcp.json",
     command: "codex-plugin-doctor mcp <path> --json",
     outputKind: "doctor.mcp.healthcheck",
-    required: ["schemaVersion", "kind", "generatedAt", "targetPath", "status", "serverCount", "findings", "security", "compatibility"]
+    required: ["schemaVersion", "kind", "generatedAt", "targetPath", "status", "serverCount", "findings", "security", "compatibility"],
+    properties: {
+      runtimeScorecard: {
+        ...runtimeScorecardSchema,
+        description: "Present only when codex-plugin-doctor mcp <path> --runtime is used."
+      }
+    }
   },
   {
     id: "doctor.audit.json",
@@ -330,7 +408,8 @@ function contractRules(rules: RuleDefinition[]): OutputContractRule[] {
 function buildSchema(
   id: string,
   outputKind: string | null,
-  required: string[]
+  required: string[],
+  schemaProperties: Record<string, unknown> = {}
 ): JsonSchema {
   const properties: Record<string, unknown> = {
     schemaVersion: {
@@ -350,7 +429,10 @@ function buildSchema(
     title: id,
     type: "object",
     required: [...new Set(["schemaVersion", ...required])],
-    properties,
+    properties: {
+      ...properties,
+      ...schemaProperties
+    },
     additionalProperties: true
   };
 }
@@ -365,7 +447,12 @@ function buildSchemas(): OutputContractSchema[] {
       schemaVersion: "1.0.0",
       stability: "stable-through-1.0",
       outputKind,
-      schema: buildSchema(definition.id, outputKind, definition.required ?? [])
+      schema: buildSchema(
+        definition.id,
+        outputKind,
+        definition.required ?? [],
+        definition.properties
+      )
     };
   });
 }

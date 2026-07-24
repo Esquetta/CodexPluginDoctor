@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 
@@ -8,11 +8,16 @@ import type {
   DiscoveredPackage,
   Finding,
   FindingEvidence,
+  McpToolObservation,
+  RuntimeCapabilityStatus,
+  RuntimeConformanceScorecard,
   RuntimeExecutionEvidence,
   RuntimeProbeResult,
   RuntimeSandboxMode,
-  RuntimeScorecard
+  RuntimeScorecard,
+  TasksListObservation
 } from "../domain/types.js";
+import { evaluateMcpConformance } from "./mcp-conformance.js";
 import {
   buildRuntimeLaunch,
   DOCKER_RUNTIME_STARTUP_TIMEOUT_MS,
@@ -30,10 +35,18 @@ const MAX_TOOL_CALL_CONTENT_LENGTH = 4096;
 const MAX_RESOURCE_READ_CONTENT_LENGTH = 4096;
 const MAX_PROMPT_GET_CONTENT_LENGTH = 4096;
 const DOCKER_CLEANUP_TIMEOUT_MS = 5_000;
+const MAX_RUNTIME_PAGINATION_PAGES = 100;
 
 type JsonObject = Record<string, unknown>;
 
 type ToolDefinition = {
+  name: string;
+  inputSchema: unknown;
+  outputSchema?: unknown;
+  execution?: unknown;
+};
+
+type CallableToolDefinition = {
   name: string;
   inputSchema: JsonObject;
 };
@@ -97,7 +110,16 @@ function createRuntimeScorecard(): RuntimeScorecard {
     resourceRead: "unsupported",
     resourceTemplatesList: "unsupported",
     promptsList: "unsupported",
-    promptGet: "unsupported"
+    promptGet: "unsupported",
+    conformance: {
+      protocolVersion: null,
+      profile: null,
+      capabilityConsistency: "skipped",
+      taskDeclarations: "skipped",
+      tasksList: "skipped",
+      schemaDialect: "skipped",
+      overall: "skipped"
+    }
   };
 }
 
@@ -136,6 +158,19 @@ function buildWarning(
 }
 
 function methodForRuntimeFinding(id: string): string {
+  if (
+    id.startsWith("mcp.conformance.protocol.") ||
+    id.startsWith("mcp.conformance.tasks.capability_")
+  ) {
+    return "initialize";
+  }
+  if (
+    id.startsWith("mcp.conformance.tasks.task_support_") ||
+    id.startsWith("mcp.conformance.schema.")
+  ) {
+    return "tools/list";
+  }
+  if (id.startsWith("mcp.conformance.tasks_list.")) return "tasks/list";
   if (id.includes(".initialize.")) return "initialize";
   if (id.includes(".tools_list.")) return "tools/list";
   if (id.includes(".tool_call.")) return "tools/call";
@@ -152,9 +187,9 @@ function withRuntimeEvidence(finding: Finding, serverName: string): Finding {
   return {
     ...finding,
     evidence: {
+      ...(finding.evidence ?? {}),
       serverName,
-      method: methodForRuntimeFinding(finding.id),
-      ...(finding.evidence ?? {})
+      method: methodForRuntimeFinding(finding.id)
     }
   };
 }
@@ -360,21 +395,7 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
   );
 }
 
-async function loadMcpServers(
-  discoveredPackage: DiscoveredPackage
-): Promise<Record<string, unknown> | null> {
-  const { manifest, rootPath } = discoveredPackage;
-
-  if (!manifest.mcpServers) {
-    return null;
-  }
-
-  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
-
-  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
-    return null;
-  }
-
+async function loadMcpServers(mcpConfigPath: string): Promise<Record<string, unknown> | null> {
   const exists = await fileExists(mcpConfigPath);
 
   if (!exists) {
@@ -430,6 +451,86 @@ function hasPromptsCapability(message: JsonObject): boolean {
   return capabilities !== null && isPlainObject(capabilities.prompts);
 }
 
+function worstRuntimeStatus<T extends RuntimeCapabilityStatus | RuntimeConformanceScorecard["overall"]>(
+  left: T,
+  right: T
+): T {
+  const severity: Record<RuntimeCapabilityStatus, number> = {
+    fail: 4,
+    warn: 3,
+    pass: 2,
+    skipped: 1,
+    unsupported: 0
+  };
+
+  return severity[left] >= severity[right] ? left : right;
+}
+
+function mergeRuntimeScorecards(
+  left: RuntimeScorecard,
+  right: RuntimeScorecard
+): RuntimeScorecard {
+  const leftConformance = left.conformance;
+  const rightConformance = right.conformance;
+  const conformance = leftConformance && rightConformance
+    ? {
+        protocolVersion:
+          leftConformance.protocolVersion === null
+            ? rightConformance.protocolVersion
+            : rightConformance.protocolVersion === null ||
+                leftConformance.protocolVersion === rightConformance.protocolVersion
+              ? leftConformance.protocolVersion
+              : null,
+        profile:
+          leftConformance.profile === null
+            ? rightConformance.profile
+            : rightConformance.profile === null || leftConformance.profile === rightConformance.profile
+              ? leftConformance.profile
+              : null,
+        capabilityConsistency: worstRuntimeStatus(
+          leftConformance.capabilityConsistency,
+          rightConformance.capabilityConsistency
+        ),
+        taskDeclarations: worstRuntimeStatus(
+          leftConformance.taskDeclarations,
+          rightConformance.taskDeclarations
+        ),
+        tasksList: worstRuntimeStatus(leftConformance.tasksList, rightConformance.tasksList),
+        schemaDialect: worstRuntimeStatus(
+          leftConformance.schemaDialect,
+          rightConformance.schemaDialect
+        ),
+        overall: worstRuntimeStatus(leftConformance.overall, rightConformance.overall)
+      }
+    : leftConformance ?? rightConformance;
+
+  return {
+    initialize: worstRuntimeStatus(left.initialize, right.initialize),
+    toolsList: worstRuntimeStatus(left.toolsList, right.toolsList),
+    toolsCall: worstRuntimeStatus(left.toolsCall, right.toolsCall),
+    resourcesList: worstRuntimeStatus(left.resourcesList, right.resourcesList),
+    resourceRead: worstRuntimeStatus(left.resourceRead, right.resourceRead),
+    resourceTemplatesList: worstRuntimeStatus(
+      left.resourceTemplatesList,
+      right.resourceTemplatesList
+    ),
+    promptsList: worstRuntimeStatus(left.promptsList, right.promptsList),
+    promptGet: worstRuntimeStatus(left.promptGet, right.promptGet),
+    ...(conformance ? { conformance } : {})
+  };
+}
+
+function supportsTasksListProbe(
+  protocolVersion: string,
+  capabilities: JsonObject
+): boolean {
+  if (protocolVersion < MCP_PROTOCOL_VERSION || !isPlainObject(capabilities.tasks)) {
+    return false;
+  }
+
+  return isPlainObject(capabilities.tasks.list);
+}
+
 function getNextCursor(result: JsonObject): string | null {
   if (result.nextCursor === undefined) {
     return null;
@@ -457,15 +558,16 @@ function extractToolsPage(
     if (
       !isPlainObject(tool) ||
       typeof tool.name !== "string" ||
-      !isPlainObject(tool.inputSchema) ||
-      tool.inputSchema.type !== "object"
+      !("inputSchema" in tool)
     ) {
       return null;
     }
 
     parsedTools.push({
       name: tool.name,
-      inputSchema: tool.inputSchema
+      inputSchema: tool.inputSchema,
+      ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+      ...(tool.execution === undefined ? {} : { execution: tool.execution })
     });
   }
 
@@ -634,7 +736,7 @@ function extractPromptsPage(
   };
 }
 
-function isDestructiveTool(tool: ToolDefinition): boolean {
+function isDestructiveTool(tool: Pick<ToolDefinition, "name">): boolean {
   return /(delete|remove|drop|destroy|erase|wipe|purge|send|deploy|refund|payment|charge|merge|push)/i.test(
     tool.name
   );
@@ -690,7 +792,7 @@ function buildSchemaValue(
 }
 
 function buildToolArguments(
-  tool: ToolDefinition
+  tool: CallableToolDefinition
 ): Record<string, unknown> | undefined {
   const schemaValue = buildSchemaValue(tool.inputSchema);
 
@@ -703,23 +805,79 @@ function buildToolArguments(
 
 function findCallableTool(
   tools: ToolDefinition[]
-): { tool: ToolDefinition; args: Record<string, unknown> } | null {
+): { tool: CallableToolDefinition; args: Record<string, unknown> } | null {
   for (const tool of tools) {
     if (isDestructiveTool(tool)) {
       continue;
     }
 
-    const args = buildToolArguments(tool);
+    if (!isPlainObject(tool.inputSchema) || tool.inputSchema.type !== "object") {
+      continue;
+    }
+
+    const callableTool: CallableToolDefinition = {
+      name: tool.name,
+      inputSchema: tool.inputSchema
+    };
+
+    const args = buildToolArguments(callableTool);
 
     if (args !== undefined) {
       return {
-        tool,
+        tool: callableTool,
         args
       };
     }
   }
 
   return null;
+}
+
+function hasValidToolInputSchemas(tools: ToolDefinition[]): boolean {
+  return tools.every(
+    (tool) => isPlainObject(tool.inputSchema) && tool.inputSchema.type === "object"
+  );
+}
+
+async function resolveRuntimeCwd(
+  rootPath: string,
+  configuredCwd: unknown
+): Promise<string | null> {
+  const resolvedCwd =
+    typeof configuredCwd === "string"
+      ? path.resolve(rootPath, configuredCwd)
+      : rootPath;
+
+  try {
+    const [canonicalCwd, details] = await Promise.all([
+      realpath(resolvedCwd),
+      stat(resolvedCwd)
+    ]);
+
+    return details.isDirectory() && isPathWithinRoot(rootPath, canonicalCwd)
+      ? canonicalCwd
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isProtocolVersion(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return false;
+  }
+
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 function buildPromptArguments(
@@ -1125,8 +1283,14 @@ async function probeCommandServer(input: {
     }): Promise<T[] | null> => {
       let cursor: string | null = null;
       const items: T[] = [];
+      const seenCursors = new Set<string>();
+      let pageCount = 0;
 
       do {
+        if (pageCount >= MAX_RUNTIME_PAGINATION_PAGES) {
+          return null;
+        }
+
         const response = await sendRequest(
           input.method,
           cursor ? { cursor } : undefined,
@@ -1151,10 +1315,106 @@ async function probeCommandServer(input: {
         }
 
         items.push(...page.items);
+        pageCount += 1;
+
+        if (page.nextCursor && seenCursors.has(page.nextCursor)) {
+          return null;
+        }
+
+        if (page.nextCursor) {
+          seenCursors.add(page.nextCursor);
+        }
+
         cursor = page.nextCursor;
       } while (cursor);
 
       return items;
+    };
+
+    const observeTasksList = async (): Promise<TasksListObservation> => {
+      let cursor: string | null = null;
+      const seenCursors = new Set<string>();
+      let itemCount = 0;
+      let pageCount = 0;
+
+      try {
+        do {
+          if (pageCount >= MAX_RUNTIME_PAGINATION_PAGES) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          const response = await sendRequest(
+            "tasks/list",
+            cursor ? { cursor } : undefined,
+            buildFailure(
+              "mcp.conformance.tasks_list.timeout",
+              `The MCP server \`${serverName}\` did not answer the tasks/list request in time.`,
+              "Codex cannot safely inspect task discovery when the server does not complete tasks/list.",
+              "Reduce tasks/list latency and verify pagination completes."
+            )
+          );
+
+          if (isErrorResponse(response) || !isPlainObject(response.result)) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          const tasks = response.result.tasks;
+          const nextCursor = getNextCursor(response.result);
+
+          if (
+            !Array.isArray(tasks) ||
+            !tasks.every(isPlainObject) ||
+            nextCursor === "__invalid__"
+          ) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          itemCount += tasks.length;
+          pageCount += 1;
+
+          if (nextCursor && seenCursors.has(nextCursor)) {
+            return {
+              status: "fail",
+              itemCount,
+              pageCount,
+              failure: "invalid"
+            };
+          }
+
+          if (nextCursor) {
+            seenCursors.add(nextCursor);
+          }
+
+          cursor = nextCursor;
+        } while (cursor);
+      } catch (error) {
+        return {
+          status: "fail",
+          itemCount,
+          pageCount,
+          failure:
+            isFinding(error) && error.id === "mcp.conformance.tasks_list.timeout"
+              ? "timeout"
+              : "invalid"
+        };
+      }
+
+      return { status: "pass", itemCount, pageCount };
     };
 
     child.stderr?.on("data", (chunk: Buffer | string) => {
@@ -1291,6 +1551,7 @@ async function probeCommandServer(input: {
 
       if (
         typeof result.protocolVersion !== "string" ||
+        !isProtocolVersion(result.protocolVersion) ||
         !isPlainObject(result.capabilities) ||
         !isPlainObject(result.serverInfo) ||
         typeof result.serverInfo.name !== "string" ||
@@ -1311,10 +1572,14 @@ async function probeCommandServer(input: {
       scorecard.initialize = "pass";
       sendNotification("notifications/initialized");
 
+      let tools: ToolDefinition[] = [];
+      let toolTerminalFinding: Finding | null = null;
+      let canEvaluateConformance = true;
+
       if (!hasToolsCapability(initializeResponse)) {
         scorecard.toolsList = "unsupported";
         scorecard.toolsCall = "unsupported";
-        settle(
+        warnings.push(
           buildWarning(
             "plugin.runtime.tools.unsupported",
             `The MCP server \`${serverName}\` does not advertise tools capability.`,
@@ -1322,55 +1587,61 @@ async function probeCommandServer(input: {
             "Expose `capabilities.tools` during initialize if this server is expected to provide tools."
           )
         );
-        return;
-      }
+      } else {
+        const listedTools = await fetchPaginated<ToolDefinition>({
+          method: "tools/list",
+          timeoutFinding: buildFailure(
+            "plugin.runtime.tools_list.timeout",
+            `The MCP server \`${serverName}\` did not answer the tools/list request in time.`,
+            "A server that cannot return its tool catalog in time will feel broken or invisible in Codex.",
+            "Inspect the tool discovery path and reduce latency before returning the tool list."
+          ),
+          extractPage: extractToolsPage
+        });
 
-      const tools = await fetchPaginated<ToolDefinition>({
-        method: "tools/list",
-        timeoutFinding: buildFailure(
-          "plugin.runtime.tools_list.timeout",
-          `The MCP server \`${serverName}\` did not answer the tools/list request in time.`,
-          "A server that cannot return its tool catalog in time will feel broken or invisible in Codex.",
-          "Inspect the tool discovery path and reduce latency before returning the tool list."
-        ),
-        extractPage: extractToolsPage
-      });
-
-      if (!tools) {
-        scorecard.toolsList = "fail";
-        settle(
-          buildFailure(
+        if (!listedTools) {
+          canEvaluateConformance = false;
+          scorecard.toolsList = "fail";
+          toolTerminalFinding = buildFailure(
             "plugin.runtime.tools_list.invalid",
             `The MCP server \`${serverName}\` returned an invalid tools/list result.`,
             "Codex cannot safely consume malformed tool definitions from `tools/list`.",
             "Return a `tools` array where every tool has a string `name` and an object-shaped `inputSchema` with `type: \"object\"`."
-          )
-        );
-        return;
-      }
+          );
+        } else {
+          tools = listedTools;
 
-      scorecard.toolsList = "pass";
+          if (!hasValidToolInputSchemas(tools)) {
+            canEvaluateConformance = false;
+            scorecard.toolsList = "fail";
+            toolTerminalFinding = buildFailure(
+              "plugin.runtime.tools_list.invalid",
+              `The MCP server \`${serverName}\` returned an invalid tools/list result.`,
+              "Codex cannot safely consume malformed tool definitions from `tools/list`.",
+              "Return a `tools` array where every tool has a string `name` and an object-shaped `inputSchema` with `type: \"object\"`."
+            );
+          } else {
+            scorecard.toolsList = "pass";
+          }
+        }
 
-      const callableTool = findCallableTool(tools);
+        const callableTool = toolTerminalFinding ? null : findCallableTool(tools);
 
-      if (!callableTool) {
-        scorecard.toolsCall = "skipped";
-        settle(
-          buildWarning(
+        if (!toolTerminalFinding && !callableTool) {
+          scorecard.toolsCall = "skipped";
+          toolTerminalFinding = buildWarning(
             "plugin.runtime.tool_call.skipped",
             `The MCP server \`${serverName}\` does not expose a safely callable tool for probing.`,
             "The validator confirmed tool discovery but could not safely perform a non-destructive `tools/call` probe.",
             "Expose at least one non-destructive tool with a JSON schema the validator can generate arguments for."
-          )
-        );
-        return;
-      } else {
-        const toolCallResponse = await sendRequest(
-          "tools/call",
-          {
-            name: callableTool.tool.name,
-            arguments: callableTool.args
-          },
+          );
+        } else if (callableTool) {
+          const toolCallResponse = await sendRequest(
+            "tools/call",
+            {
+              name: callableTool.tool.name,
+              arguments: callableTool.args
+            },
             buildFailure(
               "plugin.runtime.tool_call.timeout",
               `The MCP server \`${serverName}\` did not answer the tools/call request in time.`,
@@ -1380,26 +1651,52 @@ async function probeCommandServer(input: {
             )
         );
 
-        if (isErrorResponse(toolCallResponse) || !isValidCallToolResult(toolCallResponse)) {
-          scorecard.toolsCall = "fail";
-          settle(
-            buildFailure(
+          if (isErrorResponse(toolCallResponse) || !isValidCallToolResult(toolCallResponse)) {
+            scorecard.toolsCall = "fail";
+            toolTerminalFinding = buildFailure(
               "plugin.runtime.tool_call.invalid",
               `The MCP server \`${serverName}\` returned an invalid tools/call result.`,
               "Codex cannot safely consume malformed tool call results from the server.",
               "Return a CallToolResult with a `content` array containing valid MCP content blocks.",
               { toolName: callableTool.tool.name }
-            )
-          );
-          return;
-        }
+            );
+          }
 
-        scorecard.toolsCall = "pass";
-        warnings.push(
-          ...collectOversizedToolCallWarnings(toolCallResponse, {
-            toolName: callableTool.tool.name
-          })
-        );
+          if (!toolTerminalFinding) {
+            scorecard.toolsCall = "pass";
+            warnings.push(
+              ...collectOversizedToolCallWarnings(toolCallResponse, {
+                toolName: callableTool.tool.name
+              })
+            );
+          }
+        }
+      }
+
+      const tasksList =
+        supportsTasksListProbe(result.protocolVersion, result.capabilities)
+          ? await observeTasksList()
+          : {
+              status: "skipped" as const,
+              itemCount: 0,
+              pageCount: 0
+            };
+
+      if (canEvaluateConformance || tasksList.status !== "skipped") {
+        const conformance = evaluateMcpConformance({
+          protocolVersion: result.protocolVersion,
+          capabilities: result.capabilities,
+          tools: tools satisfies McpToolObservation[],
+          tasksList,
+          skipToolDerivedChecks: !canEvaluateConformance
+        });
+        scorecard.conformance = conformance.scorecard;
+        warnings.push(...conformance.findings);
+      }
+
+      if (toolTerminalFinding) {
+        settle(toolTerminalFinding);
+        return;
       }
 
       if (!hasResourcesCapability(initializeResponse)) {
@@ -1624,14 +1921,57 @@ async function probeCommandServer(input: {
 
 export async function probeRuntime(
   discoveredPackage: DiscoveredPackage,
-  options: {
-    startupTimeoutMs?: number;
-    sandbox?: RuntimeSandboxMode;
-    transcript?: (line: string) => void;
-  } = {}
+  options: RuntimeProbeOptions = {}
 ): Promise<RuntimeProbeResult> {
+  const { manifest, rootPath } = discoveredPackage;
+
+  if (!manifest.mcpServers) {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  return probeRuntimeConfig(rootPath, manifest.mcpServers, options);
+}
+
+export interface RuntimeProbeOptions {
+  startupTimeoutMs?: number;
+  sandbox?: RuntimeSandboxMode;
+  transcript?: (line: string) => void;
+}
+
+export async function probeRuntimeConfig(
+  rootPath: string,
+  mcpConfigPath: string,
+  options: RuntimeProbeOptions = {}
+): Promise<RuntimeProbeResult> {
+  const resolvedRootPath = path.resolve(rootPath);
+  const resolvedMcpConfigPath = path.resolve(resolvedRootPath, mcpConfigPath);
   const startupTimeoutMs = options.startupTimeoutMs ?? 400;
-  const servers = await loadMcpServers(discoveredPackage);
+  let canonicalRootPath: string;
+  let canonicalMcpConfigPath: string;
+
+  try {
+    [canonicalRootPath, canonicalMcpConfigPath] = await Promise.all([
+      realpath(resolvedRootPath),
+      realpath(resolvedMcpConfigPath)
+    ]);
+  } catch {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  if (!isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath)) {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  const servers = await loadMcpServers(canonicalMcpConfigPath);
 
   if (!servers) {
     return {
@@ -1643,6 +1983,7 @@ export async function probeRuntime(
   const findings: Finding[] = [];
   let scorecard = createRuntimeScorecard();
   let execution: RuntimeExecutionEvidence | undefined;
+  let hasProbedServer = false;
 
   for (const [serverName, config] of Object.entries(servers)) {
     if (!isPlainObject(config)) {
@@ -1658,23 +1999,42 @@ export async function probeRuntime(
     const args = Array.isArray(config.args)
       ? config.args.filter((value): value is string => typeof value === "string")
       : [];
-    const cwd =
-      typeof config.cwd === "string"
-        ? path.resolve(discoveredPackage.rootPath, config.cwd)
-        : discoveredPackage.rootPath;
+    const cwd = await resolveRuntimeCwd(canonicalRootPath, config.cwd);
+    const result: RuntimeProbeResult = cwd === null
+      ? (() => {
+          const invalidCwdScorecard = createRuntimeScorecard();
+          invalidCwdScorecard.initialize = "fail";
 
-    const result = await probeCommandServer({
-      serverName,
-      packageRoot: discoveredPackage.rootPath,
-      command,
-      args,
-      cwd,
-      startupTimeoutMs,
-      sandbox: options.sandbox,
-      transcript: options.transcript
-    });
+          return {
+            findings: [
+              withRuntimeEvidence(
+                buildFailure(
+                  "plugin.runtime.startup.invalid_cwd",
+                  `The MCP server \`${serverName}\` has an invalid runtime working directory.`,
+                  "Runtime validation must not start a server from a missing, non-directory, or out-of-package working directory.",
+                  "Set the MCP server cwd to an existing directory inside the plugin package root, or remove it."
+                ),
+                serverName
+              )
+            ],
+            scorecard: invalidCwdScorecard
+          };
+        })()
+      : await probeCommandServer({
+          serverName,
+          packageRoot: canonicalRootPath,
+          command,
+          args,
+          cwd,
+          startupTimeoutMs,
+          sandbox: options.sandbox,
+          transcript: options.transcript
+        });
 
-    scorecard = result.scorecard;
+    scorecard = hasProbedServer
+      ? mergeRuntimeScorecards(scorecard, result.scorecard)
+      : result.scorecard;
+    hasProbedServer = true;
     execution = result.execution ?? execution;
 
     if (result.findings.length > 0) {

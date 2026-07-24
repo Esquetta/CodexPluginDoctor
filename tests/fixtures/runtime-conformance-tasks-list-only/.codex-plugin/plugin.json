@@ -1,0 +1,6 @@
+{
+  "name": "runtime-conformance-tasks-list-only",
+  "version": "1.0.0",
+  "description": "Runtime fixture for task listing without tools.",
+  "mcpServers": "./.mcp.json"
+}

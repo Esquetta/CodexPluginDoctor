@@ -33,6 +33,37 @@ function getGlyphs(ascii: boolean) {
       };
 }
 
+function appendRuntimeScorecard(lines: string[], result: CheckResult) {
+  if (!result.runtimeScorecard) {
+    return;
+  }
+
+  lines.push("", "Runtime Scorecard", "----------------");
+  lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
+  lines.push(`tools/list: ${result.runtimeScorecard.toolsList}`);
+  lines.push(`tools/call: ${result.runtimeScorecard.toolsCall}`);
+  lines.push(`resources/list: ${result.runtimeScorecard.resourcesList}`);
+  lines.push(`resources/read: ${result.runtimeScorecard.resourceRead}`);
+  lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
+  lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
+  lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
+
+  const conformance = result.runtimeScorecard.conformance;
+
+  if (!conformance) {
+    return;
+  }
+
+  lines.push("", "MCP Conformance", "---------------");
+  lines.push(`Protocol version: ${conformance.protocolVersion ?? "unavailable"}`);
+  lines.push(`Profile: ${conformance.profile ?? "unavailable"}`);
+  lines.push(`Capability consistency: ${conformance.capabilityConsistency}`);
+  lines.push(`Task declarations: ${conformance.taskDeclarations}`);
+  lines.push(`Tasks list: ${conformance.tasksList}`);
+  lines.push(`Schema dialect: ${conformance.schemaDialect}`);
+  lines.push(`Overall: ${conformance.overall}`);
+}
+
 export function renderTextReport(
   result: CheckResult,
   options: { ascii?: boolean; explain?: boolean } = {}
@@ -69,17 +100,7 @@ export function renderTextReport(
   }
 
   if (result.findings.length === 0 && !result.suppressedFindings?.length) {
-    if (result.runtimeScorecard) {
-      lines.push("", "Runtime Scorecard", "----------------");
-      lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
-      lines.push(`tools/list: ${result.runtimeScorecard.toolsList}`);
-      lines.push(`tools/call: ${result.runtimeScorecard.toolsCall}`);
-      lines.push(`resources/list: ${result.runtimeScorecard.resourcesList}`);
-      lines.push(`resources/read: ${result.runtimeScorecard.resourceRead}`);
-      lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
-      lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
-      lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
-    }
+    appendRuntimeScorecard(lines, result);
 
     lines.push("", result.baselineSummary ? "No new findings." : "No findings.");
     return lines.join("\n");
@@ -161,17 +182,7 @@ export function renderTextReport(
     }
   }
 
-  if (result.runtimeScorecard) {
-    lines.push("", "Runtime Scorecard", "----------------");
-    lines.push(`initialize: ${result.runtimeScorecard.initialize}`);
-    lines.push(`tools/list: ${result.runtimeScorecard.toolsList}`);
-    lines.push(`tools/call: ${result.runtimeScorecard.toolsCall}`);
-    lines.push(`resources/list: ${result.runtimeScorecard.resourcesList}`);
-    lines.push(`resources/read: ${result.runtimeScorecard.resourceRead}`);
-    lines.push(`resources/templates/list: ${result.runtimeScorecard.resourceTemplatesList}`);
-    lines.push(`prompts/list: ${result.runtimeScorecard.promptsList}`);
-    lines.push(`prompts/get: ${result.runtimeScorecard.promptGet}`);
-  }
+  appendRuntimeScorecard(lines, result);
 
   const recommendedCommands = buildRecommendedCommands(result);
 

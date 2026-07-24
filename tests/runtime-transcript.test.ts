@@ -40,4 +40,42 @@ describe("runtime transcript sanitization", () => {
 
     expect(transcript).toContain("\"message\":\"[REDACTED]\"");
   });
+
+  it("summarizes tasks/list responses without task data or cursor values", () => {
+    const transcript = formatResponseTranscript("tasks/list", {
+      jsonrpc: "2.0",
+      result: {
+        tasks: [
+          {
+            taskId: "private-task-id",
+            status: "working",
+            statusMessage: "private task text"
+          }
+        ],
+        nextCursor: "private-task-cursor"
+      }
+    });
+
+    expect(transcript).toBe('<- tasks/list {"tasks":1,"nextCursor":"[CURSOR]"}');
+    expect(transcript).not.toContain("private-task");
+    expect(transcript).not.toContain("working");
+  });
+
+  it("redacts all tasks/list error message content", () => {
+    const transcript = formatResponseTranscript("tasks/list", {
+      jsonrpc: "2.0",
+      error: {
+        code: -32000,
+        message:
+          "task private-task-id failed for private task text at cursor private-task-cursor"
+      }
+    });
+
+    expect(transcript).toBe(
+      '<- tasks/list error {"code":-32000,"message":"[REDACTED]"}'
+    );
+    expect(transcript).not.toContain("private-task-id");
+    expect(transcript).not.toContain("private task text");
+    expect(transcript).not.toContain("private-task-cursor");
+  });
 });

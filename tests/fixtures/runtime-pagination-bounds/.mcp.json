@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sharedPaginationServer": {
+      "command": "node",
+      "args": ["./mock-server.js", "shared"]
+    },
+    "tasksPaginationServer": {
+      "command": "node",
+      "args": ["./mock-server.js", "tasks"]
+    }
+  }
+}
