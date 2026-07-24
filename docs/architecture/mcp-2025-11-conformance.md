@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete; targeted for `v1.51.0`.
+Implemented in `v1.51.0`.
 
 ## Purpose
 

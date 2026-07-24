@@ -4,6 +4,25 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.51.0] - 2026-07-24
+
+### Added
+
+- added version-aware MCP conformance profiles for legacy, `2025-11-25`, and future-compatible protocol negotiation
+- added deterministic capability, task support, and schema dialect checks with stable `mcp.conformance.*` rule identifiers
+- added an explicit `mcp --runtime` opt-in with safe, bounded, read-only `tasks/list` probing
+
+### Changed
+
+- extended runtime scorecards, text, Markdown, JSON, rule catalog, and output contracts with additive conformance results
+- aligned runtime approval plans with the actual version-gated probe order
+
+### Security
+
+- redact task records, identifiers, cursors, statuses, and runtime error text from retained findings and reports
+- enforce canonical package-root containment for runtime working directories, including symlink escape protection
+- reject malformed runtime flags and bound task pagination to 100 pages with cursor-cycle detection
+
 ## [1.50.0] - 2026-07-21
 
 ### Added
