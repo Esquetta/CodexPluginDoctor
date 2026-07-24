@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved design for the release following `v1.50.0`.
+Implementation complete; targeted for `v1.51.0`.
 
 ## Purpose
 
@@ -34,7 +34,7 @@ This feature adds version-aware, read-only conformance checks to the existing ru
 
 ## User Experience
 
-The checks run automatically anywhere the existing runtime probe runs, including `check --runtime` and `mcp`. No new flag is required.
+The checks run automatically whenever runtime probing is explicitly enabled, including `check --runtime` and `mcp <path> --runtime`. Plain `mcp <path>` remains static and does not start an MCP server.
 
 Existing report fields remain unchanged. A new additive `conformance` section records:
 

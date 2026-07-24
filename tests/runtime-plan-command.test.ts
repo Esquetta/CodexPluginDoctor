@@ -49,11 +49,23 @@ describe("doctor runtime-plan command", () => {
           probeMethods: expect.arrayContaining([
             "initialize",
             "tools/list",
+            "tasks/list:declared-2025-11-only",
             "tools/call:safe-only"
           ])
         })
       ])
     );
+    expect(output.servers[0].probeMethods).toEqual([
+      "initialize",
+      "tools/list",
+      "tasks/list:declared-2025-11-only",
+      "tools/call:safe-only",
+      "resources/list",
+      "resources/read:first-resource-only",
+      "resources/templates/list",
+      "prompts/list",
+      "prompts/get:first-prompt-only"
+    ]);
   });
 
   it("keeps the approval digest stable across repeated runs", async () => {
@@ -173,8 +185,11 @@ describe("doctor runtime-plan command", () => {
     expect(stdout.join("")).toContain("# Doctor Runtime Review Plan");
     expect(stdout.join("")).toContain("## Review Checklist");
     expect(stdout.join("")).toContain("Approval digest: `sha256:");
+    expect(stdout.join("")).toContain("- This plan is non-executing.");
+    expect(stdout.join("")).toContain("- Probe methods explicitly exclude task create, get, result, and cancel operations, plus sampling and elicitation requests.");
     expect(writtenPlan).toContain("| Risk | Name | Transport | Command or URL | Cwd |");
     expect(writtenPlan).toContain("doctorRuntime");
+    expect(writtenPlan).toContain("- tasks/list:declared-2025-11-only");
   });
 
   it("rejects conflicting runtime plan output formats", async () => {

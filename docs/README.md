@@ -8,6 +8,7 @@ This directory contains public documentation for users, contributors, and securi
 - [Validation Engine](architecture/validation-engine.md)
 - [Suppression Management](architecture/suppression-management.md)
 - [Runtime Sandbox and External Corpus](architecture/runtime-sandbox-and-external-corpus.md)
+- [MCP 2025-11 Conformance](architecture/mcp-2025-11-conformance.md)
 - [Real-World Corpus Quality Metrics](architecture/real-world-corpus-quality-metrics.md)
 - [Corpus Metrics Regression Diff](architecture/corpus-metrics-regression-diff.md)
 

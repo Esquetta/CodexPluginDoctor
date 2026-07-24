@@ -217,6 +217,7 @@ export async function buildDoctorRuntimePlan(
           ? [
               "initialize",
               "tools/list",
+              "tasks/list:declared-2025-11-only",
               "tools/call:safe-only",
               "resources/list",
               "resources/read:first-resource-only",
@@ -346,6 +347,7 @@ export function renderDoctorRuntimePlanMarkdown(plan: DoctorRuntimePlan): string
     "## Execution Boundary",
     "",
     "- This plan is non-executing.",
+    "- Probe methods explicitly exclude task create, get, result, and cancel operations, plus sampling and elicitation requests.",
     "- Runtime probes require explicit operator approval before local MCP servers are started.",
     "- The approval digest changes when command, args, cwd, probe methods, risk reasons, or findings change.",
     "- Runtime approval is a review gate, not an OS, VM, or container sandbox.",
