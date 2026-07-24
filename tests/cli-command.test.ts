@@ -213,6 +213,33 @@ describe("runCli", () => {
       );
     }
   });
+
+  it("rejects malformed MCP flags for both command aliases", async () => {
+    const invalidFlags = [
+      ["--runtme"],
+      ["unexpected"],
+      ["--runtime", "--runtime"],
+      ["--json", "--json"],
+      ["--output"],
+      ["--output", "--json"],
+      ["--output", "report.json", "--output", "second.json"]
+    ];
+
+    for (const prefix of [["mcp"], ["doctor", "mcp"]]) {
+      for (const flags of invalidFlags) {
+        const { io, stdout, stderr } = createIo();
+
+        const exitCode = await runCli(
+          [...prefix, "tests/fixtures/runtime-conformance-tasks-valid", ...flags],
+          io
+        );
+
+        expect(exitCode).toBe(2);
+        expect(stdout).toEqual([]);
+        expect(stderr).toHaveLength(1);
+      }
+    }
+  });
   it("runs a bundled self-test against the doctor runtime sample", async () => {
     const { io, stdout, stderr } = createIo();
     const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-self-test-"));

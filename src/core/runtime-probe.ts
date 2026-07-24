@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 
@@ -9,6 +9,8 @@ import type {
   Finding,
   FindingEvidence,
   McpToolObservation,
+  RuntimeCapabilityStatus,
+  RuntimeConformanceScorecard,
   RuntimeExecutionEvidence,
   RuntimeProbeResult,
   RuntimeSandboxMode,
@@ -447,6 +449,75 @@ function hasPromptsCapability(message: JsonObject): boolean {
   const capabilities = getCapabilities(message);
 
   return capabilities !== null && isPlainObject(capabilities.prompts);
+}
+
+function worstRuntimeStatus<T extends RuntimeCapabilityStatus | RuntimeConformanceScorecard["overall"]>(
+  left: T,
+  right: T
+): T {
+  const severity: Record<RuntimeCapabilityStatus, number> = {
+    fail: 4,
+    warn: 3,
+    pass: 2,
+    skipped: 1,
+    unsupported: 0
+  };
+
+  return severity[left] >= severity[right] ? left : right;
+}
+
+function mergeRuntimeScorecards(
+  left: RuntimeScorecard,
+  right: RuntimeScorecard
+): RuntimeScorecard {
+  const leftConformance = left.conformance;
+  const rightConformance = right.conformance;
+  const conformance = leftConformance && rightConformance
+    ? {
+        protocolVersion:
+          leftConformance.protocolVersion === null
+            ? rightConformance.protocolVersion
+            : rightConformance.protocolVersion === null ||
+                leftConformance.protocolVersion === rightConformance.protocolVersion
+              ? leftConformance.protocolVersion
+              : null,
+        profile:
+          leftConformance.profile === null
+            ? rightConformance.profile
+            : rightConformance.profile === null || leftConformance.profile === rightConformance.profile
+              ? leftConformance.profile
+              : null,
+        capabilityConsistency: worstRuntimeStatus(
+          leftConformance.capabilityConsistency,
+          rightConformance.capabilityConsistency
+        ),
+        taskDeclarations: worstRuntimeStatus(
+          leftConformance.taskDeclarations,
+          rightConformance.taskDeclarations
+        ),
+        tasksList: worstRuntimeStatus(leftConformance.tasksList, rightConformance.tasksList),
+        schemaDialect: worstRuntimeStatus(
+          leftConformance.schemaDialect,
+          rightConformance.schemaDialect
+        ),
+        overall: worstRuntimeStatus(leftConformance.overall, rightConformance.overall)
+      }
+    : leftConformance ?? rightConformance;
+
+  return {
+    initialize: worstRuntimeStatus(left.initialize, right.initialize),
+    toolsList: worstRuntimeStatus(left.toolsList, right.toolsList),
+    toolsCall: worstRuntimeStatus(left.toolsCall, right.toolsCall),
+    resourcesList: worstRuntimeStatus(left.resourcesList, right.resourcesList),
+    resourceRead: worstRuntimeStatus(left.resourceRead, right.resourceRead),
+    resourceTemplatesList: worstRuntimeStatus(
+      left.resourceTemplatesList,
+      right.resourceTemplatesList
+    ),
+    promptsList: worstRuntimeStatus(left.promptsList, right.promptsList),
+    promptGet: worstRuntimeStatus(left.promptGet, right.promptGet),
+    ...(conformance ? { conformance } : {})
+  };
 }
 
 function supportsTasksListProbe(
@@ -1855,15 +1926,29 @@ export async function probeRuntimeConfig(
   const resolvedRootPath = path.resolve(rootPath);
   const resolvedMcpConfigPath = path.resolve(resolvedRootPath, mcpConfigPath);
   const startupTimeoutMs = options.startupTimeoutMs ?? 400;
+  let canonicalRootPath: string;
+  let canonicalMcpConfigPath: string;
 
-  if (!isPathWithinRoot(resolvedRootPath, resolvedMcpConfigPath)) {
+  try {
+    [canonicalRootPath, canonicalMcpConfigPath] = await Promise.all([
+      realpath(resolvedRootPath),
+      realpath(resolvedMcpConfigPath)
+    ]);
+  } catch {
     return {
       findings: [],
       scorecard: createRuntimeScorecard()
     };
   }
 
-  const servers = await loadMcpServers(resolvedMcpConfigPath);
+  if (!isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath)) {
+    return {
+      findings: [],
+      scorecard: createRuntimeScorecard()
+    };
+  }
+
+  const servers = await loadMcpServers(canonicalMcpConfigPath);
 
   if (!servers) {
     return {
@@ -1875,6 +1960,7 @@ export async function probeRuntimeConfig(
   const findings: Finding[] = [];
   let scorecard = createRuntimeScorecard();
   let execution: RuntimeExecutionEvidence | undefined;
+  let hasProbedServer = false;
 
   for (const [serverName, config] of Object.entries(servers)) {
     if (!isPlainObject(config)) {
@@ -1892,12 +1978,12 @@ export async function probeRuntimeConfig(
       : [];
     const cwd =
       typeof config.cwd === "string"
-        ? path.resolve(resolvedRootPath, config.cwd)
-        : resolvedRootPath;
+        ? path.resolve(canonicalRootPath, config.cwd)
+        : canonicalRootPath;
 
     const result = await probeCommandServer({
       serverName,
-      packageRoot: resolvedRootPath,
+      packageRoot: canonicalRootPath,
       command,
       args,
       cwd,
@@ -1906,7 +1992,10 @@ export async function probeRuntimeConfig(
       transcript: options.transcript
     });
 
-    scorecard = result.scorecard;
+    scorecard = hasProbedServer
+      ? mergeRuntimeScorecards(scorecard, result.scorecard)
+      : result.scorecard;
+    hasProbedServer = true;
     execution = result.execution ?? execution;
 
     if (result.findings.length > 0) {

@@ -1150,18 +1150,57 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
     return "Missing target path. Usage: codex-plugin-doctor mcp <path> [--runtime] [--json] [--output <path>]";
   }
 
-  const outputIndex = flags.indexOf("--output");
-  const outputPath = outputIndex === -1 ? null : flags[outputIndex + 1];
+  let jsonOutput = false;
+  let outputPath: string | null = null;
+  let runtime = false;
 
-  if (outputIndex !== -1 && (!outputPath || outputPath.startsWith("--"))) {
-    return "Missing path after --output.";
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+
+    if (flag === "--runtime") {
+      if (runtime) {
+        return "Duplicate MCP flag: --runtime.";
+      }
+
+      runtime = true;
+      continue;
+    }
+
+    if (flag === "--json") {
+      if (jsonOutput) {
+        return "Duplicate MCP flag: --json.";
+      }
+
+      jsonOutput = true;
+      continue;
+    }
+
+    if (flag === "--output") {
+      if (outputPath !== null) {
+        return "Duplicate MCP flag: --output.";
+      }
+
+      const value = flags[index + 1];
+
+      if (!value || value.startsWith("--")) {
+        return "Missing path after --output.";
+      }
+
+      outputPath = value;
+      index += 1;
+      continue;
+    }
+
+    return flag.startsWith("--")
+      ? `Unknown MCP flag: ${flag}.`
+      : `Unexpected MCP argument: ${flag}.`;
   }
 
   return {
     targetPath: commandTarget,
-    jsonOutput: flags.includes("--json"),
+    jsonOutput,
     outputPath,
-    runtime: flags.includes("--runtime")
+    runtime
   };
 }
 

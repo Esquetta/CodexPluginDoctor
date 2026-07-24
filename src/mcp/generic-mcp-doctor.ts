@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -197,13 +197,21 @@ export async function buildGenericMcpDoctor(
   const rootPath = path.resolve(targetPath);
   const compatibility = await buildCompatibilityMatrix(rootPath, environment);
   const mcpConfigPath = await readMcpConfigPath(rootPath);
+  const canonicalRootPath = await realpath(rootPath).catch(() => null);
+  const canonicalMcpConfigPath = mcpConfigPath
+    ? await realpath(mcpConfigPath).catch(() => null)
+    : null;
   let parsedConfig: unknown = null;
   let staticFindings: Finding[] = [];
   let serverCount = 0;
 
   if (!mcpConfigPath || !(await fileExists(mcpConfigPath))) {
     staticFindings = buildStaticMcpFindings(null, null).findings;
-  } else if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+  } else if (
+    !canonicalRootPath ||
+    !canonicalMcpConfigPath ||
+    !isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath)
+  ) {
     staticFindings = [
       buildFinding(
         "fail",
@@ -213,7 +221,7 @@ export async function buildGenericMcpDoctor(
         "Keep `.mcp.json` or the manifest `mcpServers` reference inside the package root.",
         {
           configPath: path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/"),
-          resolvedPath: mcpConfigPath,
+          resolvedPath: canonicalMcpConfigPath ?? mcpConfigPath,
           field: "configPath"
         }
       )
@@ -254,10 +262,12 @@ export async function buildGenericMcpDoctor(
     options.runtime &&
     mcpConfigPath !== null &&
     parsedConfig !== null &&
-    isPathWithinRoot(rootPath, mcpConfigPath) &&
+    canonicalRootPath !== null &&
+    canonicalMcpConfigPath !== null &&
+    isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath) &&
     !staticFindings.some((finding) => finding.severity === "fail") &&
     security.status !== "fail"
-      ? await probeRuntimeConfig(rootPath, mcpConfigPath, {
+      ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
           startupTimeoutMs: options.runtimeStartupTimeoutMs
         })
       : null;
