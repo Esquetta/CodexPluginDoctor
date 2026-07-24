@@ -839,6 +839,29 @@ function hasValidToolInputSchemas(tools: ToolDefinition[]): boolean {
   );
 }
 
+async function resolveRuntimeCwd(
+  rootPath: string,
+  configuredCwd: unknown
+): Promise<string | null> {
+  const resolvedCwd =
+    typeof configuredCwd === "string"
+      ? path.resolve(rootPath, configuredCwd)
+      : rootPath;
+
+  try {
+    const [canonicalCwd, details] = await Promise.all([
+      realpath(resolvedCwd),
+      stat(resolvedCwd)
+    ]);
+
+    return details.isDirectory() && isPathWithinRoot(rootPath, canonicalCwd)
+      ? canonicalCwd
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function isProtocolVersion(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
 
@@ -1976,21 +1999,37 @@ export async function probeRuntimeConfig(
     const args = Array.isArray(config.args)
       ? config.args.filter((value): value is string => typeof value === "string")
       : [];
-    const cwd =
-      typeof config.cwd === "string"
-        ? path.resolve(canonicalRootPath, config.cwd)
-        : canonicalRootPath;
+    const cwd = await resolveRuntimeCwd(canonicalRootPath, config.cwd);
+    const result: RuntimeProbeResult = cwd === null
+      ? (() => {
+          const invalidCwdScorecard = createRuntimeScorecard();
+          invalidCwdScorecard.initialize = "fail";
 
-    const result = await probeCommandServer({
-      serverName,
-      packageRoot: canonicalRootPath,
-      command,
-      args,
-      cwd,
-      startupTimeoutMs,
-      sandbox: options.sandbox,
-      transcript: options.transcript
-    });
+          return {
+            findings: [
+              withRuntimeEvidence(
+                buildFailure(
+                  "plugin.runtime.startup.invalid_cwd",
+                  `The MCP server \`${serverName}\` has an invalid runtime working directory.`,
+                  "Runtime validation must not start a server from a missing, non-directory, or out-of-package working directory.",
+                  "Set the MCP server cwd to an existing directory inside the plugin package root, or remove it."
+                ),
+                serverName
+              )
+            ],
+            scorecard: invalidCwdScorecard
+          };
+        })()
+      : await probeCommandServer({
+          serverName,
+          packageRoot: canonicalRootPath,
+          command,
+          args,
+          cwd,
+          startupTimeoutMs,
+          sandbox: options.sandbox,
+          transcript: options.transcript
+        });
 
     scorecard = hasProbedServer
       ? mergeRuntimeScorecards(scorecard, result.scorecard)

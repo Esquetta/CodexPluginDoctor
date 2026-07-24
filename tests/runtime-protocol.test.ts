@@ -1,10 +1,71 @@
-import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { probeRuntime } from "../src/core/runtime-probe.js";
+import type { DiscoveredPackage } from "../src/domain/types.js";
 import { validatePlugin } from "../src/core/validate-plugin.js";
 import { runCheck } from "../src/index.js";
+
+function markerServerSource(markerPath: string): string {
+  return `import fs from "node:fs";
+import readline from "node:readline";
+fs.writeFileSync(${JSON.stringify(markerPath)}, "executed");
+const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+input.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        serverInfo: { name: "runtime-cwd", version: "1.0.0" }
+      }
+    }) + "\\n");
+  }
+});
+`;
+}
+
+async function createRuntimeCwdPackage(
+  rootPath: string,
+  cwd: string
+): Promise<DiscoveredPackage> {
+  const manifestPath = path.join(rootPath, ".codex-plugin", "plugin.json");
+
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      name: "runtime-cwd",
+      version: "1.0.0",
+      description: "Runtime cwd validation fixture.",
+      mcpServers: "./.mcp.json"
+    })
+  );
+  await writeFile(
+    path.join(rootPath, ".mcp.json"),
+    JSON.stringify({
+      mcpServers: {
+        cwdServer: { command: "node", args: ["server.mjs"], cwd }
+      }
+    })
+  );
+
+  return {
+    rootPath,
+    manifestPath,
+    manifest: {
+      name: "runtime-cwd",
+      version: "1.0.0",
+      description: "Runtime cwd validation fixture.",
+      mcpServers: "./.mcp.json"
+    }
+  };
+}
 
 describe("runtime protocol probing", () => {
   it("does not start runtime probes when static validation fails", async () => {
@@ -47,6 +108,109 @@ describe("runtime protocol probing", () => {
       await expect(access(markerPath)).rejects.toThrow();
     } finally {
       await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["missing-cwd", "not-a-directory"])(
+    "rejects a %s runtime cwd before spawn",
+    async (cwd) => {
+      const packageRoot = await mkdtemp(
+        path.join(os.tmpdir(), "codex-plugin-doctor-runtime-cwd-invalid-")
+      );
+      const markerPath = path.join(packageRoot, "runtime-started");
+
+      try {
+        if (cwd === "not-a-directory") {
+          await writeFile(path.join(packageRoot, cwd), "not a directory");
+        }
+
+        const result = await probeRuntime(
+          await createRuntimeCwdPackage(packageRoot, cwd)
+        );
+
+        expect(result.findings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: "plugin.runtime.startup.invalid_cwd",
+              severity: "fail",
+              evidence: { serverName: "cwdServer", method: "startup" }
+            })
+          ])
+        );
+        expect(result.scorecard.initialize).toBe("fail");
+        expect(result.execution).toBeUndefined();
+        await expect(access(markerPath)).rejects.toThrow();
+      } finally {
+        await rm(packageRoot, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects an in-root cwd symlink that resolves outside the package before spawn",
+    async () => {
+      const packageRoot = await mkdtemp(
+        path.join(os.tmpdir(), "codex-plugin-doctor-runtime-cwd-root-")
+      );
+      const externalPath = await mkdtemp(
+        path.join(os.tmpdir(), "codex-plugin-doctor-runtime-cwd-external-")
+      );
+      const markerPath = path.join(externalPath, "runtime-started");
+
+      try {
+        await writeFile(
+          path.join(externalPath, "server.mjs"),
+          markerServerSource(markerPath)
+        );
+        await symlink(externalPath, path.join(packageRoot, "linked-cwd"), "dir");
+
+        const result = await probeRuntime(
+          await createRuntimeCwdPackage(packageRoot, "linked-cwd")
+        );
+
+        expect(result.findings.map((finding) => finding.id)).toContain(
+          "plugin.runtime.startup.invalid_cwd"
+        );
+        expect(result.execution).toBeUndefined();
+        await expect(access(markerPath)).rejects.toThrow();
+      } finally {
+        await rm(packageRoot, { recursive: true, force: true });
+        await rm(externalPath, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it("starts an ordinary in-root cwd", async () => {
+    const packageRoot = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-runtime-cwd-in-root-")
+    );
+    const serverPath = path.join(packageRoot, "server");
+    const markerPath = path.join(serverPath, "runtime-started");
+
+    try {
+      await mkdir(serverPath);
+      await writeFile(
+        path.join(serverPath, "server.mjs"),
+        markerServerSource(markerPath)
+      );
+
+      const result = await probeRuntime(
+        await createRuntimeCwdPackage(packageRoot, "server"),
+        { startupTimeoutMs: 2_000 }
+      );
+
+      expect(result.scorecard.initialize).toBe("pass");
+      expect(result.findings.map((finding) => finding.id)).not.toContain(
+        "plugin.runtime.startup.invalid_cwd"
+      );
+      expect(await access(markerPath)).toBeUndefined();
+    } finally {
+      await rm(packageRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100
+      });
     }
   });
 

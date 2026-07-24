@@ -126,7 +126,9 @@ export function formatResponseTranscript(
   if (error) {
     const code = typeof error.code === "number" ? error.code : "?";
     const messageText =
-      typeof error.message === "string"
+      method === "tasks/list"
+        ? "[REDACTED]"
+        : typeof error.message === "string"
         ? sanitizeTranscriptValue(error.message, ["error", "message"])
         : "error";
 
