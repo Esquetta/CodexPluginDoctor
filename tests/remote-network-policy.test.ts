@@ -11,6 +11,18 @@ function lookupFor(addresses: Array<{ address: string; family: 4 | 6 }>): Remote
 }
 
 describe("resolveRemoteTarget", () => {
+  it.each([
+    ["a non-HTTP protocol", new URL("file:///tmp/mcp")],
+    ["a URL without a hostname", new URL("file:///tmp/mcp")],
+    ["an IPv4 literal", new URL("http://127.0.0.1/mcp")],
+    ["an IPv6 literal", new URL("http://[::1]/mcp")]
+  ])("rejects %s before DNS lookup", async (_name, url) => {
+    await expect(resolveRemoteTarget(url)).rejects.toMatchObject({
+      code: "REMOTE_TARGET_URL_INVALID",
+      message: "Remote target URL must use HTTP or HTTPS with a hostname, not an IP address literal."
+    });
+  });
+
   it("uses an all-address lookup and selects the first approved public IPv4 address", async () => {
     let lookupOptions: { all?: boolean; verbatim?: boolean } | undefined;
     const target = await resolveRemoteTarget(new URL("https://mcp.example/mcp"), {
@@ -53,6 +65,20 @@ describe("resolveRemoteTarget", () => {
   });
 
   it.each([
+    ["IPv6 loopback", "::1", 6],
+    ["mapped IPv4 loopback", "::ffff:127.0.0.1", 6]
+  ])("allows %s only with explicit opt-in", async (_name, address, family) => {
+    const options = { lookup: lookupFor([{ address, family: family as 4 | 6 }]) };
+
+    await expect(resolveRemoteTarget(new URL("http://mcp.test/mcp"), options)).rejects.toMatchObject({
+      code: "REMOTE_TARGET_FORBIDDEN"
+    });
+    await expect(
+      resolveRemoteTarget(new URL("http://mcp.test/mcp"), { ...options, allowLocalNetwork: true })
+    ).resolves.toMatchObject({ address, family, local: true });
+  });
+
+  it.each([
     ["RFC1918", "10.0.0.1", 4],
     ["link-local", "169.254.10.1", 4],
     ["unspecified", "0.0.0.0", 4],
@@ -65,7 +91,11 @@ describe("resolveRemoteTarget", () => {
     ["IPv6 multicast", "ff02::1", 6],
     ["IPv6 unspecified", "::", 6],
     ["IPv6 documentation", "2001:db8::1", 6],
-    ["mapped private IPv4", "::ffff:10.0.0.1", 6]
+    ["mapped private IPv4", "::ffff:10.0.0.1", 6],
+    ["mapped public IPv4", "::ffff:8.8.8.8", 6],
+    ["IPv4-compatible IPv6", "::127.0.0.1", 6],
+    ["IPv6 NAT64 local-use prefix", "64:ff9b:1::1", 6],
+    ["IPv6 discard-only prefix", "100:0:0:1::1", 6]
   ])("rejects %s destinations", async (_name, address, family) => {
     await expect(
       resolveRemoteTarget(new URL("https://mcp.example/mcp"), {

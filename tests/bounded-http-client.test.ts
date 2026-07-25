@@ -92,6 +92,69 @@ describe("requestBoundedHttp", () => {
     }
   );
 
+  it.each([
+    ["a case-variant duplicate", { Accept: "application/json", accept: "text/plain" }],
+    ["an array value", { Accept: ["application/json"] }],
+    ["a CRLF value", { Accept: "application/json\r\nX-Injected: yes" }],
+    ["a non-string value", { Accept: 1 }]
+  ])("rejects %s request header", async (_name, headers) => {
+    await expect(
+      requestBoundedHttp("http://mcp.test:1/mcp", {
+        allowLocalNetwork: true,
+        lookup: localLookup(),
+        headers: headers as never
+      })
+    ).rejects.toMatchObject({ code: "REMOTE_HTTP_HEADER_FORBIDDEN" });
+  });
+
+  it("canonicalizes allowed request header names", async () => {
+    const port = await startServer((request, response) => {
+      expect(request.rawHeaders).toContain("accept");
+      response.end("ok");
+    });
+
+    await expect(requestBoundedHttp(options(port).url, {
+      ...options(port),
+      headers: { Accept: "application/json" }
+    })).resolves.toMatchObject({ body: Buffer.from("ok") });
+  });
+
+  it.each([
+    ["timeoutMs", 0],
+    ["timeoutMs", -1],
+    ["timeoutMs", 3_001],
+    ["timeoutMs", Infinity],
+    ["timeoutMs", Number.NaN],
+    ["maxResponseBytes", 0],
+    ["maxResponseBytes", -1],
+    ["maxResponseBytes", 1_048_577],
+    ["maxResponseBytes", Infinity],
+    ["maxResponseBytes", Number.NaN]
+  ])("rejects invalid %s values", async (name, value) => {
+    await expect(requestBoundedHttp("http://mcp.test:1/mcp", {
+      allowLocalNetwork: true,
+      lookup: localLookup(),
+      [name]: value
+    })).rejects.toMatchObject({
+      code: "REMOTE_HTTP_OPTIONS_INVALID",
+      message: "Remote HTTP request options are invalid."
+    });
+  });
+
+  it("uses the timeout as a wall-clock deadline while DNS is unresolved", async () => {
+    const startedAt = Date.now();
+
+    await expect(requestBoundedHttp("http://mcp.test/mcp", {
+      lookup: async () => new Promise(() => undefined),
+      timeoutMs: 20
+    })).rejects.toMatchObject({
+      code: "REMOTE_HTTP_TIMEOUT",
+      message: "Remote HTTP request timed out."
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+  });
+
   it("rejects redirects without following them and retains only the safe location", async () => {
     const port = await startServer((_request, response) => {
       response.writeHead(302, { location: "https://elsewhere.test/mcp", "set-cookie": "secret=value" });
@@ -146,5 +209,31 @@ describe("requestBoundedHttp", () => {
       statusCode: 200,
       body: Buffer.from("ok")
     });
+  });
+
+  it("never reuses a loopback socket after DNS changes to a public target", async () => {
+    let requests = 0;
+    const port = await startServer((_request, response) => {
+      requests += 1;
+      response.end("loopback");
+    });
+    let lookupCalls = 0;
+    const rebindingLookup: RemoteLookup = async () => {
+      lookupCalls += 1;
+      return [{ address: lookupCalls === 1 ? "127.0.0.1" : "8.8.8.8", family: 4 }];
+    };
+    const url = `http://mcp.test:${port}/mcp`;
+
+    await expect(requestBoundedHttp(url, {
+      allowLocalNetwork: true,
+      lookup: rebindingLookup
+    })).resolves.toMatchObject({ body: Buffer.from("loopback") });
+
+    await expect(requestBoundedHttp(url, {
+      lookup: rebindingLookup,
+      timeoutMs: 20,
+      body: "must-not-reach-loopback"
+    })).rejects.toBeDefined();
+    expect(requests).toBe(1);
   });
 });

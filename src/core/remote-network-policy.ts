@@ -26,7 +26,8 @@ export class RemoteNetworkPolicyError extends Error {
       | "REMOTE_TARGET_EMPTY"
       | "REMOTE_TARGET_FORBIDDEN"
       | "REMOTE_TARGET_INVALID_ADDRESS"
-      | "REMOTE_TARGET_LOOKUP_FAILED",
+      | "REMOTE_TARGET_LOOKUP_FAILED"
+      | "REMOTE_TARGET_URL_INVALID",
     message: string
   ) {
     super(message);
@@ -36,6 +37,8 @@ export class RemoteNetworkPolicyError extends Error {
 
 const blockedAddresses = new BlockList();
 const loopbackAddresses = new BlockList();
+const mappedIpv4Addresses = new BlockList();
+const ipv4CompatibleAddresses = new BlockList();
 
 function addIpv4Subnet(address: string, prefix: number): void {
   blockedAddresses.addSubnet(address, prefix, "ipv4");
@@ -86,6 +89,15 @@ for (const [address, prefix] of [
 }
 
 loopbackAddresses.addAddress("::1", "ipv6");
+mappedIpv4Addresses.addSubnet("::ffff:0:0", 96, "ipv6");
+ipv4CompatibleAddresses.addSubnet("::", 96, "ipv6");
+
+for (const [address, prefix] of [
+  ["64:ff9b:1::", 48],
+  ["100:0:0:1::", 64]
+] as const) {
+  blockedAddresses.addSubnet(address, prefix, "ipv6");
+}
 
 function normalizeAddress(address: string, family: number): { address: string; family: 4 | 6 } {
   if ((family !== 4 && family !== 6) || isIP(address) !== family) {
@@ -112,6 +124,16 @@ export async function resolveRemoteTarget(
   url: URL,
   options: ResolveRemoteTargetOptions = {}
 ): Promise<ResolvedRemoteTarget> {
+  const hostname = url.hostname.startsWith("[") && url.hostname.endsWith("]")
+    ? url.hostname.slice(1, -1)
+    : url.hostname;
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !hostname || isIP(hostname) !== 0) {
+    throw new RemoteNetworkPolicyError(
+      "REMOTE_TARGET_URL_INVALID",
+      "Remote target URL must use HTTP or HTTPS with a hostname, not an IP address literal."
+    );
+  }
+
   const lookup: RemoteLookup = options.lookup ?? (async (hostname, lookupOptions) => {
     const answers = await dnsLookup(hostname, lookupOptions);
     return answers.map((answer) => ({
@@ -121,7 +143,7 @@ export async function resolveRemoteTarget(
   });
   let answers: Array<{ address: string; family: 4 | 6 }>;
   try {
-    answers = await lookup(url.hostname, { all: true, verbatim: true });
+    answers = await lookup(hostname, { all: true, verbatim: true });
   } catch {
     throw new RemoteNetworkPolicyError(
       "REMOTE_TARGET_LOOKUP_FAILED",
@@ -139,7 +161,12 @@ export async function resolveRemoteTarget(
   const normalizedAnswers = answers.map((answer) => normalizeAddress(answer.address, answer.family));
   for (const answer of normalizedAnswers) {
     const isLoopback = isListed(answer.address, answer.family, loopbackAddresses);
-    if (isListed(answer.address, answer.family, blockedAddresses) || (isLoopback && !options.allowLocalNetwork)) {
+    const isMappedIpv4 = answer.family === 6 && isListed(answer.address, answer.family, mappedIpv4Addresses);
+    const isIpv4Compatible = answer.family === 6 && isListed(answer.address, answer.family, ipv4CompatibleAddresses);
+    const isForbidden = isListed(answer.address, answer.family, blockedAddresses)
+      || isIpv4Compatible
+      || (isMappedIpv4 && !isLoopback);
+    if ((isForbidden && !isLoopback) || (isLoopback && !options.allowLocalNetwork)) {
       throw new RemoteNetworkPolicyError(
         "REMOTE_TARGET_FORBIDDEN",
         "Remote target resolved to a forbidden address."
@@ -149,7 +176,7 @@ export async function resolveRemoteTarget(
 
   const selected = normalizedAnswers[0];
   return {
-    hostname: url.hostname,
+    hostname,
     address: selected.address,
     family: selected.family,
     local: isListed(selected.address, selected.family, loopbackAddresses)

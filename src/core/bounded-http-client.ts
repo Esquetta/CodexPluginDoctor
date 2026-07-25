@@ -28,7 +28,7 @@ export interface BoundedHttpRequestOptions {
   maxResponseBytes?: number;
   method?: string;
   body?: string | Buffer;
-  headers?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | undefined>;
 }
 
 export interface BoundedHttpResponse {
@@ -42,6 +42,7 @@ export class BoundedHttpError extends Error {
     readonly code:
       | "REMOTE_HTTP_ENCODING_UNSUPPORTED"
       | "REMOTE_HTTP_HEADER_FORBIDDEN"
+      | "REMOTE_HTTP_OPTIONS_INVALID"
       | "REMOTE_HTTP_PEER_MISMATCH"
       | "REMOTE_HTTP_REDIRECT"
       | "REMOTE_HTTP_REQUEST_FAILED"
@@ -58,8 +59,8 @@ export class BoundedHttpError extends Error {
   }
 }
 
-function validateHeaders(headers: BoundedHttpRequestOptions["headers"]): Record<string, string | string[]> {
-  const validated: Record<string, string | string[]> = {};
+function validateHeaders(headers: BoundedHttpRequestOptions["headers"]): Record<string, string> {
+  const validated: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
     if (value === undefined) {
       continue;
@@ -72,9 +73,64 @@ function validateHeaders(headers: BoundedHttpRequestOptions["headers"]): Record<
         `Remote HTTP request header is not allowed: ${normalizedName}.`
       );
     }
-    validated[name] = value;
+    if (normalizedName in validated || typeof value !== "string") {
+      throw new BoundedHttpError(
+        "REMOTE_HTTP_HEADER_FORBIDDEN",
+        `Remote HTTP request header must be a single valid string: ${normalizedName}.`
+      );
+    }
+    try {
+      http.validateHeaderValue(normalizedName, value);
+    } catch {
+      throw new BoundedHttpError(
+        "REMOTE_HTTP_HEADER_FORBIDDEN",
+        `Remote HTTP request header must be a single valid string: ${normalizedName}.`
+      );
+    }
+    validated[normalizedName] = value;
   }
   return validated;
+}
+
+function validateOptions(options: BoundedHttpRequestOptions): {
+  timeoutMs: number;
+  maxResponseBytes: number;
+} {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > DEFAULT_TIMEOUT_MS
+    || !Number.isInteger(maxResponseBytes) || maxResponseBytes < 1 || maxResponseBytes > DEFAULT_MAX_RESPONSE_BYTES) {
+    throw new BoundedHttpError(
+      "REMOTE_HTTP_OPTIONS_INVALID",
+      "Remote HTTP request options are invalid."
+    );
+  }
+  return { timeoutMs, maxResponseBytes };
+}
+
+async function resolveWithinDeadline(
+  url: URL,
+  options: BoundedHttpRequestOptions,
+  timeoutMs: number
+): Promise<ResolvedRemoteTarget> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      resolveRemoteTarget(url, {
+        allowLocalNetwork: options.allowLocalNetwork,
+        lookup: options.lookup
+      }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out."));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function selectSafeHeaders(headers: http.IncomingHttpHeaders): Record<string, string | string[]> {
@@ -126,25 +182,30 @@ export async function requestBoundedHttp(
     throw new BoundedHttpError("REMOTE_HTTP_URL_CREDENTIALS", "Remote HTTP URL must not include credentials.");
   }
 
+  const { timeoutMs, maxResponseBytes } = validateOptions(options);
   const headers = validateHeaders(options.headers);
-  const target = await resolveRemoteTarget(url, {
-    allowLocalNetwork: options.allowLocalNetwork,
-    lookup: options.lookup
-  });
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const deadline = Date.now() + timeoutMs;
+  const target = await resolveWithinDeadline(url, options, timeoutMs);
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) {
+    throw new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out.");
+  }
   const transport = url.protocol === "https:" ? https : http;
 
   return new Promise<BoundedHttpResponse>((resolve, reject) => {
     let request: http.ClientRequest | undefined;
     let response: http.IncomingMessage | undefined;
     let settled = false;
+    const timeout = setTimeout(() => {
+      fail(new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out."));
+    }, remainingMs);
 
     const fail = (error: Error): void => {
       if (settled) {
         return;
       }
       settled = true;
+      clearTimeout(timeout);
       response?.destroy();
       request?.destroy();
       reject(error);
@@ -158,6 +219,7 @@ export async function requestBoundedHttp(
         path: `${url.pathname}${url.search}`,
         method: options.method ?? "GET",
         headers,
+        agent: false,
         lookup: (_hostname, lookupOptions, callback) => {
           if (lookupOptions.all) {
             callback(null, [{ address: target.address, family: target.family }]);
@@ -171,9 +233,6 @@ export async function requestBoundedHttp(
       return;
     }
 
-    request.setTimeout(timeoutMs, () => {
-      fail(new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out."));
-    });
     request.once("error", () => {
       fail(new BoundedHttpError("REMOTE_HTTP_REQUEST_FAILED", "Remote HTTP request failed."));
     });
@@ -221,6 +280,7 @@ export async function requestBoundedHttp(
       incoming.once("end", () => {
         if (!settled) {
           settled = true;
+          clearTimeout(timeout);
           resolve({
             statusCode: incoming.statusCode ?? 0,
             headers: safeHeaders,
