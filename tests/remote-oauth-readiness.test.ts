@@ -150,6 +150,21 @@ describe("checkRemoteOAuthReadiness", () => {
     ]);
   });
 
+  it.each([
+    ["malformed", response(200, "application/json", "{")],
+    ["resource-mismatched", json({ resource: "https://mcp.example/other", authorization_servers: [issuer] })]
+  ])("returns invalid when a root fallback is %s after an endpoint-specific 404", async (_name, rootReply) => {
+    const { request, calls } = requestFrom({
+      [resourceMetadataUrl]: response(404),
+      [rootResourceMetadataUrl]: rootReply
+    });
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [], { request });
+
+    expect(result.findings[0]).toMatchObject({ id: "plugin.runtime.remote.authorization.metadata.invalid" });
+    expect(calls.map((call) => call.url)).toEqual([resourceMetadataUrl, rootResourceMetadataUrl]);
+  });
+
   it("refuses HTTP metadata discovery even when an injected request could reach localhost", async () => {
     let requested = false;
 
@@ -241,18 +256,18 @@ describe("checkRemoteOAuthReadiness", () => {
   });
 
   it.each([
-    ["a malformed JSON body", response(200, "application/json", "{")],
-    ["a non-JSON content type", response(200, "text/plain", "{}")],
-    ["an oversized response", new BoundedHttpError("REMOTE_HTTP_RESPONSE_TOO_LARGE", "oversized token-secret-sentinel")],
-    ["a redirect", new BoundedHttpError("REMOTE_HTTP_REDIRECT", "redirect query-secret-sentinel")]
-  ])("returns a stable private failure for %s", async (_name, metadataReply) => {
+    ["a malformed JSON body", response(200, "application/json", "{"), "plugin.runtime.remote.authorization.metadata.invalid"],
+    ["a non-JSON content type", response(200, "text/plain", "{}"), "plugin.runtime.remote.authorization.metadata.unavailable"],
+    ["an oversized response", new BoundedHttpError("REMOTE_HTTP_RESPONSE_TOO_LARGE", "oversized token-secret-sentinel"), "plugin.runtime.remote.authorization.metadata.unavailable"],
+    ["a redirect", new BoundedHttpError("REMOTE_HTTP_REDIRECT", "redirect query-secret-sentinel"), "plugin.runtime.remote.authorization.metadata.unavailable"]
+  ])("returns a stable private failure for %s", async (_name, metadataReply, findingId) => {
     const { request } = requestFrom({ [resourceMetadataUrl]: metadataReply });
 
     const result = await checkRemoteOAuthReadiness(resourceUrl, [], { request });
 
     expect(result).toEqual(expect.objectContaining({
       status: "fail",
-      findings: [expect.objectContaining({ id: "plugin.runtime.remote.authorization.metadata.unavailable", severity: "fail" })]
+      findings: [expect.objectContaining({ id: findingId, severity: "fail" })]
     }));
     assertPrivate(result);
   });

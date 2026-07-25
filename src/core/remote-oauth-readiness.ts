@@ -26,6 +26,7 @@ export interface RemoteOAuthReadinessResult {
 
 type MetadataReply =
   | { kind: "ok"; metadata: JsonObject }
+  | { kind: "invalid" }
   | { kind: "not-found" }
   | { kind: "unavailable" };
 
@@ -222,7 +223,7 @@ async function fetchMetadata(
       return { kind: "unavailable" };
     }
     const metadata = parseJsonObject(response.body);
-    return metadata === null ? { kind: "unavailable" } : { kind: "ok", metadata };
+    return metadata === null ? { kind: "invalid" } : { kind: "ok", metadata };
   } catch {
     return { kind: "unavailable" };
   } finally {
@@ -289,6 +290,7 @@ export async function checkRemoteOAuthReadiness(
   const deadline = Date.now() + timeoutMs;
 
   let issuers: string[] | null = null;
+  let protectedMetadataFetchedInvalid = false;
   let protectedMetadataUnavailable = false;
   for (const metadataUrl of metadataUrls) {
     const reply = await fetchMetadata(metadataUrl, request, options.requestOptions, deadline);
@@ -298,6 +300,12 @@ export async function checkRemoteOAuthReadiness(
         issuers = candidateIssuers;
         break;
       }
+      protectedMetadataFetchedInvalid = true;
+      if (!explicit.specified) return failure("plugin.runtime.remote.authorization.metadata.invalid");
+      continue;
+    }
+    if (reply.kind === "invalid") {
+      protectedMetadataFetchedInvalid = true;
       if (!explicit.specified) return failure("plugin.runtime.remote.authorization.metadata.invalid");
       continue;
     }
@@ -306,7 +314,9 @@ export async function checkRemoteOAuthReadiness(
       return failure("plugin.runtime.remote.authorization.metadata.unavailable");
     }
   }
-  if (issuers === null) return failure(protectedMetadataUnavailable
+  if (issuers === null) return failure(protectedMetadataFetchedInvalid
+    ? "plugin.runtime.remote.authorization.metadata.invalid"
+    : protectedMetadataUnavailable
     ? "plugin.runtime.remote.authorization.metadata.unavailable"
     : "plugin.runtime.remote.authorization.metadata.invalid");
 
