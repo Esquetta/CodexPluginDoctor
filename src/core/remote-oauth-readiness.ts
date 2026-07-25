@@ -97,18 +97,98 @@ function oidcDiscoveryUrl(issuer: string): string {
   return `${url.origin}${url.pathname.replace(/\/$/, "")}/.well-known/openid-configuration`;
 }
 
-function parseBearerResourceMetadata(headers: Array<string | string[]>): { specified: boolean; values: string[] } {
+function splitTopLevelCommas(value: string): string[] | null {
+  const parts: string[] = [];
+  let start = 0;
+  let quoted = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]!;
+    if (quoted && character === "\\") {
+      index += 1;
+      if (index >= value.length) return null;
+      continue;
+    }
+    if (character === "\"") {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && character === ",") {
+      parts.push(value.slice(start, index));
+      start = index + 1;
+    }
+  }
+
+  return quoted ? null : [...parts, value.slice(start)];
+}
+
+function parseAuthParam(value: string): { name: string; value: string } | null {
+  const match = /^([!#$%&'*+.^`|~\w-]+)[ \t]*=[ \t]*(.*)$/.exec(value);
+  if (match === null) return null;
+
+  const name = match[1]!;
+  const rawValue = match[2]!.trim();
+  if (rawValue.length === 0) return null;
+  if (!rawValue.startsWith("\"")) {
+    return /[\s"]/u.test(rawValue) ? null : { name, value: rawValue };
+  }
+  if (!rawValue.endsWith("\"") || rawValue.length === 1) return null;
+
+  let decoded = "";
+  for (let index = 1; index < rawValue.length - 1; index += 1) {
+    const character = rawValue[index]!;
+    if (character === "\\") {
+      index += 1;
+      if (index >= rawValue.length - 1) return null;
+      decoded += rawValue[index]!;
+      continue;
+    }
+    if (character === "\"") return null;
+    decoded += character;
+  }
+  return { name, value: decoded };
+}
+
+function parseChallenge(value: string): { scheme: string; parameter: { name: string; value: string } | null } | null {
+  const match = /^([!#$%&'*+.^`|~\w-]+)(?:[ \t]+(.*))?$/.exec(value);
+  if (match === null) return null;
+
+  const scheme = match[1]!;
+  const credentials = match[2];
+  if (credentials === undefined || credentials.trim().length === 0) return { scheme, parameter: null };
+  const parameter = parseAuthParam(credentials);
+  if (parameter !== null) return { scheme, parameter };
+  return /^[A-Za-z0-9\-._~+/]+={0,}$/.test(credentials) ? { scheme, parameter: null } : null;
+}
+
+function parseBearerResourceMetadata(headers: Array<string | string[]>): { specified: boolean; values: string[] } | null {
   const values: string[] = [];
   let specified = false;
   for (const header of headers.flatMap((value) => Array.isArray(value) ? value : [value])) {
-    const challenge = /(?:^|,)\s*Bearer\s+((?:[!#$%&'*+.^`|~\w-]+\s*=\s*(?:"(?:[^"\\]|\\.)*"|[^,\s]+)\s*,?\s*)*)/gi;
-    for (const match of header.matchAll(challenge)) {
-      const parameters = match[1] ?? "";
-      const resourceMetadata = /(?:^|,)\s*resource_metadata\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^,\s]+))/i.exec(parameters);
-      if (resourceMetadata !== null) {
+    const parts = splitTopLevelCommas(header);
+    if (parts === null) return null;
+
+    let scheme: string | null = null;
+    for (const part of parts) {
+      const token = part.trim();
+      if (token.length === 0) return null;
+
+      const parameter = parseAuthParam(token);
+      if (parameter !== null) {
+        if (scheme === null) return null;
+        if (scheme.toLowerCase() === "bearer" && parameter.name.toLowerCase() === "resource_metadata") {
+          specified = true;
+          values.push(parameter.value);
+        }
+        continue;
+      }
+
+      const challenge = parseChallenge(token);
+      if (challenge === null) return null;
+      scheme = challenge.scheme;
+      if (scheme.toLowerCase() === "bearer" && challenge.parameter?.name.toLowerCase() === "resource_metadata") {
         specified = true;
-        const value = resourceMetadata[1] ?? resourceMetadata[2];
-        if (value !== undefined) values.push(value.replace(/\\(.)/g, "$1"));
+        values.push(challenge.parameter.value);
       }
     }
   }
@@ -190,6 +270,7 @@ export async function checkRemoteOAuthReadiness(
 ): Promise<RemoteOAuthReadinessResult> {
   const request = options.request ?? requestBoundedHttp;
   const explicit = parseBearerResourceMetadata(wwwAuthenticate);
+  if (explicit === null) return failure("plugin.runtime.remote.authorization.metadata.invalid");
   const metadataCandidates = explicit.specified
     ? explicit.values.map(safeHttpsUrl)
     : [

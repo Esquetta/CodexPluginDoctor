@@ -87,6 +87,52 @@ describe("checkRemoteOAuthReadiness", () => {
     assertPrivate(result);
   });
 
+  it.each([
+    ['a comma inside a Basic realm', 'Basic realm="x, Bearer resource_metadata=https://evil.example/"'],
+    ['an escaped quote inside a Basic realm', String.raw`Basic realm="x\", Bearer resource_metadata=https://evil.example/"`],
+    ['an escaped backslash inside a Basic realm', String.raw`Basic realm="x\\, Bearer resource_metadata=https://evil.example/"`]
+  ])("does not treat Bearer text in %s as a challenge", async (_name, header) => {
+    const { request, calls } = requestFrom({
+      [resourceMetadataUrl]: protectedMetadata(),
+      [authorizationMetadataUrl]: authorizationMetadata()
+    });
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [header], { request });
+
+    expect(result).toEqual({ status: "pass", findings: [] });
+    expect(calls.map((call) => call.url)).toEqual([resourceMetadataUrl, authorizationMetadataUrl]);
+  });
+
+  it("supports case-insensitive Bearer auth-params across comma-separated and separate header values", async () => {
+    const { request, calls } = requestFrom({
+      [resourceMetadataUrl]: protectedMetadata(),
+      [authorizationMetadataUrl]: authorizationMetadata()
+    });
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [[
+      `bEaReR scope="read,write", RESOURCE_METADATA="${resourceMetadataUrl}", error="invalid_token"`,
+      `Digest realm="other", BEARER error="invalid_token", resource_metadata="${resourceMetadataUrl}"`
+    ]], { request });
+
+    expect(result).toEqual({ status: "pass", findings: [] });
+    expect(calls.map((call) => call.url)).toEqual([resourceMetadataUrl, authorizationMetadataUrl]);
+  });
+
+  it("fails closed without discovery when a Bearer challenge has an unterminated quoted auth-param", async () => {
+    let requested = false;
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [
+      'Bearer resource_metadata="https://metadata.example/oauth-protected-resource'
+    ], { request: async () => {
+      requested = true;
+      throw new Error("must not request");
+    } });
+
+    expect(result.findings[0]).toMatchObject({ id: "plugin.runtime.remote.authorization.metadata.invalid" });
+    expect(requested).toBe(false);
+    assertPrivate(result);
+  });
+
   it("tries endpoint-specific resource metadata before the root fallback", async () => {
     const { request, calls } = requestFrom({
       [resourceMetadataUrl]: response(404),
