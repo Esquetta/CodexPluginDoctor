@@ -448,6 +448,23 @@ export function auditMcpServerConfig(
           )
         );
       }
+
+      if (inspection.parsedUrl?.hostname === "0.0.0.0") {
+        findings.push(
+          buildFinding(
+            "warn",
+            "plugin.security.mcp_binds_all_interfaces",
+            `The MCP server \`${serverName}\` URL binds to \`0.0.0.0\`.`,
+            "Servers that listen on all interfaces can accept connections from external hosts, which is rarely intended for local MCP development.",
+            "Use `127.0.0.1` or `localhost` instead of `0.0.0.0` unless external access is explicitly required.",
+            {
+              serverName,
+              configPath,
+              url: inspection.sanitizedUrl
+            }
+          )
+        );
+      }
     }
   }
 

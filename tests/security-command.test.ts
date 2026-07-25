@@ -201,6 +201,43 @@ describe("security command", () => {
     expect(localOutput.findings).toEqual([]);
   });
 
+  it("preserves the all-interfaces finding alongside the IP-literal policy", async () => {
+    const targetPath = await createPluginWithMcp({
+      mcpServers: {
+        remote: { url: "http://mcp-user:mcp-password@0.0.0.0:3000/mcp?token=secret" }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.mcp_binds_all_interfaces",
+          severity: "warn",
+          message: "The MCP server `remote` URL binds to `0.0.0.0`.",
+          impact: "Servers that listen on all interfaces can accept connections from external hosts, which is rarely intended for local MCP development.",
+          suggestedFix: "Use `127.0.0.1` or `localhost` instead of `0.0.0.0` unless external access is explicitly required.",
+          evidence: expect.objectContaining({ url: "http://0.0.0.0:3000/mcp" })
+        }),
+        expect.objectContaining({
+          id: "plugin.security.remote_mcp_url.ip_literal",
+          severity: "fail",
+          evidence: expect.objectContaining({ url: "http://0.0.0.0:3000/mcp" })
+        })
+      ])
+    );
+    expect(serialized).not.toContain("token=secret");
+    expect(serialized).not.toContain("secret");
+    expect(serialized).not.toContain("mcp-user");
+    expect(serialized).not.toContain("mcp-password");
+  });
+
   it("renders machine-readable security audit JSON", async () => {
     const targetPath = await createPluginWithMcp({
       mcpServers: {
