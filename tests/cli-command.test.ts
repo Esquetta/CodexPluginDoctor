@@ -2981,6 +2981,40 @@ describe("runCli", () => {
     expect(report.summary.runtimeProbeEnabled).toBe(true);
   });
 
+  it.each([
+    ["--profile publish", ["--profile", "publish"]],
+    ["a runtime-enabled policy", ["--policy", "codex-publish"]]
+  ])("accepts network approvals when %s enables runtime", async (_label, runtimeFlags) => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/valid-plugin",
+        ...runtimeFlags,
+        "--allow-network",
+        "--allow-local-network",
+        "--json"
+      ],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      allowNetwork: true,
+      allowLocalNetwork: true
+    });
+  });
+
   it("initializes a minimal Codex plugin package", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-init-"));
     const { io, stdout, stderr } = createIo();

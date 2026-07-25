@@ -274,10 +274,13 @@ describe("doctor release-evidence command", () => {
         }
       }
     );
+    const output = JSON.parse(stdout.join(""));
+
     expect(exitCode).toBe(1);
-    expect(stdout).toEqual([]);
-    expect(stderr.join("")).toContain("Runtime approval was required, but no approved plan digest was provided.");
-    expect(stderr.join("")).toContain("Current runtime plan digest:");
+    expect(stderr).toEqual([]);
+    expect(output.releaseReady).toBe(false);
+    expect(output.summary.runtimeApproval).toBe("fail");
+    expect(output.runtimeApproval.status).toBe("missing");
   });
 
   it("rejects missing runtime approval before release evidence or asset scheduling", async () => {
@@ -314,9 +317,12 @@ describe("doctor release-evidence command", () => {
         runCheckImpl
       });
 
+      const output = JSON.parse(stdout.join(""));
+
       expect(exitCode).toBe(1);
-      expect(stdout).toEqual([]);
-      expect(stderr.join("")).toContain("Current runtime plan digest:");
+      expect(stderr).toEqual([]);
+      expect(output.releaseReady).toBe(false);
+      expect(output.summary.runtimeApproval).toBe("fail");
     }
 
     expect(runCheckImpl).not.toHaveBeenCalled();

@@ -140,7 +140,6 @@ import {
 import {
   buildDoctorReleaseEvidenceAssetReport,
   buildDoctorReleaseEvidenceReport,
-  RuntimeApprovalRequiredError,
   renderDoctorReleaseEvidenceAsset,
   renderDoctorReleaseEvidenceAssetJson,
   renderDoctorReleaseEvidence,
@@ -298,15 +297,6 @@ const defaultIo: CliIo = {
 };
 
 class CliUsageError extends Error {}
-
-function handleRuntimeApprovalError(error: unknown, io: CliIo): boolean {
-  if (!(error instanceof RuntimeApprovalRequiredError)) {
-    return false;
-  }
-
-  io.writeStderr(`${error.approval.message}\nCurrent runtime plan digest: ${error.plan.digest}`);
-  return true;
-}
 
 function parseRuntimeSandbox(
   flags: string[],
@@ -2045,33 +2035,28 @@ export async function runCli(
         }
 
         const resolvedOutputPath = path.resolve(outputPath);
-        let evidence;
+        const evidence = await buildDoctorReleaseEvidenceReport(targetPath, {
+          signingKey,
+          signingKeyEnv: signKeyEnv,
+          allowDirty,
+          allowUntagged,
+          requireRuntimeApproval,
+          runtimeApprovalDigest,
+          runtime,
+          ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+          ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+          ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
+          environment: {
+            env: terminalContext.env,
+            platform: terminalContext.platform
+          },
+          runCheck: options.runCheckImpl ?? runCheck,
+          performanceThresholds: parsedThresholds.thresholds
+        });
 
-        try {
-          evidence = await buildDoctorReleaseEvidenceReport(targetPath, {
-            signingKey,
-            signingKeyEnv: signKeyEnv,
-            allowDirty,
-            allowUntagged,
-            requireRuntimeApproval,
-            runtimeApprovalDigest,
-            runtime,
-            ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
-            ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
-            ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
-            environment: {
-              env: terminalContext.env,
-              platform: terminalContext.platform
-            },
-            runCheck: options.runCheckImpl ?? runCheck,
-            performanceThresholds: parsedThresholds.thresholds
-          });
-        } catch (error) {
-          if (handleRuntimeApprovalError(error, io)) {
-            return 1;
-          }
-
-          throw error;
+        if (!evidence.releaseReady) {
+          io.writeStdout(jsonOutput ? renderDoctorReleaseEvidenceJson(evidence) : renderDoctorReleaseEvidence(evidence));
+          return evidence.exitCode;
         }
         await writeFile(resolvedOutputPath, renderDoctorReleaseEvidenceJson(evidence), "utf8");
 
@@ -2245,34 +2230,24 @@ export async function runCli(
         return 2;
       }
 
-      let report;
-
-      try {
-        report = await buildDoctorReleaseEvidenceReport(targetPath, {
-          signingKey,
-          signingKeyEnv: signKeyEnv,
-          allowDirty,
-          allowUntagged,
-          requireRuntimeApproval,
-          runtimeApprovalDigest,
-          runtime,
-          ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
-          ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
-          ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
-          environment: {
-            env: terminalContext.env,
-            platform: terminalContext.platform
-          },
-          runCheck: options.runCheckImpl ?? runCheck,
-          performanceThresholds: parsedThresholds.thresholds
-        });
-      } catch (error) {
-        if (handleRuntimeApprovalError(error, io)) {
-          return 1;
-        }
-
-        throw error;
-      }
+      const report = await buildDoctorReleaseEvidenceReport(targetPath, {
+        signingKey,
+        signingKeyEnv: signKeyEnv,
+        allowDirty,
+        allowUntagged,
+        requireRuntimeApproval,
+        runtimeApprovalDigest,
+        runtime,
+        ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+        ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+        ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
+        environment: {
+          env: terminalContext.env,
+          platform: terminalContext.platform
+        },
+        runCheck: options.runCheckImpl ?? runCheck,
+        performanceThresholds: parsedThresholds.thresholds
+      });
       const reportJson = renderDoctorReleaseEvidenceJson(report);
       const renderedReport = jsonOutput ? reportJson : renderDoctorReleaseEvidence(report);
 
@@ -3756,12 +3731,6 @@ export async function runCli(
   const badgeMarkdownOutput = normalizedFlags.includes("--badge-markdown");
   const sarifOutput = normalizedFlags.includes("--sarif");
   const runtimeProbeEnabled = normalizedFlags.includes("--runtime");
-  const remoteNetwork = parseRemoteNetworkFlags(normalizedFlags, runtimeProbeEnabled);
-
-  if (remoteNetwork instanceof CliUsageError) {
-    io.writeStderr(remoteNetwork.message);
-    return 2;
-  }
   const verboseRuntime = normalizedFlags.includes("--verbose-runtime");
   const explainFindings = normalizedFlags.includes("--explain");
   const noAnimations = normalizedFlags.includes("--no-animations");
@@ -3872,6 +3841,12 @@ export async function runCli(
     runtimeProbeEnabled ||
     checkProfile === "publish" ||
     policyEnablesRuntime(policy);
+  const remoteNetwork = parseRemoteNetworkFlags(normalizedFlags, effectiveRuntimeProbeEnabled);
+
+  if (remoteNetwork instanceof CliUsageError) {
+    io.writeStderr(remoteNetwork.message);
+    return 2;
+  }
 
   if (requireRuntimeApproval && !effectiveRuntimeProbeEnabled) {
     io.writeStderr("Runtime approval requires runtime probing. Add --runtime, --profile publish, or a runtime-enabled policy.");
