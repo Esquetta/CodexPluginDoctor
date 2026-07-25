@@ -4,6 +4,27 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.52.0] - 2026-07-25
+
+### Added
+
+- added remote Streamable HTTP initialize readiness with explicit `--allow-network` and loopback-only `--allow-local-network` consent
+- added GitHub Action inputs and documentation for remote runtime consent controls
+
+### Changed
+
+- extended runtime plans, policy, reports, scorecards, and output contracts with remote MCP readiness results
+- limited OAuth handling to bounded metadata discovery without authentication or redirect following
+
+### Fixed
+
+- preserved release-evidence compatibility when runtime readiness data is present
+
+### Security
+
+- added SSRF-safe bounded client and peer/DNS checks for remote MCP readiness probes
+- remediated development-only `postcss` and `nanoid` audit findings
+
 ## [1.51.0] - 2026-07-24
 
 ### Added
