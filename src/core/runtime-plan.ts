@@ -16,7 +16,7 @@ import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 type RuntimePlanStatus = "pass" | "warn" | "fail";
 type RuntimePlanRiskLevel = "low" | "medium" | "high";
 type RuntimePlanTransport = "stdio" | "http";
-type RemoteNetworkClass = "public_https" | "loopback_http" | "invalid";
+type RemoteNetworkClass = "public_https" | "loopback_http" | "loopback_https" | "invalid";
 
 export interface RuntimePlanServer {
   name: string;
@@ -141,9 +141,11 @@ function remoteNetworkClass(rawUrl: string): RemoteNetworkClass {
     return "invalid";
   }
 
-  return inspection.isLoopbackHost && inspection.parsedUrl.protocol === "http:"
-    ? "loopback_http"
-    : "public_https";
+  if (inspection.isLoopbackHost) {
+    return inspection.parsedUrl.protocol === "http:" ? "loopback_http" : "loopback_https";
+  }
+
+  return "public_https";
 }
 
 function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">): unknown {
@@ -261,7 +263,7 @@ export async function buildDoctorRuntimePlan(
           : url ? remoteProbeMethods() : [],
         ...(url
           ? {
-              approvalRequirements: networkClass === "loopback_http"
+              approvalRequirements: networkClass === "loopback_http" || networkClass === "loopback_https"
                 ? ["--runtime", "--allow-network", "--allow-local-network"]
                 : ["--runtime", "--allow-network"]
             }
@@ -389,6 +391,7 @@ export function renderDoctorRuntimePlanMarkdown(plan: DoctorRuntimePlan): string
     "- This plan is non-executing.",
     "- Probe methods explicitly exclude task create, get, result, and cancel operations, plus sampling and elicitation requests.",
     "- Runtime probes require explicit operator approval before local MCP servers are started.",
+    "- Any remote target whose DNS resolves to loopback requires `--allow-local-network`, even if its URL looks public.",
     "- The approval digest changes when command, args, cwd, probe methods, risk reasons, or findings change.",
     "- Runtime approval is a review gate, not an OS, VM, or container sandbox.",
     "",

@@ -140,7 +140,7 @@ function buildRecommendation(
         "Review command, args, cwd, URL, probe methods, and risk reasons before execution.",
         "Approve the exact plan digest with `check --runtime --require-runtime-approval --runtime-approval-digest <digest>`.",
         ...(hasRemoteServer
-          ? ["Remote MCP probing also requires `--runtime --allow-network`; localhost HTTP additionally requires `--allow-local-network`."]
+          ? ["Remote MCP probing also requires `--runtime --allow-network`; any target that DNS resolves to loopback additionally requires `--allow-local-network`."]
           : []),
         "Use `doctor runtime-plan --markdown` when the approval needs to be preserved with release evidence."
       ]

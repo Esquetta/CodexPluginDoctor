@@ -32,6 +32,7 @@ import {
   buildDoctorRuntimePlan,
   evaluateRuntimeApproval,
   runtimeApprovalPassed,
+  type DoctorRuntimePlan,
   type RuntimeApprovalReport
 } from "./runtime-plan.js";
 import type { CompatibilityEnvironment } from "../compatibility/compatibility-matrix.js";
@@ -164,6 +165,15 @@ export interface BuildDoctorReleaseEvidenceOptions {
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string, options?: CheckOptions) => Promise<CheckResult>;
   performanceThresholds?: DoctorPerformanceThresholdOptions;
+}
+
+export class RuntimeApprovalRequiredError extends Error {
+  constructor(
+    readonly plan: DoctorRuntimePlan,
+    readonly approval: RuntimeApprovalReport
+  ) {
+    super(approval.message);
+  }
 }
 
 interface PackageJsonMetadata {
@@ -388,6 +398,20 @@ export async function buildDoctorReleaseEvidenceReport(
   options: BuildDoctorReleaseEvidenceOptions
 ): Promise<DoctorReleaseEvidenceReport> {
   const rootPath = path.resolve(targetPath);
+  const runtimePlan = await buildDoctorRuntimePlan(
+    rootPath,
+    new Date().toISOString(),
+    options.sandbox ? { sandbox: options.sandbox } : {}
+  );
+  const runtimeApproval = evaluateRuntimeApproval(runtimePlan, {
+    required: options.requireRuntimeApproval ?? false,
+    approvedDigest: options.runtimeApprovalDigest
+  });
+
+  if (!runtimeApprovalPassed(runtimeApproval)) {
+    throw new RuntimeApprovalRequiredError(runtimePlan, runtimeApproval);
+  }
+
   const security = await buildSecurityAudit(rootPath);
   const runCheck = options.runCheck ?? validatePlugin;
   const checkOptions: CheckOptions = options.runtime
@@ -404,8 +428,7 @@ export async function buildDoctorReleaseEvidenceReport(
     performance,
     trust,
     packageMetadata,
-    git,
-    runtimePlan
+    git
   ] = await Promise.all([
     buildDoctorAttestation(rootPath, {
       signingKey: options.signingKey,
@@ -420,12 +443,7 @@ export async function buildDoctorReleaseEvidenceReport(
     }),
     buildTrustScore(rootPath, { securityAudit: security }),
     readPackageMetadata(rootPath),
-    readGitMetadata(rootPath),
-    buildDoctorRuntimePlan(
-      rootPath,
-      new Date().toISOString(),
-      options.sandbox ? { sandbox: options.sandbox } : {}
-    )
+    readGitMetadata(rootPath)
   ]);
   const normalizedPackageMetadata = {
     name: packageMetadata.name ?? attestation.subject.name,
@@ -441,10 +459,6 @@ export async function buildDoctorReleaseEvidenceReport(
     }
   );
   const releaseGates = buildReleaseGateReport(git, options);
-  const runtimeApproval = evaluateRuntimeApproval(runtimePlan, {
-    required: options.requireRuntimeApproval ?? false,
-    approvedDigest: options.runtimeApprovalDigest
-  });
   const partialReport = {
     schemaVersion: "1.0.0" as const,
     kind: "doctor.release.evidence" as const,

@@ -274,13 +274,52 @@ describe("doctor release-evidence command", () => {
         }
       }
     );
-    const output = JSON.parse(stdout.join(""));
-
     expect(exitCode).toBe(1);
-    expect(stderr).toEqual([]);
-    expect(output.releaseReady).toBe(false);
-    expect(output.summary.runtimeApproval).toBe("fail");
-    expect(output.runtimeApproval.status).toBe("missing");
+    expect(stdout).toEqual([]);
+    expect(stderr.join("")).toContain("Runtime approval was required, but no approved plan digest was provided.");
+    expect(stderr.join("")).toContain("Current runtime plan digest:");
+  });
+
+  it("rejects missing runtime approval before release evidence or asset scheduling", async () => {
+    const runCheckImpl = vi.fn(async () => {
+      throw new Error("runCheck must not be scheduled before runtime approval");
+    });
+    const outputPath = path.join(
+      await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-unapproved-")),
+      "release-evidence.json"
+    );
+    const commands = [
+      [
+        "doctor", "release-evidence", "examples/codex-doctor-runtime", "--runtime",
+        "--require-runtime-approval", "--json", "--sign-key-env", "DOCTOR_SIGNING_KEY",
+        "--allow-dirty", "--allow-untagged"
+      ],
+      [
+        "doctor", "release-evidence", "asset", "examples/codex-doctor-runtime", "--tag", "v1.1.0",
+        "--output", outputPath, "--runtime", "--require-runtime-approval",
+        "--runtime-approval-digest", "sha256:0000000000000000000000000000000000000000000000000000000000000000", "--json",
+        "--sign-key-env", "DOCTOR_SIGNING_KEY", "--allow-dirty", "--allow-untagged"
+      ]
+    ];
+
+    for (const command of commands) {
+      const { io, stdout, stderr } = createIo();
+      const exitCode = await runCli(command, io, {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { DOCTOR_SIGNING_KEY: "release-secret" },
+          platform: "win32"
+        },
+        runCheckImpl
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("")).toContain("Current runtime plan digest:");
+    }
+
+    expect(runCheckImpl).not.toHaveBeenCalled();
   });
 
   it("requires a signing key environment variable", async () => {

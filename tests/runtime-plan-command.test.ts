@@ -75,6 +75,35 @@ describe("doctor runtime-plan command", () => {
     ]));
   });
 
+  it("classifies HTTPS localhost as loopback and documents DNS loopback approval", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-loopback-"));
+
+    await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "loopback-plan", version: "1.0.0", description: "Loopback plan test.", mcpServers: ".mcp.json" }),
+      "utf8"
+    );
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".mcp.json"),
+      JSON.stringify({ mcpServers: { local: { url: "https://localhost:3443/mcp" } } }),
+      "utf8"
+    );
+    const json = createIo();
+    const markdown = createIo();
+
+    await runCli(["doctor", "runtime-plan", targetPath, "--json"], json.io);
+    await runCli(["doctor", "runtime-plan", targetPath, "--markdown"], markdown.io);
+
+    expect(JSON.parse(json.stdout.join("")).servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        networkClass: "loopback_https",
+        approvalRequirements: ["--runtime", "--allow-network", "--allow-local-network"]
+      })
+    ]));
+    expect(markdown.stdout.join("")).toContain("DNS resolves to loopback");
+  });
+
   it("renders a non-executing runtime plan as JSON", async () => {
     const { io, stdout, stderr } = createIo();
 

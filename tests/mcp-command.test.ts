@@ -36,7 +36,7 @@ async function createStandaloneMcpPackage(mcpConfig: unknown): Promise<string> {
   return targetPath;
 }
 
-async function startRemoteMcpServer(): Promise<{
+async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {}): Promise<{
   url: string;
   requests: string[];
   close(): Promise<void>;
@@ -50,6 +50,12 @@ async function startRemoteMcpServer(): Promise<{
       requests.push(message.method);
 
       if (message.method === "initialize") {
+        if (options.invalidInitialize) {
+          response.writeHead(500, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "initialize failed" }));
+          return;
+        }
+
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({
           jsonrpc: "2.0",
@@ -116,6 +122,71 @@ describe("mcp command", () => {
     } finally {
       await remote.close();
     }
+  });
+
+  it("forwards runtime network approvals through the doctor mcp alias", async () => {
+    const remote = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: { local: { url: remote.url } }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "doctor", "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], io);
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(JSON.parse(stdout.join(""))).toMatchObject({
+        runtimeScorecard: { remote: { networkSafety: "pass", overall: "pass" } }
+      });
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await remote.close();
+    }
+  });
+
+  it("preserves the worst remote status when a later remote server passes", async () => {
+    const failing = await startRemoteMcpServer({ invalidInitialize: true });
+    const passing = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        failing: { url: failing.url },
+        passing: { url: passing.url }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toEqual([]);
+      expect(output.runtimeScorecard.remote).toMatchObject({
+        initialize: "fail",
+        overall: "fail"
+      });
+      expect(failing.requests).toEqual(["initialize"]);
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await failing.close();
+      await passing.close();
+    }
+  });
+
+  it("advertises doctor mcp and release evidence remote approval flags without dropping compat backups", async () => {
+    const { io, stderr } = createIo();
+
+    expect(await runCli([], io)).toBe(2);
+
+    const usage = stderr.join("");
+    expect(usage).toContain("doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]]");
+    expect(usage).toContain("release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]]");
+    expect(usage).toContain("[--install-preview|--apply --backup]");
   });
 
   it("renders finding fingerprints in text output", async () => {
