@@ -435,7 +435,7 @@ export function auditMcpServerConfig(
       for (const issue of inspection.issues) {
         findings.push(
           buildFinding(
-            issue === "insecure_non_loopback" ? "warn" : "fail",
+            "fail",
             remoteUrlIssueFindingId(issue),
             `The MCP server \`${serverName}\` ${remoteUrlIssueMessage(issue)}.`,
             "Unsafe or ambiguous remote transport configuration can expose credentials or prevent reliable MCP connectivity.",

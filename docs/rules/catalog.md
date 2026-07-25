@@ -52,7 +52,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.security.path_traversal_risk` | fail | MCP server passes a package-external path to a path-like runtime argument. |
 | `plugin.security.dangerous_env_usage` | fail | MCP server sets an environment variable that can alter code loading. |
 | `plugin.security.cwd_outside_root` | fail | MCP server `cwd` resolves outside the plugin package root. |
-| `plugin.security.insecure_http_url` | warn | MCP server uses a plain HTTP URL. |
+| `plugin.security.insecure_http_url` | fail | MCP server uses a plain HTTP URL. |
 | `plugin.security.prompt_injection_text` | fail | Packaged text contains prompt-injection or secret-exfiltration instructions. |
 
 ## Runtime Rules

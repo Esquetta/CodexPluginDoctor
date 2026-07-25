@@ -4,6 +4,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
+import {
+  auditMcpServerConfig,
+  buildSecurityAuditFromFindings,
+  renderSecurityAuditJson
+} from "../src/security/security-audit.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -140,11 +145,12 @@ describe("security command", () => {
   });
 
   it("fails query-bearing public HTTP without leaking URL secrets and permits localhost HTTP", async () => {
-    const publicTargetPath = await createPluginWithMcp({
+    const publicMcpConfig = {
       mcpServers: {
         remote: { url: "http://example.com/mcp?token=secret" }
       }
-    }, "config/remote.json");
+    };
+    const publicTargetPath = await createPluginWithMcp(publicMcpConfig, "config/remote.json");
     const localTargetPath = await createPluginWithMcp({
       mcpServers: {
         local: { url: "http://LOCALHOST:3000/mcp" }
@@ -157,14 +163,29 @@ describe("security command", () => {
     const localExitCode = await runCli(["security", localTargetPath, "--json"], localIo.io);
     const publicSerialized = publicIo.stdout.join("");
     const publicOutput = JSON.parse(publicSerialized);
+    const rawAuditOutput = JSON.parse(renderSecurityAuditJson(buildSecurityAuditFromFindings(
+      publicTargetPath,
+      auditMcpServerConfig(publicTargetPath, publicMcpConfig, {
+        configPath: path.join(publicTargetPath, "config", "remote.json")
+      })
+    )));
     const localOutput = JSON.parse(localIo.stdout.join(""));
 
     expect(publicExitCode).toBe(1);
     expect(publicIo.stderr).toEqual([]);
+    expect(rawAuditOutput.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.insecure_http_url",
+          severity: "fail"
+        })
+      ])
+    );
     expect(publicOutput.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "plugin.security.insecure_http_url",
+          severity: "fail",
           evidence: expect.objectContaining({ url: "http://example.com/mcp" })
         }),
         expect.objectContaining({
