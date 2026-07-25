@@ -38,6 +38,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.mcp.invalid_shape` | fail | MCP config does not contain a valid `mcpServers` object. |
 | `plugin.mcp.server.invalid` | fail | MCP server entry is not an object. |
 | `plugin.mcp.server.transport.missing` | fail | MCP server entry is missing both `command` and `url`. |
+| `mcp.server.transport.conflict` | fail | An MCP server defines both command and URL transports. |
 | `plugin.mcp.server.transport.conflict` | fail | A bundled MCP server defines both command and URL transports. |
 
 ## Security Rules

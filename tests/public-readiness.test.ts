@@ -71,6 +71,9 @@ describe("public repository readiness", () => {
     const catalog = await readText("docs/rules/catalog.md");
 
     expect(catalog).toContain(
+      "| `mcp.server.transport.conflict` | fail | An MCP server defines both command and URL transports. |"
+    );
+    expect(catalog).toContain(
       "| `plugin.mcp.server.transport.conflict` | fail | A bundled MCP server defines both command and URL transports. |"
     );
     expect(catalog).toContain(
