@@ -29,6 +29,7 @@ export interface BoundedHttpRequestOptions {
   method?: string;
   body?: string | Buffer;
   headers?: Record<string, string | undefined>;
+  stopAfter?: (body: Buffer) => boolean;
 }
 
 export interface BoundedHttpResponse {
@@ -211,6 +212,21 @@ export async function requestBoundedHttp(
       reject(error);
     };
 
+    const complete = (body: Buffer): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      response?.destroy();
+      request?.destroy();
+      resolve({
+        statusCode: response?.statusCode ?? 0,
+        headers: response ? selectSafeHeaders(response.headers) : {},
+        body
+      });
+    };
+
     try {
       request = transport.request({
         protocol: url.protocol,
@@ -273,19 +289,17 @@ export async function requestBoundedHttp(
           return;
         }
         chunks.push(chunk);
+        const body = Buffer.concat(chunks);
+        if (options.stopAfter?.(body)) {
+          complete(body);
+        }
       });
       incoming.once("error", () => {
         fail(new BoundedHttpError("REMOTE_HTTP_REQUEST_FAILED", "Remote HTTP request failed."));
       });
       incoming.once("end", () => {
         if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          resolve({
-            statusCode: incoming.statusCode ?? 0,
-            headers: safeHeaders,
-            body: Buffer.concat(chunks)
-          });
+          complete(Buffer.concat(chunks));
         }
       });
     });

@@ -13,11 +13,17 @@ import type {
   RuntimeConformanceScorecard,
   RuntimeExecutionEvidence,
   RuntimeProbeResult,
+  RemoteRuntimeScorecard,
   RuntimeSandboxMode,
   RuntimeScorecard,
   TasksListObservation
 } from "../domain/types.js";
 import { evaluateMcpConformance } from "./mcp-conformance.js";
+import {
+  probeRemoteMcpServer,
+  type RemoteMcpRequest
+} from "./remote-mcp-probe.js";
+import type { RemoteLookup } from "./remote-network-policy.js";
 import {
   buildRuntimeLaunch,
   DOCKER_RUNTIME_STARTUP_TIMEOUT_MS,
@@ -503,6 +509,9 @@ function mergeRuntimeScorecards(
         overall: worstRuntimeStatus(leftConformance.overall, rightConformance.overall)
       }
     : leftConformance ?? rightConformance;
+  const remote = left.remote && right.remote
+    ? mergeRemoteRuntimeScorecards(left.remote, right.remote)
+    : left.remote ?? right.remote;
 
   return {
     initialize: worstRuntimeStatus(left.initialize, right.initialize),
@@ -516,7 +525,32 @@ function mergeRuntimeScorecards(
     ),
     promptsList: worstRuntimeStatus(left.promptsList, right.promptsList),
     promptGet: worstRuntimeStatus(left.promptGet, right.promptGet),
-    ...(conformance ? { conformance } : {})
+    ...(conformance ? { conformance } : {}),
+    ...(remote ? { remote } : {})
+  };
+}
+
+function mergeRemoteRuntimeScorecards(
+  left: RemoteRuntimeScorecard,
+  right: RemoteRuntimeScorecard
+): RemoteRuntimeScorecard {
+  const sessionSeverity: Record<RemoteRuntimeScorecard["session"], number> = {
+    "present-invalid": 2,
+    "present-valid": 1,
+    absent: 0
+  };
+
+  return {
+    transport: worstRuntimeStatus(left.transport, right.transport),
+    networkSafety: worstRuntimeStatus(left.networkSafety, right.networkSafety),
+    initialize: worstRuntimeStatus(left.initialize, right.initialize),
+    contentType: worstRuntimeStatus(left.contentType, right.contentType),
+    session: sessionSeverity[left.session] >= sessionSeverity[right.session]
+      ? left.session
+      : right.session,
+    protocolHeaders: worstRuntimeStatus(left.protocolHeaders, right.protocolHeaders),
+    authorization: worstRuntimeStatus(left.authorization, right.authorization),
+    overall: worstRuntimeStatus(left.overall, right.overall)
   };
 }
 
@@ -1939,6 +1973,11 @@ export interface RuntimeProbeOptions {
   startupTimeoutMs?: number;
   sandbox?: RuntimeSandboxMode;
   transcript?: (line: string) => void;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
+  remoteRequestTimeoutMs?: number;
+  remoteLookup?: RemoteLookup;
+  remoteRequest?: RemoteMcpRequest;
 }
 
 export async function probeRuntimeConfig(
@@ -1990,46 +2029,64 @@ export async function probeRuntimeConfig(
       continue;
     }
 
-    const command = config.command;
+    const url = config.url;
+    let result: RuntimeProbeResult;
 
-    if (typeof command !== "string") {
-      continue;
+    if (typeof url === "string") {
+      const remote = await probeRemoteMcpServer(serverName, url, {
+        allowNetwork: options.allowNetwork,
+        allowLocalNetwork: options.allowLocalNetwork,
+        requestTimeoutMs: options.remoteRequestTimeoutMs,
+        lookup: options.remoteLookup,
+        request: options.remoteRequest
+      });
+      const remoteScorecard = createRuntimeScorecard();
+      remoteScorecard.remote = remote.scorecard;
+      result = {
+        findings: remote.findings.map((finding) => withRuntimeEvidence(finding, serverName)),
+        scorecard: remoteScorecard
+      };
+    } else {
+      const command = config.command;
+      if (typeof command !== "string") {
+        continue;
+      }
+
+      const args = Array.isArray(config.args)
+        ? config.args.filter((value): value is string => typeof value === "string")
+        : [];
+      const cwd = await resolveRuntimeCwd(canonicalRootPath, config.cwd);
+      result = cwd === null
+        ? (() => {
+            const invalidCwdScorecard = createRuntimeScorecard();
+            invalidCwdScorecard.initialize = "fail";
+
+            return {
+              findings: [
+                withRuntimeEvidence(
+                  buildFailure(
+                    "plugin.runtime.startup.invalid_cwd",
+                    `The MCP server \`${serverName}\` has an invalid runtime working directory.`,
+                    "Runtime validation must not start a server from a missing, non-directory, or out-of-package working directory.",
+                    "Set the MCP server cwd to an existing directory inside the plugin package root, or remove it."
+                  ),
+                  serverName
+                )
+              ],
+              scorecard: invalidCwdScorecard
+            };
+          })()
+        : await probeCommandServer({
+            serverName,
+            packageRoot: canonicalRootPath,
+            command,
+            args,
+            cwd,
+            startupTimeoutMs,
+            sandbox: options.sandbox,
+            transcript: options.transcript
+          });
     }
-
-    const args = Array.isArray(config.args)
-      ? config.args.filter((value): value is string => typeof value === "string")
-      : [];
-    const cwd = await resolveRuntimeCwd(canonicalRootPath, config.cwd);
-    const result: RuntimeProbeResult = cwd === null
-      ? (() => {
-          const invalidCwdScorecard = createRuntimeScorecard();
-          invalidCwdScorecard.initialize = "fail";
-
-          return {
-            findings: [
-              withRuntimeEvidence(
-                buildFailure(
-                  "plugin.runtime.startup.invalid_cwd",
-                  `The MCP server \`${serverName}\` has an invalid runtime working directory.`,
-                  "Runtime validation must not start a server from a missing, non-directory, or out-of-package working directory.",
-                  "Set the MCP server cwd to an existing directory inside the plugin package root, or remove it."
-                ),
-                serverName
-              )
-            ],
-            scorecard: invalidCwdScorecard
-          };
-        })()
-      : await probeCommandServer({
-          serverName,
-          packageRoot: canonicalRootPath,
-          command,
-          args,
-          cwd,
-          startupTimeoutMs,
-          sandbox: options.sandbox,
-          transcript: options.transcript
-        });
 
     scorecard = hasProbedServer
       ? mergeRuntimeScorecards(scorecard, result.scorecard)

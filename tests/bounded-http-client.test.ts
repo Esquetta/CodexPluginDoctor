@@ -214,6 +214,20 @@ describe("requestBoundedHttp", () => {
     });
   });
 
+  it("returns after a caller-recognized bounded response prefix without waiting for EOF", async () => {
+    const port = await startServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write('data: {"ok":true}\n\n');
+    });
+
+    await expect(requestBoundedHttp(options(port).url, {
+      ...options(port),
+      stopAfter: (body) => body.toString("utf8").endsWith("\n\n")
+    })).resolves.toMatchObject({
+      body: Buffer.from('data: {"ok":true}\n\n')
+    });
+  });
+
   it("times out a non-responsive request", async () => {
     const port = await startServer(() => undefined);
 
