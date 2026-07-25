@@ -186,6 +186,26 @@ export {
   type RuntimePolicyRecommendation
 } from "./core/runtime-policy.js";
 export {
+  inspectRemoteMcpUrl,
+  type RemoteUrlInspection
+} from "./core/remote-url-policy.js";
+export {
+  resolveRemoteTarget,
+  RemoteNetworkPolicyError,
+  type ResolvedRemoteTarget,
+  type ResolveRemoteTargetOptions
+} from "./core/remote-network-policy.js";
+export {
+  probeRemoteMcpServer,
+  type RemoteMcpProbeOptions,
+  type RemoteMcpProbeResult
+} from "./core/remote-mcp-probe.js";
+export {
+  checkRemoteOAuthReadiness,
+  type RemoteOAuthReadinessOptions,
+  type RemoteOAuthReadinessResult
+} from "./core/remote-oauth-readiness.js";
+export {
   buildDoctorReviewBundle,
   diffDoctorReviewBundles,
   renderDoctorReviewBundle,

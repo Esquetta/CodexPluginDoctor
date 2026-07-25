@@ -467,6 +467,114 @@ export const ruleCatalog: RuleDefinition[] = [
     why: "MCP stdio transport requires newline-delimited JSON-RPC messages on stdout.",
     fix: "Send logs to stderr and reserve stdout for JSON-RPC protocol messages only.",
     example: "Use `console.error` for diagnostics in Node stdio servers."
+  },
+  {
+    id: "plugin.runtime.remote.network_not_approved",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote MCP probing was not explicitly approved.",
+    why: "Remote initialization creates outbound network traffic.",
+    fix: "Review the plan, then use --runtime --allow-network; add --allow-local-network only for localhost HTTP.",
+    example: "codex-plugin-doctor mcp . --runtime --allow-network"
+  },
+  {
+    id: "plugin.runtime.remote.url.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "A remote MCP endpoint URL is unsafe or unsupported.",
+    why: "Credentials, queries, fragments, IP literals, and unsupported schemes bypass the remote probe boundary.",
+    fix: "Use an absolute HTTPS URL without credentials, query parameters, fragments, or IP literals.",
+    example: "https://mcp.example/mcp"
+  },
+  {
+    id: "plugin.runtime.remote.transport.timeout",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize request timed out.",
+    why: "A bounded probe cannot safely negotiate an unavailable endpoint.",
+    fix: "Make the endpoint reachable and complete initialize within the configured timeout.",
+    example: "Return a valid initialize response promptly."
+  },
+  {
+    id: "plugin.runtime.remote.transport.response_too_large",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP response exceeded the bounded probe limit.",
+    why: "Unbounded remote responses can exhaust local resources.",
+    fix: "Return a compact initialize response and keep discovery metadata bounded.",
+    example: "Return only the MCP initialize result."
+  },
+  {
+    id: "plugin.runtime.remote.transport.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP transport request failed.",
+    why: "Protocol negotiation cannot proceed without a safe bounded connection.",
+    fix: "Verify endpoint reachability, TLS, and remote network policy eligibility.",
+    example: "Use a public HTTPS endpoint or explicitly approved localhost HTTP."
+  },
+  {
+    id: "plugin.runtime.remote.http_status.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize response used an unexpected HTTP status.",
+    why: "Streamable HTTP initialization requires a successful response before negotiation.",
+    fix: "Return HTTP 200 for initialize or publish valid OAuth discovery metadata for protected endpoints.",
+    example: "HTTP/1.1 200 OK"
+  },
+  {
+    id: "plugin.runtime.remote.content_type.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize response used an unsupported content type.",
+    why: "The probe can only validate JSON or Server-Sent Events protocol responses.",
+    fix: "Return application/json or text/event-stream with a JSON-RPC response.",
+    example: "Content-Type: application/json"
+  },
+  {
+    id: "plugin.runtime.remote.session.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP session header is invalid.",
+    why: "An invalid session identifier cannot be safely replayed on the initialized notification.",
+    fix: "Return MCP-Session-Id only as visible ASCII characters.",
+    example: "MCP-Session-Id: session-123"
+  },
+  {
+    id: "plugin.runtime.remote.initialize.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize JSON-RPC result is invalid.",
+    why: "Invalid negotiation results leave capabilities and protocol version unknown.",
+    fix: "Return a JSON-RPC 2.0 initialize result for protocol version 2025-11-25.",
+    example: '{ "jsonrpc": "2.0", "id": 1, "result": { "protocolVersion": "2025-11-25" } }'
+  },
+  {
+    id: "plugin.runtime.remote.initialized.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP server did not acknowledge notifications/initialized.",
+    why: "The session may not be ready for subsequent protocol traffic.",
+    fix: "Accept a successful initialized notification at the configured MCP endpoint.",
+    example: "Return HTTP 204 to notifications/initialized."
+  },
+  {
+    id: "plugin.runtime.remote.authorization.metadata.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote OAuth discovery metadata is invalid.",
+    why: "Protected MCP endpoints cannot be assessed safely without valid authorization metadata.",
+    fix: "Publish valid HTTPS protected-resource and authorization-server metadata.",
+    example: "https://mcp.example/.well-known/oauth-protected-resource"
+  },
+  {
+    id: "plugin.runtime.remote.authorization.metadata.unavailable",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote OAuth discovery metadata is unavailable.",
+    why: "Authorization readiness cannot be confirmed without bounded metadata responses.",
+    fix: "Make protected-resource and authorization-server metadata available over HTTPS.",
+    example: "Return application/json discovery metadata."
   }
 ];
 

@@ -11,10 +11,12 @@ import {
 import type { Finding } from "../domain/types.js";
 import type { RuntimeExecutionEvidence, RuntimeSandboxMode } from "../domain/types.js";
 import { DOCKER_RUNTIME_IMAGE } from "./runtime-sandbox.js";
+import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 
 type RuntimePlanStatus = "pass" | "warn" | "fail";
 type RuntimePlanRiskLevel = "low" | "medium" | "high";
 type RuntimePlanTransport = "stdio" | "http";
+type RemoteNetworkClass = "public_https" | "loopback_http" | "invalid";
 
 export interface RuntimePlanServer {
   name: string;
@@ -23,7 +25,9 @@ export interface RuntimePlanServer {
   args: string[];
   cwd: string | null;
   url: string | null;
+  networkClass?: RemoteNetworkClass;
   probeMethods: string[];
+  approvalRequirements?: string[];
   riskLevel: RuntimePlanRiskLevel;
   riskReasons: string[];
 }
@@ -117,6 +121,31 @@ function buildRisk(
   };
 }
 
+function remoteProbeMethods(): string[] {
+  return [
+    "POST initialize",
+    "POST notifications/initialized",
+    "GET OAuth protected-resource metadata (401 only)",
+    "GET OAuth authorization-server metadata (401 only)"
+  ];
+}
+
+function remoteNetworkClass(rawUrl: string): RemoteNetworkClass {
+  const inspection = inspectRemoteMcpUrl(rawUrl);
+
+  if (
+    inspection.parsedUrl === null ||
+    (inspection.parsedUrl.protocol !== "http:" && inspection.parsedUrl.protocol !== "https:") ||
+    !inspection.parsedUrl.hostname
+  ) {
+    return "invalid";
+  }
+
+  return inspection.isLoopbackHost && inspection.parsedUrl.protocol === "http:"
+    ? "loopback_http"
+    : "public_https";
+}
+
 function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">): unknown {
   return {
     schemaVersion: plan.schemaVersion,
@@ -204,6 +233,9 @@ export async function buildDoctorRuntimePlan(
       const url = typeof serverConfig.url === "string" ? serverConfig.url : null;
       const { riskLevel, riskReasons } = buildRisk(serverName, serverConfig, security.findings);
 
+      const networkClass = url ? remoteNetworkClass(url) : undefined;
+      const sanitizedUrl = url ? inspectRemoteMcpUrl(url).sanitizedUrl : null;
+
       return {
         name: serverName,
         transport: command ? "stdio" as const : "http" as const,
@@ -212,7 +244,8 @@ export async function buildDoctorRuntimePlan(
           ? serverConfig.args.filter((arg): arg is string => typeof arg === "string")
           : [],
         cwd: command ? normalizeCwd(discoveredPackage.rootPath, serverConfig.cwd) : null,
-        url,
+        url: sanitizedUrl,
+        ...(networkClass ? { networkClass } : {}),
         probeMethods: command
           ? [
               "initialize",
@@ -225,7 +258,14 @@ export async function buildDoctorRuntimePlan(
               "prompts/list",
               "prompts/get:first-prompt-only"
             ]
-          : [],
+          : url ? remoteProbeMethods() : [],
+        ...(url
+          ? {
+              approvalRequirements: networkClass === "loopback_http"
+                ? ["--runtime", "--allow-network", "--allow-local-network"]
+                : ["--runtime", "--allow-network"]
+            }
+          : {}),
         riskLevel,
         riskReasons
       };

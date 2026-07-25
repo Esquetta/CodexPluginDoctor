@@ -42,6 +42,8 @@ export interface BuildReleaseCheckOptions {
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   runtimeSandbox?: RuntimeSandboxMode;
   runCheck?: (targetPath: string, options: CheckOptions) => Promise<CheckResult>;
 }
@@ -173,6 +175,8 @@ export async function buildReleaseCheck(
   const runtimeProbeEnabled = options.runtime ?? false;
   const validationResult = await (options.runCheck ?? validatePlugin)(resolvedPath, {
     runtime: runtimeProbeEnabled,
+    ...(options.allowNetwork ? { allowNetwork: true } : {}),
+    ...(options.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
     ...(options.runtimeSandbox ? { runtimeSandbox: options.runtimeSandbox } : {})
   });
   const securityResult = await buildSecurityAudit(resolvedPath);

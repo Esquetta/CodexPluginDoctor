@@ -50,6 +50,8 @@ export interface BaselineSummary {
 
 export interface CheckOptions {
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   runtimeTranscript?: (line: string) => void;
   runtimeStartupTimeoutMs?: number;
   runtimeSandbox?: RuntimeSandboxMode;

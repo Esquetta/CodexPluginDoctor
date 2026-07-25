@@ -40,6 +40,8 @@ export interface GenericMcpDoctorReport {
 
 export interface GenericMcpDoctorOptions {
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   runtimeStartupTimeoutMs?: number;
 }
 
@@ -284,8 +286,10 @@ export async function buildGenericMcpDoctor(
     isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath) &&
     !staticFindings.some((finding) => finding.severity === "fail") &&
     security.status !== "fail"
-      ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
-          startupTimeoutMs: options.runtimeStartupTimeoutMs
+        ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
+          startupTimeoutMs: options.runtimeStartupTimeoutMs,
+          allowNetwork: options.allowNetwork,
+          allowLocalNetwork: options.allowLocalNetwork
         })
       : null;
   const fingerprintedFindings = withFindingFingerprints(

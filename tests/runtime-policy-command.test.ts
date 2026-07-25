@@ -24,6 +24,30 @@ function createIo() {
 }
 
 describe("doctor runtime-policy command", () => {
+  it("does not allow a remote-only plan without explicit network approval", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-policy-remote-"));
+    await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "remote-policy", version: "1.0.0", description: "Remote policy test.", mcpServers: ".mcp.json" }),
+      "utf8"
+    );
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".mcp.json"),
+      JSON.stringify({ mcpServers: { remote: { url: "https://example.com/mcp" } } }),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "runtime-policy", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.recommendation.decision).toBe("review");
+    expect(output.recommendation.actions.join("\n")).toContain("--allow-network");
+  });
+
   it("recommends review for a clean local stdio runtime server", async () => {
     const { io, stdout, stderr } = createIo();
 

@@ -158,6 +158,8 @@ export interface BuildDoctorReleaseEvidenceOptions {
   requireRuntimeApproval?: boolean;
   runtimeApprovalDigest?: string | null;
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   sandbox?: RuntimeSandboxMode;
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string, options?: CheckOptions) => Promise<CheckResult>;
@@ -391,6 +393,8 @@ export async function buildDoctorReleaseEvidenceReport(
   const checkOptions: CheckOptions = options.runtime
     ? {
         runtime: true,
+        ...(options.allowNetwork ? { allowNetwork: true } : {}),
+        ...(options.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
         ...(options.sandbox ? { runtimeSandbox: options.sandbox } : {})
       }
     : {};

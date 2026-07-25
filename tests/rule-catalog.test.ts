@@ -89,6 +89,21 @@ const remoteMcpRules = [
   { id: "plugin.security.remote_mcp_url.ip_literal", category: "security", defaultSeverity: "fail" }
 ] as const;
 
+const remoteRuntimeRules = [
+  "plugin.runtime.remote.network_not_approved",
+  "plugin.runtime.remote.url.invalid",
+  "plugin.runtime.remote.transport.timeout",
+  "plugin.runtime.remote.transport.response_too_large",
+  "plugin.runtime.remote.transport.failed",
+  "plugin.runtime.remote.http_status.invalid",
+  "plugin.runtime.remote.content_type.invalid",
+  "plugin.runtime.remote.session.invalid",
+  "plugin.runtime.remote.initialize.invalid",
+  "plugin.runtime.remote.initialized.failed",
+  "plugin.runtime.remote.authorization.metadata.invalid",
+  "plugin.runtime.remote.authorization.metadata.unavailable"
+] as const;
+
 describe("MCP 2025-11 conformance rule catalog", () => {
   it("resolves every evaluator finding with its public remediation contract", () => {
     expect(ruleCatalog.filter((rule) => rule.id.startsWith("mcp.conformance."))).toEqual(
@@ -103,6 +118,12 @@ describe("MCP 2025-11 conformance rule catalog", () => {
   it("resolves every remote MCP transport finding with a public remediation contract", () => {
     for (const expectedRule of remoteMcpRules) {
       expect(findRuleDefinition(expectedRule.id)).toMatchObject(expectedRule);
+    }
+  });
+
+  it("resolves every remote runtime finding with a fail remediation contract", () => {
+    for (const id of remoteRuntimeRules) {
+      expect(findRuleDefinition(id)).toMatchObject({ id, category: "runtime", defaultSeverity: "fail" });
     }
   });
 });

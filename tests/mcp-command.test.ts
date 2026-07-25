@@ -1,4 +1,5 @@
 import { access, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,7 +36,88 @@ async function createStandaloneMcpPackage(mcpConfig: unknown): Promise<string> {
   return targetPath;
 }
 
+async function startRemoteMcpServer(): Promise<{
+  url: string;
+  requests: string[];
+  close(): Promise<void>;
+}> {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method: string };
+      requests.push(message.method);
+
+      if (message.method === "initialize") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: {},
+            serverInfo: { name: "local", version: "1.0.0" }
+          }
+        }));
+        return;
+      }
+
+      response.writeHead(204);
+      response.end();
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected a TCP listening address.");
+  }
+
+  return {
+    url: `http://localhost:${address.port}/mcp`,
+    requests,
+    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  };
+}
+
 describe("mcp command", () => {
+  it("requires runtime and network approval flags before probing a local remote MCP server", async () => {
+    const remote = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: { local: { url: remote.url } }
+    });
+
+    try {
+      const missingRuntime = createIo();
+      const missingNetwork = createIo();
+      const approved = createIo();
+
+      expect(await runCli(["mcp", targetPath, "--allow-network"], missingRuntime.io)).toBe(2);
+      expect(missingRuntime.stderr.join("")).toContain("--allow-network requires --runtime");
+
+      expect(await runCli(["mcp", targetPath, "--runtime", "--allow-local-network"], missingNetwork.io)).toBe(2);
+      expect(missingNetwork.stderr.join("")).toContain("--allow-local-network requires --allow-network");
+
+      expect(await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], approved.io)).toBe(0);
+      expect(JSON.parse(approved.stdout.join(""))).toMatchObject({
+        runtimeScorecard: {
+          remote: {
+            networkSafety: "pass",
+            initialize: "pass",
+            protocolHeaders: "pass",
+            overall: "pass"
+          }
+        }
+      });
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await remote.close();
+    }
+  });
+
   it("renders finding fingerprints in text output", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-missing-"));
     const { io, stdout, stderr } = createIo();

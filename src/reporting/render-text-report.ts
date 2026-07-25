@@ -50,18 +50,30 @@ function appendRuntimeScorecard(lines: string[], result: CheckResult) {
 
   const conformance = result.runtimeScorecard.conformance;
 
-  if (!conformance) {
-    return;
+  if (conformance) {
+    lines.push("", "MCP Conformance", "---------------");
+    lines.push(`Protocol version: ${conformance.protocolVersion ?? "unavailable"}`);
+    lines.push(`Profile: ${conformance.profile ?? "unavailable"}`);
+    lines.push(`Capability consistency: ${conformance.capabilityConsistency}`);
+    lines.push(`Task declarations: ${conformance.taskDeclarations}`);
+    lines.push(`Tasks list: ${conformance.tasksList}`);
+    lines.push(`Schema dialect: ${conformance.schemaDialect}`);
+    lines.push(`Overall: ${conformance.overall}`);
   }
 
-  lines.push("", "MCP Conformance", "---------------");
-  lines.push(`Protocol version: ${conformance.protocolVersion ?? "unavailable"}`);
-  lines.push(`Profile: ${conformance.profile ?? "unavailable"}`);
-  lines.push(`Capability consistency: ${conformance.capabilityConsistency}`);
-  lines.push(`Task declarations: ${conformance.taskDeclarations}`);
-  lines.push(`Tasks list: ${conformance.tasksList}`);
-  lines.push(`Schema dialect: ${conformance.schemaDialect}`);
-  lines.push(`Overall: ${conformance.overall}`);
+  const remote = result.runtimeScorecard.remote;
+
+  if (remote) {
+    lines.push("", "Remote MCP Scorecard", "--------------------");
+    lines.push(`transport: ${remote.transport}`);
+    lines.push(`network safety: ${remote.networkSafety}`);
+    lines.push(`initialize: ${remote.initialize}`);
+    lines.push(`content type: ${remote.contentType}`);
+    lines.push(`session: ${remote.session}`);
+    lines.push(`protocol headers: ${remote.protocolHeaders}`);
+    lines.push(`authorization: ${remote.authorization}`);
+    lines.push(`overall: ${remote.overall}`);
+  }
 }
 
 export function renderTextReport(

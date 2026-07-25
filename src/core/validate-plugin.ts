@@ -789,7 +789,9 @@ export async function validatePlugin(
       ? await probeRuntime(discoveredPackage, {
           startupTimeoutMs: options.runtimeStartupTimeoutMs,
           sandbox: options.runtimeSandbox,
-          transcript: options.runtimeTranscript
+          transcript: options.runtimeTranscript,
+          allowNetwork: options.allowNetwork,
+          allowLocalNetwork: options.allowLocalNetwork
         })
       : null;
   const findings = [
