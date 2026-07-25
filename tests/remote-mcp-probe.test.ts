@@ -122,7 +122,7 @@ describe("probeRemoteMcpServer", () => {
     assertPrivate(result);
   });
 
-  it("uses the first complete SSE event without waiting for the stream to close", async () => {
+  it("skips SSE primer events until the initialize response without waiting for the stream to close", async () => {
     const port = await startServer((request, response) => {
       let body = "";
       request.setEncoding("utf8");
@@ -131,6 +131,8 @@ describe("probeRemoteMcpServer", () => {
         const message = JSON.parse(body) as { id?: number; method: string };
         if (message.method === "initialize") {
           response.writeHead(200, { "content-type": "text/event-stream" });
+          response.write("id: primer-event\ndata:\n\n");
+          response.write("event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n");
           response.write(`event: message\ndata: ${initializedResponse(message.id ?? 1)}\n\n`);
           openResponses.push(response);
           return;

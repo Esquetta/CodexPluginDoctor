@@ -89,38 +89,43 @@ function mediaType(value: string | null): string | null {
   return value?.split(";", 1)[0]?.trim().toLowerCase() ?? null;
 }
 
-function firstSseData(body: Buffer): { complete: boolean; data: string | null } {
-  const text = body.toString("utf8").replace(/\r\n/g, "\n");
-  let offset = 0;
-  while (offset < text.length) {
-    const boundary = text.indexOf("\n\n", offset);
-    if (boundary === -1) {
-      return { complete: false, data: null };
-    }
-    const data = text.slice(offset, boundary).split("\n")
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).replace(/^ /, ""));
-    if (data.length > 0) {
-      return { complete: true, data: data.join("\n") };
-    }
-    offset = boundary + 2;
-  }
-  return { complete: false, data: null };
-}
-
-function parseInitializeResponse(body: Buffer, contentType: string): JsonObject | null {
-  const source = contentType === "text/event-stream"
-    ? firstSseData(body).data
-    : body.toString("utf8");
-  if (source === null) {
-    return null;
-  }
+function parseJsonObject(source: string): JsonObject | null {
   try {
     const parsed: unknown = JSON.parse(source);
     return isPlainObject(parsed) ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function isInitializeResponseCandidate(message: JsonObject): boolean {
+  return message.id === 1;
+}
+
+function findSseInitializeResponse(body: Buffer): JsonObject | null {
+  const text = body.toString("utf8").replace(/\r\n/g, "\n");
+  let offset = 0;
+  while (offset < text.length) {
+    const boundary = text.indexOf("\n\n", offset);
+    if (boundary === -1) {
+      return null;
+    }
+    const data = text.slice(offset, boundary).split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).replace(/^ /, ""));
+    const message = data.length > 0 ? parseJsonObject(data.join("\n")) : null;
+    if (message && isInitializeResponseCandidate(message)) {
+      return message;
+    }
+    offset = boundary + 2;
+  }
+  return null;
+}
+
+function parseInitializeResponse(body: Buffer, contentType: string): JsonObject | null {
+  return contentType === "text/event-stream"
+    ? findSseInitializeResponse(body)
+    : parseJsonObject(body.toString("utf8"));
 }
 
 function isValidInitializeResponse(message: JsonObject): boolean {
@@ -209,7 +214,7 @@ export async function probeRemoteMcpServer(
         Accept: "application/json, text/event-stream",
         "Content-Type": "application/json"
       },
-      stopAfter: (body) => firstSseData(body).complete
+      stopAfter: (body) => findSseInitializeResponse(body) !== null
     });
   } catch (error) {
     scorecard.transport = transportStatus(error);
