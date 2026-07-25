@@ -306,7 +306,7 @@ export async function buildGenericMcpDoctor(
   const security = buildSecurityAuditFromFindings(
     rootPath,
     mcpConfigPath && parsedConfig !== null
-      ? auditMcpServerConfig(rootPath, parsedConfig)
+      ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
       : []
   );
   const runtimeResult =

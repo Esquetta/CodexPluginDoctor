@@ -119,6 +119,56 @@ describe("mcp command", () => {
     expect(serialized).not.toContain("secret");
   });
 
+  it("reports remote URL security evidence from a manifest-configured MCP file", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-custom-config-"));
+    const mcpConfigPath = path.join(targetPath, "config", "remote.json");
+    const rawUrl = "https://example.com/mcp?token=secret";
+
+    await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+    await mkdir(path.dirname(mcpConfigPath), { recursive: true });
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "custom-config",
+        version: "1.0.0",
+        description: "Custom MCP config fixture.",
+        mcpServers: "./config/remote.json"
+      }),
+      "utf8"
+    );
+    await writeFile(
+      mcpConfigPath,
+      JSON.stringify({
+        mcpServers: {
+          remote: { url: rawUrl }
+        }
+      }),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.security.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.remote_mcp_url.query",
+          evidence: expect.objectContaining({
+            configPath: "config/remote.json",
+            serverName: "remote",
+            url: "https://example.com/mcp"
+          })
+        })
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
+    expect(serialized).not.toContain("secret");
+  });
+
   it("reports empty query and fragment delimiters without exposing the remote URL", async () => {
     const rawUrl = "https://example.com/mcp?#";
     const targetPath = await createStandaloneMcpPackage({
