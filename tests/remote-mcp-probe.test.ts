@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { probeRemoteMcpServer } from "../src/core/remote-mcp-probe.js";
 import type { RemoteLookup } from "../src/core/remote-network-policy.js";
+import { packageVersion } from "../src/version.js";
 
 const servers: Server[] = [];
 const openResponses: ServerResponse[] = [];
@@ -102,6 +103,16 @@ describe("probeRemoteMcpServer", () => {
       "initialize",
       "notifications/initialized"
     ]);
+    expect(JSON.parse(requests[0]?.body ?? "")).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "Codex Plugin Doctor", version: packageVersion }
+      }
+    });
     expect(requests[0]?.headers.accept).toBe("application/json, text/event-stream");
     expect(requests[0]?.headers["content-type"]).toBe("application/json");
     expect(requests[0]?.headers.authorization).toBeUndefined();

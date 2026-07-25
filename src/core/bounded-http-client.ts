@@ -48,6 +48,7 @@ export class BoundedHttpError extends Error {
       | "REMOTE_HTTP_REDIRECT"
       | "REMOTE_HTTP_REQUEST_FAILED"
       | "REMOTE_HTTP_RESPONSE_TOO_LARGE"
+      | "REMOTE_HTTP_STOP_CONDITION_FAILED"
       | "REMOTE_HTTP_TIMEOUT"
       | "REMOTE_HTTP_URL_CREDENTIALS"
       | "REMOTE_HTTP_URL_UNSUPPORTED",
@@ -290,8 +291,19 @@ export async function requestBoundedHttp(
         }
         chunks.push(chunk);
         const body = Buffer.concat(chunks);
-        if (options.stopAfter?.(body)) {
+        let shouldStop: boolean;
+        try {
+          shouldStop = options.stopAfter?.(body) ?? false;
+        } catch {
+          fail(new BoundedHttpError(
+            "REMOTE_HTTP_STOP_CONDITION_FAILED",
+            "Remote HTTP stop condition failed."
+          ));
+          return;
+        }
+        if (shouldStop) {
           complete(body);
+          return;
         }
       });
       incoming.once("error", () => {

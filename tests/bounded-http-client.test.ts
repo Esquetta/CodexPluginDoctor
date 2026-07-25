@@ -228,6 +228,28 @@ describe("requestBoundedHttp", () => {
     });
   });
 
+  it("contains stop condition failures and closes the response", async () => {
+    let responseClosed: Promise<void> | undefined;
+    const port = await startServer((_request, response) => {
+      responseClosed = new Promise((resolve) => response.once("close", resolve));
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write('data: {"ok":true}\n\n');
+    });
+
+    await expect(requestBoundedHttp(options(port).url, {
+      ...options(port),
+      timeoutMs: 1_000,
+      stopAfter: () => {
+        throw new Error("stop condition failure");
+      }
+    })).rejects.toMatchObject({
+      code: "REMOTE_HTTP_STOP_CONDITION_FAILED",
+      message: "Remote HTTP stop condition failed."
+    });
+
+    await expect(responseClosed).resolves.toBeUndefined();
+  });
+
   it("times out a non-responsive request", async () => {
     const port = await startServer(() => undefined);
 
