@@ -80,6 +80,7 @@ const mcpConformanceRules = [
 const remoteMcpRules = [
   { id: "mcp.server.transport.conflict", category: "mcp", defaultSeverity: "fail" },
   { id: "plugin.mcp.server.transport.conflict", category: "mcp", defaultSeverity: "fail" },
+  { id: "plugin.security.insecure_http_url", category: "security", defaultSeverity: "fail" },
   { id: "plugin.security.remote_mcp_url.invalid", category: "security", defaultSeverity: "fail" },
   { id: "plugin.security.remote_mcp_url.unsupported_scheme", category: "security", defaultSeverity: "fail" },
   { id: "plugin.security.remote_mcp_url.credentials", category: "security", defaultSeverity: "fail" },

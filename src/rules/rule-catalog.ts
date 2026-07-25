@@ -282,7 +282,7 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.security.insecure_http_url",
     category: "security",
-    defaultSeverity: "warn",
+    defaultSeverity: "fail",
     summary: "An MCP server uses a plain HTTP URL.",
     why: "Plain HTTP can expose MCP traffic and does not verify endpoint identity on non-local networks.",
     fix: "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
