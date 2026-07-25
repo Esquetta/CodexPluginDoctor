@@ -119,6 +119,30 @@ describe("mcp command", () => {
     expect(serialized).not.toContain("secret");
   });
 
+  it("reports empty query and fragment delimiters without exposing the remote URL", async () => {
+    const rawUrl = "https://example.com/mcp?#";
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        remote: { url: rawUrl }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual(
+      expect.arrayContaining([
+        "plugin.security.remote_mcp_url.query",
+        "plugin.security.remote_mcp_url.fragment"
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
+  });
+
   it("runs explicit runtime conformance for a valid task-capable MCP config", async () => {
     const { io, stdout, stderr } = createIo();
 

@@ -52,6 +52,9 @@ describe("inspectRemoteMcpUrl", () => {
     ["https://user:secret@example.com/mcp", ["credentials"]],
     ["https://example.com/mcp?token=secret", ["query"]],
     ["https://example.com/mcp#secret", ["fragment"]],
+    ["https://example.com/mcp?", ["query"]],
+    ["https://example.com/mcp#", ["fragment"]],
+    ["https://example.com/mcp?#", ["query", "fragment"]],
     ["https://127.0.0.1/mcp", ["ip_literal"]],
     ["https://[::1]/mcp", ["ip_literal"]],
     ["http://example.com/mcp", ["insecure_non_loopback"]]
@@ -60,6 +63,27 @@ describe("inspectRemoteMcpUrl", () => {
 
     expect(inspection.issues).toEqual(issues);
     expect(inspection.sanitizedUrl === null || !inspection.sanitizedUrl.includes("secret")).toBe(true);
+  });
+
+  it("reports empty query and fragment delimiters to plugin validation without exposing the URL", async () => {
+    const rawUrl = "https://example.com/mcp?#";
+    const targetPath = await createPluginWithMcp({
+      mcpServers: {
+        remote: { url: rawUrl }
+      }
+    });
+
+    const result = await validatePlugin(targetPath);
+    const serialized = JSON.stringify(result.findings);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining([
+        "plugin.security.remote_mcp_url.query",
+        "plugin.security.remote_mcp_url.fragment"
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
   });
 });
 

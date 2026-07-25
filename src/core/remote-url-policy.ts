@@ -49,11 +49,11 @@ export function inspectRemoteMcpUrl(rawUrl: string): RemoteUrlInspection {
     issues.push("credentials");
   }
 
-  if (parsedUrl.search) {
+  if (parsedUrl.search || rawUrl.includes("?")) {
     issues.push("query");
   }
 
-  if (parsedUrl.hash) {
+  if (parsedUrl.hash || rawUrl.includes("#")) {
     issues.push("fragment");
   }
 
