@@ -19,7 +19,7 @@ inputs:
     required: false
     default: "false"
   allow-local-network:
-    description: Explicitly allow remote MCP runtime probes to contact localhost or other local network addresses.
+    description: Explicitly allow remote MCP runtime probes to contact loopback endpoints only (localhost, 127.0.0.0/8, or ::1). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
     required: false
     default: "false"
   installed:

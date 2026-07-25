@@ -102,6 +102,17 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).not.toContain('args+=(--allow-local-network "${{ inputs');
   });
 
+  it("documents loopback-only consent without permitting private or reserved ranges", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+    const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
+    const readiness = await readFile("docs/architecture/remote-mcp-readiness.md", "utf8");
+
+    for (const document of [actionMetadata, actionUsage, readiness]) {
+      expect(document).toContain("loopback endpoints only");
+      expect(document).toContain("Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.");
+    }
+  });
+
   it("documents the public GitHub Action consumer workflow", async () => {
     const readme = await readFile("README.md", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");

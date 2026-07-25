@@ -6,7 +6,7 @@ Codex Plugin Doctor can make bounded, read-only checks against a remote MCP endp
 
 ## Explicit Consent
 
-Remote requests require `--runtime --allow-network`. Endpoints on localhost or a local/private network additionally require `--allow-local-network`.
+Remote requests require `--runtime --allow-network`. `--allow-local-network` is a second opt-in for loopback endpoints only (`localhost`, `127.0.0.0/8`, or `::1`). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
 
 ```bash
 codex-plugin-doctor check ./plugin --runtime --allow-network
@@ -21,7 +21,7 @@ The probe uses a bounded HTTP request for MCP initialization and only follows th
 
 ## SSRF Controls
 
-Before connecting, the CLI requires an absolute HTTP or HTTPS URL without credentials, query strings, fragments, or numeric IP literals. It resolves hostnames and rejects loopback, private, link-local, multicast, reserved, cloud-metadata, and other non-public targets unless the local-network exception is explicitly granted. Requests have fixed size and time limits and do not follow redirects.
+Before connecting, the CLI requires an absolute HTTP or HTTPS URL without credentials, query strings, fragments, or numeric IP literals. It resolves hostnames and rejects non-public targets. The local-network exception permits loopback only; private, link-local, multicast, unspecified, reserved, cloud-metadata, and NAT64 destinations remain blocked. Requests have fixed size and time limits and do not follow redirects.
 
 These checks reduce SSRF exposure but cannot account for every network topology. In particular, arbitrary network-specific NAT64 Pref64 mappings can change an address's effective route. Apply runner or host egress controls as the final boundary.
 

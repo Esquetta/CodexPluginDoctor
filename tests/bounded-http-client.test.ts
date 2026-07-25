@@ -1,9 +1,18 @@
-import { createServer, type Server } from "node:http";
+import { EventEmitter } from "node:events";
+import { createServer, type ClientRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { requestBoundedHttp } from "../src/core/bounded-http-client.js";
 import type { RemoteLookup } from "../src/core/remote-network-policy.js";
+
+const requestMock = vi.hoisted(() => vi.fn());
+
+vi.mock("node:http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:http")>();
+  requestMock.mockImplementation(actual.request);
+  return { ...actual, request: requestMock };
+});
 
 const servers: Server[] = [];
 
@@ -265,6 +274,29 @@ describe("requestBoundedHttp", () => {
     await expect(requestBoundedHttp(options(port).url, options(port))).resolves.toMatchObject({
       statusCode: 200,
       body: Buffer.from("ok")
+    });
+  });
+
+  it("rejects a connected peer that differs from the DNS-pinned address", async () => {
+    const request = new EventEmitter();
+    Object.assign(request, {
+      destroy: () => undefined,
+      end: () => process.nextTick(() => request.emit("response", {
+        headers: {},
+        statusCode: 200,
+        socket: { remoteAddress: "127.0.0.2" },
+        destroy: () => undefined
+      })),
+      setTimeout: () => request
+    });
+    requestMock.mockReturnValueOnce(request as unknown as ClientRequest);
+
+    await expect(requestBoundedHttp("http://mcp.test/mcp", {
+      allowLocalNetwork: true,
+      lookup: async () => [{ address: "127.0.0.1", family: 4 }]
+    })).rejects.toMatchObject({
+      code: "REMOTE_HTTP_PEER_MISMATCH",
+      message: "Remote HTTP peer did not match the resolved target."
     });
   });
 

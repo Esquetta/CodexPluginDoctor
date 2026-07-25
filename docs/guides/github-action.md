@@ -8,7 +8,7 @@ The action installs `codex-plugin-doctor` from npm, then runs the same CLI used 
 
 ## Remote MCP Runtime Probing
 
-Remote MCP checks are off by default. Set `runtime: "true"` and give explicit network consent only for endpoints you trust. Use `allow-local-network: "true"` only when the target is intentionally on localhost or a private runner network.
+Remote MCP checks are off by default. Set `runtime: "true"` and give explicit network consent only for endpoints you trust. Use `allow-local-network: "true"` for loopback endpoints only (`localhost`, `127.0.0.0/8`, or `::1`). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
 
 ```yaml
 - uses: ./
