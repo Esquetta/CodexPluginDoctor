@@ -24,6 +24,86 @@ function createIo() {
 }
 
 describe("doctor runtime-plan command", () => {
+  it("redacts remote URLs and records the remote approval boundary", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-remote-"));
+    const rawUrl = "https://user:credential-secret@example.com/mcp?query-secret=1#fragment-secret";
+
+    await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "remote-plan", version: "1.0.0", description: "Remote plan test.", mcpServers: ".mcp.json" }),
+      "utf8"
+    );
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".mcp.json"),
+      JSON.stringify({ mcpServers: { remote: { url: rawUrl } } }),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["doctor", "runtime-plan", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+    const markdown = createIo();
+    const policy = createIo();
+
+    await runCli(["doctor", "runtime-plan", targetPath, "--markdown"], markdown.io);
+    await runCli(["doctor", "runtime-policy", targetPath, "--json"], policy.io);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(serialized).not.toContain("credential-secret");
+    expect(serialized).not.toContain("query-secret");
+    expect(serialized).not.toContain("fragment-secret");
+    for (const privateValue of ["credential-secret", "query-secret", "fragment-secret"]) {
+      expect(markdown.stdout.join("")).not.toContain(privateValue);
+      expect(policy.stdout.join("")).not.toContain(privateValue);
+    }
+    expect(output.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "remote",
+        url: "https://example.com/mcp",
+        networkClass: "public_https",
+        probeMethods: [
+          "POST initialize",
+          "POST notifications/initialized",
+          "GET OAuth protected-resource metadata (401 only)",
+          "GET OAuth authorization-server metadata (401 only)"
+        ],
+        approvalRequirements: expect.arrayContaining(["--runtime", "--allow-network"])
+      })
+    ]));
+  });
+
+  it("classifies HTTPS localhost as loopback and documents DNS loopback approval", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-loopback-"));
+
+    await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "loopback-plan", version: "1.0.0", description: "Loopback plan test.", mcpServers: ".mcp.json" }),
+      "utf8"
+    );
+    await (await import("node:fs/promises")).writeFile(
+      path.join(targetPath, ".mcp.json"),
+      JSON.stringify({ mcpServers: { local: { url: "https://localhost:3443/mcp" } } }),
+      "utf8"
+    );
+    const json = createIo();
+    const markdown = createIo();
+
+    await runCli(["doctor", "runtime-plan", targetPath, "--json"], json.io);
+    await runCli(["doctor", "runtime-plan", targetPath, "--markdown"], markdown.io);
+
+    expect(JSON.parse(json.stdout.join("")).servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        networkClass: "loopback_https",
+        approvalRequirements: ["--runtime", "--allow-network", "--allow-local-network"]
+      })
+    ]));
+    expect(markdown.stdout.join("")).toContain("DNS resolves to loopback");
+  });
+
   it("renders a non-executing runtime plan as JSON", async () => {
     const { io, stdout, stderr } = createIo();
 

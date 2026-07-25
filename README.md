@@ -81,6 +81,17 @@ Runtime MCP validation with `--runtime`:
 - optional runtime approval gating with a precomputed `doctor runtime-plan` digest
 - optional Docker isolation for local Node.js stdio servers with `--sandbox docker`
 
+### Remote MCP Readiness
+
+Remote MCP runtime probing is disabled until you explicitly pass `--allow-network`. Local endpoints also require `--allow-local-network`:
+
+```bash
+codex-plugin-doctor check ./remote-mcp --runtime --allow-network
+codex-plugin-doctor check ./remote-mcp --runtime --allow-network --allow-local-network
+```
+
+The probe makes only bounded, read-only protocol and OAuth metadata-discovery requests, redacts report output, and applies SSRF controls. It does not authenticate or follow redirects. See [Remote MCP Readiness](./docs/architecture/remote-mcp-readiness.md).
+
 Output formats:
 
 - human text output
@@ -427,9 +438,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.51.0
+      - uses: Esquetta/CodexPluginDoctor@v1.52.0
         with:
-          version: "1.51.0"
+          version: "1.52.0"
           path: .
           runtime: "true"
           policy: codex-publish

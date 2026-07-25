@@ -321,9 +321,47 @@ function parseRuntimeSandbox(
   return value;
 }
 
+function parseRemoteNetworkFlags(
+  flags: string[],
+  runtime: boolean
+): { allowNetwork: boolean; allowLocalNetwork: boolean } | CliUsageError {
+  let allowNetwork = false;
+  let allowLocalNetwork = false;
+
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+
+    if (flag === "--allow-network") {
+      if (allowNetwork) return new CliUsageError("Duplicate runtime network flag: --allow-network.");
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return new CliUsageError("--allow-network does not accept a value.");
+      }
+      allowNetwork = true;
+    } else if (flag === "--allow-local-network") {
+      if (allowLocalNetwork) return new CliUsageError("Duplicate runtime network flag: --allow-local-network.");
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return new CliUsageError("--allow-local-network does not accept a value.");
+      }
+      allowLocalNetwork = true;
+    } else if (flag?.startsWith("--allow-network=") || flag?.startsWith("--allow-local-network=")) {
+      return new CliUsageError(`${flag.split("=", 1)[0]} does not accept a value.`);
+    }
+  }
+
+  if ((allowNetwork || allowLocalNetwork) && !runtime) {
+    return new CliUsageError("--allow-network requires --runtime.");
+  }
+
+  if (allowLocalNetwork && !allowNetwork) {
+    return new CliUsageError("--allow-local-network requires --allow-network.");
+  }
+
+  return { allowNetwork, allowLocalNetwork };
+}
+
 function printUsage(io: CliIo): void {
   io.writeStderr(
-            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--runtime] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--runtime --sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--runtime --sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime --sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--upload]|mcp <path>|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime --sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>] [--upload]|mcp <path> [--runtime [--allow-network [--allow-local-network]]]|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
   io.writeStderr(
     "Corpus quality regression: codex-plugin-doctor doctor corpus metrics diff --before <metrics.json> --after <metrics.json> [--fail-on-regression] [--json|--markdown] [--output <path>]"
@@ -1145,6 +1183,8 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
   jsonOutput: boolean;
   outputPath: string | null;
   runtime: boolean;
+  allowNetwork: boolean;
+  allowLocalNetwork: boolean;
 } | string {
   if (!commandTarget || commandTarget.startsWith("--")) {
     return "Missing target path. Usage: codex-plugin-doctor mcp <path> [--runtime] [--json] [--output <path>]";
@@ -1153,6 +1193,8 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
   let jsonOutput = false;
   let outputPath: string | null = null;
   let runtime = false;
+  let allowNetwork = false;
+  let allowLocalNetwork = false;
 
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
@@ -1172,6 +1214,18 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
       }
 
       jsonOutput = true;
+      continue;
+    }
+
+    if (flag === "--allow-network") {
+      if (allowNetwork) return "Duplicate MCP flag: --allow-network.";
+      allowNetwork = true;
+      continue;
+    }
+
+    if (flag === "--allow-local-network") {
+      if (allowLocalNetwork) return "Duplicate MCP flag: --allow-local-network.";
+      allowLocalNetwork = true;
       continue;
     }
 
@@ -1196,11 +1250,19 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
       : `Unexpected MCP argument: ${flag}.`;
   }
 
+  const remoteNetwork = parseRemoteNetworkFlags(flags, runtime);
+
+  if (remoteNetwork instanceof CliUsageError) {
+    return remoteNetwork.message;
+  }
+
   return {
     targetPath: commandTarget,
     jsonOutput,
     outputPath,
-    runtime
+    runtime,
+    allowNetwork,
+    allowLocalNetwork
   };
 }
 
@@ -1590,7 +1652,9 @@ export async function runCli(
         env: terminalContext.env,
         platform: terminalContext.platform
       }, {
-        runtime: parsedMcpArgs.runtime
+        runtime: parsedMcpArgs.runtime,
+        allowNetwork: parsedMcpArgs.allowNetwork,
+        allowLocalNetwork: parsedMcpArgs.allowLocalNetwork
       });
       const renderedReport = parsedMcpArgs.jsonOutput
         ? renderGenericMcpDoctorJson(report)
@@ -1893,7 +1957,13 @@ export async function runCli(
           ? null
           : assetFlags[runtimeApprovalDigestIndex + 1];
         const runtime = assetFlags.includes("--runtime");
+        const remoteNetwork = parseRemoteNetworkFlags(assetFlags, runtime);
         let runtimeSandbox: RuntimeSandboxMode | null;
+
+        if (remoteNetwork instanceof CliUsageError) {
+          io.writeStderr(remoteNetwork.message);
+          return 2;
+        }
 
         try {
           runtimeSandbox = parseRuntimeSandbox(assetFlags);
@@ -1973,6 +2043,8 @@ export async function runCli(
           requireRuntimeApproval,
           runtimeApprovalDigest,
           runtime,
+          ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+          ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
           ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
           environment: {
             env: terminalContext.env,
@@ -1981,6 +2053,11 @@ export async function runCli(
           runCheck: options.runCheckImpl ?? runCheck,
           performanceThresholds: parsedThresholds.thresholds
         });
+
+        if (!evidence.releaseReady) {
+          io.writeStdout(jsonOutput ? renderDoctorReleaseEvidenceJson(evidence) : renderDoctorReleaseEvidence(evidence));
+          return evidence.exitCode;
+        }
         await writeFile(resolvedOutputPath, renderDoctorReleaseEvidenceJson(evidence), "utf8");
 
         let uploaded = false;
@@ -2096,7 +2173,13 @@ export async function runCli(
         ? null
         : evidenceFlags[runtimeApprovalDigestIndex + 1];
       const runtime = evidenceFlags.includes("--runtime");
+      const remoteNetwork = parseRemoteNetworkFlags(evidenceFlags, runtime);
       let runtimeSandbox: RuntimeSandboxMode | null;
+
+      if (remoteNetwork instanceof CliUsageError) {
+        io.writeStderr(remoteNetwork.message);
+        return 2;
+      }
 
       try {
         runtimeSandbox = parseRuntimeSandbox(evidenceFlags);
@@ -2155,6 +2238,8 @@ export async function runCli(
         requireRuntimeApproval,
         runtimeApprovalDigest,
         runtime,
+        ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+        ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
         ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
         environment: {
           env: terminalContext.env,
@@ -3175,7 +3260,9 @@ export async function runCli(
       env: terminalContext.env,
       platform: terminalContext.platform
     }, {
-      runtime: parsedMcpArgs.runtime
+      runtime: parsedMcpArgs.runtime,
+      allowNetwork: parsedMcpArgs.allowNetwork,
+      allowLocalNetwork: parsedMcpArgs.allowLocalNetwork
     });
     const renderedReport = parsedMcpArgs.jsonOutput
       ? renderGenericMcpDoctorJson(report)
@@ -3515,7 +3602,13 @@ export async function runCli(
       : remainingArgs.slice(1);
     const jsonOutput = releaseFlags.includes("--json");
     const runtimeProbeEnabled = releaseFlags.includes("--runtime");
+    const remoteNetwork = parseRemoteNetworkFlags(releaseFlags, runtimeProbeEnabled);
     let runtimeSandbox: RuntimeSandboxMode | null;
+
+    if (remoteNetwork instanceof CliUsageError) {
+      io.writeStderr(remoteNetwork.message);
+      return 2;
+    }
 
     try {
       runtimeSandbox = parseRuntimeSandbox(releaseFlags);
@@ -3564,6 +3657,8 @@ export async function runCli(
       env: terminalContext.env,
       platform: terminalContext.platform,
       runtime: runtimeProbeEnabled,
+      ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+      ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
       ...(runtimeSandbox ? { runtimeSandbox } : {}),
       runCheck: options.runCheckImpl
     });
@@ -3746,6 +3841,12 @@ export async function runCli(
     runtimeProbeEnabled ||
     checkProfile === "publish" ||
     policyEnablesRuntime(policy);
+  const remoteNetwork = parseRemoteNetworkFlags(normalizedFlags, effectiveRuntimeProbeEnabled);
+
+  if (remoteNetwork instanceof CliUsageError) {
+    io.writeStderr(remoteNetwork.message);
+    return 2;
+  }
 
   if (requireRuntimeApproval && !effectiveRuntimeProbeEnabled) {
     io.writeStderr("Runtime approval requires runtime probing. Add --runtime, --profile publish, or a runtime-enabled policy.");
@@ -3829,6 +3930,8 @@ export async function runCli(
         result: applyDoctorConfig(
           await runCheckImpl(plugin.rootPath, {
             runtime: effectiveRuntimeProbeEnabled,
+            ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+            ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
             runtimeTranscript:
               effectiveRuntimeProbeEnabled && verboseRuntime
                 ? (line) => io.writeStderr(line)
@@ -3929,7 +4032,9 @@ export async function runCli(
 
         const pluginResult = applyDoctorConfig(
           await runCheckImpl(pluginRoot, {
-            runtime: effectiveRuntimeProbeEnabled
+            runtime: effectiveRuntimeProbeEnabled,
+            ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+            ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {})
           }),
           applyPolicyToDoctorConfig(
             applyCheckProfile(await loadDoctorConfig(pluginRoot, configPath), checkProfile),
@@ -3963,6 +4068,8 @@ export async function runCli(
   const configuredResult = applyDoctorConfig(
     await runCheckImpl(targetPath, {
       runtime: effectiveRuntimeProbeEnabled,
+      ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
+      ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
       ...(runtimeSandbox ? { runtimeSandbox } : {}),
       ...(effectiveRuntimeProbeEnabled && verboseRuntime
         ? { runtimeTranscript: (line: string) => io.writeStderr(line) }

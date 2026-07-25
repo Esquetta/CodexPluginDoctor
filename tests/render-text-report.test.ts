@@ -76,6 +76,23 @@ describe("renderTextReport", () => {
     expect(output).toContain("Failures");
   });
 
+  it("renders the remote MCP scorecard with enum-only session state", () => {
+    const output = renderTextReport({
+      targetPath: "example",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeScorecard: {
+        ...runtimeScorecard,
+        remote: { transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "present-valid", protocolHeaders: "pass", authorization: "skipped", overall: "pass" }
+      }
+    });
+
+    expect(output).toContain("Remote MCP Scorecard");
+    expect(output).toContain("network safety: pass");
+    expect(output).toContain("session: present-valid");
+  });
+
   it("renders a rich unicode summary for warn results", async () => {
     const result = await runCheck(
       path.resolve("tests/fixtures/heuristic-long-plugin-description")

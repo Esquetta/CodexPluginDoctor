@@ -40,6 +40,8 @@ export interface GenericMcpDoctorReport {
 
 export interface GenericMcpDoctorOptions {
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   runtimeStartupTimeoutMs?: number;
 }
 
@@ -154,7 +156,10 @@ function buildStaticMcpFindings(
       continue;
     }
 
-    if (typeof serverConfig.command !== "string" && typeof serverConfig.url !== "string") {
+    const command = serverConfig.command;
+    const url = serverConfig.url;
+
+    if (typeof command !== "string" && typeof url !== "string") {
       findings.push(
         buildFinding(
           "fail",
@@ -166,6 +171,20 @@ function buildStaticMcpFindings(
         )
       );
     }
+
+    if (typeof command === "string" && typeof url === "string") {
+      findings.push(
+        buildFinding(
+          "fail",
+          "mcp.server.transport.conflict",
+          `The MCP server \`${serverName}\` must not define both \`command\` and \`url\`.`,
+          "A server with two transports cannot be selected deterministically by MCP clients.",
+          `Keep either \`command\` or \`url\` for the \`${serverName}\` entry in \`${configPath}\`.`,
+          { configPath, serverName, field: "transport" }
+        )
+      );
+    }
+
   }
 
   return {
@@ -255,7 +274,7 @@ export async function buildGenericMcpDoctor(
   const security = buildSecurityAuditFromFindings(
     rootPath,
     mcpConfigPath && parsedConfig !== null
-      ? auditMcpServerConfig(rootPath, parsedConfig)
+      ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
       : []
   );
   const runtimeResult =
@@ -267,8 +286,10 @@ export async function buildGenericMcpDoctor(
     isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath) &&
     !staticFindings.some((finding) => finding.severity === "fail") &&
     security.status !== "fail"
-      ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
-          startupTimeoutMs: options.runtimeStartupTimeoutMs
+        ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
+          startupTimeoutMs: options.runtimeStartupTimeoutMs,
+          allowNetwork: options.allowNetwork,
+          allowLocalNetwork: options.allowLocalNetwork
         })
       : null;
   const fingerprintedFindings = withFindingFingerprints(

@@ -81,6 +81,28 @@ const runtimeConformanceSchema = {
   additionalProperties: false
 };
 
+const remoteRuntimeScorecardSchema = {
+  type: "object",
+  properties: {
+    transport: runtimeCapabilityStatusSchema,
+    networkSafety: runtimeCapabilityStatusSchema,
+    initialize: runtimeCapabilityStatusSchema,
+    contentType: runtimeCapabilityStatusSchema,
+    session: {
+      type: "string",
+      enum: ["absent", "present-valid", "present-invalid"]
+    },
+    protocolHeaders: runtimeCapabilityStatusSchema,
+    authorization: runtimeCapabilityStatusSchema,
+    overall: {
+      type: "string",
+      enum: ["pass", "warn", "fail", "skipped"]
+    }
+  },
+  required: ["transport", "networkSafety", "initialize", "contentType", "session", "protocolHeaders", "authorization", "overall"],
+  additionalProperties: false
+};
+
 const runtimeScorecardSchema = {
   type: "object",
   properties: {
@@ -92,7 +114,8 @@ const runtimeScorecardSchema = {
     resourceTemplatesList: runtimeCapabilityStatusSchema,
     promptsList: runtimeCapabilityStatusSchema,
     promptGet: runtimeCapabilityStatusSchema,
-    conformance: runtimeConformanceSchema
+    conformance: runtimeConformanceSchema,
+    remote: remoteRuntimeScorecardSchema
   },
   required: [
     "initialize",

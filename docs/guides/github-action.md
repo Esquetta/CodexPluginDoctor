@@ -6,6 +6,21 @@ Use the Codex Plugin Doctor GitHub Action when a plugin repository should fail p
 
 The action installs `codex-plugin-doctor` from npm, then runs the same CLI used locally.
 
+## Remote MCP Runtime Probing
+
+Remote MCP checks are off by default. Set `runtime: "true"` and give explicit network consent only for endpoints you trust. Use `allow-local-network: "true"` for loopback endpoints only (`localhost`, `127.0.0.0/8`, or `::1`). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
+
+```yaml
+- uses: ./
+  with:
+    path: .
+    runtime: "true"
+    allow-network: "true"
+    allow-local-network: "true" # Remove for public endpoints.
+```
+
+The Action transfers these boolean inputs through environment-backed shell variables and a Bash argument array. Remote probes remain read-only and redact diagnostics; see [Remote MCP Readiness](../architecture/remote-mcp-readiness.md) for SSRF and OAuth metadata-discovery boundaries.
+
 ## Recommended Workflow
 
 ```yaml
@@ -22,9 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.51.0
+      - uses: Esquetta/CodexPluginDoctor@v1.52.0
         with:
-          version: "1.51.0"
+          version: "1.52.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -51,9 +66,9 @@ Every action run also writes `codex-plugin-doctor-action-manifest.json`. The man
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     sarif: "true"
 ```
@@ -65,9 +80,9 @@ The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to
 Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -102,11 +117,11 @@ The action also exposes these workflow outputs for follow-up steps:
 Use review bundle artifacts when a pull request or release workflow should preserve signed runtime approval, runtime policy, attestation, and release evidence handoff files.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -137,9 +152,9 @@ The CLI can produce badge output for release notes, README automation, or a stat
 Use a private corpus metrics manifest to measure reviewed precision, recall, and false-positive share in CI. The action writes only the public-safe metrics report into its artifact directory; snapshots, manifest contents, local paths, and review notes are not copied.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
 ```
@@ -147,9 +162,9 @@ Use a private corpus metrics manifest to measure reviewed precision, recall, and
 This writes `corpus-metrics.json`. To compare the result with a retained report and fail the job on regression:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
     corpus-metrics-baseline: .doctor-baselines/corpus-metrics.json
@@ -178,9 +193,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -200,9 +215,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 The composite action can pass profiles directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     profile: publish
 ```
@@ -212,9 +227,9 @@ The composite action can pass profiles directly:
 Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     path: .
     policy: codex-publish
 ```
@@ -226,9 +241,9 @@ Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The C
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -239,9 +254,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.51.0
+- uses: Esquetta/CodexPluginDoctor@v1.52.0
   with:
-    version: "1.51.0"
+    version: "1.52.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

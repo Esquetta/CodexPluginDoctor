@@ -50,6 +50,8 @@ export interface BaselineSummary {
 
 export interface CheckOptions {
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   runtimeTranscript?: (line: string) => void;
   runtimeStartupTimeoutMs?: number;
   runtimeSandbox?: RuntimeSandboxMode;
@@ -111,6 +113,18 @@ export interface RuntimeScorecard {
   promptsList: RuntimeCapabilityStatus;
   promptGet: RuntimeCapabilityStatus;
   conformance?: RuntimeConformanceScorecard;
+  remote?: RemoteRuntimeScorecard;
+}
+
+export interface RemoteRuntimeScorecard {
+  transport: RuntimeCapabilityStatus;
+  networkSafety: RuntimeCapabilityStatus;
+  initialize: RuntimeCapabilityStatus;
+  contentType: RuntimeCapabilityStatus;
+  session: "absent" | "present-valid" | "present-invalid";
+  protocolHeaders: RuntimeCapabilityStatus;
+  authorization: RuntimeCapabilityStatus;
+  overall: "pass" | "warn" | "fail" | "skipped";
 }
 
 export type McpConformanceProfile =

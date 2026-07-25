@@ -111,6 +111,43 @@ describe("runtime protocol probing", () => {
     }
   });
 
+  it("reports URL servers as unapproved without opening a remote connection by default", async () => {
+    const packageRoot = await mkdtemp(
+      path.join(os.tmpdir(), "codex-plugin-doctor-runtime-remote-")
+    );
+
+    try {
+      const manifestPath = path.join(packageRoot, ".codex-plugin", "plugin.json");
+      await mkdir(path.dirname(manifestPath), { recursive: true });
+      await writeFile(manifestPath, JSON.stringify({
+        name: "runtime-remote",
+        version: "1.0.0",
+        description: "Remote runtime validation fixture.",
+        mcpServers: "./.mcp.json"
+      }));
+      await writeFile(path.join(packageRoot, ".mcp.json"), JSON.stringify({
+        mcpServers: { remoteServer: { url: "https://mcp.example/mcp" } }
+      }));
+
+      const result = await probeRuntime({
+        rootPath: packageRoot,
+        manifestPath,
+        manifest: { mcpServers: "./.mcp.json" }
+      });
+
+      expect(result.findings).toEqual([
+        expect.objectContaining({ id: "plugin.runtime.remote.network_not_approved", severity: "fail" })
+      ]);
+      expect(result.scorecard.remote).toEqual(expect.objectContaining({
+        networkSafety: "fail",
+        overall: "fail"
+      }));
+      expect(result.scorecard.initialize).toBe("skipped");
+    } finally {
+      await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
   it.each(["missing-cwd", "not-a-directory"])(
     "rejects a %s runtime cwd before spawn",
     async (cwd) => {

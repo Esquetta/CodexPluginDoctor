@@ -181,6 +181,24 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "command": "node", "args": ["server.js"] }'
   },
   {
+    id: "mcp.server.transport.conflict",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "An MCP server defines both command and URL transports.",
+    why: "Clients cannot select a transport deterministically when a server defines both process and remote connection settings.",
+    fix: "Keep either command for stdio or url for remote MCP, but not both.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.mcp.server.transport.conflict",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "A bundled MCP server defines both command and URL transports.",
+    why: "Codex cannot select a transport deterministically when a bundled server defines both process and remote connection settings.",
+    fix: "Keep either command for stdio or url for remote MCP, but not both.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
     id: "plugin.security.path_traversal",
     category: "security",
     defaultSeverity: "fail",
@@ -264,10 +282,64 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.security.insecure_http_url",
     category: "security",
-    defaultSeverity: "warn",
+    defaultSeverity: "fail",
     summary: "An MCP server uses a plain HTTP URL.",
     why: "Plain HTTP can expose MCP traffic and does not verify endpoint identity on non-local networks.",
     fix: "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.invalid",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL is not an absolute HTTP or HTTPS URL.",
+    why: "Clients cannot reliably connect to malformed or relative remote MCP endpoints.",
+    fix: "Use an absolute HTTPS URL, or an explicit localhost HTTP development URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.unsupported_scheme",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL uses an unsupported scheme.",
+    why: "Remote MCP transport supports only HTTP and HTTPS endpoints.",
+    fix: "Use an HTTPS URL, or an explicit localhost HTTP development URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.credentials",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL embeds credentials.",
+    why: "URL credentials can leak through configuration, logs, reports, and package artifacts.",
+    fix: "Remove URL credentials and configure authentication outside the endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.query",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL contains a query string.",
+    why: "Query strings can carry secrets and make endpoint configuration ambiguous.",
+    fix: "Remove the query string from the MCP endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.fragment",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL contains a fragment.",
+    why: "Fragments are not sent to servers and can hide misleading endpoint configuration.",
+    fix: "Remove the fragment from the MCP endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.ip_literal",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL uses a numeric IP literal.",
+    why: "Numeric IP endpoints bypass hostname-based endpoint review and are not an accepted remote MCP shape.",
+    fix: "Use a reviewed hostname; use localhost only for local development.",
     example: '{ "url": "https://example.com/mcp" }'
   },
   {
@@ -395,6 +467,114 @@ export const ruleCatalog: RuleDefinition[] = [
     why: "MCP stdio transport requires newline-delimited JSON-RPC messages on stdout.",
     fix: "Send logs to stderr and reserve stdout for JSON-RPC protocol messages only.",
     example: "Use `console.error` for diagnostics in Node stdio servers."
+  },
+  {
+    id: "plugin.runtime.remote.network_not_approved",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote MCP probing was not explicitly approved.",
+    why: "Remote initialization creates outbound network traffic.",
+    fix: "Review the plan, then use --runtime --allow-network; add --allow-local-network only for localhost HTTP.",
+    example: "codex-plugin-doctor mcp . --runtime --allow-network"
+  },
+  {
+    id: "plugin.runtime.remote.url.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "A remote MCP endpoint URL is unsafe or unsupported.",
+    why: "Credentials, queries, fragments, IP literals, and unsupported schemes bypass the remote probe boundary.",
+    fix: "Use an absolute HTTPS URL without credentials, query parameters, fragments, or IP literals.",
+    example: "https://mcp.example/mcp"
+  },
+  {
+    id: "plugin.runtime.remote.transport.timeout",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize request timed out.",
+    why: "A bounded probe cannot safely negotiate an unavailable endpoint.",
+    fix: "Make the endpoint reachable and complete initialize within the configured timeout.",
+    example: "Return a valid initialize response promptly."
+  },
+  {
+    id: "plugin.runtime.remote.transport.response_too_large",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP response exceeded the bounded probe limit.",
+    why: "Unbounded remote responses can exhaust local resources.",
+    fix: "Return a compact initialize response and keep discovery metadata bounded.",
+    example: "Return only the MCP initialize result."
+  },
+  {
+    id: "plugin.runtime.remote.transport.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP transport request failed.",
+    why: "Protocol negotiation cannot proceed without a safe bounded connection.",
+    fix: "Verify endpoint reachability, TLS, and remote network policy eligibility.",
+    example: "Use a public HTTPS endpoint or explicitly approved localhost HTTP."
+  },
+  {
+    id: "plugin.runtime.remote.http_status.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize response used an unexpected HTTP status.",
+    why: "Streamable HTTP initialization requires a successful response before negotiation.",
+    fix: "Return HTTP 200 for initialize or publish valid OAuth discovery metadata for protected endpoints.",
+    example: "HTTP/1.1 200 OK"
+  },
+  {
+    id: "plugin.runtime.remote.content_type.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize response used an unsupported content type.",
+    why: "The probe can only validate JSON or Server-Sent Events protocol responses.",
+    fix: "Return application/json or text/event-stream with a JSON-RPC response.",
+    example: "Content-Type: application/json"
+  },
+  {
+    id: "plugin.runtime.remote.session.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP session header is invalid.",
+    why: "An invalid session identifier cannot be safely replayed on the initialized notification.",
+    fix: "Return MCP-Session-Id only as visible ASCII characters.",
+    example: "MCP-Session-Id: session-123"
+  },
+  {
+    id: "plugin.runtime.remote.initialize.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP initialize JSON-RPC result is invalid.",
+    why: "Invalid negotiation results leave capabilities and protocol version unknown.",
+    fix: "Return a JSON-RPC 2.0 initialize result for protocol version 2025-11-25.",
+    example: '{ "jsonrpc": "2.0", "id": 1, "result": { "protocolVersion": "2025-11-25" } }'
+  },
+  {
+    id: "plugin.runtime.remote.initialized.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP server did not acknowledge notifications/initialized.",
+    why: "The session may not be ready for subsequent protocol traffic.",
+    fix: "Accept a successful initialized notification at the configured MCP endpoint.",
+    example: "Return HTTP 204 to notifications/initialized."
+  },
+  {
+    id: "plugin.runtime.remote.authorization.metadata.invalid",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote OAuth discovery metadata is invalid.",
+    why: "Protected MCP endpoints cannot be assessed safely without valid authorization metadata.",
+    fix: "Publish valid HTTPS protected-resource and authorization-server metadata.",
+    example: "https://mcp.example/.well-known/oauth-protected-resource"
+  },
+  {
+    id: "plugin.runtime.remote.authorization.metadata.unavailable",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "Remote OAuth discovery metadata is unavailable.",
+    why: "Authorization readiness cannot be confirmed without bounded metadata responses.",
+    fix: "Make protected-resource and authorization-server metadata available over HTTPS.",
+    example: "Return application/json discovery metadata."
   }
 ];
 

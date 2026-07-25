@@ -22,20 +22,34 @@ function appendRuntimeScorecard(lines: string[], result: CheckResult) {
 
   const conformance = result.runtimeScorecard.conformance;
 
-  if (!conformance) {
-    return;
+  if (conformance) {
+    lines.push("", "## MCP Conformance", "");
+    lines.push("| Check | Status |");
+    lines.push("| --- | --- |");
+    lines.push(`| Protocol version | ${conformance.protocolVersion ?? "unavailable"} |`);
+    lines.push(`| Profile | ${conformance.profile ?? "unavailable"} |`);
+    lines.push(`| Capability consistency | ${conformance.capabilityConsistency.toUpperCase()} |`);
+    lines.push(`| Task declarations | ${conformance.taskDeclarations.toUpperCase()} |`);
+    lines.push(`| Tasks list | ${conformance.tasksList.toUpperCase()} |`);
+    lines.push(`| Schema dialect | ${conformance.schemaDialect.toUpperCase()} |`);
+    lines.push(`| Overall | ${conformance.overall.toUpperCase()} |`);
   }
 
-  lines.push("", "## MCP Conformance", "");
-  lines.push("| Check | Status |");
-  lines.push("| --- | --- |");
-  lines.push(`| Protocol version | ${conformance.protocolVersion ?? "unavailable"} |`);
-  lines.push(`| Profile | ${conformance.profile ?? "unavailable"} |`);
-  lines.push(`| Capability consistency | ${conformance.capabilityConsistency.toUpperCase()} |`);
-  lines.push(`| Task declarations | ${conformance.taskDeclarations.toUpperCase()} |`);
-  lines.push(`| Tasks list | ${conformance.tasksList.toUpperCase()} |`);
-  lines.push(`| Schema dialect | ${conformance.schemaDialect.toUpperCase()} |`);
-  lines.push(`| Overall | ${conformance.overall.toUpperCase()} |`);
+  const remote = result.runtimeScorecard.remote;
+
+  if (remote) {
+    lines.push("", "## Remote MCP Scorecard", "");
+    lines.push("| Check | Status |");
+    lines.push("| --- | --- |");
+    lines.push(`| Transport | ${remote.transport.toUpperCase()} |`);
+    lines.push(`| Network safety | ${remote.networkSafety.toUpperCase()} |`);
+    lines.push(`| Initialize | ${remote.initialize.toUpperCase()} |`);
+    lines.push(`| Content type | ${remote.contentType.toUpperCase()} |`);
+    lines.push(`| Session | ${remote.session.toUpperCase()} |`);
+    lines.push(`| Protocol headers | ${remote.protocolHeaders.toUpperCase()} |`);
+    lines.push(`| Authorization | ${remote.authorization.toUpperCase()} |`);
+    lines.push(`| Overall | ${remote.overall.toUpperCase()} |`);
+  }
 }
 
 export function buildMarkdownReport(

@@ -38,6 +38,8 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.mcp.invalid_shape` | fail | MCP config does not contain a valid `mcpServers` object. |
 | `plugin.mcp.server.invalid` | fail | MCP server entry is not an object. |
 | `plugin.mcp.server.transport.missing` | fail | MCP server entry is missing both `command` and `url`. |
+| `mcp.server.transport.conflict` | fail | An MCP server defines both command and URL transports. |
+| `plugin.mcp.server.transport.conflict` | fail | A bundled MCP server defines both command and URL transports. |
 
 ## Security Rules
 
@@ -52,7 +54,13 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.security.path_traversal_risk` | fail | MCP server passes a package-external path to a path-like runtime argument. |
 | `plugin.security.dangerous_env_usage` | fail | MCP server sets an environment variable that can alter code loading. |
 | `plugin.security.cwd_outside_root` | fail | MCP server `cwd` resolves outside the plugin package root. |
-| `plugin.security.insecure_http_url` | warn | MCP server uses a plain HTTP URL. |
+| `plugin.security.insecure_http_url` | fail | MCP server uses a plain HTTP URL. |
+| `plugin.security.remote_mcp_url.invalid` | fail | An MCP server URL is not an absolute HTTP or HTTPS URL. |
+| `plugin.security.remote_mcp_url.unsupported_scheme` | fail | An MCP server URL uses an unsupported scheme. |
+| `plugin.security.remote_mcp_url.credentials` | fail | An MCP server URL embeds credentials. |
+| `plugin.security.remote_mcp_url.query` | fail | An MCP server URL contains a query string. |
+| `plugin.security.remote_mcp_url.fragment` | fail | An MCP server URL contains a fragment. |
+| `plugin.security.remote_mcp_url.ip_literal` | fail | An MCP server URL uses a numeric IP literal. |
 | `plugin.security.prompt_injection_text` | fail | Packaged text contains prompt-injection or secret-exfiltration instructions. |
 
 ## Runtime Rules

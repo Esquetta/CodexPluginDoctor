@@ -85,6 +85,35 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('exit "$status"');
   });
 
+  it("requires explicit, environment-backed consent for remote MCP network probing", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toContain("allow-network:");
+    expect(actionMetadata).toContain("allow-local-network:");
+    expect(actionMetadata).toMatch(/allow-network:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toMatch(/allow-local-network:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toContain('ALLOW_NETWORK_INPUT: ${{ inputs[\'allow-network\'] }}');
+    expect(actionMetadata).toContain('ALLOW_LOCAL_NETWORK_INPUT: ${{ inputs[\'allow-local-network\'] }}');
+    expect(actionMetadata).toContain('if [[ "$ALLOW_NETWORK_INPUT" == "true" ]]; then');
+    expect(actionMetadata).toContain('args+=(--allow-network)');
+    expect(actionMetadata).toContain('if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then');
+    expect(actionMetadata).toContain('args+=(--allow-local-network)');
+    expect(actionMetadata).not.toContain('args+=(--allow-network "${{ inputs');
+    expect(actionMetadata).not.toContain('args+=(--allow-local-network "${{ inputs');
+  });
+
+  it("documents loopback-only consent without permitting private or reserved ranges", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+    const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
+    const readiness = await readFile("docs/architecture/remote-mcp-readiness.md", "utf8");
+    const securityArchitecture = await readFile("docs/security/security-architecture.md", "utf8");
+
+    for (const document of [actionMetadata, actionUsage, readiness, securityArchitecture]) {
+      expect(document).toContain("loopback endpoints only");
+      expect(document).toContain("Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.");
+    }
+  });
+
   it("documents the public GitHub Action consumer workflow", async () => {
     const readme = await readFile("README.md", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");

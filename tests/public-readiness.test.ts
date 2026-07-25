@@ -66,4 +66,57 @@ describe("public repository readiness", () => {
     await expect(access("validation-sessions")).rejects.toThrow();
     expect(`${readme}\n${docsReadme}`).not.toMatch(/validation-sessions|internal only/i);
   });
+
+  it("documents remote MCP transport and endpoint validation rules", async () => {
+    const catalog = await readText("docs/rules/catalog.md");
+
+    expect(catalog).toContain(
+      "| `mcp.server.transport.conflict` | fail | An MCP server defines both command and URL transports. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.mcp.server.transport.conflict` | fail | A bundled MCP server defines both command and URL transports. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.invalid` | fail | An MCP server URL is not an absolute HTTP or HTTPS URL. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.unsupported_scheme` | fail | An MCP server URL uses an unsupported scheme. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.credentials` | fail | An MCP server URL embeds credentials. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.query` | fail | An MCP server URL contains a query string. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.fragment` | fail | An MCP server URL contains a fragment. |"
+    );
+    expect(catalog).toContain(
+      "| `plugin.security.remote_mcp_url.ip_literal` | fail | An MCP server URL uses a numeric IP literal. |"
+    );
+  });
+
+  it("publishes the remote MCP readiness boundary without exposing internal planning", async () => {
+    const readme = await readText("README.md");
+    const actionGuide = await readText("docs/guides/github-action.md");
+    const conformance = await readText("docs/architecture/mcp-2025-11-conformance.md");
+    const readiness = await readText("docs/architecture/remote-mcp-readiness.md");
+    const docsReadme = await readText("docs/README.md");
+    const security = await readText("docs/security/security-architecture.md");
+    expect(readme).toContain("Remote MCP Readiness");
+    expect(actionGuide).toContain('allow-network: "true"');
+    expect(actionGuide).toContain('allow-local-network: "true"');
+    expect(conformance).toContain("OAuth metadata discovery");
+    expect(readiness).toMatch(/explicit consent/i);
+    expect(readiness).toContain("SSRF");
+    expect(readiness).toContain("NAT64 Pref64");
+    expect(readiness).toContain("authenticated OAuth");
+    expect(readiness).toContain("custom headers");
+    expect(readiness).toContain("remote tool/resource/prompt/task calls");
+    expect(readiness).toContain("GET SSE/resumability");
+    expect(readiness).toContain("redirects");
+    expect(docsReadme).toContain("Remote MCP Readiness");
+    expect(security).toContain("runner or host egress controls");
+    expect(readiness).not.toMatch(/internal (implementation )?plan/i);
+  });
 });

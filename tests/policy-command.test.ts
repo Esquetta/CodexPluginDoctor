@@ -81,7 +81,7 @@ describe("policy packs", () => {
     );
   });
 
-  it("applies security policy to fail security warnings", async () => {
+  it("preserves blocking public HTTP findings under the security policy", async () => {
     const targetPath = await createHttpMcpPlugin();
     const { io, stdout, stderr } = createIo();
 
@@ -93,7 +93,7 @@ describe("policy packs", () => {
     expect(output.status).toBe("fail");
     expect(output.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "plugin.security.insecure_http_url", severity: "warn" })
+        expect.objectContaining({ id: "plugin.security.insecure_http_url", severity: "fail" })
       ])
     );
   });

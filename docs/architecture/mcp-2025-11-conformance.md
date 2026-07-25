@@ -27,7 +27,7 @@ This feature adds version-aware, read-only conformance checks to the existing ru
 - accepting or rejecting elicitation requests
 - handling URL-mode elicitation in a browser
 - servicing `sampling/createMessage` requests
-- validating remote HTTP authorization or OAuth discovery
+- performing remote OAuth metadata discovery as part of conformance; remote runtime readiness performs metadata discovery only
 - adding a new top-level CLI command
 - requiring older servers to implement capabilities introduced after their negotiated version
 - building a generic external rule-pack engine

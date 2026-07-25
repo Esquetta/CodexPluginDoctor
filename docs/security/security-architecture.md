@@ -46,6 +46,12 @@ Run structural and config checks before any runtime command execution.
 
 This is an approval gate, not a sandbox. It reduces accidental or unreviewed execution, but it does not isolate the process after launch.
 
+### Remote MCP Network Boundary
+
+Remote probing requires explicit network consent and separately requires `--allow-local-network` consent for loopback endpoints only. Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked. Before each request, the CLI validates the URL and resolved addresses to block credentials, query and fragment components, numeric IP literals, loopback and private ranges, link-local and cloud-metadata ranges, and other SSRF targets. Requests are bounded, redirect-free, and redacted in reports.
+
+DNS and IP classification cannot eliminate arbitrary network-specific NAT64 Pref64 mappings. Use runner or host egress controls to limit the destinations that a CI job or workstation can reach.
+
 ### Secret Hygiene
 
 - redact values that look like tokens in reports

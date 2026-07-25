@@ -1,4 +1,5 @@
 import { access, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,7 +36,159 @@ async function createStandaloneMcpPackage(mcpConfig: unknown): Promise<string> {
   return targetPath;
 }
 
+async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {}): Promise<{
+  url: string;
+  requests: string[];
+  close(): Promise<void>;
+}> {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method: string };
+      requests.push(message.method);
+
+      if (message.method === "initialize") {
+        if (options.invalidInitialize) {
+          response.writeHead(500, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "initialize failed" }));
+          return;
+        }
+
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: {},
+            serverInfo: { name: "local", version: "1.0.0" }
+          }
+        }));
+        return;
+      }
+
+      response.writeHead(204);
+      response.end();
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected a TCP listening address.");
+  }
+
+  return {
+    url: `http://localhost:${address.port}/mcp`,
+    requests,
+    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  };
+}
+
 describe("mcp command", () => {
+  it("requires runtime and network approval flags before probing a local remote MCP server", async () => {
+    const remote = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: { local: { url: remote.url } }
+    });
+
+    try {
+      const missingRuntime = createIo();
+      const missingNetwork = createIo();
+      const approved = createIo();
+
+      expect(await runCli(["mcp", targetPath, "--allow-network"], missingRuntime.io)).toBe(2);
+      expect(missingRuntime.stderr.join("")).toContain("--allow-network requires --runtime");
+
+      expect(await runCli(["mcp", targetPath, "--runtime", "--allow-local-network"], missingNetwork.io)).toBe(2);
+      expect(missingNetwork.stderr.join("")).toContain("--allow-local-network requires --allow-network");
+
+      expect(await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], approved.io)).toBe(0);
+      expect(JSON.parse(approved.stdout.join(""))).toMatchObject({
+        runtimeScorecard: {
+          remote: {
+            networkSafety: "pass",
+            initialize: "pass",
+            protocolHeaders: "pass",
+            overall: "pass"
+          }
+        }
+      });
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await remote.close();
+    }
+  });
+
+  it("forwards runtime network approvals through the doctor mcp alias", async () => {
+    const remote = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: { local: { url: remote.url } }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "doctor", "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], io);
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(JSON.parse(stdout.join(""))).toMatchObject({
+        runtimeScorecard: { remote: { networkSafety: "pass", overall: "pass" } }
+      });
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await remote.close();
+    }
+  });
+
+  it("preserves the worst remote status when a later remote server passes", async () => {
+    const failing = await startRemoteMcpServer({ invalidInitialize: true });
+    const passing = await startRemoteMcpServer();
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        failing: { url: failing.url },
+        passing: { url: passing.url }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toEqual([]);
+      expect(output.runtimeScorecard.remote).toMatchObject({
+        initialize: "fail",
+        overall: "fail"
+      });
+      expect(failing.requests).toEqual(["initialize"]);
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized"]);
+    } finally {
+      await failing.close();
+      await passing.close();
+    }
+  });
+
+  it("advertises doctor mcp and release evidence remote approval flags without dropping compat backups", async () => {
+    const { io, stderr } = createIo();
+
+    expect(await runCli([], io)).toBe(2);
+
+    const usage = stderr.join("");
+    expect(usage).toContain("doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]]");
+    expect(usage).toContain("release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]]");
+    expect(usage).toContain("[--install-preview|--apply --backup]");
+  });
+
   it("renders finding fingerprints in text output", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-missing-"));
     const { io, stdout, stderr } = createIo();
@@ -74,6 +227,122 @@ describe("mcp command", () => {
         expect.objectContaining({ client: "Generic MCP", status: "pass" })
       ])
     );
+  });
+
+  it("accepts an explicit localhost HTTP development transport", async () => {
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        local: { url: "http://LOCALHOST:3000/mcp" }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("pass");
+    expect(output.security.status).toBe("pass");
+  });
+
+  it("fails conflicting remote transports without exposing URL credentials", async () => {
+    const rawUrl = "https://user:secret@example.com/mcp?token=secret";
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        remote: { command: "node", url: rawUrl }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toHaveLength(3);
+    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual([
+      "mcp.server.transport.conflict",
+      "plugin.security.remote_mcp_url.credentials",
+      "plugin.security.remote_mcp_url.query"
+    ]);
+    expect(serialized).not.toContain(rawUrl);
+    expect(serialized).not.toContain("secret");
+  });
+
+  it("reports remote URL security evidence from a manifest-configured MCP file", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-custom-config-"));
+    const mcpConfigPath = path.join(targetPath, "config", "remote.json");
+    const rawUrl = "https://example.com/mcp?token=secret";
+
+    await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+    await mkdir(path.dirname(mcpConfigPath), { recursive: true });
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "custom-config",
+        version: "1.0.0",
+        description: "Custom MCP config fixture.",
+        mcpServers: "./config/remote.json"
+      }),
+      "utf8"
+    );
+    await writeFile(
+      mcpConfigPath,
+      JSON.stringify({
+        mcpServers: {
+          remote: { url: rawUrl }
+        }
+      }),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.security.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.remote_mcp_url.query",
+          evidence: expect.objectContaining({
+            configPath: "config/remote.json",
+            serverName: "remote",
+            url: "https://example.com/mcp"
+          })
+        })
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
+    expect(serialized).not.toContain("secret");
+  });
+
+  it("reports empty query and fragment delimiters without exposing the remote URL", async () => {
+    const rawUrl = "https://example.com/mcp?#";
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        remote: { url: rawUrl }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual(
+      expect.arrayContaining([
+        "plugin.security.remote_mcp_url.query",
+        "plugin.security.remote_mcp_url.fragment"
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
   });
 
   it("runs explicit runtime conformance for a valid task-capable MCP config", async () => {

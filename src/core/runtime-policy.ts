@@ -94,7 +94,9 @@ function buildRecommendation(
   decision: RuntimePolicyDecision,
   reasons: string[]
 ): RuntimePolicyRecommendation {
-  if (plan.summary.executableServerCount === 0) {
+  const hasRemoteServer = plan.servers.some((server) => server.transport === "http");
+
+  if (plan.summary.executableServerCount === 0 && !hasRemoteServer) {
     return {
       decision: "allow",
       reason: "No executable local MCP runtime servers were found.",
@@ -137,6 +139,9 @@ function buildRecommendation(
       actions: [
         "Review command, args, cwd, URL, probe methods, and risk reasons before execution.",
         "Approve the exact plan digest with `check --runtime --require-runtime-approval --runtime-approval-digest <digest>`.",
+        ...(hasRemoteServer
+          ? ["Remote MCP probing also requires `--runtime --allow-network`; any target that DNS resolves to loopback additionally requires `--allow-local-network`."]
+          : []),
         "Use `doctor runtime-plan --markdown` when the approval needs to be preserved with release evidence."
       ]
     };

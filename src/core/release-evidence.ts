@@ -32,6 +32,7 @@ import {
   buildDoctorRuntimePlan,
   evaluateRuntimeApproval,
   runtimeApprovalPassed,
+  type DoctorRuntimePlan,
   type RuntimeApprovalReport
 } from "./runtime-plan.js";
 import type { CompatibilityEnvironment } from "../compatibility/compatibility-matrix.js";
@@ -158,6 +159,8 @@ export interface BuildDoctorReleaseEvidenceOptions {
   requireRuntimeApproval?: boolean;
   runtimeApprovalDigest?: string | null;
   runtime?: boolean;
+  allowNetwork?: boolean;
+  allowLocalNetwork?: boolean;
   sandbox?: RuntimeSandboxMode;
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string, options?: CheckOptions) => Promise<CheckResult>;
@@ -381,16 +384,138 @@ function signReleaseEvidence(
   };
 }
 
+function buildRuntimeApprovalFailureReport(
+  rootPath: string,
+  runtimePlan: DoctorRuntimePlan,
+  runtimeApproval: RuntimeApprovalReport,
+  options: BuildDoctorReleaseEvidenceOptions
+): DoctorReleaseEvidenceReport {
+  const generatedAt = new Date().toISOString();
+  const emptyDigest = sha256("");
+  const failureMessage = "Release evidence checks were not run because runtime approval did not pass.";
+  const report: Omit<DoctorReleaseEvidenceReport, "evidenceSignature"> = {
+    schemaVersion: "1.0.0",
+    kind: "doctor.release.evidence",
+    generatedAt,
+    version: packageVersion,
+    targetPath: rootPath,
+    status: "fail",
+    exitCode: 1,
+    releaseReady: false,
+    summary: {
+      attestation: "fail",
+      attestationVerification: "fail",
+      corpus: "fail",
+      performance: "fail",
+      releaseGates: "fail",
+      runtimeApproval: "fail",
+      security: "fail",
+      trust: "fail"
+    },
+    releaseGates: {
+      status: "fail",
+      checks: [{ id: "runtime.approval", status: "fail", message: runtimeApproval.message }]
+    },
+    runtimeApproval,
+    ...(options.runtime ? { execution: runtimePlan.execution } : {}),
+    package: { name: null, version: null, private: null },
+    git: { commit: null, tag: null, dirty: null },
+    attestation: {
+      schemaVersion: "1.0.0",
+      kind: "doctor.attestation",
+      generatedAt,
+      version: packageVersion,
+      targetPath: rootPath,
+      subject: { name: "unavailable", version: null, description: null },
+      packageFingerprint: { algorithm: "sha256", digest: emptyDigest, files: { total: 0, bytes: 0 } },
+      reportDigest: { algorithm: "sha256", digest: emptyDigest },
+      summary: {
+        status: "fail",
+        validation: { status: "fail", findingCount: 0 },
+        security: { status: "fail", score: 0, findingCount: 0 },
+        compatibility: { failedClients: [] },
+        trust: { status: "fail", score: 0, findingCount: 0 },
+        recommendations: { actionCount: 0 }
+      },
+      verification: { recomputeCommand: "", notes: [failureMessage] },
+      signature: { status: "unsigned", reason: failureMessage }
+    },
+    attestationVerification: {
+      schemaVersion: "1.0.0",
+      kind: "doctor.attestation.verification",
+      generatedAt,
+      artifactPath: "inline:doctor.release-evidence.attestation",
+      targetPath: rootPath,
+      status: "fail",
+      exitCode: 1,
+      summary: { packageFingerprint: "fail", reportDigest: "fail", signature: "fail" },
+      unsignedFields: [],
+      checks: [{ id: "runtime.approval", status: "fail", message: runtimeApproval.message }]
+    },
+    corpus: {
+      schemaVersion: "1.0.0",
+      kind: "doctor.validation.corpus",
+      generatedAt,
+      version: packageVersion,
+      summary: { status: "fail", caseCount: 0, passedExpectations: 0, failedExpectations: 0, runtimeCases: 0 },
+      cases: []
+    },
+    performance: {
+      schemaVersion: "1.0.0",
+      kind: "doctor.perf",
+      generatedAt,
+      targetPath: rootPath,
+      status: "fail",
+      exitCode: 1,
+      summary: {
+        stageCount: 0,
+        slowestStage: "total",
+        totalDurationMs: 0,
+        validationStatus: "fail",
+        securityStatus: "fail",
+        trustScore: 0,
+        compatibilityFailures: 0,
+        thresholdFailures: 0
+      },
+      stages: [],
+      thresholds: []
+    },
+    security: { status: "fail", score: 0, findingCounts: { fail: 0, warn: 0, total: 0 } },
+    trust: { status: "fail", score: 0, findingCounts: { fail: 0, warn: 0, total: 0 } }
+  };
+
+  return {
+    ...report,
+    evidenceSignature: signReleaseEvidence(report, options.signingKey, `env:${options.signingKeyEnv}`)
+  };
+}
+
 export async function buildDoctorReleaseEvidenceReport(
   targetPath: string,
   options: BuildDoctorReleaseEvidenceOptions
 ): Promise<DoctorReleaseEvidenceReport> {
   const rootPath = path.resolve(targetPath);
+  const runtimePlan = await buildDoctorRuntimePlan(
+    rootPath,
+    new Date().toISOString(),
+    options.sandbox ? { sandbox: options.sandbox } : {}
+  );
+  const runtimeApproval = evaluateRuntimeApproval(runtimePlan, {
+    required: options.requireRuntimeApproval ?? false,
+    approvedDigest: options.runtimeApprovalDigest
+  });
+
+  if (!runtimeApprovalPassed(runtimeApproval)) {
+    return buildRuntimeApprovalFailureReport(rootPath, runtimePlan, runtimeApproval, options);
+  }
+
   const security = await buildSecurityAudit(rootPath);
   const runCheck = options.runCheck ?? validatePlugin;
   const checkOptions: CheckOptions = options.runtime
     ? {
         runtime: true,
+        ...(options.allowNetwork ? { allowNetwork: true } : {}),
+        ...(options.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
         ...(options.sandbox ? { runtimeSandbox: options.sandbox } : {})
       }
     : {};
@@ -400,8 +525,7 @@ export async function buildDoctorReleaseEvidenceReport(
     performance,
     trust,
     packageMetadata,
-    git,
-    runtimePlan
+    git
   ] = await Promise.all([
     buildDoctorAttestation(rootPath, {
       signingKey: options.signingKey,
@@ -416,12 +540,7 @@ export async function buildDoctorReleaseEvidenceReport(
     }),
     buildTrustScore(rootPath, { securityAudit: security }),
     readPackageMetadata(rootPath),
-    readGitMetadata(rootPath),
-    buildDoctorRuntimePlan(
-      rootPath,
-      new Date().toISOString(),
-      options.sandbox ? { sandbox: options.sandbox } : {}
-    )
+    readGitMetadata(rootPath)
   ]);
   const normalizedPackageMetadata = {
     name: packageMetadata.name ?? attestation.subject.name,
@@ -437,10 +556,6 @@ export async function buildDoctorReleaseEvidenceReport(
     }
   );
   const releaseGates = buildReleaseGateReport(git, options);
-  const runtimeApproval = evaluateRuntimeApproval(runtimePlan, {
-    required: options.requireRuntimeApproval ?? false,
-    approvedDigest: options.runtimeApprovalDigest
-  });
   const partialReport = {
     schemaVersion: "1.0.0" as const,
     kind: "doctor.release.evidence" as const,

@@ -265,6 +265,11 @@ describe("doctor contract command", () => {
     expect(mcpSchema.schema.properties.runtimeScorecard.description).toBe(
       "Present only when codex-plugin-doctor mcp <path> --runtime is used."
     );
+    expect(checkSchema.schema.properties.summary.properties.runtimeScorecard.properties.remote)
+      .toMatchObject({
+        type: "object",
+        properties: { session: { enum: ["absent", "present-valid", "present-invalid"] } }
+      });
 
     const suppressionSchemas = Object.fromEntries(
       output.schemas

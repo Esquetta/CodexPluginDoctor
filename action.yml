@@ -14,6 +14,14 @@ inputs:
     description: Run optional MCP runtime probing.
     required: false
     default: "false"
+  allow-network:
+    description: Explicitly allow remote MCP runtime probes to make outbound network requests.
+    required: false
+    default: "false"
+  allow-local-network:
+    description: Explicitly allow remote MCP runtime probes to contact loopback endpoints only (localhost, 127.0.0.0/8, or ::1). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
+    required: false
+    default: "false"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -160,6 +168,8 @@ runs:
       id: run-doctor
       shell: bash
       env:
+        ALLOW_NETWORK_INPUT: ${{ inputs['allow-network'] }}
+        ALLOW_LOCAL_NETWORK_INPUT: ${{ inputs['allow-local-network'] }}
         CORPUS_METRICS_MANIFEST_INPUT: ${{ inputs['corpus-metrics-manifest'] }}
         CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
@@ -197,6 +207,14 @@ runs:
 
         if [[ "${{ inputs.runtime }}" == "true" ]]; then
           args+=(--runtime)
+        fi
+
+        if [[ "$ALLOW_NETWORK_INPUT" == "true" ]]; then
+          args+=(--allow-network)
+        fi
+
+        if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
+          args+=(--allow-local-network)
         fi
 
         if [[ -n "${{ inputs.config }}" ]]; then

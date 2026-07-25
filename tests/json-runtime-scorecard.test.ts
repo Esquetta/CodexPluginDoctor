@@ -52,4 +52,47 @@ describe("runtime scorecard", () => {
 
     expect(report.summary).not.toHaveProperty("runtimeExecution");
   });
+
+  it("includes the remote scorecard without changing stdio scorecard fields", () => {
+    const report = buildJsonReport(
+      {
+        targetPath: "/test/plugin",
+        status: "warn",
+        exitCode: 0,
+        findings: [],
+        runtimeScorecard: {
+          initialize: "skipped",
+          toolsList: "unsupported",
+          toolsCall: "unsupported",
+          resourcesList: "unsupported",
+          resourceRead: "unsupported",
+          resourceTemplatesList: "unsupported",
+          promptsList: "unsupported",
+          promptGet: "unsupported",
+          remote: {
+            transport: "pass",
+            networkSafety: "pass",
+            initialize: "skipped",
+            contentType: "skipped",
+            session: "absent",
+            protocolHeaders: "skipped",
+            authorization: "warn",
+            overall: "warn"
+          }
+        }
+      },
+      { runtimeProbeEnabled: true }
+    );
+
+    expect(report.summary.runtimeScorecard?.remote).toEqual({
+      transport: "pass",
+      networkSafety: "pass",
+      initialize: "skipped",
+      contentType: "skipped",
+      session: "absent",
+      protocolHeaders: "skipped",
+      authorization: "warn",
+      overall: "warn"
+    });
+  });
 });

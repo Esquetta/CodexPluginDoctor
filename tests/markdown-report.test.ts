@@ -84,6 +84,22 @@ describe("buildMarkdownReport", () => {
     expect(report).toContain("## Findings");
   });
 
+  it("renders the remote MCP scorecard with enum-only session state", () => {
+    const report = buildMarkdownReport({
+      targetPath: "example",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeScorecard: {
+        ...runtimeScorecard,
+        remote: { transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "present-valid", protocolHeaders: "pass", authorization: "skipped", overall: "pass" }
+      }
+    }, { runtimeProbeEnabled: true });
+
+    expect(report).toContain("## Remote MCP Scorecard");
+    expect(report).toContain("| Session | PRESENT-VALID |");
+  });
+
   it("renders a CI-friendly markdown summary", async () => {
     const targetPath = path.resolve("tests/fixtures/heuristic-long-plugin-description");
     const result = await runCheck(targetPath);
