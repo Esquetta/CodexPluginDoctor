@@ -6,6 +6,21 @@ Use the Codex Plugin Doctor GitHub Action when a plugin repository should fail p
 
 The action installs `codex-plugin-doctor` from npm, then runs the same CLI used locally.
 
+## Remote MCP Runtime Probing
+
+Remote MCP checks are off by default. Set `runtime: "true"` and give explicit network consent only for endpoints you trust. Use `allow-local-network: "true"` only when the target is intentionally on localhost or a private runner network.
+
+```yaml
+- uses: ./
+  with:
+    path: .
+    runtime: "true"
+    allow-network: "true"
+    allow-local-network: "true" # Remove for public endpoints.
+```
+
+The Action transfers these boolean inputs through environment-backed shell variables and a Bash argument array. Remote probes remain read-only and redact diagnostics; see [Remote MCP Readiness](../architecture/remote-mcp-readiness.md) for SSRF and OAuth metadata-discovery boundaries.
+
 ## Recommended Workflow
 
 ```yaml

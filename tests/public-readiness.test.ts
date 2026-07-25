@@ -95,4 +95,28 @@ describe("public repository readiness", () => {
       "| `plugin.security.remote_mcp_url.ip_literal` | fail | An MCP server URL uses a numeric IP literal. |"
     );
   });
+
+  it("publishes the remote MCP readiness boundary without exposing internal planning", async () => {
+    const readme = await readText("README.md");
+    const actionGuide = await readText("docs/guides/github-action.md");
+    const conformance = await readText("docs/architecture/mcp-2025-11-conformance.md");
+    const readiness = await readText("docs/architecture/remote-mcp-readiness.md");
+    const docsReadme = await readText("docs/README.md");
+    const security = await readText("docs/security/security-architecture.md");
+    expect(readme).toContain("Remote MCP Readiness");
+    expect(actionGuide).toContain('allow-network: "true"');
+    expect(actionGuide).toContain('allow-local-network: "true"');
+    expect(conformance).toContain("OAuth metadata discovery");
+    expect(readiness).toMatch(/explicit consent/i);
+    expect(readiness).toContain("SSRF");
+    expect(readiness).toContain("NAT64 Pref64");
+    expect(readiness).toContain("authenticated OAuth");
+    expect(readiness).toContain("custom headers");
+    expect(readiness).toContain("remote tool/resource/prompt/task calls");
+    expect(readiness).toContain("GET SSE/resumability");
+    expect(readiness).toContain("redirects");
+    expect(docsReadme).toContain("Remote MCP Readiness");
+    expect(security).toContain("runner or host egress controls");
+    expect(readiness).not.toMatch(/internal (implementation )?plan/i);
+  });
 });
