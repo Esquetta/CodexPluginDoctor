@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { probeRemoteMcpServer } from "../src/core/remote-mcp-probe.js";
+import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import type { RemoteLookup } from "../src/core/remote-network-policy.js";
 import { packageVersion } from "../src/version.js";
 
@@ -199,22 +200,49 @@ describe("probeRemoteMcpServer", () => {
     ]);
   });
 
-  it("records authorization as not ready without retaining challenge values", async () => {
-    const port = await startServer((_request, response) => {
-      response.writeHead(401, {
-        "content-type": "application/json",
-        "www-authenticate": 'Bearer realm="challenge-secret-sentinel"'
-      });
-      response.end();
+  it("validates OAuth readiness after a 401 without sending an initialized notification", async () => {
+    const requests: Array<{ url: string; options: Record<string, unknown> | undefined }> = [];
+    const request = async (url: string, requestOptions?: Record<string, unknown>): Promise<BoundedHttpResponse> => {
+      requests.push({ url, options: requestOptions });
+      if (url === "https://mcp.example/mcp") {
+        return {
+          statusCode: 401,
+          headers: {
+            "www-authenticate": 'Bearer resource_metadata="https://mcp.example/.well-known/oauth-protected-resource/mcp"'
+          },
+          body: Buffer.alloc(0)
+        };
+      }
+      if (url === "https://mcp.example/.well-known/oauth-protected-resource/mcp") {
+        return {
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          body: Buffer.from('{"resource":"https://mcp.example/mcp","authorization_servers":["https://auth.example"]}')
+        };
+      }
+      return {
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Buffer.from('{"issuer":"https://auth.example","authorization_endpoint":"https://auth.example/authorize","token_endpoint":"https://auth.example/token"}')
+      };
+    };
+
+    const result = await probeRemoteMcpServer("remote", "https://mcp.example/mcp", {
+      allowNetwork: true,
+      request
     });
 
-    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
-
-    expect(result.scorecard.authorization).toBe("warn");
-    expect(result.findings).toEqual([
-      expect.objectContaining({ id: "plugin.runtime.remote.authorization.not_ready", severity: "warn" })
+    expect(result.scorecard).toMatchObject({ authorization: "pass", initialize: "skipped", overall: "pass" });
+    expect(result.findings).toEqual([]);
+    expect(requests.map((entry) => entry.url)).toEqual([
+      "https://mcp.example/mcp",
+      "https://mcp.example/.well-known/oauth-protected-resource/mcp",
+      "https://auth.example/.well-known/oauth-authorization-server"
     ]);
-    assertPrivate(result);
+    expect(requests).toHaveLength(3);
+    for (const requestEntry of requests) {
+      expect(JSON.stringify(requestEntry.options)).not.toMatch(/authorization|cookie|proxy-authorization/i);
+    }
   });
 
   it("fails an unexpected HTTP status without exposing response details", async () => {

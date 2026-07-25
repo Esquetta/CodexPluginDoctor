@@ -5,6 +5,7 @@ import {
   type BoundedHttpResponse
 } from "./bounded-http-client.js";
 import { RemoteNetworkPolicyError, type RemoteLookup } from "./remote-network-policy.js";
+import { checkRemoteOAuthReadiness } from "./remote-oauth-readiness.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import type { Finding, RemoteRuntimeScorecard, RuntimeCapabilityStatus } from "../domain/types.js";
 import { packageVersion } from "../version.js";
@@ -53,21 +54,12 @@ function failure(
   return { id, severity: "fail", message, impact, suggestedFix };
 }
 
-function warning(
-  id: string,
-  message: string,
-  impact: string,
-  suggestedFix: string
-): Finding {
-  return { id, severity: "warn", message, impact, suggestedFix };
-}
-
 function finalize(scorecard: RemoteRuntimeScorecard, findings: Finding[]): RemoteMcpProbeResult {
   scorecard.overall = findings.some((finding) => finding.severity === "fail")
     ? "fail"
     : findings.some((finding) => finding.severity === "warn")
       ? "warn"
-      : scorecard.initialize === "pass"
+      : scorecard.initialize === "pass" || scorecard.authorization === "pass"
         ? "pass"
         : "skipped";
   return { findings, scorecard };
@@ -232,13 +224,17 @@ export async function probeRemoteMcpServer(
 
   scorecard.transport = "pass";
   if (initializeResponse.statusCode === 401) {
-    scorecard.authorization = "warn";
-    findings.push(warning(
-      "plugin.runtime.remote.authorization.not_ready",
-      `The remote MCP server \`${serverName}\` requires authorization before initialization can be probed.`,
-      "The server cannot be fully validated until its authorization requirements are configured.",
-      "Configure authorization metadata in the next remote MCP readiness step; no credentials were sent."
-    ));
+    const challenge = initializeResponse.headers["www-authenticate"];
+    const readiness = await checkRemoteOAuthReadiness(inspection.sanitizedUrl ?? rawUrl, challenge === undefined ? [] : [challenge], {
+      request,
+      requestOptions: {
+        allowLocalNetwork: options.allowLocalNetwork,
+        lookup: options.lookup,
+        timeoutMs: options.requestTimeoutMs
+      }
+    });
+    scorecard.authorization = readiness.status;
+    findings.push(...readiness.findings);
     return finalize(scorecard, findings);
   }
   if (initializeResponse.statusCode !== 200) {
