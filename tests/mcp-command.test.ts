@@ -108,13 +108,12 @@ describe("mcp command", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toEqual([]);
-    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual(
-      expect.arrayContaining([
-        "mcp.server.transport.conflict",
-        "plugin.security.remote_mcp_url.credentials",
-        "plugin.security.remote_mcp_url.query"
-      ])
-    );
+    expect(output.findings).toHaveLength(3);
+    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual([
+      "mcp.server.transport.conflict",
+      "plugin.security.remote_mcp_url.credentials",
+      "plugin.security.remote_mcp_url.query"
+    ]);
     expect(serialized).not.toContain(rawUrl);
     expect(serialized).not.toContain("secret");
   });

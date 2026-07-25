@@ -312,6 +312,42 @@ describe("security command", () => {
     );
   });
 
+  it("scans nested non-active .mcp.json files for external URL references", async () => {
+    const targetPath = await createPluginWithMcp(
+      {
+        mcpServers: {
+          safe: {
+            command: "node",
+            args: ["server.js"]
+          }
+        }
+      },
+      "config/active.json"
+    );
+    const nestedConfigPath = path.join(targetPath, "skills", "hello", "references", ".mcp.json");
+
+    await mkdir(path.dirname(nestedConfigPath), { recursive: true });
+    await writeFile(nestedConfigPath, JSON.stringify({ documentation: "https://example.com/reference" }), "utf8");
+
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.skill.external_http_reference",
+          evidence: {
+            filePath: "skills/hello/references/.mcp.json",
+            url: "https://example.com/reference"
+          }
+        })
+      ])
+    );
+  });
+
   it("passes a valid MCP plugin with a perfect scorecard", async () => {
     const { io, stdout, stderr } = createIo();
 

@@ -463,10 +463,7 @@ async function auditSkillExternalReferences(
   const findings: Finding[] = [];
 
   for (const filePath of await collectPromptPoisoningScanFiles(rootPath)) {
-    if (
-      path.basename(filePath) === ".mcp.json" ||
-      (mcpConfigPath !== null && path.resolve(filePath) === mcpConfigPath)
-    ) {
+    if (mcpConfigPath !== null && path.resolve(filePath) === mcpConfigPath) {
       continue;
     }
     const content = await readFile(filePath, "utf8");
