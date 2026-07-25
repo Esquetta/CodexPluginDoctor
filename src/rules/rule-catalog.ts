@@ -181,6 +181,24 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "command": "node", "args": ["server.js"] }'
   },
   {
+    id: "mcp.server.transport.conflict",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "An MCP server defines both command and URL transports.",
+    why: "Clients cannot select a transport deterministically when a server defines both process and remote connection settings.",
+    fix: "Keep either command for stdio or url for remote MCP, but not both.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.mcp.server.transport.conflict",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "A bundled MCP server defines both command and URL transports.",
+    why: "Codex cannot select a transport deterministically when a bundled server defines both process and remote connection settings.",
+    fix: "Keep either command for stdio or url for remote MCP, but not both.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
     id: "plugin.security.path_traversal",
     category: "security",
     defaultSeverity: "fail",
@@ -268,6 +286,60 @@ export const ruleCatalog: RuleDefinition[] = [
     summary: "An MCP server uses a plain HTTP URL.",
     why: "Plain HTTP can expose MCP traffic and does not verify endpoint identity on non-local networks.",
     fix: "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.invalid",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL is not an absolute HTTP or HTTPS URL.",
+    why: "Clients cannot reliably connect to malformed or relative remote MCP endpoints.",
+    fix: "Use an absolute HTTPS URL, or an explicit localhost HTTP development URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.unsupported_scheme",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL uses an unsupported scheme.",
+    why: "Remote MCP transport supports only HTTP and HTTPS endpoints.",
+    fix: "Use an HTTPS URL, or an explicit localhost HTTP development URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.credentials",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL embeds credentials.",
+    why: "URL credentials can leak through configuration, logs, reports, and package artifacts.",
+    fix: "Remove URL credentials and configure authentication outside the endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.query",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL contains a query string.",
+    why: "Query strings can carry secrets and make endpoint configuration ambiguous.",
+    fix: "Remove the query string from the MCP endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.fragment",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL contains a fragment.",
+    why: "Fragments are not sent to servers and can hide misleading endpoint configuration.",
+    fix: "Remove the fragment from the MCP endpoint URL.",
+    example: '{ "url": "https://example.com/mcp" }'
+  },
+  {
+    id: "plugin.security.remote_mcp_url.ip_literal",
+    category: "security",
+    defaultSeverity: "fail",
+    summary: "An MCP server URL uses a numeric IP literal.",
+    why: "Numeric IP endpoints bypass hostname-based endpoint review and are not an accepted remote MCP shape.",
+    fix: "Use a reviewed hostname; use localhost only for local development.",
     example: '{ "url": "https://example.com/mcp" }'
   },
   {

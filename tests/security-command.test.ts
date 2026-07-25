@@ -23,7 +23,10 @@ function createIo() {
   };
 }
 
-async function createPluginWithMcp(mcpConfig: unknown): Promise<string> {
+async function createPluginWithMcp(
+  mcpConfig: unknown,
+  mcpConfigPath = ".mcp.json"
+): Promise<string> {
   const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-security-"));
 
   await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
@@ -36,7 +39,7 @@ async function createPluginWithMcp(mcpConfig: unknown): Promise<string> {
         version: "1.0.0",
         description: "Fixture package for security command tests.",
         skills: "./skills",
-        mcpServers: "./.mcp.json"
+        mcpServers: `./${mcpConfigPath}`
       },
       null,
       2
@@ -48,11 +51,9 @@ async function createPluginWithMcp(mcpConfig: unknown): Promise<string> {
     "---\nname: hello\ndescription: Minimal fixture skill.\n---\n",
     "utf8"
   );
-  await writeFile(
-    path.join(targetPath, ".mcp.json"),
-    JSON.stringify(mcpConfig, null, 2),
-    "utf8"
-  );
+  const mcpConfigFilePath = path.join(targetPath, mcpConfigPath);
+  await mkdir(path.dirname(mcpConfigFilePath), { recursive: true });
+  await writeFile(mcpConfigFilePath, JSON.stringify(mcpConfig, null, 2), "utf8");
 
   return targetPath;
 }
@@ -136,6 +137,47 @@ describe("security command", () => {
     expect(stderr).toEqual([]);
     expect(output.status).toBe("pass");
     expect(output.findings).toEqual([]);
+  });
+
+  it("fails query-bearing public HTTP without leaking URL secrets and permits localhost HTTP", async () => {
+    const publicTargetPath = await createPluginWithMcp({
+      mcpServers: {
+        remote: { url: "http://example.com/mcp?token=secret" }
+      }
+    }, "config/remote.json");
+    const localTargetPath = await createPluginWithMcp({
+      mcpServers: {
+        local: { url: "http://LOCALHOST:3000/mcp" }
+      }
+    });
+    const publicIo = createIo();
+    const localIo = createIo();
+
+    const publicExitCode = await runCli(["security", publicTargetPath, "--json"], publicIo.io);
+    const localExitCode = await runCli(["security", localTargetPath, "--json"], localIo.io);
+    const publicSerialized = publicIo.stdout.join("");
+    const publicOutput = JSON.parse(publicSerialized);
+    const localOutput = JSON.parse(localIo.stdout.join(""));
+
+    expect(publicExitCode).toBe(1);
+    expect(publicIo.stderr).toEqual([]);
+    expect(publicOutput.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.security.insecure_http_url",
+          evidence: expect.objectContaining({ url: "http://example.com/mcp" })
+        }),
+        expect.objectContaining({
+          id: "plugin.security.remote_mcp_url.query",
+          severity: "fail"
+        })
+      ])
+    );
+    expect(publicSerialized).not.toContain("token=secret");
+    expect(publicSerialized).not.toContain("secret");
+    expect(localExitCode).toBe(0);
+    expect(localIo.stderr).toEqual([]);
+    expect(localOutput.findings).toEqual([]);
   });
 
   it("renders machine-readable security audit JSON", async () => {

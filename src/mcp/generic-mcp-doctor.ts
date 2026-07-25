@@ -8,6 +8,7 @@ import {
   readMcpConfigPath
 } from "../compatibility/compatibility-matrix.js";
 import { readJsonFile } from "../core/read-json-file.js";
+import { inspectRemoteMcpUrl } from "../core/remote-url-policy.js";
 import { probeRuntimeConfig } from "../core/runtime-probe.js";
 import type {
   Finding,
@@ -63,6 +64,18 @@ function buildFinding(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function remoteUrlIssueFindingId(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "plugin.security.insecure_http_url"
+    : `plugin.security.remote_mcp_url.${issue}`;
+}
+
+function remoteUrlIssueMessage(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "uses an insecure public HTTP URL"
+    : `uses a remote MCP URL with ${issue.replaceAll("_", " ")}`;
 }
 
 async function fileExists(targetPath: string): Promise<boolean> {
@@ -154,7 +167,10 @@ function buildStaticMcpFindings(
       continue;
     }
 
-    if (typeof serverConfig.command !== "string" && typeof serverConfig.url !== "string") {
+    const command = serverConfig.command;
+    const url = serverConfig.url;
+
+    if (typeof command !== "string" && typeof url !== "string") {
       findings.push(
         buildFinding(
           "fail",
@@ -165,6 +181,41 @@ function buildStaticMcpFindings(
           { configPath, serverName, field: "transport" }
         )
       );
+    }
+
+    if (typeof command === "string" && typeof url === "string") {
+      findings.push(
+        buildFinding(
+          "fail",
+          "mcp.server.transport.conflict",
+          `The MCP server \`${serverName}\` must not define both \`command\` and \`url\`.`,
+          "A server with two transports cannot be selected deterministically by MCP clients.",
+          `Keep either \`command\` or \`url\` for the \`${serverName}\` entry in \`${configPath}\`.`,
+          { configPath, serverName, field: "transport" }
+        )
+      );
+    }
+
+    if (typeof url === "string") {
+      const inspection = inspectRemoteMcpUrl(url);
+
+      for (const issue of inspection.issues) {
+        findings.push(
+          buildFinding(
+            "fail",
+            remoteUrlIssueFindingId(issue),
+            `The MCP server \`${serverName}\` ${remoteUrlIssueMessage(issue)}.`,
+            "Unsafe or ambiguous remote transport configuration can expose credentials or prevent reliable MCP connectivity.",
+            "Use an absolute HTTPS URL without credentials, query parameters, fragments, or numeric IP literals; HTTP is only supported for localhost development.",
+            {
+              configPath,
+              serverName,
+              field: "url",
+              url: inspection.sanitizedUrl
+            }
+          )
+        );
+      }
     }
   }
 

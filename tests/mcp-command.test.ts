@@ -76,6 +76,49 @@ describe("mcp command", () => {
     );
   });
 
+  it("accepts an explicit localhost HTTP development transport", async () => {
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        local: { url: "http://LOCALHOST:3000/mcp" }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("pass");
+    expect(output.security.status).toBe("pass");
+  });
+
+  it("fails conflicting remote transports without exposing URL credentials", async () => {
+    const rawUrl = "https://user:secret@example.com/mcp?token=secret";
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        remote: { command: "node", url: rawUrl }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["mcp", targetPath, "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings.map((finding: { id: string }) => finding.id)).toEqual(
+      expect.arrayContaining([
+        "mcp.server.transport.conflict",
+        "plugin.security.remote_mcp_url.credentials",
+        "plugin.security.remote_mcp_url.query"
+      ])
+    );
+    expect(serialized).not.toContain(rawUrl);
+    expect(serialized).not.toContain("secret");
+  });
+
   it("runs explicit runtime conformance for a valid task-capable MCP config", async () => {
     const { io, stdout, stderr } = createIo();
 

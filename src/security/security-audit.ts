@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { discoverPackage } from "../core/discover-package.js";
 import { readJsonFile } from "../core/read-json-file.js";
+import { inspectRemoteMcpUrl } from "../core/remote-url-policy.js";
 import { validatePlugin } from "../core/validate-plugin.js";
 import type { DiscoveredPackage, Finding, FindingEvidence } from "../domain/types.js";
 import {
@@ -43,6 +44,18 @@ function buildFinding(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function remoteUrlIssueFindingId(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "plugin.security.insecure_http_url"
+    : `plugin.security.remote_mcp_url.${issue}`;
+}
+
+function remoteUrlIssueMessage(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "uses an insecure public HTTP URL"
+    : `uses a remote MCP URL with ${issue.replaceAll("_", " ")}`;
 }
 
 function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
@@ -416,30 +429,25 @@ export function auditMcpServerConfig(
       }
     }
 
-    if (typeof url === "string" && /^http:\/\//i.test(url)) {
-      findings.push(
-        buildFinding(
-          "warn",
-          "plugin.security.insecure_http_url",
-          `The MCP server \`${serverName}\` uses an insecure HTTP URL.`,
-          "Plain HTTP transports can expose MCP traffic on non-local networks and make endpoint identity harder to verify.",
-          "Use HTTPS for remote MCP servers; reserve HTTP for explicit localhost development endpoints.",
-          { serverName, configPath, url }
-        )
-      );
-    }
+    if (typeof url === "string") {
+      const inspection = inspectRemoteMcpUrl(url);
 
-    if (typeof url === "string" && /\/\/0\.0\.0\.0[:/]/i.test(url)) {
-      findings.push(
-        buildFinding(
-          "warn",
-          "plugin.security.mcp_binds_all_interfaces",
-          `The MCP server \`${serverName}\` URL binds to \`0.0.0.0\`.`,
-          "Servers that listen on all interfaces can accept connections from external hosts, which is rarely intended for local MCP development.",
-          "Use `127.0.0.1` or `localhost` instead of `0.0.0.0` unless external access is explicitly required.",
-          { serverName, configPath, url }
-        )
-      );
+      for (const issue of inspection.issues) {
+        findings.push(
+          buildFinding(
+            issue === "insecure_non_loopback" ? "warn" : "fail",
+            remoteUrlIssueFindingId(issue),
+            `The MCP server \`${serverName}\` ${remoteUrlIssueMessage(issue)}.`,
+            "Unsafe or ambiguous remote transport configuration can expose credentials or prevent reliable MCP connectivity.",
+            "Use an absolute HTTPS URL without credentials, query parameters, fragments, or numeric IP literals; HTTP is only supported for localhost development.",
+            {
+              serverName,
+              configPath,
+              url: inspection.sanitizedUrl
+            }
+          )
+        );
+      }
     }
   }
 
@@ -448,10 +456,19 @@ export function auditMcpServerConfig(
 
 const externalUrlPattern = /https?:\/\/[^\s`"'<>)]+/gi;
 
-async function auditSkillExternalReferences(rootPath: string): Promise<Finding[]> {
+async function auditSkillExternalReferences(
+  rootPath: string,
+  mcpConfigPath: string | null
+): Promise<Finding[]> {
   const findings: Finding[] = [];
 
   for (const filePath of await collectPromptPoisoningScanFiles(rootPath)) {
+    if (
+      path.basename(filePath) === ".mcp.json" ||
+      (mcpConfigPath !== null && path.resolve(filePath) === mcpConfigPath)
+    ) {
+      continue;
+    }
     const content = await readFile(filePath, "utf8");
     const matches = content.match(externalUrlPattern);
 
@@ -734,7 +751,12 @@ export async function buildSecurityAudit(targetPath: string): Promise<SecurityAu
     ...(await auditMcpCommandSurface(discoveredPackage)),
     ...(await auditChildProcessSourceSurface(discoveredPackage.rootPath)),
     ...(await auditPromptPoisoningSurface(discoveredPackage.rootPath)),
-    ...(await auditSkillExternalReferences(discoveredPackage.rootPath))
+    ...(await auditSkillExternalReferences(
+      discoveredPackage.rootPath,
+      discoveredPackage.manifest.mcpServers
+        ? path.resolve(discoveredPackage.rootPath, discoveredPackage.manifest.mcpServers)
+        : null
+    ))
   ];
 
   return buildSecurityAuditFromFindings(discoveredPackage.rootPath, findings);

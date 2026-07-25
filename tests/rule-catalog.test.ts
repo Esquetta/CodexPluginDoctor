@@ -77,6 +77,17 @@ const mcpConformanceRules = [
   }
 ] as const;
 
+const remoteMcpRules = [
+  { id: "mcp.server.transport.conflict", category: "mcp", defaultSeverity: "fail" },
+  { id: "plugin.mcp.server.transport.conflict", category: "mcp", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.invalid", category: "security", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.unsupported_scheme", category: "security", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.credentials", category: "security", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.query", category: "security", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.fragment", category: "security", defaultSeverity: "fail" },
+  { id: "plugin.security.remote_mcp_url.ip_literal", category: "security", defaultSeverity: "fail" }
+] as const;
+
 describe("MCP 2025-11 conformance rule catalog", () => {
   it("resolves every evaluator finding with its public remediation contract", () => {
     expect(ruleCatalog.filter((rule) => rule.id.startsWith("mcp.conformance."))).toEqual(
@@ -85,6 +96,12 @@ describe("MCP 2025-11 conformance rule catalog", () => {
 
     for (const expectedRule of mcpConformanceRules) {
       expect(findRuleDefinition(expectedRule.id)).toEqual(expectedRule);
+    }
+  });
+
+  it("resolves every remote MCP transport finding with a public remediation contract", () => {
+    for (const expectedRule of remoteMcpRules) {
+      expect(findRuleDefinition(expectedRule.id)).toMatchObject(expectedRule);
     }
   });
 });

@@ -10,6 +10,7 @@ import type {
 } from "../domain/types.js";
 import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
+import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import { probeRuntime } from "./runtime-probe.js";
 
 function buildFailure(
@@ -44,6 +45,18 @@ function buildWarning(
     suggestedFix,
     ...(evidence ? { evidence } : {})
   };
+}
+
+function remoteUrlIssueFindingId(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "plugin.security.insecure_http_url"
+    : `plugin.security.remote_mcp_url.${issue}`;
+}
+
+function remoteUrlIssueMessage(issue: string): string {
+  return issue === "insecure_non_loopback"
+    ? "uses an insecure public HTTP URL"
+    : `uses a remote MCP URL with ${issue.replaceAll("_", " ")}`;
 }
 
 async function directoryExists(targetPath: string): Promise<boolean> {
@@ -674,6 +687,43 @@ async function validateMcpConfig(
           }
         )
       );
+    }
+
+    if (typeof command === "string" && typeof url === "string") {
+      findings.push(
+        buildFailure(
+          "plugin.mcp.server.transport.conflict",
+          `The MCP server \`${serverName}\` must not define both \`command\` and \`url\`.`,
+          "A server with two transports cannot be selected deterministically by MCP clients.",
+          `Keep either \`command\` or \`url\` for the \`${serverName}\` entry in \`${mcpConfigPath}\`.`,
+          {
+            configPath: relativePackagePath(rootPath, mcpConfigPath),
+            serverName,
+            field: "transport"
+          }
+        )
+      );
+    }
+
+    if (typeof url === "string") {
+      const inspection = inspectRemoteMcpUrl(url);
+
+      for (const issue of inspection.issues) {
+        findings.push(
+          buildFailure(
+            remoteUrlIssueFindingId(issue),
+            `The MCP server \`${serverName}\` ${remoteUrlIssueMessage(issue)}.`,
+            "Unsafe or ambiguous remote transport configuration can expose credentials or prevent reliable MCP connectivity.",
+            "Use an absolute HTTPS URL without credentials, query parameters, fragments, or numeric IP literals; HTTP is only supported for localhost development.",
+            {
+              configPath: relativePackagePath(rootPath, mcpConfigPath),
+              serverName,
+              field: "url",
+              url: inspection.sanitizedUrl
+            }
+          )
+        );
+      }
     }
 
     if (isPlainObject(env)) {
