@@ -11,6 +11,7 @@ const resourceMetadataUrl = "https://mcp.example/.well-known/oauth-protected-res
 const rootResourceMetadataUrl = "https://mcp.example/.well-known/oauth-protected-resource";
 const issuer = "https://auth.example/tenant";
 const authorizationMetadataUrl = "https://auth.example/.well-known/oauth-authorization-server/tenant";
+const oidcPathInsertionMetadataUrl = "https://auth.example/.well-known/openid-configuration/tenant";
 const oidcMetadataUrl = "https://auth.example/tenant/.well-known/openid-configuration";
 
 function json(body: unknown, statusCode = 200): BoundedHttpResponse {
@@ -195,6 +196,7 @@ describe("checkRemoteOAuthReadiness", () => {
     const { request, calls } = requestFrom({
       [resourceMetadataUrl]: protectedMetadata([issuer, secondIssuer]),
       [authorizationMetadataUrl]: response(404),
+      [oidcPathInsertionMetadataUrl]: response(404),
       [oidcMetadataUrl]: response(404),
       "https://auth-two.example/.well-known/oauth-authorization-server/issuer": json({
         issuer: secondIssuer,
@@ -209,15 +211,17 @@ describe("checkRemoteOAuthReadiness", () => {
     expect(calls.map((call) => call.url)).toEqual([
       resourceMetadataUrl,
       authorizationMetadataUrl,
+      oidcPathInsertionMetadataUrl,
       oidcMetadataUrl,
       "https://auth-two.example/.well-known/oauth-authorization-server/issuer"
     ]);
   });
 
-  it("tries OIDC discovery after RFC 8414 authorization metadata", async () => {
+  it("follows RFC 8414 then both OIDC discovery locations", async () => {
     const { request, calls } = requestFrom({
       [resourceMetadataUrl]: protectedMetadata(),
       [authorizationMetadataUrl]: response(404),
+      [oidcPathInsertionMetadataUrl]: authorizationMetadata(),
       [oidcMetadataUrl]: authorizationMetadata()
     });
 
@@ -227,7 +231,50 @@ describe("checkRemoteOAuthReadiness", () => {
     expect(calls.map((call) => call.url)).toEqual([
       resourceMetadataUrl,
       authorizationMetadataUrl,
+      oidcPathInsertionMetadataUrl
+    ]);
+  });
+
+  it("tries appended OIDC discovery only after the path-insertion location is not found", async () => {
+    const { request, calls } = requestFrom({
+      [resourceMetadataUrl]: protectedMetadata(),
+      [authorizationMetadataUrl]: response(404),
+      [oidcPathInsertionMetadataUrl]: response(404),
+      [oidcMetadataUrl]: authorizationMetadata()
+    });
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [], { request });
+
+    expect(result.status).toBe("pass");
+    expect(calls.map((call) => call.url)).toEqual([
+      resourceMetadataUrl,
+      authorizationMetadataUrl,
+      oidcPathInsertionMetadataUrl,
       oidcMetadataUrl
+    ]);
+  });
+
+  it("deduplicates equivalent OIDC discovery locations for a root issuer", async () => {
+    const rootIssuer = "https://auth.example";
+    const rootAuthorizationMetadataUrl = "https://auth.example/.well-known/oauth-authorization-server";
+    const rootOidcMetadataUrl = "https://auth.example/.well-known/openid-configuration";
+    const { request, calls } = requestFrom({
+      [resourceMetadataUrl]: protectedMetadata([rootIssuer]),
+      [rootAuthorizationMetadataUrl]: response(404),
+      [rootOidcMetadataUrl]: json({
+        issuer: rootIssuer,
+        authorization_endpoint: "https://auth.example/authorize",
+        token_endpoint: "https://auth.example/token"
+      })
+    });
+
+    const result = await checkRemoteOAuthReadiness(resourceUrl, [], { request });
+
+    expect(result.status).toBe("pass");
+    expect(calls.map((call) => call.url)).toEqual([
+      resourceMetadataUrl,
+      rootAuthorizationMetadataUrl,
+      rootOidcMetadataUrl
     ]);
   });
 
@@ -342,6 +389,7 @@ describe("checkRemoteOAuthReadiness", () => {
     const { request, calls } = requestFrom({
       [resourceMetadataUrl]: protectedMetadata([issuer, issuer, secondIssuer]),
       [authorizationMetadataUrl]: response(404),
+      [oidcPathInsertionMetadataUrl]: response(404),
       [oidcMetadataUrl]: response(404),
       "https://auth-two.example/.well-known/oauth-authorization-server/issuer": json({
         issuer: secondIssuer,
@@ -356,6 +404,7 @@ describe("checkRemoteOAuthReadiness", () => {
     expect(calls.map((call) => call.url)).toEqual([
       resourceMetadataUrl,
       authorizationMetadataUrl,
+      oidcPathInsertionMetadataUrl,
       oidcMetadataUrl,
       "https://auth-two.example/.well-known/oauth-authorization-server/issuer"
     ]);

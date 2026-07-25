@@ -259,9 +259,16 @@ async function authorizationServerIsReady(
   if (rfc8414.kind === "ok") return validAuthorizationServerMetadata(rfc8414.metadata, issuer) ? "pass" : "invalid";
   if (rfc8414.kind === "unavailable") return "unavailable";
 
-  const oidc = await fetchMetadata(oidcDiscoveryUrl(issuer), request, requestOptions, deadline);
-  if (oidc.kind === "ok") return validAuthorizationServerMetadata(oidc.metadata, issuer) ? "pass" : "invalid";
-  return oidc.kind === "not-found" ? "invalid" : "unavailable";
+  const oidcUrls = [...new Set([
+    insertWellKnown(issuer, "openid-configuration"),
+    oidcDiscoveryUrl(issuer)
+  ])];
+  for (const oidcUrl of oidcUrls) {
+    const oidc = await fetchMetadata(oidcUrl, request, requestOptions, deadline);
+    if (oidc.kind === "ok") return validAuthorizationServerMetadata(oidc.metadata, issuer) ? "pass" : "invalid";
+    if (oidc.kind === "unavailable") return "unavailable";
+  }
+  return "invalid";
 }
 
 export async function checkRemoteOAuthReadiness(
