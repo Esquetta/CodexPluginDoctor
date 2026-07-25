@@ -155,6 +155,27 @@ describe("requestBoundedHttp", () => {
     expect(Date.now() - startedAt).toBeLessThan(500);
   });
 
+  it("uses one deadline across DNS and a stalled request", async () => {
+    const port = await startServer(() => undefined);
+    const timeoutMs = 150;
+    const dnsDelayMs = 100;
+    const startedAt = Date.now();
+
+    await expect(requestBoundedHttp(`http://mcp.test:${port}/mcp`, {
+      allowLocalNetwork: true,
+      lookup: async () => {
+        await new Promise((resolve) => setTimeout(resolve, dnsDelayMs));
+        return [{ address: "127.0.0.1", family: 4 }];
+      },
+      timeoutMs
+    })).rejects.toMatchObject({
+      code: "REMOTE_HTTP_TIMEOUT",
+      message: "Remote HTTP request timed out."
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(350);
+  });
+
   it("rejects redirects without following them and retains only the safe location", async () => {
     const port = await startServer((_request, response) => {
       response.writeHead(302, { location: "https://elsewhere.test/mcp", "set-cookie": "secret=value" });

@@ -94,6 +94,7 @@ describe("resolveRemoteTarget", () => {
     ["mapped private IPv4", "::ffff:10.0.0.1", 6],
     ["mapped public IPv4", "::ffff:8.8.8.8", 6],
     ["IPv4-compatible IPv6", "::127.0.0.1", 6],
+    ["IPv6 well-known NAT64 prefix", "64:ff9b::a9fe:a9fe", 6],
     ["IPv6 NAT64 local-use prefix", "64:ff9b:1::1", 6],
     ["IPv6 discard-only prefix", "100:0:0:1::1", 6]
   ])("rejects %s destinations", async (_name, address, family) => {

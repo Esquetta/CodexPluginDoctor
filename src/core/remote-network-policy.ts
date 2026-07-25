@@ -93,6 +93,7 @@ mappedIpv4Addresses.addSubnet("::ffff:0:0", 96, "ipv6");
 ipv4CompatibleAddresses.addSubnet("::", 96, "ipv6");
 
 for (const [address, prefix] of [
+  ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100:0:0:1::", 64]
 ] as const) {
