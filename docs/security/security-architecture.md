@@ -48,7 +48,7 @@ This is an approval gate, not a sandbox. It reduces accidental or unreviewed exe
 
 ### Remote MCP Network Boundary
 
-Remote probing requires explicit network consent and separately requires local-network consent for localhost or private addresses. Before each request, the CLI validates the URL and resolved addresses to block credentials, query and fragment components, numeric IP literals, loopback and private ranges, link-local and cloud-metadata ranges, and other SSRF targets. Requests are bounded, redirect-free, and redacted in reports.
+Remote probing requires explicit network consent and separately requires `--allow-local-network` consent for loopback endpoints only. Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked. Before each request, the CLI validates the URL and resolved addresses to block credentials, query and fragment components, numeric IP literals, loopback and private ranges, link-local and cloud-metadata ranges, and other SSRF targets. Requests are bounded, redirect-free, and redacted in reports.
 
 DNS and IP classification cannot eliminate arbitrary network-specific NAT64 Pref64 mappings. Use runner or host egress controls to limit the destinations that a CI job or workstation can reach.
 

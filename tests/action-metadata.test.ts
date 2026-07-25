@@ -106,8 +106,9 @@ describe("GitHub Action metadata", () => {
     const actionMetadata = await readFile("action.yml", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
     const readiness = await readFile("docs/architecture/remote-mcp-readiness.md", "utf8");
+    const securityArchitecture = await readFile("docs/security/security-architecture.md", "utf8");
 
-    for (const document of [actionMetadata, actionUsage, readiness]) {
+    for (const document of [actionMetadata, actionUsage, readiness, securityArchitecture]) {
       expect(document).toContain("loopback endpoints only");
       expect(document).toContain("Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.");
     }
