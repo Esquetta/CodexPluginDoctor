@@ -245,6 +245,35 @@ describe("probeRemoteMcpServer", () => {
     }
   });
 
+  it("fails authorization discovery after a 401 without initializing or notifying", async () => {
+    const requests: Array<{ url: string; options: Record<string, unknown> | undefined }> = [];
+    const request = async (url: string, requestOptions?: Record<string, unknown>): Promise<BoundedHttpResponse> => {
+      requests.push({ url, options: requestOptions });
+      if (url === "https://mcp.example/mcp") {
+        return {
+          statusCode: 401,
+          headers: {
+            "www-authenticate": 'Bearer resource_metadata="https://mcp.example/.well-known/oauth-protected-resource/mcp"'
+          },
+          body: Buffer.alloc(0)
+        };
+      }
+      return { statusCode: 404, headers: { "content-type": "application/json" }, body: Buffer.alloc(0) };
+    };
+
+    const result = await probeRemoteMcpServer("remote", "https://mcp.example/mcp", {
+      allowNetwork: true,
+      request
+    });
+
+    expect(result.scorecard).toMatchObject({ authorization: "fail", initialize: "skipped", overall: "fail" });
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.authorization.metadata.unavailable", severity: "fail" })
+    ]);
+    expect(requests).toHaveLength(2);
+    expect(requests.some((entry) => JSON.stringify(entry.options).includes("notifications/initialized"))).toBe(false);
+  });
+
   it("fails an unexpected HTTP status without exposing response details", async () => {
     const port = await startServer((_request, response) => {
       response.writeHead(500, { "content-type": "application/json" });

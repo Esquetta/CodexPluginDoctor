@@ -29,6 +29,9 @@ type MetadataReply =
   | { kind: "not-found" }
   | { kind: "unavailable" };
 
+const MAX_DISCOVERY_CANDIDATES = 4;
+const MAX_DISCOVERY_TIMEOUT_MS = 3_000;
+
 function failure(id: string): RemoteOAuthReadinessResult {
   return {
     status: "fail",
@@ -72,6 +75,7 @@ function safeHttpsUrl(value: unknown): string | null {
       url.password ||
       url.search ||
       url.hash ||
+      url.hostname.startsWith("[") ||
       isIP(url.hostname) !== 0
     ) {
       return null;
@@ -114,14 +118,25 @@ function parseBearerResourceMetadata(headers: Array<string | string[]>): { speci
 async function fetchMetadata(
   url: string,
   request: RemoteOAuthReadinessRequest,
-  requestOptions: RemoteOAuthReadinessOptions["requestOptions"]
+  requestOptions: RemoteOAuthReadinessOptions["requestOptions"],
+  deadline: number
 ): Promise<MetadataReply> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) return { kind: "unavailable" };
+
+  let timeout: NodeJS.Timeout | undefined;
   try {
-    const response = await request(url, {
-      ...requestOptions,
-      method: "GET",
-      headers: { Accept: "application/json" }
-    });
+    const response = await Promise.race([
+      request(url, {
+        ...requestOptions,
+        timeoutMs: Math.max(1, Math.floor(remainingMs)),
+        method: "GET",
+        headers: { Accept: "application/json" }
+      }),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("OAuth discovery timed out.")), remainingMs);
+      })
+    ]);
     if (response.statusCode === 404) return { kind: "not-found" };
     if (response.statusCode !== 200 || mediaType(response.headers) !== "application/json") {
       return { kind: "unavailable" };
@@ -130,6 +145,8 @@ async function fetchMetadata(
     return metadata === null ? { kind: "unavailable" } : { kind: "ok", metadata };
   } catch {
     return { kind: "unavailable" };
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
@@ -138,7 +155,9 @@ function validProtectedResourceMetadata(metadata: JsonObject, resourceUrl: strin
     return null;
   }
   const issuers = metadata.authorization_servers.map(safeHttpsUrl);
-  return issuers.every((issuer): issuer is string => issuer !== null) ? issuers : null;
+  if (!issuers.every((issuer): issuer is string => issuer !== null)) return null;
+  const uniqueIssuers = [...new Set(issuers)];
+  return uniqueIssuers.length <= MAX_DISCOVERY_CANDIDATES ? uniqueIssuers : null;
 }
 
 function validAuthorizationServerMetadata(metadata: JsonObject, issuer: string): boolean {
@@ -152,13 +171,14 @@ function validAuthorizationServerMetadata(metadata: JsonObject, issuer: string):
 async function authorizationServerIsReady(
   issuer: string,
   request: RemoteOAuthReadinessRequest,
-  requestOptions: RemoteOAuthReadinessOptions["requestOptions"]
+  requestOptions: RemoteOAuthReadinessOptions["requestOptions"],
+  deadline: number
 ): Promise<"pass" | "invalid" | "unavailable"> {
-  const rfc8414 = await fetchMetadata(insertWellKnown(issuer, "oauth-authorization-server"), request, requestOptions);
+  const rfc8414 = await fetchMetadata(insertWellKnown(issuer, "oauth-authorization-server"), request, requestOptions, deadline);
   if (rfc8414.kind === "ok") return validAuthorizationServerMetadata(rfc8414.metadata, issuer) ? "pass" : "invalid";
   if (rfc8414.kind === "unavailable") return "unavailable";
 
-  const oidc = await fetchMetadata(oidcDiscoveryUrl(issuer), request, requestOptions);
+  const oidc = await fetchMetadata(oidcDiscoveryUrl(issuer), request, requestOptions, deadline);
   if (oidc.kind === "ok") return validAuthorizationServerMetadata(oidc.metadata, issuer) ? "pass" : "invalid";
   return oidc.kind === "not-found" ? "invalid" : "unavailable";
 }
@@ -170,35 +190,48 @@ export async function checkRemoteOAuthReadiness(
 ): Promise<RemoteOAuthReadinessResult> {
   const request = options.request ?? requestBoundedHttp;
   const explicit = parseBearerResourceMetadata(wwwAuthenticate);
-  const metadataUrls = explicit.specified
+  const metadataCandidates = explicit.specified
     ? explicit.values.map(safeHttpsUrl)
     : [
       insertWellKnown(resourceUrl, "oauth-protected-resource"),
       `${new URL(resourceUrl).origin}/.well-known/oauth-protected-resource`
     ].map(safeHttpsUrl);
-  if (!metadataUrls.every((url): url is string => url !== null)) {
+  if (!metadataCandidates.every((url): url is string => url !== null)) {
     return failure("plugin.runtime.remote.authorization.metadata.invalid");
   }
+  const metadataUrls = [...new Set(metadataCandidates)];
+  if (metadataUrls.length > MAX_DISCOVERY_CANDIDATES) return failure("plugin.runtime.remote.authorization.metadata.invalid");
+  const suppliedTimeoutMs = options.requestOptions?.timeoutMs;
+  const timeoutMs = typeof suppliedTimeoutMs === "number" && Number.isFinite(suppliedTimeoutMs)
+    ? Math.max(0, Math.min(suppliedTimeoutMs, MAX_DISCOVERY_TIMEOUT_MS))
+    : MAX_DISCOVERY_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
 
-  let protectedMetadata: JsonObject | null = null;
-  for (const metadataUrl of [...new Set(metadataUrls)]) {
-    const reply = await fetchMetadata(metadataUrl, request, options.requestOptions);
+  let issuers: string[] | null = null;
+  let protectedMetadataUnavailable = false;
+  for (const metadataUrl of metadataUrls) {
+    const reply = await fetchMetadata(metadataUrl, request, options.requestOptions, deadline);
     if (reply.kind === "ok") {
-      protectedMetadata = reply.metadata;
-      break;
+      const candidateIssuers = validProtectedResourceMetadata(reply.metadata, resourceUrl);
+      if (candidateIssuers !== null) {
+        issuers = candidateIssuers;
+        break;
+      }
+      if (!explicit.specified) return failure("plugin.runtime.remote.authorization.metadata.invalid");
+      continue;
     }
-    if (reply.kind === "unavailable" || explicit.specified) {
+    protectedMetadataUnavailable = true;
+    if (!explicit.specified && reply.kind === "unavailable") {
       return failure("plugin.runtime.remote.authorization.metadata.unavailable");
     }
   }
-  if (protectedMetadata === null) return failure("plugin.runtime.remote.authorization.metadata.unavailable");
-
-  const issuers = validProtectedResourceMetadata(protectedMetadata, resourceUrl);
-  if (issuers === null) return failure("plugin.runtime.remote.authorization.metadata.invalid");
+  if (issuers === null) return failure(protectedMetadataUnavailable
+    ? "plugin.runtime.remote.authorization.metadata.unavailable"
+    : "plugin.runtime.remote.authorization.metadata.invalid");
 
   let unavailable = false;
   for (const issuer of issuers) {
-    const readiness = await authorizationServerIsReady(issuer, request, options.requestOptions);
+    const readiness = await authorizationServerIsReady(issuer, request, options.requestOptions, deadline);
     if (readiness === "pass") return { status: "pass", findings: [] };
     unavailable ||= readiness === "unavailable";
   }
