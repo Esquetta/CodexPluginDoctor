@@ -46,6 +46,12 @@ async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
+      if (request.method === "GET") {
+        requests.push("GET");
+        response.writeHead(405);
+        response.end();
+        return;
+      }
       const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method: string };
       requests.push(message.method);
 
@@ -118,7 +124,7 @@ describe("mcp command", () => {
           }
         }
       });
-      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await remote.close();
     }
@@ -141,7 +147,7 @@ describe("mcp command", () => {
       expect(JSON.parse(stdout.join(""))).toMatchObject({
         runtimeScorecard: { remote: { networkSafety: "pass", overall: "pass" } }
       });
-      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await remote.close();
     }
@@ -171,7 +177,7 @@ describe("mcp command", () => {
         overall: "fail"
       });
       expect(failing.requests).toEqual(["initialize"]);
-      expect(passing.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await failing.close();
       await passing.close();

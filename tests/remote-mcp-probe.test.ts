@@ -71,6 +71,11 @@ describe("probeRemoteMcpServer", () => {
       request.on("data", (chunk) => { body += chunk; });
       request.on("end", () => {
         requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
         const message = JSON.parse(body) as { id?: number; method: string };
         if (message.method === "initialize") {
           response.writeHead(200, {
@@ -98,9 +103,9 @@ describe("probeRemoteMcpServer", () => {
       authorization: "skipped",
       overall: "pass"
     });
-    expect(requests).toHaveLength(2);
-    expect(requests.map((request) => request.method)).toEqual(["POST", "POST"]);
-    expect(requests.map((request) => JSON.parse(request.body).method)).toEqual([
+    expect(requests).toHaveLength(3);
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET"]);
+    expect(requests.slice(0, 2).map((request) => JSON.parse(request.body).method)).toEqual([
       "initialize",
       "notifications/initialized"
     ]);
@@ -120,7 +125,40 @@ describe("probeRemoteMcpServer", () => {
     expect(requests[0]?.headers.cookie).toBeUndefined();
     expect(requests[1]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
     expect(requests[1]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
+    expect(requests[2]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
     assertPrivate(result);
+  });
+
+  it("treats a bounded SSE GET 405 as protocol-compliant after initialization", async () => {
+    const requests: Array<{ method: string; headers: Record<string, string | string[] | undefined>; body: string }> = [];
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([]);
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET"]);
+    expect(requests[2]?.headers.accept).toBe("text/event-stream");
+    expect(requests[2]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
   });
 
   it("skips SSE primer events until the initialize response without waiting for the stream to close", async () => {
@@ -129,6 +167,11 @@ describe("probeRemoteMcpServer", () => {
       request.setEncoding("utf8");
       request.on("data", (chunk) => { body += chunk; });
       request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
         const message = JSON.parse(body) as { id?: number; method: string };
         if (message.method === "initialize") {
           response.writeHead(200, { "content-type": "text/event-stream" });

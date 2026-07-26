@@ -6,6 +6,11 @@ import {
 } from "./bounded-http-client.js";
 import { RemoteNetworkPolicyError, type RemoteLookup } from "./remote-network-policy.js";
 import { checkRemoteOAuthReadiness } from "./remote-oauth-readiness.js";
+import {
+  createSkippedRemoteTransportReliabilityResult,
+  probeRemoteTransportReliability,
+  type RemoteTransportReliabilityResult
+} from "./remote-transport-reliability.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import type { Finding, RemoteRuntimeScorecard, RuntimeCapabilityStatus } from "../domain/types.js";
 import { packageVersion } from "../version.js";
@@ -25,11 +30,13 @@ export interface RemoteMcpProbeOptions {
   requestTimeoutMs?: number;
   lookup?: RemoteLookup;
   request?: RemoteMcpRequest;
+  allowSessionLifecycle?: boolean;
 }
 
 export interface RemoteMcpProbeResult {
   findings: Finding[];
   scorecard: RemoteRuntimeScorecard;
+  reliability: RemoteTransportReliabilityResult;
 }
 
 function createScorecard(): RemoteRuntimeScorecard {
@@ -54,7 +61,11 @@ function failure(
   return { id, severity: "fail", message, impact, suggestedFix };
 }
 
-function finalize(scorecard: RemoteRuntimeScorecard, findings: Finding[]): RemoteMcpProbeResult {
+function finalize(
+  scorecard: RemoteRuntimeScorecard,
+  findings: Finding[],
+  reliability = createSkippedRemoteTransportReliabilityResult()
+): RemoteMcpProbeResult {
   scorecard.overall = findings.some((finding) => finding.severity === "fail")
     ? "fail"
     : findings.some((finding) => finding.severity === "warn")
@@ -62,7 +73,7 @@ function finalize(scorecard: RemoteRuntimeScorecard, findings: Finding[]): Remot
       : scorecard.initialize === "pass" || scorecard.authorization === "pass"
         ? "pass"
         : "skipped";
-  return { findings, scorecard };
+  return { findings, scorecard, reliability };
 }
 
 function isPlainObject(value: unknown): value is JsonObject {
@@ -327,5 +338,72 @@ export async function probeRemoteMcpServer(
   }
 
   scorecard.protocolHeaders = "pass";
-  return finalize(scorecard, findings);
+  const reliability = await probeRemoteTransportReliability({
+    rawUrl,
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    request,
+    requestTimeoutMs: options.requestTimeoutMs,
+    requestOptions: {
+      allowLocalNetwork: options.allowLocalNetwork,
+      lookup: options.lookup
+    },
+    sessionId,
+    allowSessionLifecycle: options.allowSessionLifecycle,
+    reinitialize: async (remainingMs) => {
+      const restartDeadline = Date.now() + remainingMs;
+      const restartTimeoutMs = (): number => {
+        const availableMs = restartDeadline - Date.now();
+        if (availableMs <= 0) {
+          throw new Error("restart deadline elapsed");
+        }
+        return Math.min(availableMs, options.requestTimeoutMs ?? 3_000);
+      };
+      const restartInitialize = await request(rawUrl, {
+        allowLocalNetwork: options.allowLocalNetwork,
+        lookup: options.lookup,
+        timeoutMs: restartTimeoutMs(),
+        method: "POST",
+        body: initializeBody,
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json"
+        },
+        stopAfter: (body) => findSseInitializeResponse(body) !== null
+      });
+      if (restartInitialize.statusCode !== 200) {
+        throw new Error("restart initialize failed");
+      }
+      const restartContentType = mediaType(responseHeader(restartInitialize.headers, "content-type"));
+      if (restartContentType !== "application/json" && restartContentType !== "text/event-stream") {
+        throw new Error("restart initialize content type invalid");
+      }
+      const replacementSessionId = responseHeader(restartInitialize.headers, "mcp-session-id");
+      if (replacementSessionId !== null && !validSessionId(replacementSessionId)) {
+        throw new Error("restart session invalid");
+      }
+      const restartMessage = parseInitializeResponse(restartInitialize.body, restartContentType);
+      if (!restartMessage || !isValidInitializeResponse(restartMessage)) {
+        throw new Error("restart initialize result invalid");
+      }
+      const restartInitialized = await request(rawUrl, {
+        allowLocalNetwork: options.allowLocalNetwork,
+        lookup: options.lookup,
+        timeoutMs: restartTimeoutMs(),
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+          ...(replacementSessionId === null ? {} : { "MCP-Session-Id": replacementSessionId })
+        }
+      });
+      if (restartInitialized.statusCode < 200 || restartInitialized.statusCode >= 300) {
+        throw new Error("restart initialized failed");
+      }
+      return replacementSessionId;
+    }
+  });
+  findings.push(...reliability.findings);
+  return finalize(scorecard, findings, reliability);
 }
