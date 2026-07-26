@@ -346,6 +346,28 @@ describe("probeRemoteTransportReliability", () => {
     assertRedacted(result);
   });
 
+  it("treats a session-bound DELETE 404 as one failed termination without restart", async () => {
+    const fixture = scriptedRequest([response(405), response(404)]);
+    let restarts = 0;
+
+    const result = await probe(fixture.request, {
+      sessionId: "session-secret-sentinel",
+      allowSessionLifecycle: true,
+      reinitialize: async () => {
+        restarts += 1;
+        return "replacement-session-secret-sentinel";
+      }
+    });
+
+    expect(fixture.requests.map((request) => request.method)).toEqual(["GET", "DELETE"]);
+    expect(restarts).toBe(0);
+    expect(result.scorecard).toMatchObject({ termination: "fail", overall: "fail" });
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.termination.failed", severity: "fail" })
+    ]);
+    assertRedacted(result);
+  });
+
   it.each([
     [false, response(405), "skipped", "pass"],
     [true, response(204), "pass", "pass"],

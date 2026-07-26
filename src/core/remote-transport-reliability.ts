@@ -175,7 +175,7 @@ export async function probeRemoteTransportReliability(
         return { error };
       }
 
-      if (sessionId !== null && response.statusCode === 404) {
+      if (method === "GET" && sessionId !== null && response.statusCode === 404) {
         if (restarted) {
           scorecard.sessionRestart = "fail";
           return { restartFailed: true };
