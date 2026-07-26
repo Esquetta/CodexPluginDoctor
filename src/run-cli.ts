@@ -412,6 +412,9 @@ function printUsage(io: CliIo): void {
   io.writeStderr(
     "Baseline gating: codex-plugin-doctor baseline create <path> --output <path> [--runtime]\n       codex-plugin-doctor check <path> --baseline <path>"
   );
+  io.writeStderr(
+    "Remote MCP runtime flags (check, mcp, release check, and doctor release-evidence): --runtime --allow-network [--allow-local-network] [--allow-session-lifecycle] [--require-remote-reliability]\n       --allow-session-lifecycle requires --runtime --allow-network and can terminate a remote session.\n       --require-remote-reliability requires --runtime --allow-network, blocks non-pass reliability, and does not grant network consent."
+  );
 }
 
 const suppressUsageText = [

@@ -3019,6 +3019,19 @@ describe("runCli", () => {
     });
   });
 
+  it("documents remote lifecycle consent and reliability gate dependencies in general help", async () => {
+    const { io, stderr } = createIo();
+
+    expect(await runCli([], io)).toBe(2);
+
+    const usage = stderr.join("");
+    expect(usage).toContain("--allow-session-lifecycle");
+    expect(usage).toContain("--require-remote-reliability");
+    expect(usage).toContain("can terminate a remote session");
+    expect(usage).toContain("requires --runtime --allow-network");
+    expect(usage).toContain("does not grant network consent");
+  });
+
   it("propagates explicit lifecycle consent and strict remote reliability gating to a runtime check", async () => {
     const { io, stderr } = createIo();
     const runCheckImpl = vi.fn(async (targetPath: string) => ({

@@ -204,6 +204,34 @@ describe("mcp command", () => {
     }
   });
 
+  it("blocks the strict gate when one of multiple remote reliability scorecards warns", async () => {
+    const passing = await startRemoteMcpServer();
+    const warning = await startRemoteMcpServer({ incompleteSse: true });
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        passing: { url: passing.url },
+        warning: { url: warning.url }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--require-remote-reliability", "--json"
+      ], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toEqual([]);
+      expect(output.runtimeScorecard.remote.reliability.overall).toBe("warn");
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
+      expect(warning.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
+    } finally {
+      await passing.close();
+      await warning.close();
+    }
+  });
+
   it("preserves the worst remote status when a later remote server passes", async () => {
     const failing = await startRemoteMcpServer({ invalidInitialize: true });
     const passing = await startRemoteMcpServer();
