@@ -161,6 +161,104 @@ describe("probeRemoteMcpServer", () => {
     expect(requests[2]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
   });
 
+  it("keeps reliability failures internal until the public scorecard is wired", async () => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(500, { "content-type": "application/json" });
+          response.end('{"error":"remote-body-secret-sentinel"}');
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([]);
+    expect(result.scorecard.overall).toBe("pass");
+    expect(result.reliability.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.get.status", severity: "fail" })
+    ]);
+    expect(result.reliability.scorecard.overall).toBe("fail");
+    assertPrivate(result);
+  });
+
+  it("shares one fixed request budget with both actual session-restart POSTs", async () => {
+    const requests: Array<{ method: string; headers: Record<string, string | string[] | undefined>; body: string }> = [];
+    let initializeCount = 0;
+    let getCount = 0;
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          getCount += 1;
+          if (getCount === 1) {
+            response.writeHead(404);
+          } else if (getCount === 2) {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end("id: event-secret-sentinel\n\n");
+            return;
+          } else if (getCount === 3) {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end("\n");
+            return;
+          } else {
+            response.writeHead(500);
+          }
+          response.end();
+          return;
+        }
+        if (request.method === "DELETE") {
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          initializeCount += 1;
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": initializeCount === 1
+              ? "session-secret-sentinel"
+              : "replacement-session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, {
+      ...options(port),
+      allowSessionLifecycle: true
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.reliability.scorecard).toMatchObject({ sessionRestart: "pass", resumability: "pass", termination: "pass", overall: "pass" });
+    expect(requests.map((request) => request.method)).toEqual([
+      "POST", "POST", "GET", "POST", "POST", "GET", "GET", "DELETE"
+    ]);
+    expect(requests).toHaveLength(8);
+    expect(initializeCount).toBe(2);
+    assertPrivate(result);
+  });
+
   it("skips SSE primer events until the initialize response without waiting for the stream to close", async () => {
     const port = await startServer((request, response) => {
       let body = "";

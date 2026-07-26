@@ -7,7 +7,7 @@ import { observeFirstSseEvent, type SseObservation } from "./sse-observation.js"
 import type { Finding } from "../domain/types.js";
 
 const DEFAULT_RELIABILITY_TIMEOUT_MS = 3_000;
-const MAX_RELIABILITY_REQUESTS = 4;
+const MAX_RELIABILITY_REQUESTS = 6;
 
 export type RemoteTransportReliabilityStatus = "pass" | "warn" | "fail" | "skipped";
 
@@ -26,6 +26,10 @@ export interface RemoteTransportReliabilityResult {
   scorecard: RemoteTransportReliabilityScorecard;
 }
 
+export type RemoteTransportReliabilityRequest = (
+  options: BoundedHttpRequestOptions
+) => Promise<BoundedHttpResponse>;
+
 export interface RemoteTransportReliabilityOptions {
   rawUrl: string;
   protocolVersion: string;
@@ -34,7 +38,7 @@ export interface RemoteTransportReliabilityOptions {
   requestOptions?: Pick<BoundedHttpRequestOptions, "allowLocalNetwork" | "lookup">;
   sessionId: string | null;
   allowSessionLifecycle?: boolean;
-  reinitialize: (remainingMs: number) => Promise<string | null>;
+  reinitialize: (request: RemoteTransportReliabilityRequest) => Promise<string | null>;
 }
 
 interface RequestResult {
@@ -144,19 +148,28 @@ export async function probeRemoteTransportReliability(
   let requestCount = 0;
   let restarted = false;
 
+  const requestWithinBudget: RemoteTransportReliabilityRequest = async (requestOptions) => {
+    if (requestCount >= MAX_RELIABILITY_REQUESTS) {
+      throw new Error("reliability request ceiling reached");
+    }
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote reliability deadline elapsed.");
+    }
+    requestCount += 1;
+    return options.request(options.rawUrl, {
+      ...requestOptions,
+      ...options.requestOptions,
+      timeoutMs: Math.max(1, Math.min(remainingMs, DEFAULT_RELIABILITY_TIMEOUT_MS))
+    });
+  };
+
   const send = async (
     method: "GET" | "DELETE",
     extraHeaders: Record<string, string> = {},
     stopAfter?: (body: Buffer) => boolean
   ): Promise<RequestResult> => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (requestCount >= MAX_RELIABILITY_REQUESTS) {
-        return { error: new Error("reliability request ceiling reached") };
-      }
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 0) {
-        return { error: new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote reliability deadline elapsed.") };
-      }
       const sessionId = currentSessionId;
       const headers = {
         Accept: "text/event-stream",
@@ -167,12 +180,9 @@ export async function probeRemoteTransportReliability(
       if (sessionId !== null) {
         scorecard.sessionPropagation = "pass";
       }
-      requestCount += 1;
       let response: BoundedHttpResponse;
       try {
-        response = await options.request(options.rawUrl, {
-          ...options.requestOptions,
-          timeoutMs: Math.max(1, Math.min(remainingMs, DEFAULT_RELIABILITY_TIMEOUT_MS)),
+        response = await requestWithinBudget({
           method,
           headers,
           stopAfter
@@ -189,7 +199,7 @@ export async function probeRemoteTransportReliability(
         restarted = true;
         currentSessionId = null;
         try {
-          const replacementSessionId = await options.reinitialize(Math.max(1, deadline - Date.now()));
+          const replacementSessionId = await options.reinitialize(requestWithinBudget);
           if (replacementSessionId !== null && !validSessionId(replacementSessionId)) {
             throw new Error("invalid replacement session");
           }

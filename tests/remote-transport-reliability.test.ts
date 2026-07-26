@@ -47,10 +47,14 @@ function probe(request: (url: string, options?: BoundedHttpRequestOptions) => Pr
 
 function assertRedacted(value: unknown): void {
   const serialized = JSON.stringify(value);
-  expect(serialized).not.toContain("session-secret-sentinel");
-  expect(serialized).not.toContain("event-secret-sentinel");
-  expect(serialized).not.toContain("retry-secret-sentinel");
-  expect(serialized).not.toContain("remote-body-secret-sentinel");
+  for (const secret of [
+    "session-secret-sentinel",
+    "event-secret-sentinel",
+    "999999",
+    "remote-body-secret-sentinel"
+  ]) {
+    expect(serialized).not.toContain(secret);
+  }
 }
 
 describe("probeRemoteTransportReliability", () => {
@@ -67,20 +71,31 @@ describe("probeRemoteTransportReliability", () => {
   it("uses a safe event id for exactly one resume without retaining it", async () => {
     const fixture = scriptedRequest([
       response(200, "text/event-stream", "id: event-secret-sentinel\ndata: remote-body-secret-sentinel\n\n"),
-      response(200, "text/event-stream", "\n")
+      response(200, "text/event-stream", "\n"),
+      response(204)
     ]);
 
-    const result = await probe(fixture.request, { sessionId: "session-secret-sentinel" });
+    const result = await probe(fixture.request, { sessionId: "session-secret-sentinel", allowSessionLifecycle: true });
 
     expect(result.findings).toEqual([]);
     expect(result.scorecard).toMatchObject({ getSse: "pass", sessionPropagation: "pass", resumability: "pass", overall: "pass" });
-    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.requests).toHaveLength(3);
     expect(fixture.requests[0]?.headers).toMatchObject({
       Accept: "text/event-stream",
       "MCP-Protocol-Version": protocolVersion,
       "MCP-Session-Id": "session-secret-sentinel"
     });
-    expect(fixture.requests[1]?.headers).toMatchObject({ "Last-Event-ID": "event-secret-sentinel" });
+    expect(fixture.requests[0]?.headers?.["Last-Event-ID"]).toBeUndefined();
+    expect(fixture.requests[1]?.headers).toMatchObject({
+      "MCP-Protocol-Version": protocolVersion,
+      "MCP-Session-Id": "session-secret-sentinel",
+      "Last-Event-ID": "event-secret-sentinel"
+    });
+    expect(fixture.requests[2]?.headers).toMatchObject({
+      "MCP-Protocol-Version": protocolVersion,
+      "MCP-Session-Id": "session-secret-sentinel"
+    });
+    expect(fixture.requests[2]?.headers?.["Last-Event-ID"]).toBeUndefined();
     assertRedacted(result);
   });
 
@@ -157,6 +172,67 @@ describe("probeRemoteTransportReliability", () => {
     expect(fixture.requests[1]?.headers?.["MCP-Session-Id"]).toBe("replacement-session-secret-sentinel");
     expect(result.scorecard).toMatchObject({ sessionRestart: "pass", overall: "pass" });
     assertRedacted(result);
+  });
+
+  it("counts both restart POST requests against the shared reliability request budget", async () => {
+    const fixture = scriptedRequest([
+      response(404),
+      response(200, "application/json", "{}"),
+      response(202),
+      response(405)
+    ]);
+
+    const result = await probe(fixture.request, {
+      sessionId: "session-secret-sentinel",
+      reinitialize: async (requestWithinBudget: unknown) => {
+        if (typeof requestWithinBudget !== "function") {
+          throw new Error("restart requests must share the reliability budget");
+        }
+        const bounded = requestWithinBudget as (options: BoundedHttpRequestOptions) => Promise<BoundedHttpResponse>;
+        await bounded({ method: "POST", headers: { "Content-Type": "application/json" } });
+        await bounded({ method: "POST", headers: { "Content-Type": "application/json" } });
+        return "replacement-session-secret-sentinel";
+      }
+    });
+
+    expect(result.scorecard).toMatchObject({ sessionRestart: "pass", overall: "pass" });
+    expect(fixture.requests.map((request) => request.method)).toEqual(["GET", "POST", "POST", "GET"]);
+    expect(fixture.requests).toHaveLength(4);
+    assertRedacted(result);
+  });
+
+  it("refuses a seventh request through the restart budget", async () => {
+    const fixture = scriptedRequest([
+      response(404),
+      response(202),
+      response(202),
+      response(202),
+      response(202),
+      response(202)
+    ]);
+    let ceilingReached = false;
+
+    await probe(fixture.request, {
+      sessionId: "session-secret-sentinel",
+      reinitialize: async (requestWithinBudget: unknown) => {
+        if (typeof requestWithinBudget !== "function") {
+          throw new Error("restart requests must share the reliability budget");
+        }
+        const bounded = requestWithinBudget as (options: BoundedHttpRequestOptions) => Promise<BoundedHttpResponse>;
+        for (let index = 0; index < 5; index += 1) {
+          await bounded({ method: "POST" });
+        }
+        try {
+          await bounded({ method: "POST" });
+        } catch {
+          ceilingReached = true;
+        }
+        return "replacement-session-secret-sentinel";
+      }
+    });
+
+    expect(ceilingReached).toBe(true);
+    expect(fixture.requests).toHaveLength(6);
   });
 
   it("fails a single bounded session restart without recursion", async () => {

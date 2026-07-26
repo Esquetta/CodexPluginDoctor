@@ -349,19 +349,8 @@ export async function probeRemoteMcpServer(
     },
     sessionId,
     allowSessionLifecycle: options.allowSessionLifecycle,
-    reinitialize: async (remainingMs) => {
-      const restartDeadline = Date.now() + remainingMs;
-      const restartTimeoutMs = (): number => {
-        const availableMs = restartDeadline - Date.now();
-        if (availableMs <= 0) {
-          throw new Error("restart deadline elapsed");
-        }
-        return Math.min(availableMs, options.requestTimeoutMs ?? 3_000);
-      };
-      const restartInitialize = await request(rawUrl, {
-        allowLocalNetwork: options.allowLocalNetwork,
-        lookup: options.lookup,
-        timeoutMs: restartTimeoutMs(),
+    reinitialize: async (requestWithinBudget) => {
+      const restartInitialize = await requestWithinBudget({
         method: "POST",
         body: initializeBody,
         headers: {
@@ -385,10 +374,7 @@ export async function probeRemoteMcpServer(
       if (!restartMessage || !isValidInitializeResponse(restartMessage)) {
         throw new Error("restart initialize result invalid");
       }
-      const restartInitialized = await request(rawUrl, {
-        allowLocalNetwork: options.allowLocalNetwork,
-        lookup: options.lookup,
-        timeoutMs: restartTimeoutMs(),
+      const restartInitialized = await requestWithinBudget({
         method: "POST",
         body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
         headers: {
@@ -404,6 +390,5 @@ export async function probeRemoteMcpServer(
       return replacementSessionId;
     }
   });
-  findings.push(...reliability.findings);
   return finalize(scorecard, findings, reliability);
 }
