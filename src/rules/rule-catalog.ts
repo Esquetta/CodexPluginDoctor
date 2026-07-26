@@ -597,7 +597,7 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.runtime.remote.reliability.get.inconclusive",
     category: "runtime",
-    defaultSeverity: "fail",
+    defaultSeverity: "warn",
     summary: "The remote MCP GET streaming check was inconclusive.",
     why: "A bounded probe could not observe a complete SSE event, so streaming reliability remains uncertain.",
     fix: "Emit complete SSE event frames promptly when server-to-client streaming is supported.",
@@ -642,7 +642,7 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.runtime.remote.reliability.resume.inconclusive",
     category: "runtime",
-    defaultSeverity: "fail",
+    defaultSeverity: "warn",
     summary: "The remote MCP SSE resume check was inconclusive.",
     why: "A bounded probe could not confirm a complete resumed event, so reconnect reliability remains uncertain.",
     fix: "Emit complete SSE event frames after accepting a reconnect.",

@@ -155,6 +155,22 @@ describe("probeRemoteTransportReliability", () => {
     expect(result.scorecard.overall).toBe("warn");
   });
 
+  it("treats a bounded SSE resume timeout as inconclusive", async () => {
+    const timeout = new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "timeout", 200, { "content-type": "text/event-stream" });
+    const fixture = scriptedRequest([
+      response(200, "text/event-stream", "id: event-secret-sentinel\n\n"),
+      timeout
+    ]);
+
+    const result = await probe(fixture.request);
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.resume.inconclusive", severity: "warn" })
+    ]);
+    expect(result.scorecard).toMatchObject({ resumability: "warn", overall: "warn" });
+    assertRedacted(result);
+  });
+
   it("reinitializes once after a session-bound GET 404 and uses the replacement session", async () => {
     const fixture = scriptedRequest([response(404), response(405)]);
     let restarts = 0;
