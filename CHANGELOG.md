@@ -4,6 +4,23 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.53.0] - 2026-07-26
+
+### Added
+
+- added a bounded remote MCP transport-reliability readiness check that performs a post-initialize SSE `GET`, preserves session propagation, and observes bounded resume and session-restart paths
+- added `allow-session-lifecycle` and `require-remote-reliability` GitHub Action inputs for explicit session-lifecycle approval and strict reliability-result gating
+
+### Changed
+
+- extended remote runtime reports, scorecards, output contracts, and release evidence with additive transport-reliability results
+- made `--require-remote-reliability` fail when an attempted remote reliability scorecard does not pass; the flag grants no network consent and does not affect local-only runs
+
+### Security
+
+- kept remote session termination opt-in: after a valid session identifier, `--allow-session-lifecycle` permits at most one bounded session `DELETE`
+- hardened remote reliability diagnostics to redact response content and sensitive transport details
+
 ## [1.52.0] - 2026-07-25
 
 ### Added
