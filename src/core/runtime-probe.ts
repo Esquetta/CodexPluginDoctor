@@ -539,6 +539,23 @@ function mergeRemoteRuntimeScorecards(
     "present-valid": 1,
     absent: 0
   };
+  const reliability = left.reliability && right.reliability
+    ? {
+        getSse: worstRuntimeStatus(left.reliability.getSse, right.reliability.getSse),
+        sessionPropagation: worstRuntimeStatus(
+          left.reliability.sessionPropagation,
+          right.reliability.sessionPropagation
+        ),
+        resumability: worstRuntimeStatus(left.reliability.resumability, right.reliability.resumability),
+        disconnectSafety: worstRuntimeStatus(
+          left.reliability.disconnectSafety,
+          right.reliability.disconnectSafety
+        ),
+        sessionRestart: worstRuntimeStatus(left.reliability.sessionRestart, right.reliability.sessionRestart),
+        termination: worstRuntimeStatus(left.reliability.termination, right.reliability.termination),
+        overall: worstRuntimeStatus(left.reliability.overall, right.reliability.overall)
+      }
+    : left.reliability ?? right.reliability;
 
   return {
     transport: worstRuntimeStatus(left.transport, right.transport),
@@ -550,7 +567,8 @@ function mergeRemoteRuntimeScorecards(
       : right.session,
     protocolHeaders: worstRuntimeStatus(left.protocolHeaders, right.protocolHeaders),
     authorization: worstRuntimeStatus(left.authorization, right.authorization),
-    overall: worstRuntimeStatus(left.overall, right.overall)
+    overall: worstRuntimeStatus(left.overall, right.overall),
+    ...(reliability ? { reliability } : {})
   };
 }
 

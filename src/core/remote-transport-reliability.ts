@@ -4,22 +4,10 @@ import {
   type BoundedHttpResponse
 } from "./bounded-http-client.js";
 import { observeFirstSseEvent, type SseObservation } from "./sse-observation.js";
-import type { Finding } from "../domain/types.js";
+import type { Finding, RemoteTransportReliabilityScorecard } from "../domain/types.js";
 
 const DEFAULT_RELIABILITY_TIMEOUT_MS = 3_000;
 const MAX_RELIABILITY_REQUESTS = 6;
-
-export type RemoteTransportReliabilityStatus = "pass" | "warn" | "fail" | "skipped";
-
-export interface RemoteTransportReliabilityScorecard {
-  getSse: RemoteTransportReliabilityStatus;
-  sessionPropagation: RemoteTransportReliabilityStatus;
-  resumability: RemoteTransportReliabilityStatus;
-  disconnectSafety: RemoteTransportReliabilityStatus;
-  sessionRestart: RemoteTransportReliabilityStatus;
-  termination: RemoteTransportReliabilityStatus;
-  overall: RemoteTransportReliabilityStatus;
-}
 
 export interface RemoteTransportReliabilityResult {
   findings: Finding[];
@@ -57,10 +45,6 @@ function createScorecard(): RemoteTransportReliabilityScorecard {
     termination: "skipped",
     overall: "skipped"
   };
-}
-
-export function createSkippedRemoteTransportReliabilityResult(): RemoteTransportReliabilityResult {
-  return { findings: [], scorecard: createScorecard() };
 }
 
 function finding(id: string, severity: "fail" | "warn", message: string, suggestedFix: string): Finding {

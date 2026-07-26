@@ -575,6 +575,114 @@ export const ruleCatalog: RuleDefinition[] = [
     why: "Authorization readiness cannot be confirmed without bounded metadata responses.",
     fix: "Make protected-resource and authorization-server metadata available over HTTPS.",
     example: "Return application/json discovery metadata."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.get.status",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint rejected the SSE transport request.",
+    why: "Clients cannot rely on server-to-client streaming when an accepted SSE request does not return the expected status.",
+    fix: "Return HTTP 200 with a valid SSE response, or HTTP 405 when GET streaming is not supported.",
+    example: "HTTP/1.1 405 Method Not Allowed"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.get.content_type",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint returned a non-SSE media type for GET streaming.",
+    why: "Clients cannot interpret a successful streaming response unless it is declared as Server-Sent Events.",
+    fix: "Return Content-Type: text/event-stream for accepted GET streaming requests.",
+    example: "Content-Type: text/event-stream"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.get.inconclusive",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP GET streaming check was inconclusive.",
+    why: "A bounded probe could not observe a complete SSE event, so streaming reliability remains uncertain.",
+    fix: "Emit complete SSE event frames promptly when server-to-client streaming is supported.",
+    example: "id: event-1\n\ndata: {}\n\n"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.get.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP GET streaming request could not be completed.",
+    why: "Clients cannot rely on server-to-client streaming when a bounded transport request fails.",
+    fix: "Keep the Streamable HTTP transport reachable within the configured request bounds.",
+    example: "Complete the GET request before the runtime timeout."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.get.malformed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint emitted malformed SSE framing.",
+    why: "Malformed event framing prevents clients from safely processing stream progress or reconnecting.",
+    fix: "Return complete SSE events with valid id and retry fields.",
+    example: "id: event-1\n\nevent: message\n\ndata: {}\n\n"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.resume.status",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint rejected the SSE resume request.",
+    why: "Clients cannot resume a dropped stream when the reconnect response has an unexpected status.",
+    fix: "Return HTTP 200 for an accepted Last-Event-ID reconnect request.",
+    example: "HTTP/1.1 200 OK"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.resume.content_type",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint returned a non-SSE media type for a resume request.",
+    why: "Clients cannot process a resumed stream unless it is declared as Server-Sent Events.",
+    fix: "Return Content-Type: text/event-stream after accepting a Last-Event-ID reconnect request.",
+    example: "Content-Type: text/event-stream"
+  },
+  {
+    id: "plugin.runtime.remote.reliability.resume.inconclusive",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP SSE resume check was inconclusive.",
+    why: "A bounded probe could not confirm a complete resumed event, so reconnect reliability remains uncertain.",
+    fix: "Emit complete SSE event frames after accepting a reconnect.",
+    example: "Return one complete SSE event after a Last-Event-ID request."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.resume.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP SSE resume request could not be completed.",
+    why: "Clients cannot recover from a dropped stream when a bounded reconnect fails.",
+    fix: "Accept one bounded SSE reconnect using Last-Event-ID.",
+    example: "Honor the Last-Event-ID header on one reconnect."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.resume.malformed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP endpoint emitted malformed SSE framing after reconnecting.",
+    why: "Malformed resumed events prevent clients from safely continuing stream processing.",
+    fix: "Return complete SSE events with valid id and retry fields after reconnecting.",
+    example: "Return a complete event frame after reconnecting."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.session_restart.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP session could not be restarted.",
+    why: "Clients cannot recover from an expired MCP session when a fresh initialization sequence fails.",
+    fix: "Accept a fresh initialize sequence after an expired MCP session.",
+    example: "Return a valid initialize response after HTTP 404 for a session-bound request."
+  },
+  {
+    id: "plugin.runtime.remote.reliability.termination.failed",
+    category: "runtime",
+    defaultSeverity: "fail",
+    summary: "The remote MCP session could not be terminated.",
+    why: "A server that advertises session lifecycle support must safely handle the approved termination request.",
+    fix: "Return a successful response or HTTP 405 for a bounded MCP session DELETE request.",
+    example: "HTTP/1.1 204 No Content"
   }
 ];
 

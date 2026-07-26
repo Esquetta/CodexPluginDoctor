@@ -100,6 +100,27 @@ describe("buildMarkdownReport", () => {
     expect(report).toContain("| Session | PRESENT-VALID |");
   });
 
+  it("renders remote reliability capability labels and statuses only", () => {
+    const report = buildMarkdownReport({
+      targetPath: "example",
+      status: "pass",
+      exitCode: 0,
+      findings: [],
+      runtimeScorecard: {
+        ...runtimeScorecard,
+        remote: {
+          transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "present-valid", protocolHeaders: "pass", authorization: "skipped", overall: "pass",
+          reliability: { getSse: "pass", sessionPropagation: "pass", resumability: "skipped", disconnectSafety: "warn", sessionRestart: "skipped", termination: "skipped", overall: "warn" }
+        }
+      }
+    }, { runtimeProbeEnabled: true });
+
+    expect(report).toContain("## Remote Transport Reliability");
+    expect(report).toContain("| GET SSE | PASS |");
+    expect(report).toContain("| Disconnect safety | WARN |");
+    expect(report).not.toMatch(/session-secret-sentinel|event-secret-sentinel|retry-secret-sentinel|body-secret-sentinel/);
+  });
+
   it("renders a CI-friendly markdown summary", async () => {
     const targetPath = path.resolve("tests/fixtures/heuristic-long-plugin-description");
     const result = await runCheck(targetPath);

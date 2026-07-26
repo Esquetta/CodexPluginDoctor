@@ -7,9 +7,7 @@ import {
 import { RemoteNetworkPolicyError, type RemoteLookup } from "./remote-network-policy.js";
 import { checkRemoteOAuthReadiness } from "./remote-oauth-readiness.js";
 import {
-  createSkippedRemoteTransportReliabilityResult,
-  probeRemoteTransportReliability,
-  type RemoteTransportReliabilityResult
+  probeRemoteTransportReliability
 } from "./remote-transport-reliability.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import type { Finding, RemoteRuntimeScorecard, RuntimeCapabilityStatus } from "../domain/types.js";
@@ -36,7 +34,6 @@ export interface RemoteMcpProbeOptions {
 export interface RemoteMcpProbeResult {
   findings: Finding[];
   scorecard: RemoteRuntimeScorecard;
-  reliability: RemoteTransportReliabilityResult;
 }
 
 function createScorecard(): RemoteRuntimeScorecard {
@@ -63,8 +60,7 @@ function failure(
 
 function finalize(
   scorecard: RemoteRuntimeScorecard,
-  findings: Finding[],
-  reliability = createSkippedRemoteTransportReliabilityResult()
+  findings: Finding[]
 ): RemoteMcpProbeResult {
   scorecard.overall = findings.some((finding) => finding.severity === "fail")
     ? "fail"
@@ -73,7 +69,7 @@ function finalize(
       : scorecard.initialize === "pass" || scorecard.authorization === "pass"
         ? "pass"
         : "skipped";
-  return { findings, scorecard, reliability };
+  return { findings, scorecard };
 }
 
 function isPlainObject(value: unknown): value is JsonObject {
@@ -390,5 +386,7 @@ export async function probeRemoteMcpServer(
       return replacementSessionId;
     }
   });
-  return finalize(scorecard, findings, reliability);
+  scorecard.reliability = reliability.scorecard;
+  findings.push(...reliability.findings);
+  return finalize(scorecard, findings);
 }

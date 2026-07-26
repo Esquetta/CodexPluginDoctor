@@ -1,20 +1,28 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { probeRemoteMcpServer } from "../src/core/remote-mcp-probe.js";
+import { probeRuntimeConfig } from "../src/core/runtime-probe.js";
 import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import type { RemoteLookup } from "../src/core/remote-network-policy.js";
 import { packageVersion } from "../src/version.js";
 
 const servers: Server[] = [];
 const openResponses: ServerResponse[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   openResponses.splice(0).forEach((response) => response.destroy());
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
-  })));
+  await Promise.all([
+    ...servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    })),
+    ...temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+  ]);
 });
 
 async function startServer(handler: Parameters<typeof createServer>[0]): Promise<number> {
@@ -101,6 +109,15 @@ describe("probeRemoteMcpServer", () => {
       session: "present-valid",
       protocolHeaders: "pass",
       authorization: "skipped",
+      reliability: {
+        getSse: "pass",
+        sessionPropagation: "pass",
+        resumability: "skipped",
+        disconnectSafety: "skipped",
+        sessionRestart: "skipped",
+        termination: "skipped",
+        overall: "pass"
+      },
       overall: "pass"
     });
     expect(requests).toHaveLength(3);
@@ -127,6 +144,61 @@ describe("probeRemoteMcpServer", () => {
     expect(requests[1]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
     expect(requests[2]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
     assertPrivate(result);
+  });
+
+  it("merges reliability scorecards across remote servers field by field", async () => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(request.url === "/failing" ? 500 : 405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-remote-merge-"));
+    temporaryDirectories.push(rootPath);
+    await writeFile(path.join(rootPath, ".mcp.json"), JSON.stringify({
+      mcpServers: {
+        compliant: { url: `http://localhost:${port}/compliant` },
+        failing: { url: `http://localhost:${port}/failing` }
+      }
+    }), "utf8");
+
+    const result = await probeRuntimeConfig(rootPath, ".mcp.json", {
+      allowNetwork: true,
+      allowLocalNetwork: true,
+      remoteLookup: localLookup(),
+      remoteRequestTimeoutMs: 100
+    });
+
+    expect(result.scorecard.remote?.reliability).toEqual({
+      getSse: "fail",
+      sessionPropagation: "skipped",
+      resumability: "skipped",
+      disconnectSafety: "skipped",
+      sessionRestart: "skipped",
+      termination: "skipped",
+      overall: "fail"
+    });
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "plugin.runtime.remote.reliability.get.status",
+        severity: "fail",
+        evidence: expect.objectContaining({ serverName: "failing" })
+      })
+    ]);
   });
 
   it("treats a bounded SSE GET 405 as protocol-compliant after initialization", async () => {
@@ -161,7 +233,7 @@ describe("probeRemoteMcpServer", () => {
     expect(requests[2]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
   });
 
-  it("keeps reliability failures internal until the public scorecard is wired", async () => {
+  it("publishes redacted reliability failures through the remote scorecard and findings", async () => {
     const port = await startServer((request, response) => {
       let body = "";
       request.setEncoding("utf8");
@@ -185,12 +257,11 @@ describe("probeRemoteMcpServer", () => {
 
     const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
 
-    expect(result.findings).toEqual([]);
-    expect(result.scorecard.overall).toBe("pass");
-    expect(result.reliability.findings).toEqual([
+    expect(result.findings).toEqual([
       expect.objectContaining({ id: "plugin.runtime.remote.reliability.get.status", severity: "fail" })
     ]);
-    expect(result.reliability.scorecard.overall).toBe("fail");
+    expect(result.scorecard.overall).toBe("fail");
+    expect(result.scorecard.reliability?.overall).toBe("fail");
     assertPrivate(result);
   });
 
@@ -250,7 +321,7 @@ describe("probeRemoteMcpServer", () => {
     });
 
     expect(result.findings).toEqual([]);
-    expect(result.reliability.scorecard).toMatchObject({ sessionRestart: "pass", resumability: "pass", termination: "pass", overall: "pass" });
+    expect(result.scorecard.reliability).toMatchObject({ sessionRestart: "pass", resumability: "pass", termination: "pass", overall: "pass" });
     expect(requests.map((request) => request.method)).toEqual([
       "POST", "POST", "GET", "POST", "POST", "GET", "GET", "DELETE"
     ]);

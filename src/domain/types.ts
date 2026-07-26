@@ -124,6 +124,17 @@ export interface RemoteRuntimeScorecard {
   session: "absent" | "present-valid" | "present-invalid";
   protocolHeaders: RuntimeCapabilityStatus;
   authorization: RuntimeCapabilityStatus;
+  reliability?: RemoteTransportReliabilityScorecard;
+  overall: "pass" | "warn" | "fail" | "skipped";
+}
+
+export interface RemoteTransportReliabilityScorecard {
+  getSse: RuntimeCapabilityStatus;
+  sessionPropagation: RuntimeCapabilityStatus;
+  resumability: RuntimeCapabilityStatus;
+  disconnectSafety: RuntimeCapabilityStatus;
+  sessionRestart: RuntimeCapabilityStatus;
+  termination: RuntimeCapabilityStatus;
   overall: "pass" | "warn" | "fail" | "skipped";
 }
 
