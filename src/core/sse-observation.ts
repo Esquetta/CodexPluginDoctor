@@ -69,7 +69,10 @@ export function observeFirstSseEvent(body: Buffer): SseObservation {
         malformed = true;
       }
     } else if (field.equals(Buffer.from("retry"))) {
-      retryMs = parseRetry(value);
+      const parsedRetryMs = parseRetry(value);
+      if (parsedRetryMs !== null) {
+        retryMs = parsedRetryMs;
+      }
     }
   }
 

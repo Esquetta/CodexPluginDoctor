@@ -26,11 +26,41 @@ describe("observeFirstSseEvent", () => {
     });
   });
 
-  it("ignores invalid retry values", () => {
-    expect(observeFirstSseEvent(Buffer.from("retry: 12ms\nretry: -1\nretry: 125\n\n"))).toEqual({
+  it("observes a complete LF-delimited event", () => {
+    expect(observeFirstSseEvent(Buffer.from("id: event-1\nretry: 125\n\n"))).toEqual({
+      complete: true,
+      eventId: "event-1",
+      retryMs: 125,
+      malformed: false
+    });
+  });
+
+  it("does not replace a valid retry with a later invalid retry", () => {
+    expect(observeFirstSseEvent(Buffer.from("retry: 125\nretry: nope\n\n"))).toEqual({
       complete: true,
       eventId: null,
       retryMs: 125,
+      malformed: false
+    });
+  });
+
+  it.each([
+    ["an overflowing retry", "9007199254740992"],
+    ["an oversized retry", "9".repeat(1_025)]
+  ])("ignores %s without replacing a valid retry", (_name, invalidRetry) => {
+    expect(observeFirstSseEvent(Buffer.from(`retry: 125\nretry: ${invalidRetry}\n\n`))).toEqual({
+      complete: true,
+      eventId: null,
+      retryMs: 125,
+      malformed: false
+    });
+  });
+
+  it("resets the event ID when the event contains an empty id field", () => {
+    expect(observeFirstSseEvent(Buffer.from("id: event-1\nid:\n\n"))).toEqual({
+      complete: true,
+      eventId: null,
+      retryMs: null,
       malformed: false
     });
   });

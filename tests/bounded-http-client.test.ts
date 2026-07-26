@@ -274,10 +274,16 @@ describe("requestBoundedHttp", () => {
   it("times out a non-responsive request", async () => {
     const port = await startServer(() => undefined);
 
-    await expect(requestBoundedHttp(options(port).url, { ...options(port), timeoutMs: 20 })).rejects.toMatchObject({
-      code: "REMOTE_HTTP_TIMEOUT",
-      message: "Remote HTTP request timed out."
-    });
+    try {
+      await requestBoundedHttp(options(port).url, { ...options(port), timeoutMs: 20 });
+      throw new Error("Expected request to time out.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "REMOTE_HTTP_TIMEOUT",
+        message: "Remote HTTP request timed out."
+      });
+      expect(error).toMatchObject({ statusCode: undefined, headers: undefined });
+    }
   });
 
   it("retains only safe response metadata when a response times out after headers arrive", async () => {
