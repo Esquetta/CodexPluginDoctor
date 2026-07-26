@@ -46,7 +46,9 @@ export function redactValue(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([key, nestedValue]) => [
         key,
-        redactValue(nestedValue)
+        /^(?:mcp[-_]?session[-_]?id|session[-_]?id|last[-_]?event[-_]?id|event[-_]?id|retry|(?:sse[-_]?)?data)$/i.test(key)
+          ? "[REDACTED_SECRET]"
+          : redactValue(nestedValue)
       ])
     );
   }

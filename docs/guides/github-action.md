@@ -17,9 +17,10 @@ Remote MCP checks are off by default. Set `runtime: "true"` and give explicit ne
     runtime: "true"
     allow-network: "true"
     allow-local-network: "true" # Remove for public endpoints.
+    require-remote-reliability: "true" # Fails unless the bounded reliability scorecard passes.
 ```
 
-The Action transfers these boolean inputs through environment-backed shell variables and a Bash argument array. Remote probes remain read-only and redact diagnostics; see [Remote MCP Readiness](../architecture/remote-mcp-readiness.md) for SSRF and OAuth metadata-discovery boundaries.
+The Action transfers these boolean inputs through environment-backed shell variables and a Bash argument array. `require-remote-reliability` is a strict result gate, not network consent. Keep `allow-session-lifecycle: "false"` (the default) unless the workflow explicitly authorizes one bounded, state-changing session `DELETE` after a valid session is issued. Remote probes redact diagnostics and retain no raw remote content; see [Remote MCP Readiness](../architecture/remote-mcp-readiness.md) and [Remote MCP Transport Reliability](../architecture/remote-mcp-transport-reliability.md) for SSRF, OAuth metadata-discovery, SSE, and lifecycle boundaries.
 
 ## Recommended Workflow
 

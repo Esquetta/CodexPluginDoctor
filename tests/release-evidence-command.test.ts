@@ -457,6 +457,28 @@ describe("doctor release-evidence command", () => {
     expect(rendered).not.toContain("SHOULD_NOT_LEAK");
   });
 
+  it("never renders remote transport values in release evidence", () => {
+    const rendered = renderDoctorReleaseEvidenceJson({
+      kind: "doctor.release.evidence",
+      schemaVersion: "1.0.0",
+      transport: {
+        sessionId: "release-session-canary-7d31",
+        lastEventId: "release-event-canary-91ac",
+        retry: "release-retry-canary-4f82",
+        data: "release-sse-data-canary-c8e5"
+      }
+    } as never);
+
+    for (const canary of [
+      "release-session-canary-7d31",
+      "release-event-canary-91ac",
+      "release-retry-canary-4f82",
+      "release-sse-data-canary-c8e5"
+    ]) {
+      expect(rendered).not.toContain(canary);
+    }
+  });
+
   it("verifies a release evidence bundle against its target package", async () => {
     const outputPath = path.join(
       await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-release-evidence-verify-")),

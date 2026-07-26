@@ -123,6 +123,8 @@ describe("GitHub Action metadata", () => {
       expect(document).toContain("loopback endpoints only");
       expect(document).toContain("Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.");
     }
+    expect(actionUsage).toContain('require-remote-reliability: "true"');
+    expect(actionUsage).toContain('allow-session-lifecycle: "false"');
   });
 
   it("documents the public GitHub Action consumer workflow", async () => {

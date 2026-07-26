@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { BoundedHttpError, type BoundedHttpRequestOptions, type BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import { probeRemoteTransportReliability } from "../src/core/remote-transport-reliability.js";
+import { buildMarkdownReport } from "../src/reporting/render-markdown-report.js";
+import { renderTextReport } from "../src/reporting/render-text-report.js";
 
 const endpoint = "https://mcp.example/mcp";
 const protocolVersion = "2025-11-25";
@@ -58,6 +60,62 @@ function assertRedacted(value: unknown): void {
 }
 
 describe("probeRemoteTransportReliability", () => {
+  it("keeps remote transport canaries out of CLI and Action-facing report content", async () => {
+    const fixture = scriptedRequest([
+      response(
+        200,
+        "text/event-stream",
+        "id: report-event-canary-91ac\nretry: 917431\ndata: report-sse-data-canary-c8e5\n\n"
+      )
+    ]);
+    const result = await probe(fixture.request, {
+      sessionId: "report-session-canary-7d31",
+      requestTimeoutMs: 10
+    });
+    const report = {
+      targetPath: "example",
+      status: "warn" as const,
+      exitCode: 0,
+      findings: result.findings,
+      runtimeScorecard: {
+        initialize: "pass" as const,
+        toolsList: "skipped" as const,
+        toolsCall: "skipped" as const,
+        resourcesList: "skipped" as const,
+        resourceRead: "skipped" as const,
+        resourceTemplatesList: "skipped" as const,
+        promptsList: "skipped" as const,
+        promptGet: "skipped" as const,
+        remote: {
+          transport: "pass" as const,
+          networkSafety: "pass" as const,
+          initialize: "pass" as const,
+          contentType: "pass" as const,
+          session: "present-valid" as const,
+          protocolHeaders: "pass" as const,
+          authorization: "skipped" as const,
+          overall: "warn" as const,
+          reliability: result.scorecard
+        }
+      }
+    };
+
+    for (const output of [
+      JSON.stringify(report),
+      renderTextReport(report),
+      buildMarkdownReport(report, { runtimeProbeEnabled: true })
+    ]) {
+      for (const canary of [
+        "report-session-canary-7d31",
+        "report-event-canary-91ac",
+        "917431",
+        "report-sse-data-canary-c8e5"
+      ]) {
+        expect(output).not.toContain(canary);
+      }
+    }
+  });
+
   it("accepts GET 405 as compliant without attempting resume", async () => {
     const fixture = scriptedRequest([response(405)]);
 

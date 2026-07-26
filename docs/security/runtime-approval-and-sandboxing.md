@@ -10,6 +10,8 @@ Native probing preserves the existing host execution behavior:
 codex-plugin-doctor check ./plugin --runtime
 ```
 
+Remote MCP probing additionally requires `--allow-network`; loopback endpoints require `--allow-local-network`. Its transport reliability check is bounded and does not retain raw session IDs, event IDs, retry values, SSE data, or response bodies. `--allow-session-lifecycle` is false by default and is state-changing: it allows one bounded session `DELETE` only after a valid session identifier is issued. `--require-remote-reliability` is a strict pass gate, not network consent.
+
 Docker probing is explicit and currently supports local Node.js stdio servers:
 
 ```bash

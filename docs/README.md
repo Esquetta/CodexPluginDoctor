@@ -10,6 +10,7 @@ This directory contains public documentation for users, contributors, and securi
 - [Runtime Sandbox and External Corpus](architecture/runtime-sandbox-and-external-corpus.md)
 - [MCP 2025-11 Conformance](architecture/mcp-2025-11-conformance.md)
 - [Remote MCP Readiness](architecture/remote-mcp-readiness.md)
+- [Remote MCP Transport Reliability](architecture/remote-mcp-transport-reliability.md)
 - [Real-World Corpus Quality Metrics](architecture/real-world-corpus-quality-metrics.md)
 - [Corpus Metrics Regression Diff](architecture/corpus-metrics-regression-diff.md)
 

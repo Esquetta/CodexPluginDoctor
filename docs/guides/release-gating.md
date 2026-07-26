@@ -58,6 +58,16 @@ node dist/cli.js check ./path/to/plugin --json --runtime --output codex-plugin-d
 node dist/cli.js check ./path/to/plugin --json --runtime --sandbox docker --output codex-plugin-doctor-runtime-report.json
 ```
 
+### Remote Transport Reliability
+
+Remote MCP probing remains opt-in: it requires `--runtime --allow-network`, plus `--allow-local-network` for loopback endpoints. The reliability probe uses bounded requests, accepts HTTP `405` as compliant when GET SSE is unsupported, and makes no more than one resume or session restart. It does not establish live interoperability, delivery, or load-test guarantees.
+
+```bash
+node dist/cli.js check ./path/to/plugin --runtime --allow-network --require-remote-reliability
+```
+
+`--require-remote-reliability` is a strict result gate and grants no network consent; the command passes only when the reliability scorecard passes. Keep `--allow-session-lifecycle` off for ordinary release gates. That opt-in is state-changing and permits one bounded session `DELETE` only when initialization supplied a valid session identifier.
+
 Docker mode currently supports Node.js stdio MCP servers. It uses a read-only package mount and container filesystem, no network, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed and does not fall back to native execution.
 
 ### Release Readiness
