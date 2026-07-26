@@ -35,12 +35,14 @@ export function observeFirstSseEvent(body: Buffer): SseObservation {
   let lineStart = 0;
 
   for (let index = 0; index < body.length; index += 1) {
-    if (body[index] !== 0x0a) {
+    if (body[index] !== 0x0a && body[index] !== 0x0d) {
       continue;
     }
 
-    const lineEnd = index > lineStart && body[index - 1] === 0x0d ? index - 1 : index;
-    const line = body.subarray(lineStart, lineEnd);
+    const line = body.subarray(lineStart, index);
+    if (body[index] === 0x0d && body[index + 1] === 0x0a) {
+      index += 1;
+    }
     lineStart = index + 1;
 
     if (line.length === 0) {

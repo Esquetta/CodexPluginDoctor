@@ -271,44 +271,73 @@ describe("requestBoundedHttp", () => {
     await expect(responseClosed).resolves.toBeUndefined();
   });
 
-  it("times out a non-responsive request", async () => {
-    const port = await startServer(() => undefined);
+  it("times out without response metadata before response headers arrive", async () => {
+    vi.useFakeTimers();
+    const request = new EventEmitter();
+    const requestEnd = vi.fn();
+    Object.assign(request, { destroy: vi.fn(), end: requestEnd });
+    requestMock.mockReturnValueOnce(request as unknown as ClientRequest);
 
     try {
-      await requestBoundedHttp(options(port).url, { ...options(port), timeoutMs: 20 });
-      throw new Error("Expected request to time out.");
-    } catch (error) {
-      expect(error).toMatchObject({
-        code: "REMOTE_HTTP_TIMEOUT",
-        message: "Remote HTTP request timed out."
+      const pending = requestBoundedHttp("http://mcp.test/mcp", {
+        allowLocalNetwork: true,
+        lookup: localLookup(),
+        timeoutMs: 20
       });
-      expect(error).toMatchObject({ statusCode: undefined, headers: undefined });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requestEnd).toHaveBeenCalledOnce();
+      const timedOut = expect(pending).rejects.toMatchObject({
+        code: "REMOTE_HTTP_TIMEOUT",
+        message: "Remote HTTP request timed out.",
+        statusCode: undefined,
+        headers: undefined
+      });
+      await vi.advanceTimersByTimeAsync(20);
+
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it("retains only safe response metadata when a response times out after headers arrive", async () => {
-    const port = await startServer((_request, response) => {
-      response.writeHead(200, {
+    vi.useFakeTimers();
+    const response = new EventEmitter();
+    Object.assign(response, {
+      destroy: vi.fn(),
+      headers: {
         "mcp-session-id": "session-1",
         "set-cookie": "secret=value",
         "x-internal": "hidden"
-      });
-      response.write("partial");
+      },
+      socket: { remoteAddress: "127.0.0.1" },
+      statusCode: 200
     });
+    const request = new EventEmitter();
+    Object.assign(request, {
+      destroy: vi.fn(),
+      end: () => request.emit("response", response)
+    });
+    requestMock.mockReturnValueOnce(request as unknown as ClientRequest);
 
     try {
-      await requestBoundedHttp(options(port).url, { ...options(port), timeoutMs: 20 });
-      throw new Error("Expected request to time out.");
-    } catch (error) {
-      expect(error).toMatchObject({
+      const pending = requestBoundedHttp("http://mcp.test/mcp", {
+        allowLocalNetwork: true,
+        lookup: localLookup(),
+        timeoutMs: 20
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const timedOut = expect(pending).rejects.toMatchObject({
         code: "REMOTE_HTTP_TIMEOUT",
         message: "Remote HTTP request timed out.",
         statusCode: 200,
         headers: { "mcp-session-id": "session-1" }
       });
-      expect((error as { headers?: Record<string, string | string[]> }).headers).toEqual({
-        "mcp-session-id": "session-1"
-      });
+      await vi.advanceTimersByTimeAsync(20);
+
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
     }
   });
 

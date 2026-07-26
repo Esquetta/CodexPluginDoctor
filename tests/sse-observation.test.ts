@@ -35,6 +35,15 @@ describe("observeFirstSseEvent", () => {
     });
   });
 
+  it("observes only the first complete CR-delimited event", () => {
+    expect(observeFirstSseEvent(Buffer.from("id: event-1\rretry: 125\r\rid: event-2\r\r"))).toEqual({
+      complete: true,
+      eventId: "event-1",
+      retryMs: 125,
+      malformed: false
+    });
+  });
+
   it("does not replace a valid retry with a later invalid retry", () => {
     expect(observeFirstSseEvent(Buffer.from("retry: 125\nretry: nope\n\n"))).toEqual({
       complete: true,
