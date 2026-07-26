@@ -128,6 +128,18 @@ describe("requestBoundedHttp", () => {
     })).resolves.toMatchObject({ body: Buffer.from("ok") });
   });
 
+  it("allows last-event-id without widening the request header allowlist", async () => {
+    const port = await startServer((request, response) => {
+      expect(request.headers["last-event-id"]).toBe("event-1");
+      response.end("ok");
+    });
+
+    await expect(requestBoundedHttp(options(port).url, {
+      ...options(port),
+      headers: { "Last-Event-ID": "event-1" }
+    })).resolves.toMatchObject({ body: Buffer.from("ok") });
+  });
+
   it.each([
     ["timeoutMs", 0],
     ["timeoutMs", -1],
@@ -266,6 +278,32 @@ describe("requestBoundedHttp", () => {
       code: "REMOTE_HTTP_TIMEOUT",
       message: "Remote HTTP request timed out."
     });
+  });
+
+  it("retains only safe response metadata when a response times out after headers arrive", async () => {
+    const port = await startServer((_request, response) => {
+      response.writeHead(200, {
+        "mcp-session-id": "session-1",
+        "set-cookie": "secret=value",
+        "x-internal": "hidden"
+      });
+      response.write("partial");
+    });
+
+    try {
+      await requestBoundedHttp(options(port).url, { ...options(port), timeoutMs: 20 });
+      throw new Error("Expected request to time out.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "REMOTE_HTTP_TIMEOUT",
+        message: "Remote HTTP request timed out.",
+        statusCode: 200,
+        headers: { "mcp-session-id": "session-1" }
+      });
+      expect((error as { headers?: Record<string, string | string[]> }).headers).toEqual({
+        "mcp-session-id": "session-1"
+      });
+    }
   });
 
   it("uses the DNS-pinned local target", async () => {
