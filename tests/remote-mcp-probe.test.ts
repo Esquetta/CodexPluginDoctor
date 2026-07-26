@@ -146,6 +146,45 @@ describe("probeRemoteMcpServer", () => {
     assertPrivate(result);
   });
 
+  it.each([
+    ["HTTP 200", 200, ""],
+    ["another 2xx status", 204, ""],
+    ["a non-empty HTTP 202 response", 202, "notification-body-secret-sentinel"]
+  ])("rejects %s for the initial initialized notification", async (_name, statusCode, responseBody) => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": "session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(statusCode);
+        response.end(responseBody);
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.initialized.failed", severity: "fail" })
+    ]);
+    expect(result.scorecard).toMatchObject({ protocolHeaders: "fail", overall: "fail" });
+    expect(JSON.stringify(result)).not.toContain("notification-body-secret-sentinel");
+    assertPrivate(result);
+  });
+
   it("merges reliability scorecards across remote servers field by field", async () => {
     const port = await startServer((request, response) => {
       let body = "";
@@ -327,6 +366,52 @@ describe("probeRemoteMcpServer", () => {
     ]);
     expect(requests).toHaveLength(8);
     expect(initializeCount).toBe(2);
+    assertPrivate(result);
+  });
+
+  it.each([
+    ["HTTP 200", 200, ""],
+    ["another 2xx status", 204, ""],
+    ["a non-empty HTTP 202 response", 202, "notification-body-secret-sentinel"]
+  ])("rejects %s for the replacement session initialized notification", async (_name, statusCode, responseBody) => {
+    let initializeCount = 0;
+    const requests: Array<{ method: string; body: string }> = [];
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", body });
+        if (request.method === "GET") {
+          response.writeHead(404);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          initializeCount += 1;
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": initializeCount === 1
+              ? "session-secret-sentinel"
+              : "replacement-session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(initializeCount === 1 ? 202 : statusCode);
+        response.end(initializeCount === 1 ? "" : responseBody);
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.session_restart.failed", severity: "fail" })
+    ]);
+    expect(result.scorecard.reliability).toMatchObject({ sessionRestart: "fail", overall: "fail" });
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET", "POST", "POST"]);
+    expect(JSON.stringify(result)).not.toContain("notification-body-secret-sentinel");
     assertPrivate(result);
   });
 

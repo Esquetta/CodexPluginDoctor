@@ -249,6 +249,33 @@ describe("probeRemoteTransportReliability", () => {
     assertRedacted(result);
   });
 
+  it("does not carry a resume cursor into a replacement MCP session", async () => {
+    const fixture = scriptedRequest([
+      response(200, "text/event-stream", "id: event-secret-sentinel\n\n"),
+      response(404),
+      response(405)
+    ]);
+
+    const result = await probe(fixture.request, {
+      sessionId: "session-secret-sentinel",
+      reinitialize: async () => "replacement-session-secret-sentinel"
+    });
+
+    expect(fixture.requests).toHaveLength(3);
+    expect(fixture.requests[1]?.headers?.["Last-Event-ID"]).toBe("event-secret-sentinel");
+    expect(fixture.requests[2]?.headers).toMatchObject({
+      "MCP-Session-Id": "replacement-session-secret-sentinel"
+    });
+    expect(fixture.requests[2]?.headers?.["Last-Event-ID"]).toBeUndefined();
+    expect(result.findings).toEqual([]);
+    expect(result.scorecard).toMatchObject({
+      sessionRestart: "pass",
+      resumability: "skipped",
+      overall: "pass"
+    });
+    assertRedacted(result);
+  });
+
   it("counts both restart POST requests against the shared reliability request budget", async () => {
     const fixture = scriptedRequest([
       response(404),

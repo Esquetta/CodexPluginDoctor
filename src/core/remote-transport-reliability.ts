@@ -33,6 +33,7 @@ interface RequestResult {
   response?: BoundedHttpResponse;
   error?: unknown;
   restartFailed?: boolean;
+  sessionRestarted?: boolean;
 }
 
 function createScorecard(): RemoteTransportReliabilityScorecard {
@@ -153,13 +154,14 @@ export async function probeRemoteTransportReliability(
     extraHeaders: Record<string, string> = {},
     stopAfter?: (body: Buffer) => boolean
   ): Promise<RequestResult> => {
+    let sessionRestarted = false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const sessionId = currentSessionId;
       const headers = {
         Accept: "text/event-stream",
         "MCP-Protocol-Version": options.protocolVersion,
         ...(sessionId === null ? {} : { "MCP-Session-Id": sessionId }),
-        ...extraHeaders
+        ...(sessionRestarted ? {} : extraHeaders)
       };
       if (sessionId !== null) {
         scorecard.sessionPropagation = "pass";
@@ -181,6 +183,7 @@ export async function probeRemoteTransportReliability(
           return { restartFailed: true };
         }
         restarted = true;
+        sessionRestarted = true;
         currentSessionId = null;
         try {
           const replacementSessionId = await options.reinitialize(requestWithinBudget);
@@ -195,7 +198,7 @@ export async function probeRemoteTransportReliability(
         }
         continue;
       }
-      return { response };
+      return { response, sessionRestarted };
     }
     return { restartFailed: true };
   };
@@ -310,28 +313,32 @@ export async function probeRemoteTransportReliability(
         scorecard.resumability = "fail";
         return finalize(scorecard, findings);
       }
-      const resumeObservation = classifySseResponse(resumed.response, "resume", findings);
-      if (resumeObservation === null || resumeObservation.malformed) {
-        scorecard.resumability = "fail";
-        if (resumeObservation?.malformed) {
-          findings.push(finding(
-            "plugin.runtime.remote.reliability.resume.malformed",
-            "fail",
-            "The remote MCP endpoint emitted malformed SSE framing after a resume request.",
-            "Return complete SSE events with valid id and retry fields after reconnecting."
-          ));
+      if (resumed.sessionRestarted) {
+        scorecard.resumability = "skipped";
+      } else {
+        const resumeObservation = classifySseResponse(resumed.response, "resume", findings);
+        if (resumeObservation === null || resumeObservation.malformed) {
+          scorecard.resumability = "fail";
+          if (resumeObservation?.malformed) {
+            findings.push(finding(
+              "plugin.runtime.remote.reliability.resume.malformed",
+              "fail",
+              "The remote MCP endpoint emitted malformed SSE framing after a resume request.",
+              "Return complete SSE events with valid id and retry fields after reconnecting."
+            ));
+          }
+          return finalize(scorecard, findings);
         }
-        return finalize(scorecard, findings);
-      }
-      scorecard.resumability = resumeObservation.complete ? "pass" : "warn";
-      if (!resumeObservation.complete) {
-        findings.push(finding(
-          "plugin.runtime.remote.reliability.resume.inconclusive",
-          "warn",
-          "The remote MCP SSE resume response ended before a complete event could be observed.",
-          "Emit complete SSE event frames after accepting a reconnect."
-        ));
-        return finalize(scorecard, findings);
+        scorecard.resumability = resumeObservation.complete ? "pass" : "warn";
+        if (!resumeObservation.complete) {
+          findings.push(finding(
+            "plugin.runtime.remote.reliability.resume.inconclusive",
+            "warn",
+            "The remote MCP SSE resume response ended before a complete event could be observed.",
+            "Emit complete SSE events after accepting a reconnect."
+          ));
+          return finalize(scorecard, findings);
+        }
       }
     }
   }

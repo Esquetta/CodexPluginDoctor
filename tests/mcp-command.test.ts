@@ -90,7 +90,7 @@ async function startRemoteMcpServer(options: { invalidInitialize?: boolean; sess
         return;
       }
 
-      response.writeHead(204);
+      response.writeHead(202);
       response.end();
     });
   });

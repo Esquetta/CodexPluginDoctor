@@ -140,6 +140,10 @@ function isValidInitializeResponse(message: JsonObject): boolean {
   );
 }
 
+function isInitializedNotificationAcknowledged(response: BoundedHttpResponse): boolean {
+  return response.statusCode === 202 && response.body.length === 0;
+}
+
 function validSessionId(value: string | null): boolean {
   return value !== null && /^[\x21-\x7e]+$/.test(value);
 }
@@ -312,7 +316,7 @@ export async function probeRemoteMcpServer(
         ...(sessionId === null ? {} : { "MCP-Session-Id": sessionId })
       }
     });
-    if (initializedResponse.statusCode < 200 || initializedResponse.statusCode >= 300) {
+    if (!isInitializedNotificationAcknowledged(initializedResponse)) {
       scorecard.protocolHeaders = "fail";
       findings.push(failure(
         "plugin.runtime.remote.initialized.failed",
@@ -380,7 +384,7 @@ export async function probeRemoteMcpServer(
           ...(replacementSessionId === null ? {} : { "MCP-Session-Id": replacementSessionId })
         }
       });
-      if (restartInitialized.statusCode < 200 || restartInitialized.statusCode >= 300) {
+      if (!isInitializedNotificationAcknowledged(restartInitialized)) {
         throw new Error("restart initialized failed");
       }
       return replacementSessionId;
