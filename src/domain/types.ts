@@ -52,6 +52,8 @@ export interface CheckOptions {
   runtime?: boolean;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
+  requireRemoteReliability?: boolean;
   runtimeTranscript?: (line: string) => void;
   runtimeStartupTimeoutMs?: number;
   runtimeSandbox?: RuntimeSandboxMode;

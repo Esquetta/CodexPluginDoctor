@@ -88,6 +88,29 @@ describe("release-check command", () => {
   });
 
   describe("CLI", () => {
+    it("forwards lifecycle consent and strict reliability gating to release validation", async () => {
+      const { io, stderr } = createIo();
+      const runCheckImpl = vi.fn(async (targetPath: string) => ({
+        targetPath,
+        status: "pass" as const,
+        exitCode: 0 as const,
+        findings: []
+      }));
+
+      await runCli([
+        "release", "check", "tests/fixtures/valid-plugin-with-mcp", "--runtime", "--allow-network",
+        "--allow-session-lifecycle", "--require-remote-reliability", "--json"
+      ], io, { runCheckImpl });
+
+      expect(stderr).toEqual([]);
+      expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+        runtime: true,
+        allowNetwork: true,
+        allowSessionLifecycle: true,
+        requireRemoteReliability: true
+      });
+    });
+
     it("keeps runtime probing disabled by default", async () => {
       const { io, stdout, stderr } = createIo();
       const runCheckImpl = vi.fn(async (targetPath: string) => ({

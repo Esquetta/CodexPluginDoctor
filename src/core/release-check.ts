@@ -44,6 +44,8 @@ export interface BuildReleaseCheckOptions {
   runtime?: boolean;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
+  requireRemoteReliability?: boolean;
   runtimeSandbox?: RuntimeSandboxMode;
   runCheck?: (targetPath: string, options: CheckOptions) => Promise<CheckResult>;
 }
@@ -177,6 +179,8 @@ export async function buildReleaseCheck(
     runtime: runtimeProbeEnabled,
     ...(options.allowNetwork ? { allowNetwork: true } : {}),
     ...(options.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+    ...(options.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+    ...(options.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
     ...(options.runtimeSandbox ? { runtimeSandbox: options.runtimeSandbox } : {})
   });
   const securityResult = await buildSecurityAudit(resolvedPath);

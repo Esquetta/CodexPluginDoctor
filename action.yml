@@ -22,6 +22,14 @@ inputs:
     description: Explicitly allow remote MCP runtime probes to contact loopback endpoints only (localhost, 127.0.0.0/8, or ::1). Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.
     required: false
     default: "false"
+  allow-session-lifecycle:
+    description: Explicitly allow remote MCP runtime probing to send one state-changing session termination request when a valid session is issued.
+    required: false
+    default: "false"
+  require-remote-reliability:
+    description: Fail the validation result unless every attempted remote MCP reliability scorecard passes; this does not grant network access.
+    required: false
+    default: "false"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -170,6 +178,8 @@ runs:
       env:
         ALLOW_NETWORK_INPUT: ${{ inputs['allow-network'] }}
         ALLOW_LOCAL_NETWORK_INPUT: ${{ inputs['allow-local-network'] }}
+        ALLOW_SESSION_LIFECYCLE_INPUT: ${{ inputs['allow-session-lifecycle'] }}
+        REQUIRE_REMOTE_RELIABILITY_INPUT: ${{ inputs['require-remote-reliability'] }}
         CORPUS_METRICS_MANIFEST_INPUT: ${{ inputs['corpus-metrics-manifest'] }}
         CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
@@ -215,6 +225,14 @@ runs:
 
         if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
           args+=(--allow-local-network)
+        fi
+
+        if [[ "$ALLOW_SESSION_LIFECYCLE_INPUT" == "true" ]]; then
+          args+=(--allow-session-lifecycle)
+        fi
+
+        if [[ "$REQUIRE_REMOTE_RELIABILITY_INPUT" == "true" ]]; then
+          args+=(--require-remote-reliability)
         fi
 
         if [[ -n "${{ inputs.config }}" ]]; then

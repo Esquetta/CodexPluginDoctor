@@ -1993,9 +1993,15 @@ export interface RuntimeProbeOptions {
   transcript?: (line: string) => void;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
   remoteRequestTimeoutMs?: number;
   remoteLookup?: RemoteLookup;
   remoteRequest?: RemoteMcpRequest;
+}
+
+export function remoteReliabilityGatePassed(scorecard: RuntimeScorecard | undefined): boolean {
+  return scorecard !== undefined &&
+    (scorecard.remote === undefined || scorecard.remote.reliability?.overall === "pass");
 }
 
 export async function probeRuntimeConfig(
@@ -2054,6 +2060,7 @@ export async function probeRuntimeConfig(
       const remote = await probeRemoteMcpServer(serverName, url, {
         allowNetwork: options.allowNetwork,
         allowLocalNetwork: options.allowLocalNetwork,
+        allowSessionLifecycle: options.allowSessionLifecycle,
         requestTimeoutMs: options.remoteRequestTimeoutMs,
         lookup: options.remoteLookup,
         request: options.remoteRequest

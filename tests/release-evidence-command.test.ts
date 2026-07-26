@@ -25,6 +25,33 @@ function createIo() {
 }
 
 describe("doctor release-evidence command", () => {
+  it("forwards lifecycle consent and strict reliability gating to release evidence validation", async () => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    await runCli([
+      "doctor", "release-evidence", "examples/codex-doctor-runtime", "--sign-key-env", "DOCTOR_SIGNING_KEY",
+      "--allow-dirty", "--allow-untagged", "--runtime", "--allow-network", "--allow-session-lifecycle",
+      "--require-remote-reliability", "--json"
+    ], io, {
+      terminalContext: { env: { DOCTOR_SIGNING_KEY: "release-secret" }, platform: "win32" },
+      runCheckImpl
+    });
+
+    expect(stderr).toEqual([]);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      allowNetwork: true,
+      allowSessionLifecycle: true,
+      requireRemoteReliability: true
+    });
+  });
+
   it("renders a signed release evidence bundle as JSON", async () => {
     const { io, stdout, stderr } = createIo();
 
