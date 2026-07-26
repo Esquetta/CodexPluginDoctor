@@ -128,6 +128,12 @@ describe("public repository readiness", () => {
     expect(reliability).toContain("--runtime --allow-network");
     expect(reliability).toContain("one bounded `DELETE` request");
     expect(reliability).toContain("does not claim delivery guarantees");
+    expect(reliability).toContain("GET carrying an issued session identifier");
+    expect(reliability).toContain("DELETE 404 never restarts or retries");
+    for (const document of [reliability, readme, readiness, releaseGating, runtimeSecurity, actionGuide]) {
+      expect(document).toMatch(/every attempted remote\s+reliability scorecard passes/);
+      expect(document).toContain("Local-only runs are unaffected.");
+    }
     expect(releaseGating).toContain("--require-remote-reliability");
     expect(runtimeSecurity).toContain("--allow-session-lifecycle");
     expect(security).toContain("runner or host egress controls");

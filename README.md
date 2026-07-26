@@ -94,7 +94,7 @@ The probe makes only bounded protocol and OAuth metadata-discovery requests, red
 
 Remote transport reliability adds one bounded SSE GET after initialization. HTTP `200` must be `text/event-stream`; HTTP `405` is compliant when the endpoint does not offer server-to-client SSE. At most one SSE resume and one session restart are attempted, and no remote response content is retained. This is a bounded readiness check, not a live interoperability, delivery-guarantee, or load-test claim.
 
-`--allow-session-lifecycle` is disabled by default and is state-changing: only after a valid `MCP-Session-Id` it permits one bounded session `DELETE`. `--require-remote-reliability` is a strict result gate that requires a passing reliability scorecard; it grants no network consent, so `--runtime --allow-network` (and loopback consent when applicable) remain required. See [Remote MCP Readiness](./docs/architecture/remote-mcp-readiness.md) and [Remote MCP Transport Reliability](./docs/architecture/remote-mcp-transport-reliability.md).
+`--allow-session-lifecycle` is disabled by default and is state-changing: only after a valid `MCP-Session-Id` it permits one bounded session `DELETE`. `--require-remote-reliability` is a strict result gate: it fails unless every attempted remote reliability scorecard passes. Local-only runs are unaffected. It grants no network consent, so `--runtime --allow-network` (and loopback consent when applicable) remain required. See [Remote MCP Readiness](./docs/architecture/remote-mcp-readiness.md) and [Remote MCP Transport Reliability](./docs/architecture/remote-mcp-transport-reliability.md).
 
 Output formats:
 

@@ -37,9 +37,9 @@ The default reliability probe does not send a session termination request.
 after the probe completes and only when initialization returned a valid
 `MCP-Session-Id`.
 
-`--require-remote-reliability` is a result gate, not network consent. It is
-invalid unless remote runtime probing is enabled. The command fails unless the
-remote reliability scorecard reaches `pass`.
+`--require-remote-reliability` is a result gate, not network consent, and
+requires `--runtime --allow-network`. It fails unless every attempted remote
+reliability scorecard passes. Local-only runs are unaffected.
 
 ## Probe Sequence
 
@@ -57,9 +57,9 @@ remote reliability scorecard reaches `pass`.
    using `Last-Event-ID`. Honor a valid server-provided SSE `retry` delay within
    the remaining probe deadline. Do not reconnect when no event identifier is
    observed.
-8. If a subsequent request returns HTTP 404 for an issued session identifier,
-   discard that identifier and make one bounded re-initialization attempt
-   without it. Never restart a session more than once.
+8. If a GET carrying an issued session identifier returns HTTP 404, discard
+   that identifier and make one bounded re-initialization attempt without it.
+   Never restart a session more than once.
 9. If lifecycle consent is enabled and a current session exists, send one bounded
    `DELETE` request with the protocol and session headers.
 
@@ -89,11 +89,12 @@ rules.
 
 ### Expired Session
 
-HTTP 404 on a request carrying an issued session identifier means the session
+HTTP 404 from a GET carrying an issued session identifier means the session
 expired or was terminated. The probe discards the stale identifier and performs
 one fresh initialize request without a session header. A successful restart
 continues with the new session; a second session-expiry response fails restart
-reliability.
+reliability. A DELETE 404 never restarts or retries and is a termination
+failure.
 
 ### DELETE
 

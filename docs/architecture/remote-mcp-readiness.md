@@ -23,7 +23,7 @@ The probe uses bounded HTTP requests for MCP initialization and only follows the
 
 The optional reliability scorecard runs only within the same `--runtime --allow-network` consent boundary; loopback endpoints still need `--allow-local-network`. It makes one bounded GET request after initialization. A `200` response must use `text/event-stream`; a `405` response is compliant when server-to-client SSE is unsupported. The probe can make at most one SSE resume and one session restart, and it retains no raw response body or SSE data. It is a bounded readiness check, not a claim of live remote interoperability, replay correctness, delivery guarantees, or load capacity.
 
-`--allow-session-lifecycle` is false by default. It is state-changing and permits one bounded `DELETE` only after initialization supplies a valid `MCP-Session-Id`. `--require-remote-reliability` is a strict result gate: the command requires a passing reliability scorecard, but the flag grants no network or loopback consent. See [Remote MCP Transport Reliability](remote-mcp-transport-reliability.md) for the protocol sequence and classifications.
+`--allow-session-lifecycle` is false by default. It is state-changing and permits one bounded `DELETE` only after initialization supplies a valid `MCP-Session-Id`. `--require-remote-reliability` is a strict result gate: it fails unless every attempted remote reliability scorecard passes. Local-only runs are unaffected. The flag grants no network or loopback consent. See [Remote MCP Transport Reliability](remote-mcp-transport-reliability.md) for the protocol sequence and classifications.
 
 ## SSRF Controls
 

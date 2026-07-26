@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BoundedHttpError, type BoundedHttpRequestOptions, type BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import { probeRemoteTransportReliability } from "../src/core/remote-transport-reliability.js";
+import { renderJsonReport } from "../src/reporting/render-json-report.js";
 import { buildMarkdownReport } from "../src/reporting/render-markdown-report.js";
 import { renderTextReport } from "../src/reporting/render-text-report.js";
 
@@ -101,7 +102,7 @@ describe("probeRemoteTransportReliability", () => {
     };
 
     for (const output of [
-      JSON.stringify(report),
+      renderJsonReport(report, { runtimeProbeEnabled: true }),
       renderTextReport(report),
       buildMarkdownReport(report, { runtimeProbeEnabled: true })
     ]) {
