@@ -101,6 +101,9 @@ describe("public repository readiness", () => {
     const actionGuide = await readText("docs/guides/github-action.md");
     const conformance = await readText("docs/architecture/mcp-2025-11-conformance.md");
     const readiness = await readText("docs/architecture/remote-mcp-readiness.md");
+    const reliability = await readText("docs/architecture/remote-mcp-transport-reliability.md");
+    const releaseGating = await readText("docs/guides/release-gating.md");
+    const runtimeSecurity = await readText("docs/security/runtime-approval-and-sandboxing.md");
     const docsReadme = await readText("docs/README.md");
     const security = await readText("docs/security/security-architecture.md");
     expect(readme).toContain("Remote MCP Readiness");
@@ -113,9 +116,26 @@ describe("public repository readiness", () => {
     expect(readiness).toContain("authenticated OAuth");
     expect(readiness).toContain("custom headers");
     expect(readiness).toContain("remote tool/resource/prompt/task calls");
-    expect(readiness).toContain("GET SSE/resumability");
+    expect(readiness).toContain("one bounded GET request");
     expect(readiness).toContain("redirects");
     expect(docsReadme).toContain("Remote MCP Readiness");
+    expect(docsReadme).toContain("Remote MCP Transport Reliability");
+    expect(readme).toContain("--allow-session-lifecycle");
+    expect(readme).toContain("--require-remote-reliability");
+    expect(readiness).toContain("--allow-session-lifecycle");
+    expect(readiness).toContain("--require-remote-reliability");
+    expect(reliability).toContain("GET returning 405");
+    expect(reliability).toContain("--runtime --allow-network");
+    expect(reliability).toContain("one bounded `DELETE` request");
+    expect(reliability).toContain("does not claim delivery guarantees");
+    expect(reliability).toContain("GET carrying an issued session identifier");
+    expect(reliability).toContain("DELETE 404 never restarts or retries");
+    for (const document of [reliability, readme, readiness, releaseGating, runtimeSecurity, actionGuide]) {
+      expect(document).toMatch(/every attempted remote\s+reliability scorecard passes/);
+      expect(document).toContain("Local-only runs are unaffected.");
+    }
+    expect(releaseGating).toContain("--require-remote-reliability");
+    expect(runtimeSecurity).toContain("--allow-session-lifecycle");
     expect(security).toContain("runner or host egress controls");
     expect(readiness).not.toMatch(/internal (implementation )?plan/i);
   });

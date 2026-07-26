@@ -9,6 +9,7 @@ const DEFAULT_MAX_RESPONSE_BYTES = 1_024 * 1_024;
 const allowedRequestHeaders = new Set([
   "accept",
   "content-type",
+  "last-event-id",
   "mcp-protocol-version",
   "mcp-session-id",
   "user-agent"
@@ -199,7 +200,12 @@ export async function requestBoundedHttp(
     let response: http.IncomingMessage | undefined;
     let settled = false;
     const timeout = setTimeout(() => {
-      fail(new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out."));
+      fail(new BoundedHttpError(
+        "REMOTE_HTTP_TIMEOUT",
+        "Remote HTTP request timed out.",
+        response?.statusCode,
+        response ? selectSafeHeaders(response.headers) : undefined
+      ));
     }, remainingMs);
 
     const fail = (error: Error): void => {

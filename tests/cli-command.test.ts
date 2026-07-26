@@ -219,6 +219,10 @@ describe("runCli", () => {
       ["--runtme"],
       ["unexpected"],
       ["--runtime", "--runtime"],
+      ["--runtime", "--allow-network", "--allow-session-lifecycle", "--allow-session-lifecycle"],
+      ["--runtime", "--allow-network", "--require-remote-reliability", "--require-remote-reliability"],
+      ["--runtime", "--allow-network", "--allow-session-lifecycle", "true"],
+      ["--runtime", "--allow-network", "--require-remote-reliability", "true"],
       ["--json", "--json"],
       ["--output"],
       ["--output", "--json"],
@@ -3013,6 +3017,67 @@ describe("runCli", () => {
       allowNetwork: true,
       allowLocalNetwork: true
     });
+  });
+
+  it("documents remote lifecycle consent and reliability gate dependencies in general help", async () => {
+    const { io, stderr } = createIo();
+
+    expect(await runCli([], io)).toBe(2);
+
+    const usage = stderr.join("");
+    expect(usage).toContain("--allow-session-lifecycle");
+    expect(usage).toContain("--require-remote-reliability");
+    expect(usage).toContain("can terminate a remote session");
+    expect(usage).toContain("requires --runtime --allow-network");
+    expect(usage).toContain("does not grant network consent");
+  });
+
+  it("propagates explicit lifecycle consent and strict remote reliability gating to a runtime check", async () => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    const exitCode = await runCli(
+      [
+        "check",
+        "tests/fixtures/valid-plugin",
+        "--runtime",
+        "--allow-network",
+        "--allow-session-lifecycle",
+        "--require-remote-reliability",
+        "--json"
+      ],
+      io,
+      { runCheckImpl }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      allowNetwork: true,
+      allowSessionLifecycle: true,
+      requireRemoteReliability: true
+    });
+  });
+
+  it.each([
+    [["--allow-session-lifecycle"], "--allow-session-lifecycle requires --runtime."],
+    [["--runtime", "--allow-session-lifecycle"], "--allow-session-lifecycle requires --allow-network."],
+    [["--runtime", "--require-remote-reliability"], "--require-remote-reliability requires --runtime and --allow-network."],
+    [["--runtime", "--allow-network", "--allow-session-lifecycle", "--allow-session-lifecycle"], "Duplicate runtime remote flag: --allow-session-lifecycle."],
+    [["--runtime", "--allow-network", "--require-remote-reliability", "--require-remote-reliability"], "Duplicate runtime remote flag: --require-remote-reliability."]
+  ])("rejects invalid lifecycle and reliability runtime flag combinations", async (flags, message) => {
+    const { io, stderr } = createIo();
+
+    const exitCode = await runCli(["check", "tests/fixtures/valid-plugin", ...flags], io);
+
+    expect(exitCode).toBe(2);
+    expect(stderr.join("")).toContain(message);
   });
 
   it("initializes a minimal Codex plugin package", async () => {

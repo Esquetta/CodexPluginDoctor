@@ -102,6 +102,17 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).not.toContain('args+=(--allow-local-network "${{ inputs');
   });
 
+  it("forwards explicit lifecycle consent and strict reliability gating through every Action output", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toMatch(/allow-session-lifecycle:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toMatch(/require-remote-reliability:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toContain('ALLOW_SESSION_LIFECYCLE_INPUT: ${{ inputs[\'allow-session-lifecycle\'] }}');
+    expect(actionMetadata).toContain('REQUIRE_REMOTE_RELIABILITY_INPUT: ${{ inputs[\'require-remote-reliability\'] }}');
+    expect(actionMetadata).toContain('args+=(--allow-session-lifecycle)');
+    expect(actionMetadata).toContain('args+=(--require-remote-reliability)');
+  });
+
   it("documents loopback-only consent without permitting private or reserved ranges", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
@@ -112,6 +123,8 @@ describe("GitHub Action metadata", () => {
       expect(document).toContain("loopback endpoints only");
       expect(document).toContain("Private, link-local, multicast, unspecified, reserved, and NAT64 ranges remain blocked.");
     }
+    expect(actionUsage).toContain('require-remote-reliability: "true"');
+    expect(actionUsage).toContain('allow-session-lifecycle: "false"');
   });
 
   it("documents the public GitHub Action consumer workflow", async () => {

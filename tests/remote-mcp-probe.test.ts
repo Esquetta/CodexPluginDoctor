@@ -1,20 +1,28 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { probeRemoteMcpServer } from "../src/core/remote-mcp-probe.js";
+import { probeRuntimeConfig } from "../src/core/runtime-probe.js";
 import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import type { RemoteLookup } from "../src/core/remote-network-policy.js";
 import { packageVersion } from "../src/version.js";
 
 const servers: Server[] = [];
 const openResponses: ServerResponse[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   openResponses.splice(0).forEach((response) => response.destroy());
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
-  })));
+  await Promise.all([
+    ...servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    })),
+    ...temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+  ]);
 });
 
 async function startServer(handler: Parameters<typeof createServer>[0]): Promise<number> {
@@ -71,6 +79,11 @@ describe("probeRemoteMcpServer", () => {
       request.on("data", (chunk) => { body += chunk; });
       request.on("end", () => {
         requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
         const message = JSON.parse(body) as { id?: number; method: string };
         if (message.method === "initialize") {
           response.writeHead(200, {
@@ -96,11 +109,20 @@ describe("probeRemoteMcpServer", () => {
       session: "present-valid",
       protocolHeaders: "pass",
       authorization: "skipped",
+      reliability: {
+        getSse: "pass",
+        sessionPropagation: "pass",
+        resumability: "skipped",
+        disconnectSafety: "skipped",
+        sessionRestart: "skipped",
+        termination: "skipped",
+        overall: "pass"
+      },
       overall: "pass"
     });
-    expect(requests).toHaveLength(2);
-    expect(requests.map((request) => request.method)).toEqual(["POST", "POST"]);
-    expect(requests.map((request) => JSON.parse(request.body).method)).toEqual([
+    expect(requests).toHaveLength(3);
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET"]);
+    expect(requests.slice(0, 2).map((request) => JSON.parse(request.body).method)).toEqual([
       "initialize",
       "notifications/initialized"
     ]);
@@ -120,6 +142,276 @@ describe("probeRemoteMcpServer", () => {
     expect(requests[0]?.headers.cookie).toBeUndefined();
     expect(requests[1]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
     expect(requests[1]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
+    expect(requests[2]?.headers["mcp-session-id"]).toBe("session-secret-sentinel");
+    assertPrivate(result);
+  });
+
+  it.each([
+    ["HTTP 200", 200, ""],
+    ["another 2xx status", 204, ""],
+    ["a non-empty HTTP 202 response", 202, "notification-body-secret-sentinel"]
+  ])("rejects %s for the initial initialized notification", async (_name, statusCode, responseBody) => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": "session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(statusCode);
+        response.end(responseBody);
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.initialized.failed", severity: "fail" })
+    ]);
+    expect(result.scorecard).toMatchObject({ protocolHeaders: "fail", overall: "fail" });
+    expect(JSON.stringify(result)).not.toContain("notification-body-secret-sentinel");
+    assertPrivate(result);
+  });
+
+  it("merges reliability scorecards across remote servers field by field", async () => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(request.url === "/failing" ? 500 : 405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-remote-merge-"));
+    temporaryDirectories.push(rootPath);
+    await writeFile(path.join(rootPath, ".mcp.json"), JSON.stringify({
+      mcpServers: {
+        compliant: { url: `http://localhost:${port}/compliant` },
+        failing: { url: `http://localhost:${port}/failing` }
+      }
+    }), "utf8");
+
+    const result = await probeRuntimeConfig(rootPath, ".mcp.json", {
+      allowNetwork: true,
+      allowLocalNetwork: true,
+      remoteLookup: localLookup(),
+      remoteRequestTimeoutMs: 100
+    });
+
+    expect(result.scorecard.remote?.reliability).toEqual({
+      getSse: "fail",
+      sessionPropagation: "skipped",
+      resumability: "skipped",
+      disconnectSafety: "skipped",
+      sessionRestart: "skipped",
+      termination: "skipped",
+      overall: "fail"
+    });
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        id: "plugin.runtime.remote.reliability.get.status",
+        severity: "fail",
+        evidence: expect.objectContaining({ serverName: "failing" })
+      })
+    ]);
+  });
+
+  it("treats a bounded SSE GET 405 as protocol-compliant after initialization", async () => {
+    const requests: Array<{ method: string; headers: Record<string, string | string[] | undefined>; body: string }> = [];
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([]);
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET"]);
+    expect(requests[2]?.headers.accept).toBe("text/event-stream");
+    expect(requests[2]?.headers["mcp-protocol-version"]).toBe("2025-11-25");
+  });
+
+  it("publishes redacted reliability failures through the remote scorecard and findings", async () => {
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(500, { "content-type": "application/json" });
+          response.end('{"error":"remote-body-secret-sentinel"}');
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.get.status", severity: "fail" })
+    ]);
+    expect(result.scorecard.overall).toBe("fail");
+    expect(result.scorecard.reliability?.overall).toBe("fail");
+    assertPrivate(result);
+  });
+
+  it("shares one fixed request budget with both actual session-restart POSTs", async () => {
+    const requests: Array<{ method: string; headers: Record<string, string | string[] | undefined>; body: string }> = [];
+    let initializeCount = 0;
+    let getCount = 0;
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", headers: request.headers, body });
+        if (request.method === "GET") {
+          getCount += 1;
+          if (getCount === 1) {
+            response.writeHead(404);
+          } else if (getCount === 2) {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end("id: event-secret-sentinel\n\n");
+            return;
+          } else if (getCount === 3) {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end("\n");
+            return;
+          } else {
+            response.writeHead(500);
+          }
+          response.end();
+          return;
+        }
+        if (request.method === "DELETE") {
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          initializeCount += 1;
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": initializeCount === 1
+              ? "session-secret-sentinel"
+              : "replacement-session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(202);
+        response.end();
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, {
+      ...options(port),
+      allowSessionLifecycle: true
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.scorecard.reliability).toMatchObject({ sessionRestart: "pass", resumability: "pass", termination: "pass", overall: "pass" });
+    expect(requests.map((request) => request.method)).toEqual([
+      "POST", "POST", "GET", "POST", "POST", "GET", "GET", "DELETE"
+    ]);
+    expect(requests).toHaveLength(8);
+    expect(initializeCount).toBe(2);
+    assertPrivate(result);
+  });
+
+  it.each([
+    ["HTTP 200", 200, ""],
+    ["another 2xx status", 204, ""],
+    ["a non-empty HTTP 202 response", 202, "notification-body-secret-sentinel"]
+  ])("rejects %s for the replacement session initialized notification", async (_name, statusCode, responseBody) => {
+    let initializeCount = 0;
+    const requests: Array<{ method: string; body: string }> = [];
+    const port = await startServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        requests.push({ method: request.method ?? "", body });
+        if (request.method === "GET") {
+          response.writeHead(404);
+          response.end();
+          return;
+        }
+        const message = JSON.parse(body) as { id?: number; method: string };
+        if (message.method === "initialize") {
+          initializeCount += 1;
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": initializeCount === 1
+              ? "session-secret-sentinel"
+              : "replacement-session-secret-sentinel"
+          });
+          response.end(initializedResponse(message.id ?? 1));
+          return;
+        }
+        response.writeHead(initializeCount === 1 ? 202 : statusCode);
+        response.end(initializeCount === 1 ? "" : responseBody);
+      });
+    });
+
+    const result = await probeRemoteMcpServer("remote", options(port).url, options(port));
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({ id: "plugin.runtime.remote.reliability.session_restart.failed", severity: "fail" })
+    ]);
+    expect(result.scorecard.reliability).toMatchObject({ sessionRestart: "fail", overall: "fail" });
+    expect(requests.map((request) => request.method)).toEqual(["POST", "POST", "GET", "POST", "POST"]);
+    expect(JSON.stringify(result)).not.toContain("notification-body-secret-sentinel");
     assertPrivate(result);
   });
 
@@ -129,6 +421,11 @@ describe("probeRemoteMcpServer", () => {
       request.setEncoding("utf8");
       request.on("data", (chunk) => { body += chunk; });
       request.on("end", () => {
+        if (request.method === "GET") {
+          response.writeHead(405);
+          response.end();
+          return;
+        }
         const message = JSON.parse(body) as { id?: number; method: string };
         if (message.method === "initialize") {
           response.writeHead(200, { "content-type": "text/event-stream" });

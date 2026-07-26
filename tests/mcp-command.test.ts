@@ -36,7 +36,7 @@ async function createStandaloneMcpPackage(mcpConfig: unknown): Promise<string> {
   return targetPath;
 }
 
-async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {}): Promise<{
+async function startRemoteMcpServer(options: { invalidInitialize?: boolean; session?: boolean; incompleteSse?: boolean } = {}): Promise<{
   url: string;
   requests: string[];
   close(): Promise<void>;
@@ -46,6 +46,24 @@ async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
+      if (request.method === "GET") {
+        requests.push("GET");
+        if (options.incompleteSse) {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.end("id: bounded-event\\n");
+          return;
+        }
+        response.writeHead(405);
+        response.end();
+        return;
+      }
+
+      if (request.method === "DELETE") {
+        requests.push("DELETE");
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method: string };
       requests.push(message.method);
 
@@ -56,7 +74,10 @@ async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {
           return;
         }
 
-        response.writeHead(200, { "content-type": "application/json" });
+        response.writeHead(200, {
+          "content-type": "application/json",
+          ...(options.session ? { "mcp-session-id": "session-for-test" } : {})
+        });
         response.end(JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
@@ -69,7 +90,7 @@ async function startRemoteMcpServer(options: { invalidInitialize?: boolean } = {
         return;
       }
 
-      response.writeHead(204);
+      response.writeHead(202);
       response.end();
     });
   });
@@ -118,7 +139,7 @@ describe("mcp command", () => {
           }
         }
       });
-      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await remote.close();
     }
@@ -141,9 +162,73 @@ describe("mcp command", () => {
       expect(JSON.parse(stdout.join(""))).toMatchObject({
         runtimeScorecard: { remote: { networkSafety: "pass", overall: "pass" } }
       });
-      expect(remote.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await remote.close();
+    }
+  });
+
+  it("requires lifecycle consent before terminating a remote session", async () => {
+    const remote = await startRemoteMcpServer({ session: true });
+    const targetPath = await createStandaloneMcpPackage({ mcpServers: { local: { url: remote.url } } });
+    const { io, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--allow-session-lifecycle", "--json"
+      ], io);
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(remote.requests).toEqual(["initialize", "notifications/initialized", "GET", "DELETE"]);
+    } finally {
+      await remote.close();
+    }
+  });
+
+  it("turns an inconclusive remote reliability scorecard into a blocking result only when requested", async () => {
+    const remote = await startRemoteMcpServer({ incompleteSse: true });
+    const targetPath = await createStandaloneMcpPackage({ mcpServers: { local: { url: remote.url } } });
+    const withoutGate = createIo();
+    const withGate = createIo();
+
+    try {
+      expect(await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--json"
+      ], withoutGate.io)).toBe(0);
+      expect(await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--require-remote-reliability", "--json"
+      ], withGate.io)).toBe(1);
+    } finally {
+      await remote.close();
+    }
+  });
+
+  it("blocks the strict gate when one of multiple remote reliability scorecards warns", async () => {
+    const passing = await startRemoteMcpServer();
+    const warning = await startRemoteMcpServer({ incompleteSse: true });
+    const targetPath = await createStandaloneMcpPackage({
+      mcpServers: {
+        passing: { url: passing.url },
+        warning: { url: warning.url }
+      }
+    });
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli([
+        "mcp", targetPath, "--runtime", "--allow-network", "--allow-local-network", "--require-remote-reliability", "--json"
+      ], io);
+      const output = JSON.parse(stdout.join(""));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toEqual([]);
+      expect(output.runtimeScorecard.remote.reliability.overall).toBe("warn");
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
+      expect(warning.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
+    } finally {
+      await passing.close();
+      await warning.close();
     }
   });
 
@@ -171,7 +256,7 @@ describe("mcp command", () => {
         overall: "fail"
       });
       expect(failing.requests).toEqual(["initialize"]);
-      expect(passing.requests).toEqual(["initialize", "notifications/initialized"]);
+      expect(passing.requests).toEqual(["initialize", "notifications/initialized", "GET"]);
     } finally {
       await failing.close();
       await passing.close();

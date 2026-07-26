@@ -4,6 +4,22 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCheck } from "../src/index.js";
+import { remoteReliabilityGatePassed } from "../src/core/runtime-probe.js";
+import type { RuntimeScorecard } from "../src/domain/types.js";
+
+function runtimeScorecard(remote?: RuntimeScorecard["remote"]): RuntimeScorecard {
+  return {
+    initialize: "skipped",
+    toolsList: "skipped",
+    toolsCall: "skipped",
+    resourcesList: "skipped",
+    resourceRead: "skipped",
+    resourceTemplatesList: "skipped",
+    promptsList: "skipped",
+    promptGet: "skipped",
+    ...(remote ? { remote } : {})
+  };
+}
 
 async function createPluginWithMissingSkillFiles(): Promise<string> {
   const targetPath = await mkdtemp(
@@ -28,6 +44,25 @@ async function createPluginWithMissingSkillFiles(): Promise<string> {
 }
 
 describe("runCheck", () => {
+  it.each(["warn", "fail", "skipped"] as const)("rejects a %s remote reliability result at the strict gate", (overall) => {
+    expect(remoteReliabilityGatePassed(runtimeScorecard({
+      transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "absent", protocolHeaders: "pass", authorization: "skipped", overall: "pass",
+      reliability: { getSse: overall, sessionPropagation: "pass", resumability: "skipped", disconnectSafety: "pass", sessionRestart: "skipped", termination: "skipped", overall }
+    }))).toBe(false);
+  });
+
+  it("accepts a passing remote reliability result and ignores local-only runtime scorecards", () => {
+    expect(remoteReliabilityGatePassed(runtimeScorecard({
+      transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "absent", protocolHeaders: "pass", authorization: "skipped", overall: "pass",
+      reliability: { getSse: "pass", sessionPropagation: "pass", resumability: "skipped", disconnectSafety: "pass", sessionRestart: "skipped", termination: "skipped", overall: "pass" }
+    }))).toBe(true);
+    expect(remoteReliabilityGatePassed(runtimeScorecard())).toBe(true);
+    expect(remoteReliabilityGatePassed(runtimeScorecard({
+      transport: "pass", networkSafety: "pass", initialize: "pass", contentType: "pass", session: "absent", protocolHeaders: "pass", authorization: "skipped", overall: "pass"
+    }))).toBe(false);
+    expect(remoteReliabilityGatePassed(undefined)).toBe(false);
+  });
+
   it("distinguishes repeated skill findings with package-relative evidence", async () => {
     const targetPath = await createPluginWithMissingSkillFiles();
 

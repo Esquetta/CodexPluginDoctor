@@ -52,6 +52,8 @@ export interface CheckOptions {
   runtime?: boolean;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
+  requireRemoteReliability?: boolean;
   runtimeTranscript?: (line: string) => void;
   runtimeStartupTimeoutMs?: number;
   runtimeSandbox?: RuntimeSandboxMode;
@@ -124,7 +126,20 @@ export interface RemoteRuntimeScorecard {
   session: "absent" | "present-valid" | "present-invalid";
   protocolHeaders: RuntimeCapabilityStatus;
   authorization: RuntimeCapabilityStatus;
+  reliability?: RemoteTransportReliabilityScorecard;
   overall: "pass" | "warn" | "fail" | "skipped";
+}
+
+export type RemoteTransportReliabilityStatus = "pass" | "warn" | "fail" | "skipped";
+
+export interface RemoteTransportReliabilityScorecard {
+  getSse: RemoteTransportReliabilityStatus;
+  sessionPropagation: RemoteTransportReliabilityStatus;
+  resumability: RemoteTransportReliabilityStatus;
+  disconnectSafety: RemoteTransportReliabilityStatus;
+  sessionRestart: RemoteTransportReliabilityStatus;
+  termination: RemoteTransportReliabilityStatus;
+  overall: RemoteTransportReliabilityStatus;
 }
 
 export type McpConformanceProfile =

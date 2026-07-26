@@ -49,6 +49,20 @@ function appendRuntimeScorecard(lines: string[], result: CheckResult) {
     lines.push(`| Protocol headers | ${remote.protocolHeaders.toUpperCase()} |`);
     lines.push(`| Authorization | ${remote.authorization.toUpperCase()} |`);
     lines.push(`| Overall | ${remote.overall.toUpperCase()} |`);
+
+    if (remote.reliability) {
+      const reliability = remote.reliability;
+      lines.push("", "## Remote Transport Reliability", "");
+      lines.push("| Check | Status |");
+      lines.push("| --- | --- |");
+      lines.push(`| GET SSE | ${reliability.getSse.toUpperCase()} |`);
+      lines.push(`| Session propagation | ${reliability.sessionPropagation.toUpperCase()} |`);
+      lines.push(`| Resumability | ${reliability.resumability.toUpperCase()} |`);
+      lines.push(`| Disconnect safety | ${reliability.disconnectSafety.toUpperCase()} |`);
+      lines.push(`| Session restart | ${reliability.sessionRestart.toUpperCase()} |`);
+      lines.push(`| Termination | ${reliability.termination.toUpperCase()} |`);
+      lines.push(`| Overall | ${reliability.overall.toUpperCase()} |`);
+    }
   }
 }
 

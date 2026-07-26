@@ -8,7 +8,7 @@ import {
   readMcpConfigPath
 } from "../compatibility/compatibility-matrix.js";
 import { readJsonFile } from "../core/read-json-file.js";
-import { probeRuntimeConfig } from "../core/runtime-probe.js";
+import { probeRuntimeConfig, remoteReliabilityGatePassed } from "../core/runtime-probe.js";
 import type {
   Finding,
   FindingEvidence,
@@ -42,6 +42,8 @@ export interface GenericMcpDoctorOptions {
   runtime?: boolean;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
+  requireRemoteReliability?: boolean;
   runtimeStartupTimeoutMs?: number;
 }
 
@@ -289,14 +291,17 @@ export async function buildGenericMcpDoctor(
         ? await probeRuntimeConfig(canonicalRootPath, canonicalMcpConfigPath, {
           startupTimeoutMs: options.runtimeStartupTimeoutMs,
           allowNetwork: options.allowNetwork,
-          allowLocalNetwork: options.allowLocalNetwork
+          allowLocalNetwork: options.allowLocalNetwork,
+          allowSessionLifecycle: options.allowSessionLifecycle
         })
       : null;
   const fingerprintedFindings = withFindingFingerprints(
     [...staticFindings, ...(runtimeResult?.findings ?? [])],
     rootPath
   );
-  const status = mergeReportStatus(fingerprintedFindings, security);
+  const status = options.requireRemoteReliability === true && !remoteReliabilityGatePassed(runtimeResult?.scorecard)
+    ? "fail"
+    : mergeReportStatus(fingerprintedFindings, security);
 
   return {
     targetPath: rootPath,

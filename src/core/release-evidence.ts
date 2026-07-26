@@ -161,6 +161,8 @@ export interface BuildDoctorReleaseEvidenceOptions {
   runtime?: boolean;
   allowNetwork?: boolean;
   allowLocalNetwork?: boolean;
+  allowSessionLifecycle?: boolean;
+  requireRemoteReliability?: boolean;
   sandbox?: RuntimeSandboxMode;
   environment?: CompatibilityEnvironment;
   runCheck?: (targetPath: string, options?: CheckOptions) => Promise<CheckResult>;
@@ -516,6 +518,8 @@ export async function buildDoctorReleaseEvidenceReport(
         runtime: true,
         ...(options.allowNetwork ? { allowNetwork: true } : {}),
         ...(options.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+        ...(options.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+        ...(options.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
         ...(options.sandbox ? { runtimeSandbox: options.sandbox } : {})
       }
     : {};

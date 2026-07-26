@@ -104,6 +104,24 @@ const remoteRuntimeRules = [
   "plugin.runtime.remote.authorization.metadata.unavailable"
 ] as const;
 
+const remoteReliabilityFailRules = [
+  "plugin.runtime.remote.reliability.get.status",
+  "plugin.runtime.remote.reliability.get.content_type",
+  "plugin.runtime.remote.reliability.get.failed",
+  "plugin.runtime.remote.reliability.get.malformed",
+  "plugin.runtime.remote.reliability.resume.status",
+  "plugin.runtime.remote.reliability.resume.content_type",
+  "plugin.runtime.remote.reliability.resume.failed",
+  "plugin.runtime.remote.reliability.resume.malformed",
+  "plugin.runtime.remote.reliability.session_restart.failed",
+  "plugin.runtime.remote.reliability.termination.failed"
+] as const;
+
+const remoteReliabilityWarnRules = [
+  "plugin.runtime.remote.reliability.get.inconclusive",
+  "plugin.runtime.remote.reliability.resume.inconclusive"
+] as const;
+
 describe("MCP 2025-11 conformance rule catalog", () => {
   it("resolves every evaluator finding with its public remediation contract", () => {
     expect(ruleCatalog.filter((rule) => rule.id.startsWith("mcp.conformance."))).toEqual(
@@ -124,6 +142,18 @@ describe("MCP 2025-11 conformance rule catalog", () => {
   it("resolves every remote runtime finding with a fail remediation contract", () => {
     for (const id of remoteRuntimeRules) {
       expect(findRuleDefinition(id)).toMatchObject({ id, category: "runtime", defaultSeverity: "fail" });
+    }
+  });
+
+  it("resolves failing remote reliability findings with fail remediation contracts", () => {
+    for (const id of remoteReliabilityFailRules) {
+      expect(findRuleDefinition(id)).toMatchObject({ id, category: "runtime", defaultSeverity: "fail" });
+    }
+  });
+
+  it("resolves inconclusive remote reliability findings with warn remediation contracts", () => {
+    for (const id of remoteReliabilityWarnRules) {
+      expect(findRuleDefinition(id)).toMatchObject({ id, category: "runtime", defaultSeverity: "warn" });
     }
   });
 });

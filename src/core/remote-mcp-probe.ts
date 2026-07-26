@@ -6,6 +6,9 @@ import {
 } from "./bounded-http-client.js";
 import { RemoteNetworkPolicyError, type RemoteLookup } from "./remote-network-policy.js";
 import { checkRemoteOAuthReadiness } from "./remote-oauth-readiness.js";
+import {
+  probeRemoteTransportReliability
+} from "./remote-transport-reliability.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import type { Finding, RemoteRuntimeScorecard, RuntimeCapabilityStatus } from "../domain/types.js";
 import { packageVersion } from "../version.js";
@@ -25,6 +28,7 @@ export interface RemoteMcpProbeOptions {
   requestTimeoutMs?: number;
   lookup?: RemoteLookup;
   request?: RemoteMcpRequest;
+  allowSessionLifecycle?: boolean;
 }
 
 export interface RemoteMcpProbeResult {
@@ -54,7 +58,10 @@ function failure(
   return { id, severity: "fail", message, impact, suggestedFix };
 }
 
-function finalize(scorecard: RemoteRuntimeScorecard, findings: Finding[]): RemoteMcpProbeResult {
+function finalize(
+  scorecard: RemoteRuntimeScorecard,
+  findings: Finding[]
+): RemoteMcpProbeResult {
   scorecard.overall = findings.some((finding) => finding.severity === "fail")
     ? "fail"
     : findings.some((finding) => finding.severity === "warn")
@@ -131,6 +138,10 @@ function isValidInitializeResponse(message: JsonObject): boolean {
     typeof message.result.serverInfo.name === "string" &&
     typeof message.result.serverInfo.version === "string"
   );
+}
+
+function isInitializedNotificationAcknowledged(response: BoundedHttpResponse): boolean {
+  return response.statusCode === 202 && response.body.length === 0;
 }
 
 function validSessionId(value: string | null): boolean {
@@ -305,7 +316,7 @@ export async function probeRemoteMcpServer(
         ...(sessionId === null ? {} : { "MCP-Session-Id": sessionId })
       }
     });
-    if (initializedResponse.statusCode < 200 || initializedResponse.statusCode >= 300) {
+    if (!isInitializedNotificationAcknowledged(initializedResponse)) {
       scorecard.protocolHeaders = "fail";
       findings.push(failure(
         "plugin.runtime.remote.initialized.failed",
@@ -327,5 +338,59 @@ export async function probeRemoteMcpServer(
   }
 
   scorecard.protocolHeaders = "pass";
+  const reliability = await probeRemoteTransportReliability({
+    rawUrl,
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    request,
+    requestTimeoutMs: options.requestTimeoutMs,
+    requestOptions: {
+      allowLocalNetwork: options.allowLocalNetwork,
+      lookup: options.lookup
+    },
+    sessionId,
+    allowSessionLifecycle: options.allowSessionLifecycle,
+    reinitialize: async (requestWithinBudget) => {
+      const restartInitialize = await requestWithinBudget({
+        method: "POST",
+        body: initializeBody,
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json"
+        },
+        stopAfter: (body) => findSseInitializeResponse(body) !== null
+      });
+      if (restartInitialize.statusCode !== 200) {
+        throw new Error("restart initialize failed");
+      }
+      const restartContentType = mediaType(responseHeader(restartInitialize.headers, "content-type"));
+      if (restartContentType !== "application/json" && restartContentType !== "text/event-stream") {
+        throw new Error("restart initialize content type invalid");
+      }
+      const replacementSessionId = responseHeader(restartInitialize.headers, "mcp-session-id");
+      if (replacementSessionId !== null && !validSessionId(replacementSessionId)) {
+        throw new Error("restart session invalid");
+      }
+      const restartMessage = parseInitializeResponse(restartInitialize.body, restartContentType);
+      if (!restartMessage || !isValidInitializeResponse(restartMessage)) {
+        throw new Error("restart initialize result invalid");
+      }
+      const restartInitialized = await requestWithinBudget({
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+        headers: {
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+          ...(replacementSessionId === null ? {} : { "MCP-Session-Id": replacementSessionId })
+        }
+      });
+      if (!isInitializedNotificationAcknowledged(restartInitialized)) {
+        throw new Error("restart initialized failed");
+      }
+      return replacementSessionId;
+    }
+  });
+  scorecard.reliability = reliability.scorecard;
+  findings.push(...reliability.findings);
   return finalize(scorecard, findings);
 }

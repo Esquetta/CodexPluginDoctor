@@ -50,6 +50,11 @@ const runtimeCapabilityStatusSchema = {
   enum: ["pass", "fail", "warn", "skipped", "unsupported"]
 };
 
+const remoteTransportReliabilityStatusSchema = {
+  type: "string",
+  enum: ["pass", "warn", "fail", "skipped"]
+};
+
 const runtimeConformanceSchema = {
   type: "object",
   properties: {
@@ -81,6 +86,29 @@ const runtimeConformanceSchema = {
   additionalProperties: false
 };
 
+const remoteTransportReliabilitySchema = {
+  type: "object",
+  properties: {
+    getSse: remoteTransportReliabilityStatusSchema,
+    sessionPropagation: remoteTransportReliabilityStatusSchema,
+    resumability: remoteTransportReliabilityStatusSchema,
+    disconnectSafety: remoteTransportReliabilityStatusSchema,
+    sessionRestart: remoteTransportReliabilityStatusSchema,
+    termination: remoteTransportReliabilityStatusSchema,
+    overall: remoteTransportReliabilityStatusSchema
+  },
+  required: [
+    "getSse",
+    "sessionPropagation",
+    "resumability",
+    "disconnectSafety",
+    "sessionRestart",
+    "termination",
+    "overall"
+  ],
+  additionalProperties: false
+};
+
 const remoteRuntimeScorecardSchema = {
   type: "object",
   properties: {
@@ -94,6 +122,7 @@ const remoteRuntimeScorecardSchema = {
     },
     protocolHeaders: runtimeCapabilityStatusSchema,
     authorization: runtimeCapabilityStatusSchema,
+    reliability: remoteTransportReliabilitySchema,
     overall: {
       type: "string",
       enum: ["pass", "warn", "fail", "skipped"]

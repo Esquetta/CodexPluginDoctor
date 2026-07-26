@@ -11,7 +11,7 @@ import type {
 import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
-import { probeRuntime } from "./runtime-probe.js";
+import { probeRuntime, remoteReliabilityGatePassed } from "./runtime-probe.js";
 
 function buildFailure(
   id: string,
@@ -791,7 +791,8 @@ export async function validatePlugin(
           sandbox: options.runtimeSandbox,
           transcript: options.runtimeTranscript,
           allowNetwork: options.allowNetwork,
-          allowLocalNetwork: options.allowLocalNetwork
+          allowLocalNetwork: options.allowLocalNetwork,
+          allowSessionLifecycle: options.allowSessionLifecycle
         })
       : null;
   const findings = [
@@ -805,7 +806,7 @@ export async function validatePlugin(
   );
   const hasFailures = fingerprintedFindings.some(
     (finding) => finding.severity === "fail"
-  );
+  ) || (options.requireRemoteReliability === true && !remoteReliabilityGatePassed(runtimeResult?.scorecard));
   const hasWarnings = fingerprintedFindings.some(
     (finding) => finding.severity === "warn"
   );

@@ -25,6 +25,33 @@ function createIo() {
 }
 
 describe("doctor release-evidence command", () => {
+  it("forwards lifecycle consent and strict reliability gating to release evidence validation", async () => {
+    const { io, stderr } = createIo();
+    const runCheckImpl = vi.fn(async (targetPath: string) => ({
+      targetPath,
+      status: "pass" as const,
+      exitCode: 0 as const,
+      findings: []
+    }));
+
+    await runCli([
+      "doctor", "release-evidence", "examples/codex-doctor-runtime", "--sign-key-env", "DOCTOR_SIGNING_KEY",
+      "--allow-dirty", "--allow-untagged", "--runtime", "--allow-network", "--allow-session-lifecycle",
+      "--require-remote-reliability", "--json"
+    ], io, {
+      terminalContext: { env: { DOCTOR_SIGNING_KEY: "release-secret" }, platform: "win32" },
+      runCheckImpl
+    });
+
+    expect(stderr).toEqual([]);
+    expect(runCheckImpl).toHaveBeenCalledWith(expect.any(String), {
+      runtime: true,
+      allowNetwork: true,
+      allowSessionLifecycle: true,
+      requireRemoteReliability: true
+    });
+  });
+
   it("renders a signed release evidence bundle as JSON", async () => {
     const { io, stdout, stderr } = createIo();
 
@@ -428,6 +455,28 @@ describe("doctor release-evidence command", () => {
 
     expect(rendered).toContain("[REDACTED_SECRET]");
     expect(rendered).not.toContain("SHOULD_NOT_LEAK");
+  });
+
+  it("never renders remote transport values in release evidence", () => {
+    const rendered = renderDoctorReleaseEvidenceJson({
+      kind: "doctor.release.evidence",
+      schemaVersion: "1.0.0",
+      transport: {
+        sessionId: "release-session-canary-7d31",
+        lastEventId: "release-event-canary-91ac",
+        retry: "release-retry-canary-4f82",
+        data: "release-sse-data-canary-c8e5"
+      }
+    } as never);
+
+    for (const canary of [
+      "release-session-canary-7d31",
+      "release-event-canary-91ac",
+      "release-retry-canary-4f82",
+      "release-sse-data-canary-c8e5"
+    ]) {
+      expect(rendered).not.toContain(canary);
+    }
   });
 
   it("verifies a release evidence bundle against its target package", async () => {

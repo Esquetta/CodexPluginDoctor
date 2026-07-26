@@ -73,6 +73,18 @@ function appendRuntimeScorecard(lines: string[], result: CheckResult) {
     lines.push(`protocol headers: ${remote.protocolHeaders}`);
     lines.push(`authorization: ${remote.authorization}`);
     lines.push(`overall: ${remote.overall}`);
+
+    if (remote.reliability) {
+      const reliability = remote.reliability;
+      lines.push("", "Remote Transport Reliability", "----------------------------");
+      lines.push(`GET SSE: ${reliability.getSse}`);
+      lines.push(`Session propagation: ${reliability.sessionPropagation}`);
+      lines.push(`Resumability: ${reliability.resumability}`);
+      lines.push(`Disconnect safety: ${reliability.disconnectSafety}`);
+      lines.push(`Session restart: ${reliability.sessionRestart}`);
+      lines.push(`Termination: ${reliability.termination}`);
+      lines.push(`Overall: ${reliability.overall}`);
+    }
   }
 }
 

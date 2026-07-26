@@ -324,9 +324,16 @@ function parseRuntimeSandbox(
 function parseRemoteNetworkFlags(
   flags: string[],
   runtime: boolean
-): { allowNetwork: boolean; allowLocalNetwork: boolean } | CliUsageError {
+): {
+  allowNetwork: boolean;
+  allowLocalNetwork: boolean;
+  allowSessionLifecycle: boolean;
+  requireRemoteReliability: boolean;
+} | CliUsageError {
   let allowNetwork = false;
   let allowLocalNetwork = false;
+  let allowSessionLifecycle = false;
+  let requireRemoteReliability = false;
 
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
@@ -343,9 +350,34 @@ function parseRemoteNetworkFlags(
         return new CliUsageError("--allow-local-network does not accept a value.");
       }
       allowLocalNetwork = true;
-    } else if (flag?.startsWith("--allow-network=") || flag?.startsWith("--allow-local-network=")) {
+    } else if (flag === "--allow-session-lifecycle") {
+      if (allowSessionLifecycle) return new CliUsageError("Duplicate runtime remote flag: --allow-session-lifecycle.");
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return new CliUsageError("--allow-session-lifecycle does not accept a value.");
+      }
+      allowSessionLifecycle = true;
+    } else if (flag === "--require-remote-reliability") {
+      if (requireRemoteReliability) return new CliUsageError("Duplicate runtime remote flag: --require-remote-reliability.");
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return new CliUsageError("--require-remote-reliability does not accept a value.");
+      }
+      requireRemoteReliability = true;
+    } else if (
+      flag?.startsWith("--allow-network=") ||
+      flag?.startsWith("--allow-local-network=") ||
+      flag?.startsWith("--allow-session-lifecycle=") ||
+      flag?.startsWith("--require-remote-reliability=")
+    ) {
       return new CliUsageError(`${flag.split("=", 1)[0]} does not accept a value.`);
     }
+  }
+
+  if (allowSessionLifecycle && !runtime) {
+    return new CliUsageError("--allow-session-lifecycle requires --runtime.");
+  }
+
+  if (requireRemoteReliability && !runtime) {
+    return new CliUsageError("--require-remote-reliability requires --runtime and --allow-network.");
   }
 
   if ((allowNetwork || allowLocalNetwork) && !runtime) {
@@ -356,7 +388,15 @@ function parseRemoteNetworkFlags(
     return new CliUsageError("--allow-local-network requires --allow-network.");
   }
 
-  return { allowNetwork, allowLocalNetwork };
+  if (allowSessionLifecycle && !allowNetwork) {
+    return new CliUsageError("--allow-session-lifecycle requires --allow-network.");
+  }
+
+  if (requireRemoteReliability && !allowNetwork) {
+    return new CliUsageError("--require-remote-reliability requires --runtime and --allow-network.");
+  }
+
+  return { allowNetwork, allowLocalNetwork, allowSessionLifecycle, requireRemoteReliability };
 }
 
 function printUsage(io: CliIo): void {
@@ -371,6 +411,9 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(
     "Baseline gating: codex-plugin-doctor baseline create <path> --output <path> [--runtime]\n       codex-plugin-doctor check <path> --baseline <path>"
+  );
+  io.writeStderr(
+    "Remote MCP runtime flags (check, mcp, release check, and doctor release-evidence): --runtime --allow-network [--allow-local-network] [--allow-session-lifecycle] [--require-remote-reliability]\n       --allow-session-lifecycle requires --runtime --allow-network and can terminate a remote session.\n       --require-remote-reliability requires --runtime --allow-network, blocks non-pass reliability, and does not grant network consent."
   );
 }
 
@@ -1185,6 +1228,8 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
   runtime: boolean;
   allowNetwork: boolean;
   allowLocalNetwork: boolean;
+  allowSessionLifecycle: boolean;
+  requireRemoteReliability: boolean;
 } | string {
   if (!commandTarget || commandTarget.startsWith("--")) {
     return "Missing target path. Usage: codex-plugin-doctor mcp <path> [--runtime] [--json] [--output <path>]";
@@ -1195,6 +1240,8 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
   let runtime = false;
   let allowNetwork = false;
   let allowLocalNetwork = false;
+  let allowSessionLifecycle = false;
+  let requireRemoteReliability = false;
 
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
@@ -1229,6 +1276,31 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
       continue;
     }
 
+    if (flag === "--allow-session-lifecycle") {
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return "--allow-session-lifecycle does not accept a value.";
+      }
+      allowSessionLifecycle = true;
+      continue;
+    }
+
+    if (flag === "--require-remote-reliability") {
+      if (flags[index + 1] && !flags[index + 1]!.startsWith("--")) {
+        return "--require-remote-reliability does not accept a value.";
+      }
+      requireRemoteReliability = true;
+      continue;
+    }
+
+    if (
+      flag.startsWith("--allow-network=") ||
+      flag.startsWith("--allow-local-network=") ||
+      flag.startsWith("--allow-session-lifecycle=") ||
+      flag.startsWith("--require-remote-reliability=")
+    ) {
+      return `${flag.split("=", 1)[0]} does not accept a value.`;
+    }
+
     if (flag === "--output") {
       if (outputPath !== null) {
         return "Duplicate MCP flag: --output.";
@@ -1261,8 +1333,10 @@ function buildGenericMcpDoctorCommandArgs(commandTarget: string, flags: string[]
     jsonOutput,
     outputPath,
     runtime,
-    allowNetwork,
-    allowLocalNetwork
+    allowNetwork: remoteNetwork.allowNetwork,
+    allowLocalNetwork: remoteNetwork.allowLocalNetwork,
+    allowSessionLifecycle,
+    requireRemoteReliability
   };
 }
 
@@ -1654,7 +1728,9 @@ export async function runCli(
       }, {
         runtime: parsedMcpArgs.runtime,
         allowNetwork: parsedMcpArgs.allowNetwork,
-        allowLocalNetwork: parsedMcpArgs.allowLocalNetwork
+        allowLocalNetwork: parsedMcpArgs.allowLocalNetwork,
+        allowSessionLifecycle: parsedMcpArgs.allowSessionLifecycle,
+        requireRemoteReliability: parsedMcpArgs.requireRemoteReliability
       });
       const renderedReport = parsedMcpArgs.jsonOutput
         ? renderGenericMcpDoctorJson(report)
@@ -2045,6 +2121,8 @@ export async function runCli(
           runtime,
           ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
           ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+          ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+          ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
           ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
           environment: {
             env: terminalContext.env,
@@ -2240,6 +2318,8 @@ export async function runCli(
         runtime,
         ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
         ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+        ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+        ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
         ...(runtimeSandbox ? { sandbox: runtimeSandbox } : {}),
         environment: {
           env: terminalContext.env,
@@ -3262,7 +3342,9 @@ export async function runCli(
     }, {
       runtime: parsedMcpArgs.runtime,
       allowNetwork: parsedMcpArgs.allowNetwork,
-      allowLocalNetwork: parsedMcpArgs.allowLocalNetwork
+      allowLocalNetwork: parsedMcpArgs.allowLocalNetwork,
+      allowSessionLifecycle: parsedMcpArgs.allowSessionLifecycle,
+      requireRemoteReliability: parsedMcpArgs.requireRemoteReliability
     });
     const renderedReport = parsedMcpArgs.jsonOutput
       ? renderGenericMcpDoctorJson(report)
@@ -3659,6 +3741,8 @@ export async function runCli(
       runtime: runtimeProbeEnabled,
       ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
       ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+      ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+      ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
       ...(runtimeSandbox ? { runtimeSandbox } : {}),
       runCheck: options.runCheckImpl
     });
@@ -3932,6 +4016,8 @@ export async function runCli(
             runtime: effectiveRuntimeProbeEnabled,
             ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
             ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+            ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+            ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
             runtimeTranscript:
               effectiveRuntimeProbeEnabled && verboseRuntime
                 ? (line) => io.writeStderr(line)
@@ -4034,7 +4120,9 @@ export async function runCli(
           await runCheckImpl(pluginRoot, {
             runtime: effectiveRuntimeProbeEnabled,
             ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
-            ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {})
+            ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+            ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+            ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {})
           }),
           applyPolicyToDoctorConfig(
             applyCheckProfile(await loadDoctorConfig(pluginRoot, configPath), checkProfile),
@@ -4070,6 +4158,8 @@ export async function runCli(
       runtime: effectiveRuntimeProbeEnabled,
       ...(remoteNetwork.allowNetwork ? { allowNetwork: true } : {}),
       ...(remoteNetwork.allowLocalNetwork ? { allowLocalNetwork: true } : {}),
+      ...(remoteNetwork.allowSessionLifecycle ? { allowSessionLifecycle: true } : {}),
+      ...(remoteNetwork.requireRemoteReliability ? { requireRemoteReliability: true } : {}),
       ...(runtimeSandbox ? { runtimeSandbox } : {}),
       ...(effectiveRuntimeProbeEnabled && verboseRuntime
         ? { runtimeTranscript: (line: string) => io.writeStderr(line) }
