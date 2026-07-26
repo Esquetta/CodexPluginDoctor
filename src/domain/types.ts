@@ -128,14 +128,16 @@ export interface RemoteRuntimeScorecard {
   overall: "pass" | "warn" | "fail" | "skipped";
 }
 
+export type RemoteTransportReliabilityStatus = "pass" | "warn" | "fail" | "skipped";
+
 export interface RemoteTransportReliabilityScorecard {
-  getSse: RuntimeCapabilityStatus;
-  sessionPropagation: RuntimeCapabilityStatus;
-  resumability: RuntimeCapabilityStatus;
-  disconnectSafety: RuntimeCapabilityStatus;
-  sessionRestart: RuntimeCapabilityStatus;
-  termination: RuntimeCapabilityStatus;
-  overall: "pass" | "warn" | "fail" | "skipped";
+  getSse: RemoteTransportReliabilityStatus;
+  sessionPropagation: RemoteTransportReliabilityStatus;
+  resumability: RemoteTransportReliabilityStatus;
+  disconnectSafety: RemoteTransportReliabilityStatus;
+  sessionRestart: RemoteTransportReliabilityStatus;
+  termination: RemoteTransportReliabilityStatus;
+  overall: RemoteTransportReliabilityStatus;
 }
 
 export type McpConformanceProfile =

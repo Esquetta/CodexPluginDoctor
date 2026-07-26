@@ -50,6 +50,11 @@ const runtimeCapabilityStatusSchema = {
   enum: ["pass", "fail", "warn", "skipped", "unsupported"]
 };
 
+const remoteTransportReliabilityStatusSchema = {
+  type: "string",
+  enum: ["pass", "warn", "fail", "skipped"]
+};
+
 const runtimeConformanceSchema = {
   type: "object",
   properties: {
@@ -84,16 +89,13 @@ const runtimeConformanceSchema = {
 const remoteTransportReliabilitySchema = {
   type: "object",
   properties: {
-    getSse: runtimeCapabilityStatusSchema,
-    sessionPropagation: runtimeCapabilityStatusSchema,
-    resumability: runtimeCapabilityStatusSchema,
-    disconnectSafety: runtimeCapabilityStatusSchema,
-    sessionRestart: runtimeCapabilityStatusSchema,
-    termination: runtimeCapabilityStatusSchema,
-    overall: {
-      type: "string",
-      enum: ["pass", "warn", "fail", "skipped"]
-    }
+    getSse: remoteTransportReliabilityStatusSchema,
+    sessionPropagation: remoteTransportReliabilityStatusSchema,
+    resumability: remoteTransportReliabilityStatusSchema,
+    disconnectSafety: remoteTransportReliabilityStatusSchema,
+    sessionRestart: remoteTransportReliabilityStatusSchema,
+    termination: remoteTransportReliabilityStatusSchema,
+    overall: remoteTransportReliabilityStatusSchema
   },
   required: [
     "getSse",

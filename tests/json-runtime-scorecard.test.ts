@@ -141,17 +141,38 @@ describe("runtime scorecard", () => {
     expect(report.summary.runtimeScorecard?.remote?.reliability).toEqual(reliability);
   });
 
-  it("keeps reliability optional in the public contract while requiring a complete object when present", () => {
+  it("keeps reliability optional while rejecting unsupported capability statuses", () => {
     const contract = buildDoctorOutputContract("2026-07-26T00:00:00.000Z");
     const schema = contract.schemas.find((entry) => entry.id === "doctor.check.json")?.schema;
     const remote = (schema?.properties as { summary?: { properties?: { runtimeScorecard?: { properties?: { remote?: { properties?: Record<string, unknown>; required?: string[] } } } } } })
       .summary?.properties?.runtimeScorecard?.properties?.remote;
-    const reliability = remote?.properties?.reliability as { required?: string[]; additionalProperties?: boolean } | undefined;
+    const reliability = remote?.properties?.reliability as {
+      properties?: Record<string, { enum?: string[] }>;
+      required?: string[];
+      additionalProperties?: boolean;
+    } | undefined;
 
     expect(remote?.required).not.toContain("reliability");
     expect(reliability).toMatchObject({
       required: ["getSse", "sessionPropagation", "resumability", "disconnectSafety", "sessionRestart", "termination", "overall"],
       additionalProperties: false
     });
+    for (const capability of [
+      "getSse",
+      "sessionPropagation",
+      "resumability",
+      "disconnectSafety",
+      "sessionRestart",
+      "termination",
+      "overall"
+    ]) {
+      expect(reliability?.properties?.[capability]?.enum).not.toContain("unsupported");
+      expect(reliability?.properties?.[capability]?.enum).toEqual([
+        "pass",
+        "warn",
+        "fail",
+        "skipped"
+      ]);
+    }
   });
 });
