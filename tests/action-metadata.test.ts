@@ -113,6 +113,19 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('args+=(--require-remote-reliability)');
   });
 
+  it("supports opt-in local Registry metadata reports and strict readiness gating", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toMatch(/registry-metadata:[\s\S]*?default: ""/);
+    expect(actionMetadata).toMatch(/require-registry-readiness:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toContain('REGISTRY_METADATA_INPUT: ${{ inputs[\'registry-metadata\'] }}');
+    expect(actionMetadata).toContain('REQUIRE_REGISTRY_READINESS_INPUT: ${{ inputs[\'require-registry-readiness\'] }}');
+    expect(actionMetadata).toContain('registry_args=(registry check "$REGISTRY_METADATA_INPUT" --json --output "$registry_report_path")');
+    expect(actionMetadata).toContain('registry_args+=(--require-registry-readiness)');
+    expect(actionMetadata).toContain('echo "registry-report-path=$registry_report_path"');
+    expect(actionMetadata).toContain("registryReport: report(");
+  });
+
   it("documents loopback-only consent without permitting private or reserved ranges", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");
