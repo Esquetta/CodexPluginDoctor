@@ -286,6 +286,18 @@ export {
   type GenericMcpDoctorReport
 } from "./mcp/generic-mcp-doctor.js";
 export {
+  buildMcpRegistryReadiness,
+  inspectMcpRegistryServer,
+  registryReadinessExitCode,
+  renderMcpRegistryReadiness,
+  renderMcpRegistryReadinessJson,
+  type InspectMcpRegistryOptions,
+  type McpRegistryFinding,
+  type McpRegistryInstallability,
+  type McpRegistryReadinessReport,
+  type McpRegistryScorecard
+} from "./core/mcp-registry.js";
+export {
   watchPlugin,
   type WatchPluginOptions,
   type WatchPluginResult
