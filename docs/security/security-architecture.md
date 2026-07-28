@@ -52,6 +52,12 @@ Remote probing requires explicit network consent and separately requires `--allo
 
 DNS and IP classification cannot eliminate arbitrary network-specific NAT64 Pref64 mappings. Use runner or host egress controls to limit the destinations that a CI job or workstation can reach.
 
+### MCP Registry Boundary
+
+Local `registry check` is offline. Live `registry inspect` requires `--allow-network` and sends one unauthenticated bounded GET to the fixed official Registry hostname and exact-name endpoint. It never follows URLs found in Registry metadata, downloads packages or icons, executes install previews, authenticates, or mutates Registry state.
+
+Registry publication proves namespace control under Registry policy; it does not prove that listed code is safe. Reports therefore describe metadata and installability readiness rather than endorsement or runtime trust.
+
 ### Secret Hygiene
 
 - redact values that look like tokens in reports

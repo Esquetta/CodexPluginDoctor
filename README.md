@@ -96,6 +96,18 @@ Remote transport reliability adds one bounded SSE GET after initialization. HTTP
 
 `--allow-session-lifecycle` is disabled by default and is state-changing: only after a valid `MCP-Session-Id` it permits one bounded session `DELETE`. `--require-remote-reliability` is a strict result gate: it fails unless every attempted remote reliability scorecard passes. Local-only runs are unaffected. It grants no network consent, so `--runtime --allow-network` (and loopback consent when applicable) remain required. See [Remote MCP Readiness](./docs/architecture/remote-mcp-readiness.md) and [Remote MCP Transport Reliability](./docs/architecture/remote-mcp-transport-reliability.md).
 
+### MCP Registry Readiness
+
+Validate official MCP Registry publication metadata without publishing or installing anything:
+
+```bash
+codex-plugin-doctor registry check path/to/server.json
+codex-plugin-doctor registry check path/to/server.json --json --require-registry-readiness
+codex-plugin-doctor registry inspect io.github.example/weather --allow-network
+```
+
+Local checks validate metadata, ownership consistency, package integrity, transports, and Codex installability. Exact Registry lookup is read-only, requires explicit network consent, and contacts only the fixed official Registry endpoint. It never follows advertised package, icon, repository, or remote MCP URLs. See [MCP Registry Readiness](./docs/architecture/mcp-registry-readiness.md).
+
 Output formats:
 
 - human text output

@@ -22,6 +22,21 @@ Remote MCP checks are off by default. Set `runtime: "true"` and give explicit ne
 
 The Action transfers these boolean inputs through environment-backed shell variables and a Bash argument array. `require-remote-reliability` is a strict result gate, not network consent: it fails unless every attempted remote reliability scorecard passes. Local-only runs are unaffected. Keep `allow-session-lifecycle: "false"` (the default) unless the workflow explicitly authorizes one bounded, state-changing session `DELETE` after a valid session is issued. Remote probes redact diagnostics and retain no raw remote content; see [Remote MCP Readiness](../architecture/remote-mcp-readiness.md) and [Remote MCP Transport Reliability](../architecture/remote-mcp-transport-reliability.md) for SSRF, OAuth metadata-discovery, SSE, and lifecycle boundaries.
 
+## MCP Registry Readiness
+
+Use local Registry metadata gating when the repository contains a `server.json` intended for publication:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v1.54.0
+  with:
+    version: "1.54.0"
+    path: .
+    registry-metadata: ./server.json
+    require-registry-readiness: "true"
+```
+
+The Action writes `mcp-registry-readiness.json` and exposes `registry-report-path`. This path is checked locally; the Action does not inspect the live Registry and does not grant network access. `require-registry-readiness` requires `registry-metadata` and blocks warnings as well as failures.
+
 ## Recommended Workflow
 
 ```yaml
@@ -110,6 +125,7 @@ The action also exposes these workflow outputs for follow-up steps:
 - `corpus-metrics-diff-path`
 - `output-contract-path`
 - `action-manifest-path`
+- `registry-report-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 

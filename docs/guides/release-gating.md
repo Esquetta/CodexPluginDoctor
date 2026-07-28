@@ -68,6 +68,17 @@ node dist/cli.js check ./path/to/plugin --runtime --allow-network --require-remo
 
 `--require-remote-reliability` is a strict result gate and grants no network consent; it fails unless every attempted remote reliability scorecard passes. Local-only runs are unaffected. Keep `--allow-session-lifecycle` off for ordinary release gates. That opt-in is state-changing and permits one bounded session `DELETE` only when initialization supplied a valid session identifier.
 
+### MCP Registry Metadata
+
+Repositories that publish `server.json` can keep metadata validation advisory or make every warning blocking:
+
+```bash
+codex-plugin-doctor registry check ./server.json --json --output mcp-registry-readiness.json
+codex-plugin-doctor registry check ./server.json --require-registry-readiness
+```
+
+The local check performs no network access. Use the strict gate for publication branches after ownership and installability evidence are complete.
+
 Docker mode currently supports Node.js stdio MCP servers. It uses a read-only package mount and container filesystem, no network, an unprivileged user, dropped capabilities, bounded resources, and a limited writable `/tmp`. It fails closed and does not fall back to native execution.
 
 ### Release Readiness
