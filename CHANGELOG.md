@@ -4,6 +4,25 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.54.0] - 2026-07-28
+
+### Added
+
+- added offline MCP Registry readiness checks for metadata, ownership, package integrity, transport readiness, and client installability
+- added opt-in exact-name lookup against the official MCP Registry with lifecycle validation and a non-executing Codex configuration preview
+- added optional GitHub Action Registry readiness gating and the `mcp-registry-readiness.json` artifact
+
+### Changed
+
+- extended the public output contract with the additive `doctor.registry.readiness.json` schema surface
+- accept historical official MCP Registry schema URLs with a compatibility warning while retaining strict metadata validation
+
+### Security
+
+- keep local Registry checks offline and require explicit `--allow-network` consent for live inspection
+- constrain live requests to the fixed official Registry endpoint through the existing bounded HTTP client without following metadata URLs
+- reject literal embedded secrets and unsafe package or transport declarations while preserving supported variable templates
+
 ## [1.53.0] - 2026-07-26
 
 ### Added
