@@ -4,6 +4,7 @@ import path from "node:path";
 import { requestBoundedHttp, type BoundedHttpRequestOptions, type BoundedHttpResponse } from "./bounded-http-client.js";
 
 const OFFICIAL_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
+const OFFICIAL_SCHEMA_PATTERN = /^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/;
 const OFFICIAL_REGISTRY = "https://registry.modelcontextprotocol.io";
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -150,7 +151,7 @@ function inspectInputSecrets(
       return;
     }
     const name = typeof value.name === "string" ? value.name : "";
-    if (typeof value.value === "string" && value.value.length > 0
+    if (typeof value.value === "string" && value.value.length > 0 && !/\{[^{}]+\}/.test(value.value)
       && (value.isSecret === true || SECRET_NAME_PATTERN.test(name))) {
       addFinding(
         findings,
@@ -297,7 +298,17 @@ async function buildReportFromServer(
     return finalizeReport({}, target, source, findings, validPackages, validRemotes, ownershipVerified);
   }
 
-  if (server.$schema !== OFFICIAL_SCHEMA) {
+  if (typeof server.$schema === "string"
+    && OFFICIAL_SCHEMA_PATTERN.test(server.$schema)
+    && server.$schema !== OFFICIAL_SCHEMA) {
+    addFinding(
+      findings,
+      "registry.metadata.schema-outdated",
+      "warn",
+      `server.json uses an older official schema; new publications should use ${OFFICIAL_SCHEMA}.`,
+      "$schema"
+    );
+  } else if (server.$schema !== OFFICIAL_SCHEMA) {
     addFinding(
       findings,
       "registry.metadata.schema",

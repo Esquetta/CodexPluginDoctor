@@ -88,6 +88,30 @@ describe("MCP Registry readiness", () => {
     expect(report.findings.map((finding) => finding.id)).toContain("registry.installability.missing");
   });
 
+  it("warns on older official schemas and does not treat variable templates as embedded secrets", async () => {
+    const target = await writeServerJson({
+      ...validServer,
+      $schema: "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+      packages: [],
+      remotes: [{
+        type: "streamable-http",
+        url: "https://example.com/mcp",
+        headers: [{
+          name: "Authorization",
+          isSecret: true,
+          value: "Bearer {api_key}"
+        }]
+      }]
+    });
+
+    const report = await buildMcpRegistryReadiness(target);
+    const ids = report.findings.map((finding) => finding.id);
+
+    expect(report.status).toBe("warn");
+    expect(ids).toContain("registry.metadata.schema-outdated");
+    expect(ids).not.toContain("registry.secret.embedded-value");
+  });
+
   it("rejects unsafe or inconsistent publication metadata", async () => {
     const target = await writeServerJson({
       ...validServer,
