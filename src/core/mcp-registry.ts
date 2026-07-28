@@ -47,8 +47,9 @@ export interface McpRegistryInstallability {
 }
 
 export interface McpRegistryReadinessReport {
-  schemaVersion: "1";
+  schemaVersion: "1.0.0";
   kind: "mcp-registry-readiness";
+  generatedAt: string;
   source: "file" | "registry";
   target: string;
   serverName?: string;
@@ -478,8 +479,9 @@ function finalizeReport(
   const hasTransport = validPackages.length > 0 || validRemotes.length > 0;
   const installability = buildInstallability(server, validPackages, validRemotes);
   return {
-    schemaVersion: "1",
+    schemaVersion: "1.0.0",
     kind: "mcp-registry-readiness",
+    generatedAt: new Date().toISOString(),
     source,
     target,
     ...(typeof server.name === "string" ? { serverName: server.name } : {}),

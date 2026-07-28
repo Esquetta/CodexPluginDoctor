@@ -67,6 +67,8 @@ describe("MCP Registry readiness", () => {
     expect(renderMcpRegistryReadiness(report)).toContain("Registry readiness: PASS");
     expect(JSON.parse(renderMcpRegistryReadinessJson(report))).toMatchObject({
       kind: "mcp-registry-readiness",
+      schemaVersion: "1.0.0",
+      generatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       status: "pass"
     });
   });

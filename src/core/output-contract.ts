@@ -209,6 +209,52 @@ const publicSchemaDefinitions: Array<{
     }
   },
   {
+    id: "doctor.registry.readiness.json",
+    command: "codex-plugin-doctor registry check <server.json|directory> --json",
+    outputKind: "mcp-registry-readiness",
+    required: [
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "source",
+      "target",
+      "status",
+      "scorecard",
+      "installability",
+      "findings"
+    ],
+    properties: {
+      source: {
+        type: "string",
+        enum: ["file", "registry"]
+      },
+      status: {
+        type: "string",
+        enum: ["pass", "warn", "fail"]
+      },
+      scorecard: {
+        type: "object",
+        required: [
+          "metadata",
+          "ownership",
+          "packageIntegrity",
+          "transportReadiness",
+          "clientInstallability",
+          "overall"
+        ],
+        additionalProperties: false
+      },
+      installability: {
+        type: "object",
+        required: ["codex", "packageTypes", "remoteTransports"],
+        additionalProperties: true
+      },
+      findings: {
+        type: "array"
+      }
+    }
+  },
+  {
     id: "doctor.audit.json",
     command: "codex-plugin-doctor audit --installed --json",
     required: ["schemaVersion", "generatedAt", "summary", "items"]
