@@ -77,6 +77,11 @@ describe("doctor contract command", () => {
           command: "codex-plugin-doctor audit deps <path> --json"
         }),
         expect.objectContaining({
+          id: "doctor.registry.readiness.json",
+          command: "codex-plugin-doctor registry check <server.json|directory> --json",
+          outputKind: "mcp-registry-readiness"
+        }),
+        expect.objectContaining({
           id: "doctor.watch.validation.json",
           command: "codex-plugin-doctor watch <path> --json"
         }),

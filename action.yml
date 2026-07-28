@@ -30,6 +30,14 @@ inputs:
     description: Fail the validation result unless every attempted remote MCP reliability scorecard passes; this does not grant network access.
     required: false
     default: "false"
+  registry-metadata:
+    description: Optional local server.json file or containing directory to validate for MCP Registry readiness.
+    required: false
+    default: ""
+  require-registry-readiness:
+    description: Fail unless the configured local Registry metadata receives a pass result.
+    required: false
+    default: "false"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -158,6 +166,9 @@ outputs:
   action-manifest-path:
     description: Path to the generated GitHub Action artifact manifest.
     value: ${{ steps.run-doctor.outputs.action-manifest-path }}
+  registry-report-path:
+    description: Path to the MCP Registry readiness JSON report when registry-metadata is configured.
+    value: ${{ steps.run-doctor.outputs.registry-report-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -180,6 +191,8 @@ runs:
         ALLOW_LOCAL_NETWORK_INPUT: ${{ inputs['allow-local-network'] }}
         ALLOW_SESSION_LIFECYCLE_INPUT: ${{ inputs['allow-session-lifecycle'] }}
         REQUIRE_REMOTE_RELIABILITY_INPUT: ${{ inputs['require-remote-reliability'] }}
+        REGISTRY_METADATA_INPUT: ${{ inputs['registry-metadata'] }}
+        REQUIRE_REGISTRY_READINESS_INPUT: ${{ inputs['require-registry-readiness'] }}
         CORPUS_METRICS_MANIFEST_INPUT: ${{ inputs['corpus-metrics-manifest'] }}
         CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
@@ -195,6 +208,7 @@ runs:
         corpus_metrics_diff_path="$report_dir/corpus-metrics-diff.json"
         output_contract_path="$report_dir/output-contract.json"
         action_manifest_path="$report_dir/codex-plugin-doctor-action-manifest.json"
+        registry_report_path="$report_dir/mcp-registry-readiness.json"
         review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
         review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
@@ -321,6 +335,19 @@ runs:
           run_doctor "output contract" doctor contract --json --output "$output_contract_path"
         fi
 
+        if [[ -z "$REGISTRY_METADATA_INPUT" ]]; then
+          if [[ "$REQUIRE_REGISTRY_READINESS_INPUT" == "true" ]]; then
+            echo "require-registry-readiness requires registry-metadata."
+            record_status 2
+          fi
+        else
+          registry_args=(registry check "$REGISTRY_METADATA_INPUT" --json --output "$registry_report_path")
+          if [[ "$REQUIRE_REGISTRY_READINESS_INPUT" == "true" ]]; then
+            registry_args+=(--require-registry-readiness)
+          fi
+          run_doctor "MCP Registry readiness" "${registry_args[@]}"
+        fi
+
         if [[ "${{ inputs['review-bundle'] }}" == "true" ]]; then
           signing_key_env="${{ inputs['signing-key-env'] }}"
 
@@ -367,6 +394,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS="$([[ -n "$CORPUS_METRICS_MANIFEST_INPUT" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF="$([[ -n "$CORPUS_METRICS_BASELINE_INPUT" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT="${{ inputs.contract }}"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REGISTRY="$([[ -n "$REGISTRY_METADATA_INPUT" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${{ inputs['review-bundle'] }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${{ inputs['review-bundle-verify'] }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
@@ -376,6 +404,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_PATH="$corpus_metrics_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF_PATH="$corpus_metrics_diff_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH="$output_contract_path"
+        export CODEX_PLUGIN_DOCTOR_ACTION_REGISTRY_PATH="$registry_report_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
@@ -407,6 +436,7 @@ runs:
             corpusMetrics: report("corpusMetrics", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_PATH"),
             corpusMetricsDiff: report("corpusMetricsDiff", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_CORPUS_METRICS_DIFF_PATH"),
             contract: report("contract", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT", "CODEX_PLUGIN_DOCTOR_ACTION_CONTRACT_PATH"),
+            registryReport: report("registryReport", "CODEX_PLUGIN_DOCTOR_ACTION_REGISTRY", "CODEX_PLUGIN_DOCTOR_ACTION_REGISTRY_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
           }
@@ -432,6 +462,7 @@ runs:
           echo "corpus-metrics-diff-path=$corpus_metrics_diff_path"
           echo "output-contract-path=$output_contract_path"
           echo "action-manifest-path=$action_manifest_path"
+          echo "registry-report-path=$registry_report_path"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"

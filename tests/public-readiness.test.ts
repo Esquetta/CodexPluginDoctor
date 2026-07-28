@@ -139,4 +139,26 @@ describe("public repository readiness", () => {
     expect(security).toContain("runner or host egress controls");
     expect(readiness).not.toMatch(/internal (implementation )?plan/i);
   });
+
+  it("publishes the MCP Registry readiness and non-execution boundary", async () => {
+    const readme = await readText("README.md");
+    const docsReadme = await readText("docs/README.md");
+    const registry = await readText("docs/architecture/mcp-registry-readiness.md");
+    const actionGuide = await readText("docs/guides/github-action.md");
+    const releaseGating = await readText("docs/guides/release-gating.md");
+    const security = await readText("docs/security/security-architecture.md");
+
+    expect(readme).toContain("MCP Registry Readiness");
+    expect(docsReadme).toContain("MCP Registry Readiness");
+    expect(registry).toContain("registry inspect");
+    expect(registry).toContain("--allow-network");
+    expect(registry).toContain("does not prove that the referenced code");
+    expect(registry).toContain("never edits Codex configuration");
+    expect(registry).toContain("does not follow package, icon, repository, website, or remote MCP URLs");
+    expect(actionGuide).toContain("registry-metadata: ./server.json");
+    expect(actionGuide).toContain('require-registry-readiness: "true"');
+    expect(actionGuide).toContain("registry-report-path");
+    expect(releaseGating).toContain("--require-registry-readiness");
+    expect(security).toContain("Registry publication proves namespace control");
+  });
 });
