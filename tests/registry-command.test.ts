@@ -105,6 +105,31 @@ describe("registry command", () => {
     expect(renderMcpRegistryPublicationPreflight(report)).toContain("Network verification: NOT AVAILABLE");
   });
 
+  it("returns failure for an offline preflight with blocking local metadata", async () => {
+    const target = await createMetadataOnlyServer();
+    await writeFile(path.join(target, "server.json"), JSON.stringify({
+      $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+      name: "com.example/metadata-only",
+      description: "",
+      version: "1.0.0"
+    }), "utf8");
+    const result = createIo();
+
+    expect(await runCli(["registry", "preflight", target], result.io)).toBe(1);
+    expect(result.stdout.join("")).toContain("Registry publication preflight: FAIL");
+  });
+
+  it("writes the exact text preflight report to --output", async () => {
+    const target = await createMetadataOnlyServer();
+    const outputPath = path.join(target, "preflight.txt");
+    const result = createIo();
+
+    expect(await runCli([
+      "registry", "preflight", target, "--output", outputPath
+    ], result.io)).toBe(0);
+    expect(await readFile(outputPath, "utf8")).toBe(result.stdout.join(""));
+  });
+
   it("writes the exact JSON preflight report to --output", async () => {
     const target = await createMetadataOnlyServer();
     const outputPath = path.join(target, "preflight.json");
@@ -150,6 +175,32 @@ describe("registry command", () => {
 
     expect(await runCli(["registry", "preflight", target, "--publish"], unknown.io)).toBe(2);
     expect(unknown.stderr.join("")).toContain("Unknown registry flag");
+  });
+
+  it("returns usage for missing or invalid preflight targets", async () => {
+    const missingTarget = createIo();
+    const invalidTarget = createIo();
+
+    expect(await runCli(["registry", "preflight"], missingTarget.io)).toBe(2);
+    expect(missingTarget.stderr.join("")).toContain("Usage:");
+    expect(missingTarget.stderr.join("")).toContain("registry preflight");
+
+    expect(await runCli(["registry", "preflight", "--json"], invalidTarget.io)).toBe(2);
+    expect(invalidTarget.stderr.join("")).toContain("Usage:");
+    expect(invalidTarget.stderr.join("")).toContain("registry preflight");
+  });
+
+  it("hides write failures behind the generic Registry error", async () => {
+    const target = await createMetadataOnlyServer();
+    const outputPath = path.join(target, "missing-parent", "preflight.txt");
+    const result = createIo();
+
+    expect(await runCli([
+      "registry", "preflight", target, "--output", outputPath
+    ], result.io)).toBe(1);
+    expect(result.stderr.join("")).toBe("Registry command failed.");
+    expect(result.stderr.join("")).not.toContain(outputPath);
+    expect(result.stderr.join("")).not.toContain("ENOENT");
   });
 
   it("exports preflight builders, renderers, status, and exit policy from the barrel", async () => {
