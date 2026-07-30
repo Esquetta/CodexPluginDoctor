@@ -394,6 +394,36 @@ describe("MCP Registry publication preflight", () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps Registry version availability unknown for an unexpected latest Registry status", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      response(418, { error: "unexpected response" })
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.latest-response");
+  });
+
+  it("keeps Registry version availability unknown for a malformed latest Registry not-found body", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      response(404, { error: "" })
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.latest-response");
+  });
+
   it("keeps Registry version availability unknown for a mismatched latest record", async () => {
     const target = await writeServerJson(validServer, matchingPackageJson);
     const request = requestSequence(
@@ -451,12 +481,14 @@ describe("MCP Registry publication preflight", () => {
       ]
     }, matchingPackageJson);
 
-    const report = await buildMcpRegistryPublicationPreflight(target);
+    const request = vi.fn();
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
 
     expect(report.status).toBe("fail");
     expect(report.localReadiness).toBe("fail");
     expect(report.packagePublication).toBe("fail");
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.package.multiple-npm-declarations");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("inherits a package mcpName mismatch as a blocking local failure", async () => {
