@@ -11,7 +11,7 @@ import {
   type BoundedHttpResponse
 } from "./bounded-http-client.js";
 
-type PreflightStatus = "pass" | "warn" | "fail";
+export type McpRegistryPublicationPreflightStatus = "pass" | "warn" | "fail";
 type RegistryRequest = (
   url: string,
   options?: BoundedHttpRequestOptions
@@ -45,8 +45,8 @@ export interface McpRegistryPublicationPreflightReport {
   target: "server.json";
   serverName?: string;
   serverVersion?: string;
-  status: PreflightStatus;
-  localReadiness: PreflightStatus;
+  status: McpRegistryPublicationPreflightStatus;
+  localReadiness: McpRegistryPublicationPreflightStatus;
   packagePublication: "pass" | "fail" | "skipped" | "unknown";
   registryVersionAvailability: "available-first-publication" | "available-new-version" | "already-published" | "unknown";
   publisherPlan: {
@@ -76,7 +76,7 @@ function publicFinding(finding: McpRegistryFinding): McpRegistryPublicationPrefl
   };
 }
 
-function statusFromFindings(findings: McpRegistryPublicationPreflightFinding[]): PreflightStatus {
+function statusFromFindings(findings: McpRegistryPublicationPreflightFinding[]): McpRegistryPublicationPreflightStatus {
   if (findings.some((finding) => finding.severity === "fail")) {
     return "fail";
   }
@@ -397,7 +397,7 @@ export async function buildMcpRegistryPublicationPreflight(
 
 function buildReport(
   readiness: Awaited<ReturnType<typeof buildMcpRegistryReadiness>>,
-  localReadiness: PreflightStatus,
+  localReadiness: McpRegistryPublicationPreflightStatus,
   packagePublication: McpRegistryPublicationPreflightReport["packagePublication"],
   registryVersionAvailability: McpRegistryPublicationPreflightReport["registryVersionAvailability"],
   findings: McpRegistryPublicationPreflightFinding[]
@@ -422,4 +422,38 @@ export function renderMcpRegistryPublicationPreflightJson(
   report: McpRegistryPublicationPreflightReport
 ): string {
   return JSON.stringify(report, null, 2);
+}
+
+export function renderMcpRegistryPublicationPreflight(
+  report: McpRegistryPublicationPreflightReport
+): string {
+  const networkVerification = report.findings.some((finding) => finding.id === "registry.preflight.network-unverified")
+    ? "NOT REQUESTED"
+    : report.registryVersionAvailability === "unknown" && report.packagePublication !== "pass"
+      ? "NOT AVAILABLE"
+      : "COMPLETED";
+  const lines = [
+    `Registry publication preflight: ${report.status.toUpperCase()}`,
+    `Target: ${report.target}`,
+    report.serverName ? `Server: ${report.serverName}@${report.serverVersion ?? "unknown"}` : null,
+    `Local readiness: ${report.localReadiness.toUpperCase()}`,
+    `Package publication: ${report.packagePublication.toUpperCase()}`,
+    `Registry version availability: ${report.registryVersionAvailability.toUpperCase()}`,
+    `Network verification: ${networkVerification}`
+  ].filter((line): line is string => line !== null);
+
+  if (report.findings.length > 0) {
+    lines.push("", "Findings", "--------");
+    for (const finding of report.findings) {
+      lines.push(`${finding.severity.toUpperCase()} ${finding.id}: ${finding.message}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export function registryPublicationPreflightExitCode(
+  report: McpRegistryPublicationPreflightReport,
+  requirePublishReady = false
+): 0 | 1 {
+  return report.status === "fail" || (requirePublishReady && report.status !== "pass") ? 1 : 0;
 }

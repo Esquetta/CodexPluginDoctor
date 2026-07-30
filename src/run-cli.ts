@@ -161,6 +161,12 @@ import {
   renderMcpRegistryReadinessJson
 } from "./core/mcp-registry.js";
 import {
+  buildMcpRegistryPublicationPreflight,
+  registryPublicationPreflightExitCode,
+  renderMcpRegistryPublicationPreflight,
+  renderMcpRegistryPublicationPreflightJson
+} from "./core/mcp-registry-preflight.js";
+import {
   buildDoctorRiskDiffReport,
   renderDoctorRiskDiffReport,
   renderDoctorRiskDiffReportJson
@@ -412,7 +418,8 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
-    + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]"
+    + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
+    + "Registry publication preflight: codex-plugin-doctor registry preflight <server.json|directory> [--allow-network] [--json] [--output <path>] [--require-publish-ready]"
   );
   io.writeStderr(
     "Corpus quality regression: codex-plugin-doctor doctor corpus metrics diff --before <metrics.json> --after <metrics.json> [--fail-on-regression] [--json|--markdown] [--output <path>]"
@@ -3305,10 +3312,11 @@ export async function runCli(
     const subcommand = maybePath;
     const target = remainingArgs[0];
     const flags = remainingArgs.slice(1);
-    if ((subcommand !== "check" && subcommand !== "inspect") || !target || target.startsWith("--")) {
+    if ((subcommand !== "check" && subcommand !== "inspect" && subcommand !== "preflight") || !target || target.startsWith("--")) {
       io.writeStderr(
         "Usage: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
-        + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]"
+        + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
+        + "       codex-plugin-doctor registry preflight <server.json|directory> [--allow-network] [--json] [--output <path>] [--require-publish-ready]"
       );
       return 2;
     }
@@ -3317,7 +3325,8 @@ export async function runCli(
       "--json",
       "--output",
       "--allow-network",
-      "--require-registry-readiness"
+      "--require-registry-readiness",
+      "--require-publish-ready"
     ]);
     let outputPath: string | null = null;
     for (let index = 0; index < flags.length; index += 1) {
@@ -3339,15 +3348,34 @@ export async function runCli(
 
     const allowNetwork = flags.includes("--allow-network");
     if (subcommand === "check" && allowNetwork) {
-      io.writeStderr("--allow-network is supported only by registry inspect.");
+      io.writeStderr("--allow-network is not supported by registry check.");
       return 2;
     }
     if (subcommand === "inspect" && !allowNetwork) {
       io.writeStderr("registry inspect requires explicit --allow-network consent.");
       return 2;
     }
+    if (subcommand === "preflight" && flags.includes("--require-registry-readiness")) {
+      io.writeStderr("--require-registry-readiness is supported only by registry check or registry inspect.");
+      return 2;
+    }
+    if (subcommand !== "preflight" && flags.includes("--require-publish-ready")) {
+      io.writeStderr("--require-publish-ready is supported only by registry preflight.");
+      return 2;
+    }
 
     try {
+      if (subcommand === "preflight") {
+        const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork });
+        const rendered = flags.includes("--json")
+          ? renderMcpRegistryPublicationPreflightJson(report)
+          : renderMcpRegistryPublicationPreflight(report);
+        if (outputPath) {
+          await writeFile(outputPath, rendered, "utf8");
+        }
+        io.writeStdout(rendered);
+        return registryPublicationPreflightExitCode(report, flags.includes("--require-publish-ready"));
+      }
       const report = subcommand === "check"
         ? await buildMcpRegistryReadiness(target)
         : await inspectMcpRegistryServer(target, { allowNetwork: true });
@@ -3359,8 +3387,8 @@ export async function runCli(
       }
       io.writeStdout(rendered);
       return registryReadinessExitCode(report, flags.includes("--require-registry-readiness"));
-    } catch (error) {
-      io.writeStderr(`Registry inspection failed: ${(error as Error).message}`);
+    } catch {
+      io.writeStderr("Registry command failed.");
       return 1;
     }
   }
