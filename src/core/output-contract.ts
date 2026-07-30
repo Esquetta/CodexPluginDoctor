@@ -55,6 +55,52 @@ const remoteTransportReliabilityStatusSchema = {
   enum: ["pass", "warn", "fail", "skipped"]
 };
 
+const registryPublicationPreflightStatusSchema = {
+  type: "string",
+  enum: ["pass", "warn", "fail"]
+};
+
+const registryPackagePublicationSchema = {
+  type: "string",
+  enum: ["pass", "fail", "skipped", "unknown"]
+};
+
+const registryVersionAvailabilitySchema = {
+  type: "string",
+  enum: ["available-first-publication", "available-new-version", "already-published", "unknown"]
+};
+
+const registryPublisherPlanSchema = {
+  type: "object",
+  properties: {
+    executable: {
+      type: "boolean"
+    },
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          order: {
+            type: "integer",
+            minimum: 1
+          },
+          command: {
+            type: "string"
+          },
+          purpose: {
+            type: "string"
+          }
+        },
+        required: ["order", "command", "purpose"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["executable", "steps"],
+  additionalProperties: false
+};
+
 const runtimeConformanceSchema = {
   type: "object",
   properties: {
@@ -249,6 +295,36 @@ const publicSchemaDefinitions: Array<{
         required: ["codex", "packageTypes", "remoteTransports"],
         additionalProperties: true
       },
+      findings: {
+        type: "array"
+      }
+    }
+  },
+  {
+    id: "doctor.registry.preflight.json",
+    command: "codex-plugin-doctor registry preflight <server.json|directory> --json",
+    outputKind: "mcp-registry-publication-preflight",
+    required: [
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "target",
+      "status",
+      "localReadiness",
+      "packagePublication",
+      "registryVersionAvailability",
+      "publisherPlan",
+      "findings"
+    ],
+    properties: {
+      target: {
+        const: "server.json"
+      },
+      status: registryPublicationPreflightStatusSchema,
+      localReadiness: registryPublicationPreflightStatusSchema,
+      packagePublication: registryPackagePublicationSchema,
+      registryVersionAvailability: registryVersionAvailabilitySchema,
+      publisherPlan: registryPublisherPlanSchema,
       findings: {
         type: "array"
       }

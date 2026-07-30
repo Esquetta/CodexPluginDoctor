@@ -111,7 +111,8 @@ preflight does not download the tarball or independently verify its contents.
 
 ## Report Contract
 
-The JSON report uses:
+`codex-plugin-doctor doctor contract --json` publishes this stable surface as
+`doctor.registry.preflight.json`. The JSON report uses:
 
 ```text
 kind: mcp-registry-publication-preflight
@@ -124,7 +125,9 @@ registryVersionAvailability:
   available-new-version |
   already-published |
   unknown
-publisherPlan: ordered, non-executing steps
+publisherPlan:
+  executable: false
+  steps: ordered non-executing steps with order, command, and purpose
 findings: stable identifiers, severity, and redacted messages
 ```
 

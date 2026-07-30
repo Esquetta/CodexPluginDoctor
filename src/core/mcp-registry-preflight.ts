@@ -52,6 +52,7 @@ export interface McpRegistryPublicationPreflightReport {
   publisherPlan: {
     executable: false;
     steps: Array<{
+      order: number;
       command: "mcp-publisher login github" | "mcp-publisher publish";
       purpose: string;
     }>;
@@ -246,10 +247,12 @@ function publisherPlan(): McpRegistryPublicationPreflightReport["publisherPlan"]
     executable: false,
     steps: [
       {
+        order: 1,
         command: "mcp-publisher login github",
         purpose: "Authenticate with GitHub for Registry publication."
       },
       {
+        order: 2,
         command: "mcp-publisher publish",
         purpose: "Publish the validated Registry metadata."
       }

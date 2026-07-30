@@ -82,6 +82,11 @@ describe("doctor contract command", () => {
           outputKind: "mcp-registry-readiness"
         }),
         expect.objectContaining({
+          id: "doctor.registry.preflight.json",
+          command: "codex-plugin-doctor registry preflight <server.json|directory> --json",
+          outputKind: "mcp-registry-publication-preflight"
+        }),
+        expect.objectContaining({
           id: "doctor.watch.validation.json",
           command: "codex-plugin-doctor watch <path> --json"
         }),
@@ -214,6 +219,9 @@ describe("doctor contract command", () => {
     const mcpSchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.mcp.json"
     );
+    const registryPreflightSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.registry.preflight.json"
+    );
     const releaseEvidenceSchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.release.evidence.json"
     );
@@ -241,6 +249,44 @@ describe("doctor contract command", () => {
       "security",
       "compatibility"
     ]);
+    expect(registryPreflightSchema.schema.required).toEqual([
+      "schemaVersion",
+      "kind",
+      "generatedAt",
+      "target",
+      "status",
+      "localReadiness",
+      "packagePublication",
+      "registryVersionAvailability",
+      "publisherPlan",
+      "findings"
+    ]);
+    expect(registryPreflightSchema.schema.properties).toMatchObject({
+      status: { enum: ["pass", "warn", "fail"] },
+      localReadiness: { enum: ["pass", "warn", "fail"] },
+      packagePublication: { enum: ["pass", "fail", "skipped", "unknown"] },
+      registryVersionAvailability: {
+        enum: [
+          "available-first-publication",
+          "available-new-version",
+          "already-published",
+          "unknown"
+        ]
+      },
+      publisherPlan: {
+        type: "object",
+        required: ["executable", "steps"],
+        properties: {
+          steps: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["order", "command", "purpose"]
+            }
+          }
+        }
+      }
+    });
     expect(checkSchema.schema.properties.summary.properties.runtimeScorecard.properties.conformance)
       .toMatchObject({
         type: "object",
