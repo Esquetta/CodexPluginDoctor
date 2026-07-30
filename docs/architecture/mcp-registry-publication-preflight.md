@@ -40,11 +40,12 @@ an MCP server, download a package tarball, or invoke the publisher.
 
 ## Scope
 
-The first release supports npm-backed Registry package declarations. Local
-Registry metadata containing another package type or only a remote transport
-continues to receive the existing readiness checks, but the package publication
-stage is reported as skipped. This prevents the command from claiming evidence
-it did not collect.
+The first release supports exactly one npm-backed Registry package declaration.
+Multiple npm declarations fail preflight because one adjacent `package.json`
+cannot prove ownership for multiple packages. Local Registry metadata containing
+another package type or only a remote transport continues to receive the
+existing readiness checks, but the package publication stage is reported as
+skipped. This prevents the command from claiming evidence it did not collect.
 
 The command accepts either a `server.json` path or a directory containing that
 file. An adjacent `package.json` is used only for local npm ownership and version
@@ -75,10 +76,15 @@ requests:
 
 1. Query the fixed public npm Registry for the declared package.
 2. Select the exact version declared in `server.json`.
-3. Compare its package name, version, `mcpName`, and `dist.integrity` metadata.
+3. Compare its package name, version, and `mcpName`, and require a syntactically
+   valid `dist.integrity` value as published metadata evidence.
 4. Query the fixed official MCP Registry for the exact server name and version.
-5. Classify the version as available for first publication, available as a new
-   immutable version, or already published.
+5. If the exact version returns a valid not-found response, query the fixed
+   `latest` endpoint for the same exact server name.
+6. Classify the version as available for first publication only when both the
+   exact version and latest record are valid not-found responses, as a new
+   immutable version when latest returns the same server name, or as already
+   published when the exact version returns matching metadata.
 
 The command does not accept alternate Registry base URLs in this release.
 Restricting requests to fixed public hosts keeps the network boundary reviewable
@@ -99,7 +105,9 @@ maintainer must increment the version rather than attempting to overwrite it.
 
 An unavailable npm package version is also blocking during the network phase.
 The official Registry stores metadata rather than package artifacts, so an npm
-package must be publicly available before publication.
+package must be publicly available before publication. The presence of
+`dist.integrity` proves only that npm returned package integrity metadata; the
+preflight does not download the tarball or independently verify its contents.
 
 ## Report Contract
 
@@ -156,7 +164,9 @@ Network denial, timeout, malformed JSON, oversized responses, and inconsistent
 metadata produce stable findings rather than raw stack traces.
 
 A Registry not-found response is evidence only when the bounded request
-completed successfully and the response shape is valid. Other request failures
+completed successfully and the response shape is valid. An exact-version
+not-found response is followed by a latest-version lookup so the command can
+distinguish a new server from a new immutable version. Other request failures
 produce `unknown`; they are not treated as proof that a name or version is
 available.
 
@@ -166,6 +176,7 @@ Tests must prove:
 
 - offline preflight performs zero HTTP requests
 - local npm name, `mcpName`, and version mismatches fail
+- multiple npm declarations fail before network access
 - missing network consent produces a partial warning, not false readiness
 - an exact public npm version with matching metadata passes
 - a missing or inconsistent npm version fails
@@ -185,6 +196,7 @@ Publication Preflight does not:
 - handle Registry authentication or GitHub OIDC
 - publish the npm package
 - download or extract npm tarballs
+- claim that npm integrity metadata proves the downloaded artifact contents
 - execute lifecycle scripts or MCP servers
 - support private or user-configured registry hosts
 - prove namespace ownership independently of the official publisher
