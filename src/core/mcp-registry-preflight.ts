@@ -120,10 +120,14 @@ function responseJson(response: BoundedHttpResponse): unknown | null {
 
 function validNotFound(response: BoundedHttpResponse): boolean {
   const payload = responseJson(response);
-  return response.statusCode === 404
-    && isRecord(payload)
-    && typeof payload.error === "string"
-    && payload.error.trim().length > 0;
+  if (response.statusCode !== 404 || !isRecord(payload)) {
+    return false;
+  }
+  return (typeof payload.error === "string" && payload.error.trim().length > 0)
+    || (payload.title === "Not Found"
+      && payload.status === 404
+      && typeof payload.detail === "string"
+      && payload.detail.trim().length > 0);
 }
 
 function hasValidHttpUrl(value: unknown): boolean {

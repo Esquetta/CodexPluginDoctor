@@ -90,6 +90,14 @@ function registryResponse(name = validServer.name, version = validServer.version
   return response(200, { server: registryServer(name, version) });
 }
 
+function problemNotFound(detail = "Server not found") {
+  return response(404, {
+    title: "Not Found",
+    status: 404,
+    detail
+  }, { "content-type": "application/problem+json" });
+}
+
 function requestSequence(...responses: Array<ReturnType<typeof response> | Error>) {
   return vi.fn(async () => {
     const next = responses.shift();
@@ -319,6 +327,40 @@ describe("MCP Registry publication preflight", () => {
     expect(report.registryVersionAvailability).toBe("available-new-version");
   });
 
+  it("accepts Registry problem details for an unavailable exact version", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      problemNotFound(),
+      registryResponse(validServer.name, "1.2.2")
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("pass");
+    expect(report.registryVersionAvailability).toBe("available-new-version");
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("accepts Registry problem details for an unavailable latest version without serializing the detail", async () => {
+    const sentinel = "registry-problem-details-sentinel";
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      problemNotFound(sentinel)
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("pass");
+    expect(report.registryVersionAvailability).toBe("available-first-publication");
+    const rendered = renderMcpRegistryPublicationPreflightJson(report);
+    expect(rendered).not.toContain("Not Found");
+    expect(rendered).not.toContain(sentinel);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
   it("blocks an already published exact Registry version", async () => {
     const target = await writeServerJson(validServer, matchingPackageJson);
     const request = requestSequence(response(200, npmPackument()), registryResponse());
@@ -392,6 +434,13 @@ describe("MCP Registry publication preflight", () => {
 
   it.each([
     ["a malformed exact not-found response", response(404, { error: "" })],
+    ["an exact problem response with the wrong title", response(404, { title: "Missing", status: 404, detail: "Server not found" })],
+    ["an exact problem response with the wrong status", response(404, { title: "Not Found", status: 400, detail: "Server not found" })],
+    ["an exact problem response with a missing detail", response(404, { title: "Not Found", status: 404 })],
+    ["an exact problem response with an empty detail", response(404, { title: "Not Found", status: 404, detail: "" })],
+    ["an exact problem response with an array detail", response(404, { title: "Not Found", status: 404, detail: ["Server not found"] })],
+    ["an arbitrary exact not-found object", response(404, { code: "NOT_FOUND" })],
+    ["an exact not-found array", response(404, [{ title: "Not Found", status: 404, detail: "Server not found" }])],
     ["an arbitrary exact client error", response(418, { error: "teapot" })],
     ["an arbitrary exact server error", response(503, { error: "unavailable" })],
     ["malformed exact JSON", response(200, "not json")],
@@ -479,6 +528,30 @@ describe("MCP Registry publication preflight", () => {
     expect(report.status).toBe("fail");
     expect(report.registryVersionAvailability).toBe("unknown");
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.latest-response");
+  });
+
+  it.each([
+    ["a problem response with the wrong title", response(404, { title: "Missing", status: 404, detail: "Server not found" })],
+    ["a problem response with the wrong status", response(404, { title: "Not Found", status: 400, detail: "Server not found" })],
+    ["a problem response with a missing detail", response(404, { title: "Not Found", status: 404 })],
+    ["a problem response with an empty detail", response(404, { title: "Not Found", status: 404, detail: "" })],
+    ["a problem response with an array detail", response(404, { title: "Not Found", status: 404, detail: ["Server not found"] })],
+    ["an arbitrary not-found object", response(404, { code: "NOT_FOUND" })],
+    ["a not-found array", response(404, [{ title: "Not Found", status: 404, detail: "Server not found" }])]
+  ])("keeps Registry version availability unknown for latest %s", async (_caseName, latestResponse) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      latestResponse
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.latest-response");
+    expect(request).toHaveBeenCalledTimes(3);
   });
 
   it("keeps Registry version availability unknown for a mismatched latest record", async () => {
