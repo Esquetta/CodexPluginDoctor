@@ -12,6 +12,8 @@ type RegistryRequest = (
   url: string,
   options?: BoundedHttpRequestOptions
 ) => Promise<BoundedHttpResponse>;
+const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
+const VERSION_RANGE_PATTERN = /^(?:latest|[~^]|[<>]=?)|(?:\s+\|\|\s+)|(?:^|[.\s])[x*](?:$|[.\s])/i;
 
 export interface McpRegistryPublicationPreflightFinding {
   id: string;
@@ -62,6 +64,15 @@ function statusFromFindings(findings: McpRegistryPublicationPreflightFinding[]):
     return "fail";
   }
   return findings.some((finding) => finding.severity === "warn") ? "warn" : "pass";
+}
+
+function isSafeServerName(value: string | undefined): value is string {
+  return value !== undefined && value.length >= 3 && value.length <= 200 && SERVER_NAME_PATTERN.test(value);
+}
+
+function isSafeServerVersion(value: string | undefined): value is string {
+  return value !== undefined && value.length >= 1 && value.length <= 255
+    && !/[\\/\u0000-\u001F\u007F]/.test(value) && !VERSION_RANGE_PATTERN.test(value);
 }
 
 async function resolveServerJsonPath(targetPath: string): Promise<string> {
@@ -154,8 +165,8 @@ export async function buildMcpRegistryPublicationPreflight(
     kind: "mcp-registry-publication-preflight",
     generatedAt: new Date().toISOString(),
     target: "server.json",
-    ...(readiness.serverName ? { serverName: readiness.serverName } : {}),
-    ...(readiness.serverVersion ? { serverVersion: readiness.serverVersion } : {}),
+    ...(isSafeServerName(readiness.serverName) ? { serverName: readiness.serverName } : {}),
+    ...(isSafeServerVersion(readiness.serverVersion) ? { serverVersion: readiness.serverVersion } : {}),
     status: statusFromFindings(findings),
     localReadiness,
     packagePublication,

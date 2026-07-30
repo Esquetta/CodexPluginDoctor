@@ -78,13 +78,18 @@ describe("MCP Registry publication preflight", () => {
     expect(rendered).not.toContain("\\\\");
   });
 
-  it("does not issue a request during an offline preflight", async () => {
+  it("does not issue a request when network consent is present in Task 1", async () => {
     const target = await writeServerJson(validServer, matchingPackageJson);
     const request = vi.fn();
 
-    await buildMcpRegistryPublicationPreflight(target, { request });
+    const report = await buildMcpRegistryPublicationPreflight(target, {
+      allowNetwork: true,
+      request
+    });
 
     expect(request).not.toHaveBeenCalled();
+    expect(report.packagePublication).toBe("unknown");
+    expect(report.registryVersionAvailability).toBe("unknown");
   });
 
   it("fails when the adjacent package name differs from the sole npm declaration", async () => {
@@ -121,6 +126,82 @@ describe("MCP Registry publication preflight", () => {
     expect(report.localReadiness).toBe("fail");
     expect(report.packagePublication).toBe("fail");
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.package.multiple-npm-declarations");
+  });
+
+  it("inherits a package mcpName mismatch as a blocking local failure", async () => {
+    const target = await writeServerJson(validServer, {
+      ...matchingPackageJson,
+      mcpName: "io.github.example/other"
+    });
+
+    const report = await buildMcpRegistryPublicationPreflight(target);
+
+    expect(report.status).toBe("fail");
+    expect(report.localReadiness).toBe("fail");
+    expect(report.packagePublication).toBe("fail");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.ownership.npm-mcp-name");
+  });
+
+  it("inherits a local package version mismatch as a blocking failure", async () => {
+    const target = await writeServerJson(validServer, {
+      ...matchingPackageJson,
+      version: "1.2.4"
+    });
+
+    const report = await buildMcpRegistryPublicationPreflight(target);
+
+    expect(report.status).toBe("fail");
+    expect(report.localReadiness).toBe("fail");
+    expect(report.packagePublication).toBe("fail");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.package.local-version-mismatch");
+  });
+
+  it("keeps inherited Registry readiness failures blocking", async () => {
+    const target = await writeServerJson({
+      ...validServer,
+      description: ""
+    }, matchingPackageJson);
+
+    const report = await buildMcpRegistryPublicationPreflight(target);
+
+    expect(report.status).toBe("fail");
+    expect(report.localReadiness).toBe("fail");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.metadata.description");
+  });
+
+  it("redacts invalid path-shaped metadata from the public report", async () => {
+    const windowsName = "C:\\registry-preflight-name-sentinel";
+    const posixVersion = "/registry-preflight-version-sentinel";
+    const target = await writeServerJson({
+      ...validServer,
+      name: windowsName,
+      version: posixVersion
+    }, matchingPackageJson);
+
+    const report = await buildMcpRegistryPublicationPreflight(target);
+    const rendered = renderMcpRegistryPublicationPreflightJson(report);
+
+    expect(report.serverName).toBeUndefined();
+    expect(report.serverVersion).toBeUndefined();
+    expect(rendered).not.toContain(windowsName);
+    expect(rendered).not.toContain(posixVersion);
+  });
+
+  it("skips package publication evidence for non-npm packages", async () => {
+    const target = await writeServerJson({
+      ...validServer,
+      packages: [{
+        registryType: "mcpb",
+        identifier: "https://github.com/example/weather/releases/download/v1/weather.mcpb",
+        version: validServer.version,
+        fileSha256: "a".repeat(64),
+        transport: { type: "stdio" }
+      }]
+    });
+
+    const report = await buildMcpRegistryPublicationPreflight(target);
+
+    expect(report.packagePublication).toBe("skipped");
   });
 
   it("skips package publication evidence for remote-only input", async () => {
