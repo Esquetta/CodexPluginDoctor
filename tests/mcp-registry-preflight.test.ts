@@ -135,10 +135,12 @@ describe("MCP Registry publication preflight", () => {
         executable: false,
         steps: [
           {
+            order: 1,
             command: "mcp-publisher login github",
             purpose: "Authenticate with GitHub for Registry publication."
           },
           {
+            order: 2,
             command: "mcp-publisher publish",
             purpose: "Publish the validated Registry metadata."
           }
@@ -148,6 +150,12 @@ describe("MCP Registry publication preflight", () => {
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.network-unverified");
 
     const rendered = renderMcpRegistryPublicationPreflightJson(report);
+    const parsedRendered = JSON.parse(rendered);
+
+    expect(parsedRendered.publisherPlan.steps).toMatchObject([
+      { order: 1, command: "mcp-publisher login github" },
+      { order: 2, command: "mcp-publisher publish" }
+    ]);
     expect(rendered).not.toContain(target);
     expect(rendered).not.toContain("\\\\");
   });
