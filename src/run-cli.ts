@@ -3387,8 +3387,12 @@ export async function runCli(
       }
       io.writeStdout(rendered);
       return registryReadinessExitCode(report, flags.includes("--require-registry-readiness"));
-    } catch {
-      io.writeStderr("Registry command failed.");
+    } catch (error) {
+      if (subcommand === "preflight") {
+        io.writeStderr("Registry publication preflight failed.");
+      } else {
+        io.writeStderr(`Registry inspection failed: ${(error as Error).message}`);
+      }
       return 1;
     }
   }

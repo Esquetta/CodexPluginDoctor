@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildMcpRegistryPublicationPreflight,
+  renderMcpRegistryPublicationPreflight,
   renderMcpRegistryPublicationPreflightJson
 } from "../src/core/mcp-registry-preflight.js";
 
@@ -421,6 +422,7 @@ describe("MCP Registry publication preflight", () => {
     expect(report.packagePublication).toBe("pass");
     expect(report.registryVersionAvailability).toBe("unknown");
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.exact-request");
+    expect(renderMcpRegistryPublicationPreflight(report)).toContain("Network verification: INCOMPLETE");
     expect(request).toHaveBeenCalledTimes(2);
   });
 

@@ -429,9 +429,11 @@ export function renderMcpRegistryPublicationPreflight(
 ): string {
   const networkVerification = report.findings.some((finding) => finding.id === "registry.preflight.network-unverified")
     ? "NOT REQUESTED"
-    : report.registryVersionAvailability === "unknown" && report.packagePublication !== "pass"
+    : report.packagePublication === "pass" && report.registryVersionAvailability !== "unknown"
+      ? "COMPLETED"
+      : report.localReadiness === "fail"
       ? "NOT AVAILABLE"
-      : "COMPLETED";
+      : "INCOMPLETE";
   const lines = [
     `Registry publication preflight: ${report.status.toUpperCase()}`,
     `Target: ${report.target}`,

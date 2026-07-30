@@ -190,7 +190,7 @@ describe("registry command", () => {
     expect(invalidTarget.stderr.join("")).toContain("registry preflight");
   });
 
-  it("hides write failures behind the generic Registry error", async () => {
+  it("hides preflight write failures behind the generic preflight error", async () => {
     const target = await createMetadataOnlyServer();
     const outputPath = path.join(target, "missing-parent", "preflight.txt");
     const result = createIo();
@@ -198,9 +198,20 @@ describe("registry command", () => {
     expect(await runCli([
       "registry", "preflight", target, "--output", outputPath
     ], result.io)).toBe(1);
-    expect(result.stderr.join("")).toBe("Registry command failed.");
+    expect(result.stderr.join("")).toBe("Registry publication preflight failed.");
     expect(result.stderr.join("")).not.toContain(outputPath);
     expect(result.stderr.join("")).not.toContain("ENOENT");
+  });
+
+  it("preserves Registry check diagnostics when output writing fails", async () => {
+    const target = await createMetadataOnlyServer();
+    const outputPath = path.join(target, "missing-parent", "check.txt");
+    const result = createIo();
+
+    expect(await runCli([
+      "registry", "check", target, "--output", outputPath
+    ], result.io)).toBe(1);
+    expect(result.stderr.join("")).toContain("Registry inspection failed:");
   });
 
   it("exports preflight builders, renderers, status, and exit policy from the barrel", async () => {
