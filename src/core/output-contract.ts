@@ -74,27 +74,47 @@ const registryPublisherPlanSchema = {
   type: "object",
   properties: {
     executable: {
-      type: "boolean"
+      const: false
     },
     steps: {
       type: "array",
-      items: {
-        type: "object",
-        properties: {
-          order: {
-            type: "integer",
-            minimum: 1
+      minItems: 2,
+      maxItems: 2,
+      prefixItems: [
+        {
+          type: "object",
+          properties: {
+            order: {
+              const: 1
+            },
+            command: {
+              const: "mcp-publisher login github"
+            },
+            purpose: {
+              type: "string"
+            }
           },
-          command: {
-            type: "string"
-          },
-          purpose: {
-            type: "string"
-          }
+          required: ["order", "command", "purpose"],
+          additionalProperties: false
         },
-        required: ["order", "command", "purpose"],
-        additionalProperties: false
-      }
+        {
+          type: "object",
+          properties: {
+            order: {
+              const: 2
+            },
+            command: {
+              const: "mcp-publisher publish"
+            },
+            purpose: {
+              type: "string"
+            }
+          },
+          required: ["order", "command", "purpose"],
+          additionalProperties: false
+        }
+      ],
+      items: false
     }
   },
   required: ["executable", "steps"],

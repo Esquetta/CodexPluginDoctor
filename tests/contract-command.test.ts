@@ -276,13 +276,36 @@ describe("doctor contract command", () => {
       publisherPlan: {
         type: "object",
         required: ["executable", "steps"],
+        additionalProperties: false,
         properties: {
+          executable: { const: false },
           steps: {
             type: "array",
-            items: {
-              type: "object",
-              required: ["order", "command", "purpose"]
-            }
+            minItems: 2,
+            maxItems: 2,
+            items: false,
+            prefixItems: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["order", "command", "purpose"],
+                properties: {
+                  order: { const: 1 },
+                  command: { const: "mcp-publisher login github" },
+                  purpose: { type: "string" }
+                }
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["order", "command", "purpose"],
+                properties: {
+                  order: { const: 2 },
+                  command: { const: "mcp-publisher publish" },
+                  purpose: { type: "string" }
+                }
+              }
+            ]
           }
         }
       }
