@@ -4,6 +4,25 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.55.0] - 2026-07-30
+
+### Added
+
+- added `registry preflight` for offline publication planning and opt-in public npm and official MCP Registry metadata verification
+- added immutable Registry version availability classification for first publications, new versions, and already-published versions
+- added the additive `doctor.registry.preflight.json` output contract with a fixed, non-executing publisher plan
+
+### Changed
+
+- distinguish first publication from a new immutable version through bounded exact-version and latest-version lookups
+- accept both legacy Registry not-found responses and the official Registry's problem-details response without retaining response content
+
+### Security
+
+- keep preflight offline by default and require explicit `--allow-network` consent for fixed-host metadata requests
+- reject ambiguous multiple npm declarations, mismatched package identity, malformed SRI metadata, and untrusted Registry response shapes
+- never authenticate, publish, download tarballs, execute package scripts, or expose local paths and remote response content
+
 ## [1.54.0] - 2026-07-28
 
 ### Added
