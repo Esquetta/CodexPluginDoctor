@@ -108,6 +108,32 @@ codex-plugin-doctor registry inspect io.github.example/weather --allow-network
 
 Local checks validate metadata, ownership consistency, package integrity, transports, and Codex installability. Exact Registry lookup is read-only, requires explicit network consent, and contacts only the fixed official Registry endpoint. It never follows advertised package, icon, repository, or remote MCP URLs. See [MCP Registry Readiness](./docs/architecture/mcp-registry-readiness.md).
 
+### MCP Registry Publication Preflight
+
+Check a publication candidate locally without making a network request:
+
+```bash
+codex-plugin-doctor registry preflight path/to/server.json --json
+```
+
+Opt in to bounded public npm and MCP Registry metadata checks:
+
+```bash
+codex-plugin-doctor registry preflight path/to/server.json --allow-network --json
+```
+
+Require a publish-ready result in CI:
+
+```bash
+codex-plugin-doctor registry preflight path/to/server.json --allow-network --require-publish-ready --json
+```
+
+Preflight checks the exact npm package version, then the exact Registry version
+and latest Registry record on fixed public hosts. An existing exact Registry
+version is an immutable collision and must be replaced by a version bump. The
+command is advisory: it never authenticates, publishes, or changes npm or
+Registry records. See [MCP Registry Publication Preflight](./docs/architecture/mcp-registry-publication-preflight.md).
+
 Output formats:
 
 - human text output
@@ -454,9 +480,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.54.0
+      - uses: Esquetta/CodexPluginDoctor@v1.55.0
         with:
-          version: "1.54.0"
+          version: "1.55.0"
           path: .
           runtime: "true"
           policy: codex-publish

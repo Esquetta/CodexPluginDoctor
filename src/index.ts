@@ -298,6 +298,16 @@ export {
   type McpRegistryScorecard
 } from "./core/mcp-registry.js";
 export {
+  buildMcpRegistryPublicationPreflight,
+  registryPublicationPreflightExitCode,
+  renderMcpRegistryPublicationPreflight,
+  renderMcpRegistryPublicationPreflightJson,
+  type BuildMcpRegistryPublicationPreflightOptions,
+  type McpRegistryPublicationPreflightFinding,
+  type McpRegistryPublicationPreflightReport,
+  type McpRegistryPublicationPreflightStatus
+} from "./core/mcp-registry-preflight.js";
+export {
   watchPlugin,
   type WatchPluginOptions,
   type WatchPluginResult

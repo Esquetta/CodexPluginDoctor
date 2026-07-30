@@ -6,6 +6,9 @@ The Registry Doctor validates whether MCP `server.json` metadata is structurally
 
 This is a metadata readiness check. A passing Registry record does not prove that the referenced code or remote server is trustworthy, available, or safe to execute.
 
+For npm publication evidence and immutable Registry-version availability, use
+[MCP Registry Publication Preflight](./mcp-registry-publication-preflight.md).
+
 ## Commands
 
 Validate a local file or a directory containing `server.json`:
