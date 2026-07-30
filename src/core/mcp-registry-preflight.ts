@@ -18,8 +18,10 @@ type RegistryRequest = (
 ) => Promise<BoundedHttpResponse>;
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
 const VERSION_RANGE_PATTERN = /^(?:latest|[~^]|[<>]=?)|(?:\s+\|\|\s+)|(?:^|[.\s])[x*](?:$|[.\s])/i;
+const OFFICIAL_SCHEMA_PATTERN = /^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/;
 const NPM_IDENTIFIER_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]{0,213}\/)?[a-z0-9][a-z0-9._-]{0,213}$/;
 const INTEGRITY_PATTERN = /^(?:sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const MCP_REGISTRY = "https://registry.modelcontextprotocol.io";
 const REQUEST_OPTIONS: BoundedHttpRequestOptions = {
@@ -114,6 +116,53 @@ function validNotFound(response: BoundedHttpResponse): boolean {
     && payload.error.trim().length > 0;
 }
 
+function hasValidHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string" || value.length === 0 || /\s/.test(value)) {
+    return false;
+  }
+  try {
+    const url = new URL(value.replace(/\{[^{}]+\}/g, "template-value"));
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function hasValidPackageShape(value: unknown): boolean {
+  if (!isRecord(value)
+    || typeof value.registryType !== "string" || value.registryType.length === 0
+    || typeof value.identifier !== "string" || value.identifier.length === 0
+    || !isRecord(value.transport)
+    || !["stdio", "streamable-http", "sse"].includes(value.transport.type as string)) {
+    return false;
+  }
+  if (/^https?:\/\//i.test(value.identifier) && !hasValidHttpUrl(value.identifier)) {
+    return false;
+  }
+  if (typeof value.version === "string" && VERSION_RANGE_PATTERN.test(value.version)) {
+    return false;
+  }
+  return value.registryType !== "mcpb" || (typeof value.fileSha256 === "string" && SHA256_PATTERN.test(value.fileSha256));
+}
+
+function hasValidRemoteShape(value: unknown): boolean {
+  return isRecord(value)
+    && (value.type === "streamable-http" || value.type === "sse")
+    && hasValidHttpUrl(value.url);
+}
+
+function hasValidRegistryServerShape(server: Record<string, unknown>): boolean {
+  return typeof server.$schema === "string"
+    && OFFICIAL_SCHEMA_PATTERN.test(server.$schema)
+    && isSafeServerName(typeof server.name === "string" ? server.name : undefined)
+    && isSafeServerVersion(typeof server.version === "string" ? server.version : undefined)
+    && typeof server.description === "string"
+    && server.description.length >= 1
+    && server.description.length <= 100
+    && (server.packages === undefined || (Array.isArray(server.packages) && server.packages.every(hasValidPackageShape)))
+    && (server.remotes === undefined || (Array.isArray(server.remotes) && server.remotes.every(hasValidRemoteShape)));
+}
+
 function matchingRegistryServer(
   response: BoundedHttpResponse,
   serverName: string,
@@ -125,11 +174,8 @@ function matchingRegistryServer(
   }
 
   const server = payload.server;
-  return typeof server.$schema === "string"
-    && typeof server.description === "string"
-    && (Array.isArray(server.packages) || Array.isArray(server.remotes))
+  return hasValidRegistryServerShape(server)
     && server.name === serverName
-    && isSafeServerVersion(typeof server.version === "string" ? server.version : undefined)
     && (serverVersion === undefined || server.version === serverVersion);
 }
 
