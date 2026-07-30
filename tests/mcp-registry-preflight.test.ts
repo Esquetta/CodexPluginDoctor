@@ -40,6 +40,65 @@ const matchingPackageJson = {
   mcpName: "io.github.example/weather"
 };
 
+function response(statusCode: number, payload: unknown, headers: Record<string, string | string[]> = {}) {
+  return {
+    statusCode,
+    headers,
+    body: Buffer.from(typeof payload === "string" ? payload : JSON.stringify(payload))
+  };
+}
+
+function npmPackument(overrides: Record<string, unknown> = {}) {
+  return {
+    name: matchingPackageJson.name,
+    versions: {
+      [validServer.version]: {
+        name: matchingPackageJson.name,
+        version: validServer.version,
+        mcpName: validServer.name,
+        dist: { integrity: "sha512-aGVsbG8=" }
+      }
+    },
+    ...overrides
+  };
+}
+
+function registryServer(name = validServer.name, version = validServer.version) {
+  return {
+    ...validServer,
+    name,
+    version
+  };
+}
+
+function registryResponse(name = validServer.name, version = validServer.version) {
+  return response(200, { server: registryServer(name, version) });
+}
+
+function requestSequence(...responses: Array<ReturnType<typeof response> | Error>) {
+  return vi.fn(async () => {
+    const next = responses.shift();
+    if (next instanceof Error) {
+      throw next;
+    }
+    if (!next) {
+      throw new Error("Unexpected registry request.");
+    }
+    return next;
+  });
+}
+
+const npmUrl = "https://registry.npmjs.org/%40example%2Fweather-mcp";
+const registryExactUrl = "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.example%2Fweather/versions/1.2.3";
+const registryLatestUrl = "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.example%2Fweather/versions/latest";
+const requestOptions = {
+  method: "GET",
+  headers: {
+    accept: "application/json",
+    "user-agent": "codex-plugin-doctor"
+  }
+};
+
 describe("MCP Registry publication preflight", () => {
   it("returns a public-safe partial warning and non-executing publisher plan offline", async () => {
     const target = await writeServerJson(validServer, matchingPackageJson);
@@ -78,18 +137,188 @@ describe("MCP Registry publication preflight", () => {
     expect(rendered).not.toContain("\\\\");
   });
 
-  it("does not issue a request when network consent is present in Task 1", async () => {
+  it("collects matching public npm metadata and first-publication Registry evidence with fixed bounded requests", async () => {
     const target = await writeServerJson(validServer, matchingPackageJson);
-    const request = vi.fn();
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "server not found" }),
+      response(404, { error: "server not found" })
+    );
 
     const report = await buildMcpRegistryPublicationPreflight(target, {
       allowNetwork: true,
       request
     });
 
-    expect(request).not.toHaveBeenCalled();
+    expect(report.status).toBe("pass");
+    expect(report.packagePublication).toBe("pass");
+    expect(report.registryVersionAvailability).toBe("available-first-publication");
+    expect(request).toHaveBeenNthCalledWith(1, npmUrl, requestOptions);
+    expect(request).toHaveBeenNthCalledWith(2, registryExactUrl, requestOptions);
+    expect(request).toHaveBeenNthCalledWith(3, registryLatestUrl, requestOptions);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["missing requested version", npmPackument({ versions: {} })],
+    ["malformed packument", "not json"],
+    ["mismatched top-level name", npmPackument({ name: "@example/other-mcp" })],
+    ["mismatched published package name", npmPackument({ versions: {
+      [validServer.version]: {
+        name: "@example/other-mcp",
+        version: validServer.version,
+        mcpName: validServer.name,
+        dist: { integrity: "sha512-aGVsbG8=" }
+      }
+    } })],
+    ["mismatched published package version", npmPackument({ versions: {
+      [validServer.version]: {
+        name: matchingPackageJson.name,
+        version: "1.2.4",
+        mcpName: validServer.name,
+        dist: { integrity: "sha512-aGVsbG8=" }
+      }
+    } })],
+    ["mismatched published mcpName", npmPackument({ versions: {
+      [validServer.version]: {
+        name: matchingPackageJson.name,
+        version: validServer.version,
+        mcpName: "io.github.example/other",
+        dist: { integrity: "sha512-aGVsbG8=" }
+      }
+    } })],
+    ["malformed published integrity", npmPackument({ versions: {
+      [validServer.version]: {
+        name: matchingPackageJson.name,
+        version: validServer.version,
+        mcpName: validServer.name,
+        dist: { integrity: "not-an-integrity-value" }
+      }
+    } })]
+  ])("blocks package publication for %s", async (_caseName, payload) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(response(200, payload));
+
+    const report = await buildMcpRegistryPublicationPreflight(target, {
+      allowNetwork: true,
+      request
+    });
+
+    expect(report.status).toBe("fail");
+    expect(report.packagePublication).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.npm.metadata");
+  });
+
+  it.each([418, 503])("keeps package publication unknown for unexpected npm HTTP %s", async (statusCode) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(response(statusCode, { error: "unexpected response" }));
+
+    const report = await buildMcpRegistryPublicationPreflight(target, {
+      allowNetwork: true,
+      request
+    });
+
+    expect(report.status).toBe("fail");
     expect(report.packagePublication).toBe("unknown");
     expect(report.registryVersionAvailability).toBe("unknown");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.npm.response");
+  });
+
+  it("encodes a scoped npm package identifier as one path segment", async () => {
+    const target = await writeServerJson({
+      ...validServer,
+      packages: [{
+        ...validServer.packages[0],
+        identifier: "@scope/weather-mcp"
+      }]
+    }, {
+      ...matchingPackageJson,
+      name: "@scope/weather-mcp"
+    });
+    const request = requestSequence(response(404, { error: "package not found" }));
+
+    await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(request).toHaveBeenCalledWith(
+      "https://registry.npmjs.org/%40scope%2Fweather-mcp",
+      requestOptions
+    );
+  });
+
+  it("classifies an existing Registry server at another version as available for a new version", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      registryResponse(validServer.name, "1.2.2")
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("pass");
+    expect(report.packagePublication).toBe("pass");
+    expect(report.registryVersionAvailability).toBe("available-new-version");
+  });
+
+  it("blocks an already published exact Registry version", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(response(200, npmPackument()), registryResponse());
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.packagePublication).toBe("pass");
+    expect(report.registryVersionAvailability).toBe("already-published");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.already-published");
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["a malformed exact not-found response", response(404, { error: "" })],
+    ["an arbitrary exact client error", response(418, { error: "teapot" })],
+    ["an arbitrary exact server error", response(503, { error: "unavailable" })],
+    ["malformed exact JSON", response(200, "not json")],
+    ["an exact identity mismatch", registryResponse("io.github.attacker/weather")]
+  ])("keeps Registry version availability unknown for %s", async (_caseName, exactResponse) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(response(200, npmPackument()), exactResponse);
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.exact-response");
+  });
+
+  it("keeps Registry version availability unknown when a bounded request throws", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(new Error("registry-preflight-request-sentinel"));
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.packagePublication).toBe("unknown");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.npm.request");
+  });
+
+  it("keeps Registry version availability unknown for a mismatched latest record", async () => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackument()),
+      response(404, { error: "version not found" }),
+      registryResponse(validServer.name, validServer.version)
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.registryVersionAvailability).toBe("unknown");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.registry.latest-response");
   });
 
   it("fails when the adjacent package name differs from the sole npm declaration", async () => {
@@ -98,12 +327,14 @@ describe("MCP Registry publication preflight", () => {
       name: "@example/other-mcp"
     });
 
-    const report = await buildMcpRegistryPublicationPreflight(target);
+    const request = vi.fn();
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
 
     expect(report.status).toBe("fail");
     expect(report.localReadiness).toBe("fail");
     expect(report.packagePublication).toBe("fail");
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.package.local-name-mismatch");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("fails when publication evidence declares multiple npm packages", async () => {
@@ -199,9 +430,11 @@ describe("MCP Registry publication preflight", () => {
       }]
     });
 
-    const report = await buildMcpRegistryPublicationPreflight(target);
+    const request = vi.fn();
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
 
     expect(report.packagePublication).toBe("skipped");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("skips package publication evidence for remote-only input", async () => {
@@ -217,11 +450,36 @@ describe("MCP Registry publication preflight", () => {
       }]
     });
 
-    const report = await buildMcpRegistryPublicationPreflight(target);
+    const request = vi.fn();
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
 
     expect(report.status).toBe("warn");
     expect(report.localReadiness).toBe("pass");
     expect(report.packagePublication).toBe("skipped");
     expect(report.registryVersionAvailability).toBe("unknown");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("does not serialize untrusted response or error sentinels", async () => {
+    const sentinel = "registry-preflight-redaction-sentinel";
+    const pathReport = await buildMcpRegistryPublicationPreflight(await writeServerJson({
+      ...validServer,
+      name: `C:\\\\${sentinel}`,
+      version: `/${sentinel}`
+    }, matchingPackageJson));
+    const responseRequest = requestSequence(response(200, sentinel, { "www-authenticate": sentinel }));
+
+    const responseReport = await buildMcpRegistryPublicationPreflight(await writeServerJson(validServer, matchingPackageJson), {
+      allowNetwork: true,
+      request: responseRequest
+    });
+    const errorReport = await buildMcpRegistryPublicationPreflight(await writeServerJson(validServer, matchingPackageJson), {
+      allowNetwork: true,
+      request: requestSequence(new Error(sentinel))
+    });
+
+    expect(renderMcpRegistryPublicationPreflightJson(pathReport)).not.toContain(sentinel);
+    expect(renderMcpRegistryPublicationPreflightJson(responseReport)).not.toContain(sentinel);
+    expect(renderMcpRegistryPublicationPreflightJson(errorReport)).not.toContain(sentinel);
   });
 });

@@ -5,7 +5,11 @@ import {
   buildMcpRegistryReadiness,
   type McpRegistryFinding
 } from "./mcp-registry.js";
-import type { BoundedHttpRequestOptions, BoundedHttpResponse } from "./bounded-http-client.js";
+import {
+  requestBoundedHttp,
+  type BoundedHttpRequestOptions,
+  type BoundedHttpResponse
+} from "./bounded-http-client.js";
 
 type PreflightStatus = "pass" | "warn" | "fail";
 type RegistryRequest = (
@@ -14,6 +18,17 @@ type RegistryRequest = (
 ) => Promise<BoundedHttpResponse>;
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
 const VERSION_RANGE_PATTERN = /^(?:latest|[~^]|[<>]=?)|(?:\s+\|\|\s+)|(?:^|[.\s])[x*](?:$|[.\s])/i;
+const NPM_IDENTIFIER_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]{0,213}\/)?[a-z0-9][a-z0-9._-]{0,213}$/;
+const INTEGRITY_PATTERN = /^(?:sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/;
+const NPM_REGISTRY = "https://registry.npmjs.org";
+const MCP_REGISTRY = "https://registry.modelcontextprotocol.io";
+const REQUEST_OPTIONS: BoundedHttpRequestOptions = {
+  method: "GET",
+  headers: {
+    accept: "application/json",
+    "user-agent": "codex-plugin-doctor"
+  }
+};
 
 export interface McpRegistryPublicationPreflightFinding {
   id: string;
@@ -73,6 +88,77 @@ function isSafeServerName(value: string | undefined): value is string {
 function isSafeServerVersion(value: string | undefined): value is string {
   return value !== undefined && value.length >= 1 && value.length <= 255
     && !/[\\/\u0000-\u001F\u007F]/.test(value) && !VERSION_RANGE_PATTERN.test(value);
+}
+
+function isSafeNpmIdentifier(value: unknown): value is string {
+  return typeof value === "string" && NPM_IDENTIFIER_PATTERN.test(value);
+}
+
+function isIntegrity(value: unknown): value is string {
+  return typeof value === "string" && INTEGRITY_PATTERN.test(value);
+}
+
+function responseJson(response: BoundedHttpResponse): unknown | null {
+  try {
+    return JSON.parse(response.body.toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function validNotFound(response: BoundedHttpResponse): boolean {
+  const payload = responseJson(response);
+  return response.statusCode === 404
+    && isRecord(payload)
+    && typeof payload.error === "string"
+    && payload.error.trim().length > 0;
+}
+
+function matchingRegistryServer(
+  response: BoundedHttpResponse,
+  serverName: string,
+  serverVersion?: string
+): boolean {
+  const payload = responseJson(response);
+  if (response.statusCode !== 200 || !isRecord(payload) || !isRecord(payload.server)) {
+    return false;
+  }
+
+  const server = payload.server;
+  return typeof server.$schema === "string"
+    && typeof server.description === "string"
+    && (Array.isArray(server.packages) || Array.isArray(server.remotes))
+    && server.name === serverName
+    && isSafeServerVersion(typeof server.version === "string" ? server.version : undefined)
+    && (serverVersion === undefined || server.version === serverVersion);
+}
+
+function matchingNpmPackument(
+  response: BoundedHttpResponse,
+  packageName: string,
+  packageVersion: string,
+  serverName: string
+): boolean {
+  const payload = responseJson(response);
+  if (response.statusCode !== 200 || !isRecord(payload) || payload.name !== packageName || !isRecord(payload.versions)) {
+    return false;
+  }
+
+  const version = payload.versions[packageVersion];
+  return isRecord(version)
+    && version.name === packageName
+    && version.version === packageVersion
+    && version.mcpName === serverName
+    && isRecord(version.dist)
+    && isIntegrity(version.dist.integrity);
+}
+
+function addFinding(
+  findings: McpRegistryPublicationPreflightFinding[],
+  id: string,
+  message: string
+): void {
+  findings.push({ id, severity: "fail", message });
 }
 
 async function resolveServerJsonPath(targetPath: string): Promise<string> {
@@ -146,13 +232,36 @@ export async function buildMcpRegistryPublicationPreflight(
     });
   }
 
+  if (declarations.length === 1 && !isSafeNpmIdentifier(declarations[0].identifier)) {
+    findings.push({
+      id: "registry.preflight.package.invalid-npm-identifier",
+      severity: "fail",
+      message: "The declared npm package identifier is not valid for public registry verification."
+    });
+  }
+
   const localReadiness = statusFromFindings(findings);
-  const packagePublication = declarations.length === 0
+  let packagePublication: McpRegistryPublicationPreflightReport["packagePublication"] = declarations.length === 0
     ? "skipped"
     : localReadiness === "fail" ? "fail" : "unknown";
-  const registryVersionAvailability = "unknown" as const;
+  let registryVersionAvailability: McpRegistryPublicationPreflightReport["registryVersionAvailability"] = "unknown";
+  const declaration = declarations.length === 1 ? declarations[0] : undefined;
+  const serverName = isSafeServerName(readiness.serverName) ? readiness.serverName : undefined;
+  const serverVersion = isSafeServerVersion(readiness.serverVersion) ? readiness.serverVersion : undefined;
+  const packageName = isSafeNpmIdentifier(declaration?.identifier) ? declaration.identifier : undefined;
+  const declarationVersion = typeof declaration?.version === "string" ? declaration.version : undefined;
+  const packageVersion = isSafeServerVersion(declarationVersion)
+    ? declarationVersion
+    : undefined;
+  const canVerifyNetwork = options.allowNetwork === true
+    && localReadiness === "pass"
+    && declaration !== undefined
+    && serverName !== undefined
+    && serverVersion !== undefined
+    && packageName !== undefined
+    && packageVersion !== undefined;
 
-  if (localReadiness !== "fail") {
+  if (!canVerifyNetwork && localReadiness !== "fail") {
     findings.push({
       id: "registry.preflight.network-unverified",
       severity: "warn",
@@ -160,6 +269,84 @@ export async function buildMcpRegistryPublicationPreflight(
     });
   }
 
+  if (canVerifyNetwork && packageName && packageVersion && serverName && serverVersion) {
+    const request = options.request ?? requestBoundedHttp;
+    let npmResponse: BoundedHttpResponse;
+    try {
+      npmResponse = await request(`${NPM_REGISTRY}/${encodeURIComponent(packageName)}`, REQUEST_OPTIONS);
+    } catch {
+      addFinding(findings, "registry.preflight.npm.request", "Public npm metadata could not be verified.");
+      packagePublication = "unknown";
+      return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+    }
+
+    if (npmResponse.statusCode !== 200 && npmResponse.statusCode !== 404) {
+      addFinding(findings, "registry.preflight.npm.response", "Public npm metadata could not prove package publication.");
+      packagePublication = "unknown";
+      return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+    }
+
+    if (!matchingNpmPackument(npmResponse, packageName, packageVersion, serverName)) {
+      addFinding(findings, "registry.preflight.npm.metadata", "Published npm metadata does not match the declared package version.");
+      packagePublication = "fail";
+      return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+    }
+    packagePublication = "pass";
+
+    let exactResponse: BoundedHttpResponse;
+    try {
+      exactResponse = await request(
+        `${MCP_REGISTRY}/v0.1/servers/${encodeURIComponent(serverName)}/versions/${encodeURIComponent(serverVersion)}`,
+        REQUEST_OPTIONS
+      );
+    } catch {
+      addFinding(findings, "registry.preflight.registry.exact-request", "Exact Registry version availability could not be verified.");
+      return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+    }
+
+    if (matchingRegistryServer(exactResponse, serverName, serverVersion)) {
+      registryVersionAvailability = "already-published";
+      addFinding(findings, "registry.preflight.registry.already-published", "The exact Registry version is already published and cannot be overwritten.");
+    } else if (validNotFound(exactResponse)) {
+      let latestResponse: BoundedHttpResponse;
+      try {
+        latestResponse = await request(
+          `${MCP_REGISTRY}/v0.1/servers/${encodeURIComponent(serverName)}/versions/latest`,
+          REQUEST_OPTIONS
+        );
+      } catch {
+        addFinding(findings, "registry.preflight.registry.latest-request", "Latest Registry version availability could not be verified.");
+        return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+      }
+
+      if (validNotFound(latestResponse)) {
+        registryVersionAvailability = "available-first-publication";
+      } else if (matchingRegistryServer(latestResponse, serverName) && responseJson(latestResponse) !== null) {
+        const payload = responseJson(latestResponse) as Record<string, unknown>;
+        const latestVersion = (payload.server as Record<string, unknown>).version;
+        if (latestVersion !== serverVersion) {
+          registryVersionAvailability = "available-new-version";
+        } else {
+          addFinding(findings, "registry.preflight.registry.latest-response", "Latest Registry metadata did not prove a different published version.");
+        }
+      } else {
+        addFinding(findings, "registry.preflight.registry.latest-response", "Latest Registry metadata could not prove version availability.");
+      }
+    } else {
+      addFinding(findings, "registry.preflight.registry.exact-response", "Exact Registry metadata could not prove version availability.");
+    }
+  }
+
+  return buildReport(readiness, localReadiness, packagePublication, registryVersionAvailability, findings);
+}
+
+function buildReport(
+  readiness: Awaited<ReturnType<typeof buildMcpRegistryReadiness>>,
+  localReadiness: PreflightStatus,
+  packagePublication: McpRegistryPublicationPreflightReport["packagePublication"],
+  registryVersionAvailability: McpRegistryPublicationPreflightReport["registryVersionAvailability"],
+  findings: McpRegistryPublicationPreflightFinding[]
+): McpRegistryPublicationPreflightReport {
   return {
     schemaVersion: "1.0.0",
     kind: "mcp-registry-publication-preflight",
