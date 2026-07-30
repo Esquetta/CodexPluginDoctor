@@ -39,6 +39,7 @@ const matchingPackageJson = {
   version: "1.2.3",
   mcpName: "io.github.example/weather"
 };
+const validSha512Integrity = `sha512-${"A".repeat(86)}==`;
 
 function response(statusCode: number, payload: unknown, headers: Record<string, string | string[]> = {}) {
   return {
@@ -56,11 +57,24 @@ function npmPackument(overrides: Record<string, unknown> = {}) {
         name: matchingPackageJson.name,
         version: validServer.version,
         mcpName: validServer.name,
-        dist: { integrity: "sha512-aGVsbG8=" }
+        dist: { integrity: validSha512Integrity }
       }
     },
     ...overrides
   };
+}
+
+function npmPackumentWithIntegrity(integrity: string) {
+  return npmPackument({
+    versions: {
+      [validServer.version]: {
+        name: matchingPackageJson.name,
+        version: validServer.version,
+        mcpName: validServer.name,
+        dist: { integrity }
+      }
+    }
+  });
 }
 
 function registryServer(name = validServer.name, version = validServer.version) {
@@ -168,7 +182,7 @@ describe("MCP Registry publication preflight", () => {
         name: "@example/other-mcp",
         version: validServer.version,
         mcpName: validServer.name,
-        dist: { integrity: "sha512-aGVsbG8=" }
+        dist: { integrity: validSha512Integrity }
       }
     } })],
     ["mismatched published package version", npmPackument({ versions: {
@@ -176,7 +190,7 @@ describe("MCP Registry publication preflight", () => {
         name: matchingPackageJson.name,
         version: "1.2.4",
         mcpName: validServer.name,
-        dist: { integrity: "sha512-aGVsbG8=" }
+        dist: { integrity: validSha512Integrity }
       }
     } })],
     ["mismatched published mcpName", npmPackument({ versions: {
@@ -184,7 +198,7 @@ describe("MCP Registry publication preflight", () => {
         name: matchingPackageJson.name,
         version: validServer.version,
         mcpName: "io.github.example/other",
-        dist: { integrity: "sha512-aGVsbG8=" }
+        dist: { integrity: validSha512Integrity }
       }
     } })],
     ["malformed published integrity", npmPackument({ versions: {
@@ -209,6 +223,39 @@ describe("MCP Registry publication preflight", () => {
     expect(report.registryVersionAvailability).toBe("unknown");
     expect(request).toHaveBeenCalledTimes(1);
     expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.npm.metadata");
+  });
+
+  it.each([
+    ["a too-short digest", "sha512-A"],
+    ["invalid base64 padding", `sha512-${"A".repeat(86)}=`],
+    ["invalid base64 characters", `sha512-${"A".repeat(85)}!==`]
+  ])("blocks package publication for %s", async (_caseName, integrity) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(response(200, npmPackumentWithIntegrity(integrity)));
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("fail");
+    expect(report.packagePublication).toBe("fail");
+    expect(report.findings.map((finding) => finding.id)).toContain("registry.preflight.npm.metadata");
+  });
+
+  it.each([
+    ["sha256", `sha256-${"A".repeat(43)}=`],
+    ["sha384", `sha384-${"A".repeat(64)}`],
+    ["sha512", `sha512-${"A".repeat(86)}==`]
+  ])("accepts a valid %s npm integrity digest", async (_algorithm, integrity) => {
+    const target = await writeServerJson(validServer, matchingPackageJson);
+    const request = requestSequence(
+      response(200, npmPackumentWithIntegrity(integrity)),
+      response(404, { error: "server not found" }),
+      response(404, { error: "server not found" })
+    );
+
+    const report = await buildMcpRegistryPublicationPreflight(target, { allowNetwork: true, request });
+
+    expect(report.status).toBe("pass");
+    expect(report.packagePublication).toBe("pass");
   });
 
   it.each([418, 503])("keeps package publication unknown for unexpected npm HTTP %s", async (statusCode) => {

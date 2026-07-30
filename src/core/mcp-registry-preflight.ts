@@ -20,7 +20,7 @@ const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
 const VERSION_RANGE_PATTERN = /^(?:latest|[~^]|[<>]=?)|(?:\s+\|\|\s+)|(?:^|[.\s])[x*](?:$|[.\s])/i;
 const OFFICIAL_SCHEMA_PATTERN = /^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/;
 const NPM_IDENTIFIER_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]{0,213}\/)?[a-z0-9][a-z0-9._-]{0,213}$/;
-const INTEGRITY_PATTERN = /^(?:sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/;
+const INTEGRITY_PATTERN = /^(sha256|sha384|sha512)-([A-Za-z0-9+/]*={0,2})$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const MCP_REGISTRY = "https://registry.modelcontextprotocol.io";
@@ -97,7 +97,16 @@ function isSafeNpmIdentifier(value: unknown): value is string {
 }
 
 function isIntegrity(value: unknown): value is string {
-  return typeof value === "string" && INTEGRITY_PATTERN.test(value);
+  if (typeof value !== "string") {
+    return false;
+  }
+  const match = INTEGRITY_PATTERN.exec(value);
+  if (!match || match[2].length % 4 !== 0) {
+    return false;
+  }
+  const digest = Buffer.from(match[2], "base64");
+  const expectedBytes = match[1] === "sha256" ? 32 : match[1] === "sha384" ? 48 : 64;
+  return digest.length === expectedBytes && digest.toString("base64") === match[2];
 }
 
 function responseJson(response: BoundedHttpResponse): unknown | null {
