@@ -188,6 +188,7 @@ import {
   renderEnvironmentDoctor,
   renderEnvironmentDoctorJson
 } from "./core/environment-doctor.js";
+import { buildDoctorSize, renderDoctorSize, renderDoctorSizeJson } from "./core/doctor-size.js";
 import { initCiWorkflow } from "./core/init-ci.js";
 import { watchPlugin } from "./core/watch-plugin.js";
 import { buildDepAudit, renderDepAudit, renderDepAuditJson, renderDepAuditSarif } from "./core/dep-audit.js";
@@ -2952,6 +2953,21 @@ export async function runCli(
     if (maybePath === "clients") {
       io.writeStdout(await renderClientDoctor(terminalContext));
       return 0;
+    }
+
+    if (maybePath === "size") {
+      const sizeTarget = remainingArgs[0] && !remainingArgs[0].startsWith("--") ? remainingArgs[0] : ".";
+      const sizeFlags = remainingArgs[0] && remainingArgs[0].startsWith("--")
+        ? remainingArgs
+        : remainingArgs.slice(1);
+      const jsonOutput = sizeFlags.includes("--json");
+      const report = await buildDoctorSize(sizeTarget);
+      const output = jsonOutput
+        ? renderDoctorSizeJson(report)
+        : renderDoctorSize(report);
+
+      io.writeStdout(output);
+      return report.status === "fail" ? 1 : 0;
     }
 
     io.writeStdout(

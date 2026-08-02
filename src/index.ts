@@ -1,6 +1,12 @@
 import type { CheckOptions, CheckResult } from "./domain/types.js";
 import { validatePlugin } from "./core/validate-plugin.js";
 export {
+  buildDoctorSize,
+  renderDoctorSize,
+  renderDoctorSizeJson,
+  type DoctorSizeReport
+} from "./core/doctor-size.js";
+export {
   applyDoctorConfig,
   loadDoctorConfig,
   type DoctorConfig
