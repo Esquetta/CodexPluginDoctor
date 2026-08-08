@@ -1,4 +1,5 @@
 import { readdir, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
 
 export interface DoctorSizeReport {
@@ -9,6 +10,8 @@ export interface DoctorSizeReport {
   fileCount: number;
   largeFiles: Array<{ path: string; size: number; sizeHuman: string }>;
   warnings: string[];
+  npmPackSize?: number;
+  npmPackSizeHuman?: string;
 }
 
 const skippedDirs = new Set([
@@ -92,13 +95,78 @@ async function scanDirectory(
   return { totalSize, fileCount, largeFiles };
 }
 
-export async function buildDoctorSize(targetPath: string): Promise<DoctorSizeReport> {
+export async function buildDoctorSize(
+  targetPath: string,
+  options: { npmPack?: boolean } = {}
+): Promise<DoctorSizeReport> {
   const resolvedPath = path.resolve(targetPath);
   const { totalSize, fileCount, largeFiles } = await scanDirectory(resolvedPath);
 
   const warnings: string[] = [];
 
   let status: DoctorSizeReport["status"] = "pass";
+  let npmPackSize: number | undefined;
+  let npmPackSizeHuman: string | undefined;
+
+  if (options.npmPack) {
+    try {
+      const packOutput = await new Promise<string>((resolve, reject) => {
+        execFile(
+          "npm",
+          ["pack", "--dry-run"],
+          { cwd: resolvedPath, timeout: 30000, shell: process.platform === "win32" },
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(new Error(stderr.trim() || error.message));
+              return;
+            }
+            resolve(stdout);
+          }
+        );
+      });
+
+      const tarballLine = packOutput.split("\n").find((line) => line.includes("total files") || line.includes("package size"));
+
+      if (tarballLine) {
+        const totalMatch = tarballLine.match(/(\d[\d.]*)\s*([KMG]?B)/i);
+
+        if (totalMatch) {
+          const value = Number.parseFloat(totalMatch[1]);
+          const unit = totalMatch[2].toUpperCase();
+
+          switch (unit) {
+            case "KB":
+              npmPackSize = Math.round(value * 1024);
+              break;
+            case "MB":
+              npmPackSize = Math.round(value * 1024 * 1024);
+              break;
+            case "GB":
+              npmPackSize = Math.round(value * 1024 * 1024 * 1024);
+              break;
+            default:
+              npmPackSize = Math.round(value);
+          }
+
+          npmPackSizeHuman = formatSize(npmPackSize);
+        }
+      }
+
+      if (npmPackSize === undefined) {
+        warnings.push("Could not determine npm pack size from output.");
+      } else {
+        const diffPercent = totalSize > 0
+          ? Math.abs(Math.round(((npmPackSize - totalSize) / totalSize) * 100))
+          : 0;
+
+        if (diffPercent > 50 && npmPackSize > totalSize) {
+          warnings.push(`npm pack size (${npmPackSizeHuman}) differs from local size (${formatSize(totalSize)}) by ${diffPercent}%.`);
+        }
+      }
+    } catch (error) {
+      warnings.push(`npm pack failed: ${(error as Error).message}`);
+    }
+  }
 
   if (totalSize >= packageSizeFailThreshold) {
     status = "fail";
@@ -122,7 +190,9 @@ export async function buildDoctorSize(targetPath: string): Promise<DoctorSizeRep
     totalSizeHuman: formatSize(totalSize),
     fileCount,
     largeFiles: largeFiles.slice(0, 10),
-    warnings
+    warnings,
+    npmPackSize,
+    npmPackSizeHuman
   };
 }
 
@@ -133,6 +203,7 @@ export function renderDoctorSize(report: DoctorSizeReport): string {
     `Path: ${report.targetPath}`,
     `Status: ${report.status.toUpperCase()}`,
     `Total size: ${report.totalSizeHuman} (${report.fileCount} files)`,
+    report.npmPackSizeHuman ? `npm pack size: ${report.npmPackSizeHuman}` : "",
     ""
   ];
 
@@ -173,7 +244,11 @@ export function renderDoctorSizeJson(report: DoctorSizeReport): string {
       totalSizeHuman: report.totalSizeHuman,
       fileCount: report.fileCount,
       largeFiles: report.largeFiles,
-      warnings: report.warnings
+      warnings: report.warnings,
+      ...(report.npmPackSize !== undefined ? {
+        npmPackSize: report.npmPackSize,
+        npmPackSizeHuman: report.npmPackSizeHuman
+      } : {})
     },
     null,
     2
