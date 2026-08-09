@@ -1,8 +1,18 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { evaluateReleaseSync } from "../src/release/release-sync.js";
 
 describe("evaluateReleaseSync", () => {
+  it("uses the 1.58.0 stable release target", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      version: string;
+    };
+
+    expect(packageJson.version).toBe("1.58.0");
+  });
+
   it("passes when npm, remote tag, GitHub release, and latest release match", () => {
     const report = evaluateReleaseSync({
       version: "0.10.1",

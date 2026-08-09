@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,6 +8,20 @@ import {
 } from "../src/release/release-notes.js";
 
 describe("extractReleaseSection", () => {
+  it("records the latest release and restores the two shipped release sections", async () => {
+    const changelog = await readFile("CHANGELOG.md", "utf8");
+    const latestRelease = changelog.indexOf("## [1.58.0] - 2026-08-09");
+    const previousRelease = changelog.indexOf("## [1.57.0] - 2026-08-08");
+    const olderRelease = changelog.indexOf("## [1.56.0] - 2026-08-02");
+
+    expect(latestRelease).toBeGreaterThanOrEqual(0);
+    expect(previousRelease).toBeGreaterThan(latestRelease);
+    expect(olderRelease).toBeGreaterThan(previousRelease);
+    expect(extractReleaseSection(changelog, "1.58.0")).toContain("current official MCP layouts");
+    expect(extractReleaseSection(changelog, "1.57.0")).toContain("npm pack dry-run");
+    expect(extractReleaseSection(changelog, "1.56.0")).toContain("doctor size <path>");
+  });
+
   it("extracts the matching version section from the changelog", () => {
     const changelog = `
 # Changelog

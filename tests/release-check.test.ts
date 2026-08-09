@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,20 @@ import {
 } from "../scripts/release-check.mjs";
 
 describe("release check registry version gate", () => {
+  it("keeps package and lockfile roots on the 1.58.0 release version", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      version: string;
+    };
+    const packageLock = JSON.parse(await readFile("package-lock.json", "utf8")) as {
+      version: string;
+      packages: { "": { version: string } };
+    };
+
+    expect(packageJson.version).toBe("1.58.0");
+    expect(packageLock.version).toBe(packageJson.version);
+    expect(packageLock.packages[""].version).toBe(packageJson.version);
+  });
+
   it("rejects the target version when that exact version is published but latest differs", () => {
     const run = vi.fn((_command: string, args: string[]) =>
       args.includes("codex-plugin-doctor@1.28.0") ? "1.28.0" : "1.27.0"
