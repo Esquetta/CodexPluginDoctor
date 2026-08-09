@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { discoverPackage } from "../core/discover-package.js";
+import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import { readJsonFile } from "../core/read-json-file.js";
 import { inspectRemoteMcpUrl } from "../core/remote-url-policy.js";
 import { validatePlugin } from "../core/validate-plugin.js";
@@ -300,14 +301,16 @@ export function auditMcpServerConfig(
     ? relativePackagePath(rootPath, options.configPath)
     : ".mcp.json";
 
-  if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+
+  if (!normalizedConfig.ok) {
     return [
       buildFinding(
         "fail",
         "plugin.security.audit_unavailable",
-        "The MCP security audit could not find a valid `mcpServers` object.",
+        "The MCP security audit could not find a valid MCP server map.",
         "Without server entries, the audit cannot evaluate command execution or remote transport risk.",
-        "Define MCP servers under a top-level `mcpServers` object.",
+        "Use a direct server map, `mcp_servers`, or `mcpServers`.",
         { configPath }
       )
     ];
@@ -315,10 +318,7 @@ export function auditMcpServerConfig(
 
   const findings: Finding[] = [];
 
-  for (const [serverName, serverConfig] of Object.entries(parsedConfig.mcpServers)) {
-    if (!isPlainObject(serverConfig)) {
-      continue;
-    }
+  for (const [serverName, serverConfig] of Object.entries(normalizedConfig.servers)) {
 
     const command = serverConfig.command;
     const args = serverConfig.args;

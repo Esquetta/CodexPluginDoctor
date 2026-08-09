@@ -10,6 +10,7 @@ import type {
 } from "../domain/types.js";
 import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
+import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import { probeRuntime, remoteReliabilityGatePassed } from "./runtime-probe.js";
 
@@ -620,34 +621,52 @@ async function validateMcpConfig(
     ];
   }
 
-  if (!isPlainObject(parsedConfig)) {
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+
+  if (!normalizedConfig.ok) {
+    if (normalizedConfig.reason === "ambiguous_shape") {
+      return [
+        buildFailure(
+          "plugin.mcp.ambiguous_shape",
+          "The referenced `.mcp.json` file uses an ambiguous MCP config layout.",
+          "Codex cannot safely choose between multiple wrapper layouts when they appear in one configuration file.",
+          "Use exactly one supported layout: a direct server map, `mcp_servers`, or `mcpServers`.",
+          { configPath: relativePackagePath(rootPath, mcpConfigPath), field: "root" }
+        )
+      ];
+    }
+
+    if (normalizedConfig.field === "server" && normalizedConfig.invalidServerNames) {
+      return normalizedConfig.invalidServerNames.map((serverName) =>
+        buildFailure(
+          "plugin.mcp.server.invalid",
+          `The MCP server \`${serverName}\` must be configured as an object.`,
+          "Codex cannot interpret a server entry unless it is represented as an object with server options.",
+          `Change the \`${serverName}\` entry in \`${mcpConfigPath}\` to an object.`,
+          {
+            configPath: relativePackagePath(rootPath, mcpConfigPath),
+            serverName,
+            field: "server"
+          }
+        )
+      );
+    }
+
     return [
       buildFailure(
         "plugin.mcp.invalid_shape",
-        "The referenced `.mcp.json` file must contain a JSON object.",
-        "Codex expects bundled MCP configuration to be object-shaped so server entries can be resolved reliably.",
-      `Wrap the MCP configuration in a top-level object inside \`${mcpConfigPath}\`.`,
-      { configPath: relativePackagePath(rootPath, mcpConfigPath), field: "root" }
+        "The referenced `.mcp.json` file must contain a valid MCP server map.",
+        "Without valid server entries, Codex cannot discover the bundled MCP server definitions.",
+        `Use a direct server map, \`mcp_servers\`, or \`mcpServers\` in \`${mcpConfigPath}\`.`,
+        {
+          configPath: relativePackagePath(rootPath, mcpConfigPath),
+          field: normalizedConfig.field
+        }
       )
     ];
   }
 
-  const servers = parsedConfig.mcpServers;
-
-  if (!isPlainObject(servers) || Object.keys(servers).length === 0) {
-    return [
-      buildFailure(
-        "plugin.mcp.invalid_shape",
-        "The referenced `.mcp.json` file must contain a non-empty `mcpServers` object.",
-        "Without a valid `mcpServers` object, Codex cannot discover the bundled MCP server definitions.",
-      `Define bundled servers under \`mcpServers\` in \`${mcpConfigPath}\`.`,
-      {
-        configPath: relativePackagePath(rootPath, mcpConfigPath),
-        field: "mcpServers"
-      }
-      )
-    ];
-  }
+  const servers = normalizedConfig.servers;
 
   const findings: Finding[] = [];
 

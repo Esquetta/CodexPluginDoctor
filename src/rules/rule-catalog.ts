@@ -163,6 +163,15 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "mcpServers": { "doctor": { "command": "node", "args": ["server.js"] } } }'
   },
   {
+    id: "plugin.mcp.ambiguous_shape",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "The `.mcp.json` file uses an ambiguous MCP config layout.",
+    why: "Codex cannot safely choose between multiple wrapper layouts when they appear in one configuration file.",
+    fix: "Use exactly one supported layout: a direct server map, `mcp_servers`, or `mcpServers`.",
+    example: '{ "weather": { "command": "node", "args": ["server.js"] } }'
+  },
+  {
     id: "plugin.mcp.server.invalid",
     category: "mcp",
     defaultSeverity: "fail",

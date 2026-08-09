@@ -1,0 +1,6 @@
+{
+  "weather": {
+    "command": "node",
+    "args": ["server.js"]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "valid-plugin-with-mcp-snake-case",
+  "version": "1.0.0",
+  "description": "Fixture with a snake case official MCP config.",
+  "mcpServers": "./.mcp.json"
+}

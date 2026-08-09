@@ -123,6 +123,18 @@ const remoteReliabilityWarnRules = [
 ] as const;
 
 describe("MCP 2025-11 conformance rule catalog", () => {
+  it("publishes remediation metadata for ambiguous MCP config layouts", () => {
+    expect(findRuleDefinition("plugin.mcp.ambiguous_shape")).toEqual({
+      id: "plugin.mcp.ambiguous_shape",
+      category: "mcp",
+      defaultSeverity: "fail",
+      summary: "The `.mcp.json` file uses an ambiguous MCP config layout.",
+      why: "Codex cannot safely choose between multiple wrapper layouts when they appear in one configuration file.",
+      fix: "Use exactly one supported layout: a direct server map, `mcp_servers`, or `mcpServers`.",
+      example: '{ "weather": { "command": "node", "args": ["server.js"] } }'
+    });
+  });
+
   it("resolves every evaluator finding with its public remediation contract", () => {
     expect(ruleCatalog.filter((rule) => rule.id.startsWith("mcp.conformance."))).toEqual(
       mcpConformanceRules

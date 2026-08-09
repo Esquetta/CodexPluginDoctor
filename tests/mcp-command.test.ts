@@ -314,6 +314,28 @@ describe("mcp command", () => {
     );
   });
 
+  it.each([
+    "valid-plugin-with-mcp-direct",
+    "valid-plugin-with-mcp-snake-case"
+  ])("diagnoses the official %s MCP config layout", async (fixtureName) => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli([
+      "mcp",
+      path.resolve("tests/fixtures", fixtureName),
+      "--json"
+    ], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      status: "pass",
+      serverCount: 1,
+      security: { status: "pass", findings: [] }
+    });
+  });
+
   it("accepts an explicit localhost HTTP development transport", async () => {
     const targetPath = await createStandaloneMcpPackage({
       mcpServers: {
