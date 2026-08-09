@@ -40,6 +40,37 @@ function isWithinRoot(rootPath: string, candidatePath: string): boolean {
   return relativePath === "" || (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
 }
 
+export interface SafePackagePath {
+  path: string;
+  packagePath: string;
+}
+
+export async function resolveSafePackagePath(
+  rootPath: string,
+  value: string
+): Promise<SafePackagePath | null> {
+  if (!value.startsWith("./")) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(rootPath, value);
+  if (!isWithinRoot(rootPath, resolvedPath)) {
+    return null;
+  }
+
+  try {
+    const canonicalRoot = await realpath(rootPath);
+    const canonicalPath = await realpath(resolvedPath);
+    if (!isWithinRoot(canonicalRoot, canonicalPath)) {
+      return null;
+    }
+  } catch {
+    // The path may be intentionally absent; callers that require it report that separately.
+  }
+
+  return { path: resolvedPath, packagePath: relativePackagePath(rootPath, resolvedPath) };
+}
+
 function invalidField(field: string, manifestPath: string): Finding {
   return failure(
     "plugin.manifest.invalid_field",
@@ -81,26 +112,7 @@ async function safePath(
     return invalidField(field, manifestPath);
   }
 
-  if (!value.startsWith("./")) {
-    return invalidPath(id, field, manifestPath);
-  }
-
-  const resolvedPath = path.resolve(rootPath, value);
-  if (!isWithinRoot(rootPath, resolvedPath)) {
-    return invalidPath(id, field, manifestPath);
-  }
-
-  try {
-    const canonicalRoot = await realpath(rootPath);
-    const canonicalPath = await realpath(resolvedPath);
-    if (!isWithinRoot(canonicalRoot, canonicalPath)) {
-      return invalidPath(id, field, manifestPath);
-    }
-  } catch {
-    // The path may be intentionally absent; callers that require it report that separately.
-  }
-
-  return { path: resolvedPath, packagePath: relativePackagePath(rootPath, resolvedPath) };
+  return (await resolveSafePackagePath(rootPath, value)) ?? invalidPath(id, field, manifestPath);
 }
 
 function validateString(value: unknown, field: string, manifestPath: string, findings: Finding[]): void {

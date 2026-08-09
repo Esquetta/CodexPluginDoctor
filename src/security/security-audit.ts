@@ -105,6 +105,55 @@ function containsPipeInstaller(args: unknown): boolean {
   );
 }
 
+function relativeSourcePath(rootPath: string, sourcePath: string): string {
+  return relativePackagePath(rootPath, path.resolve(rootPath, sourcePath));
+}
+
+export function auditHookCommand(
+  rootPath: string,
+  sourcePath: string,
+  event: string,
+  command: string
+): Finding[] {
+  const evidence = { sourcePath: relativeSourcePath(rootPath, sourcePath), event };
+  const findings: Finding[] = [];
+
+  if (/(?:^|\s)[/-]enc(?:odedcommand)?(?=\s|$)/i.test(command)) {
+    findings.push(buildFinding(
+      "fail",
+      "plugin.security.encoded_command",
+      "A plugin lifecycle hook uses an encoded shell command flag.",
+      "Encoded command payloads hide the executed script from reviewers and increase supply-chain risk.",
+      "Replace encoded shell payloads with a checked-in script or readable direct command.",
+      evidence
+    ));
+  }
+
+  if (containsPipeInstaller(command.split(/\s+/))) {
+    findings.push(buildFinding(
+      "fail",
+      "plugin.security.remote_pipe_install",
+      "A plugin lifecycle hook appears to pipe remote content into a shell.",
+      "Download-and-execute patterns can run unreviewed remote code when a host invokes the hook.",
+      "Pin dependencies through the package manager or use a reviewed local script instead of piping remote content to a shell.",
+      evidence
+    ));
+  }
+
+  if (/^\s*(?:cmd(?:\.exe)?\s+\/c|(?:powershell|pwsh)(?:\.exe)?\s+-(?:command|c)\b)/i.test(command)) {
+    findings.push(buildFinding(
+      "warn",
+      "plugin.security.command_shell_wrapper",
+      "A plugin lifecycle hook starts through a shell wrapper.",
+      "Shell wrappers expand quoting, pipes, aliases, and platform-specific behavior, which makes the execution path harder to audit.",
+      "Prefer a concrete executable or checked-in script with explicit arguments.",
+      evidence
+    ));
+  }
+
+  return findings;
+}
+
 const pathLikeArgFlags = new Set([
   "--config",
   "--config-path",

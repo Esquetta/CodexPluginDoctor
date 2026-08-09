@@ -12,6 +12,7 @@ import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
 import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 import { validatePluginComponents } from "./plugin-components.js";
+import { validatePluginHooks } from "./plugin-hooks.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import { probeRuntime, remoteReliabilityGatePassed } from "./runtime-probe.js";
 
@@ -804,11 +805,13 @@ export async function validatePlugin(
   }
 
   const componentFindings = await validatePluginComponents(discoveredPackage);
+  const hookFindings = await validatePluginHooks(discoveredPackage);
   const hasInvalidSkillsPath = hasInvalidComponentPath(componentFindings, "skills");
   const hasInvalidMcpPath = hasInvalidComponentPath(componentFindings, "mcpServers");
   const staticFindings = [
     ...validateRequiredManifestFields(discoveredPackage),
     ...componentFindings,
+    ...hookFindings,
     ...(hasInvalidSkillsPath ? [] : await validateSkillsDirectory(discoveredPackage)),
     ...(hasInvalidSkillsPath ? [] : await validateSkillDefinitions(discoveredPackage)),
     ...(hasInvalidMcpPath ? [] : await validateMcpConfig(discoveredPackage))
