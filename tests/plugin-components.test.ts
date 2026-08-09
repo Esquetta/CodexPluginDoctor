@@ -116,6 +116,25 @@ describe("plugin component validation", () => {
     expect(findingIds(result)).toContain("plugin.manifest.invalid_path");
   });
 
+  it.each([
+    ["skills", "skills"],
+    ["mcpServers", ".mcp.json"],
+    ["skills", "../outside-skills"],
+    ["mcpServers", "../outside/.mcp.json"]
+  ])("emits one authoritative path finding for %s: %s", async (field, value) => {
+    const rootPath = await createPlugin({ [field]: value });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      id: "plugin.manifest.invalid_path",
+      severity: "fail",
+      evidence: { manifestPath: ".codex-plugin/plugin.json", field }
+    });
+    expect(JSON.stringify(result.findings[0].evidence)).not.toContain(rootPath);
+  });
+
   it("reports missing and malformed app manifests while accepting every parseable JSON value", async () => {
     const rootPath = await createPlugin({ apps: "./apps/app.json" });
     await mkdir(path.join(rootPath, "apps"));

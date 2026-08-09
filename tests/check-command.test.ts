@@ -284,7 +284,7 @@ describe("runCheck", () => {
     expect(result.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "plugin.security.path_traversal",
+          id: "plugin.manifest.invalid_path",
           severity: "fail"
         })
       ])

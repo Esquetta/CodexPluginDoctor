@@ -3116,7 +3116,7 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Initialized Codex plugin package");
     expect(manifest.name).toBe(path.basename(targetPath).toLowerCase());
-    expect(manifest.skills).toBe("skills");
+    expect(manifest.skills).toBe("./skills");
     expect(skill).toContain("name: hello");
   });
 
@@ -3135,7 +3135,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Template: mcp-stdio");
-    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(manifest.mcpServers).toBe("./.mcp.json");
     expect(serverConfig.command).toBe("node");
     expect(serverConfig.args).toEqual(["./mock-server.js"]);
     expect(server).toContain("method === \"initialize\"");
@@ -3155,7 +3155,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Template: mcp-http");
-    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(manifest.mcpServers).toBe("./.mcp.json");
     expect(serverConfig.url).toBe("http://localhost:8787/mcp");
   });
 
@@ -3232,7 +3232,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       manifestPath,
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3248,7 +3248,7 @@ describe("runCli", () => {
     expect(output).toContain("No files changed.");
     expect(output).toContain(".codex-plugin/plugin.json");
     expect(output).toContain("skills");
-    expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "skills" });
+    expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "./skills" });
   });
 
   it("renders a dry-run fix plan as JSON", async () => {
@@ -3257,7 +3257,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       path.join(manifestDirectory, "plugin.json"),
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3296,7 +3296,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       manifestPath,
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3588,7 +3588,7 @@ describe("runCli", () => {
     expect(writtenReport.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "plugin.security.path_traversal",
+          id: "plugin.manifest.invalid_path",
           severity: "fail"
         })
       ])

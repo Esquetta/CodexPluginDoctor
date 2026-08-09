@@ -49,6 +49,12 @@ function buildWarning(
   };
 }
 
+function hasInvalidComponentPath(findings: Finding[], field: "skills" | "mcpServers"): boolean {
+  return findings.some(
+    (finding) => finding.id === "plugin.manifest.invalid_path" && finding.evidence?.field === field
+  );
+}
+
 function remoteUrlIssueFindingId(issue: string): string {
   return issue === "insecure_non_loopback"
     ? "plugin.security.insecure_http_url"
@@ -406,7 +412,7 @@ async function validateSkillsDirectory(
           manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
           field: "skills",
           configuredPath: manifest.skills,
-          resolvedPath: skillsPath
+          resolvedPath: relativePackagePath(rootPath, skillsPath)
         }
       )
     ];
@@ -428,7 +434,7 @@ async function validateSkillsDirectory(
         manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
         field: "skills",
         configuredPath: manifest.skills,
-        resolvedPath: skillsPath
+        resolvedPath: relativePackagePath(rootPath, skillsPath)
       }
     )
   ];
@@ -797,12 +803,15 @@ export async function validatePlugin(
     };
   }
 
+  const componentFindings = await validatePluginComponents(discoveredPackage);
+  const hasInvalidSkillsPath = hasInvalidComponentPath(componentFindings, "skills");
+  const hasInvalidMcpPath = hasInvalidComponentPath(componentFindings, "mcpServers");
   const staticFindings = [
     ...validateRequiredManifestFields(discoveredPackage),
-    ...(await validatePluginComponents(discoveredPackage)),
-    ...(await validateSkillsDirectory(discoveredPackage)),
-    ...(await validateSkillDefinitions(discoveredPackage)),
-    ...(await validateMcpConfig(discoveredPackage))
+    ...componentFindings,
+    ...(hasInvalidSkillsPath ? [] : await validateSkillsDirectory(discoveredPackage)),
+    ...(hasInvalidSkillsPath ? [] : await validateSkillDefinitions(discoveredPackage)),
+    ...(hasInvalidMcpPath ? [] : await validateMcpConfig(discoveredPackage))
   ];
   const staticFailed = staticFindings.some(
     (finding) => finding.severity === "fail"
