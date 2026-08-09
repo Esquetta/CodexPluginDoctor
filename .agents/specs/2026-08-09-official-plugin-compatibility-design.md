@@ -94,10 +94,7 @@ Validation covers:
 
 - safe, root-contained reference resolution;
 - file existence and readable JSON;
-- a plain-object root;
-- documented field types;
-- safe local asset and component references;
-- syntactically valid external URLs where the schema permits them.
+- compatibility with the published manifest reference contract.
 
 App findings use:
 
@@ -106,7 +103,10 @@ App findings use:
 - `plugin.app.invalid_shape`
 - `plugin.app.invalid_path`
 
-The validator will not fetch linked assets, render UI, or infer application behavior.
+The current official documentation does not publish the internal `.app.json`
+field schema. The validator therefore treats the parsed value as `unknown` and
+does not fail on inferred mapping fields, identifiers, or cardinality. It will
+not fetch linked assets, render UI, or infer application behavior.
 
 ## Lifecycle Hook Validation
 
@@ -203,7 +203,7 @@ Each step must leave existing tests passing and must not broaden runtime executi
 - All three `.mcp.json` layouts are accepted and normalized consistently.
 - Legacy valid packages retain their current result.
 - Ambiguous configuration never receives a guessed interpretation.
-- Current official manifest, app, and hook structures receive deterministic static validation.
+- Current official manifest and hook structures receive deterministic static validation; `.app.json` references receive path, existence, and JSON syntax validation only until an official internal schema is published.
 - Unsafe references are rejected before file reads or process execution.
 - Hooks and apps are never executed.
 - Findings expose no secrets, raw component contents, or absolute host paths.
