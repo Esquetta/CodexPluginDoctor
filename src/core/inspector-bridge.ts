@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { readJsonFile } from "./read-json-file.js";
 import { discoverPackage } from "./discover-package.js";
+import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 
 export interface DoctorInspectorReport {
   schemaVersion: "1.0.0";
@@ -21,10 +22,6 @@ export interface DoctorInspectorReport {
 
 export interface BuildDoctorInspectorReportOptions {
   serverName?: string | null;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
@@ -86,7 +83,9 @@ export async function buildDoctorInspectorReport(
     );
   }
 
-  if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+
+  if (!normalizedConfig.ok) {
     return buildFailure(
       discoveredPackage.rootPath,
       "The MCP server config does not contain a valid `mcpServers` object.",
@@ -94,7 +93,7 @@ export async function buildDoctorInspectorReport(
     );
   }
 
-  const serverNames = Object.keys(parsedConfig.mcpServers).sort();
+  const serverNames = Object.keys(normalizedConfig.servers).sort();
   const selectedServerName = options.serverName ?? serverNames[0] ?? null;
 
   if (!selectedServerName || !serverNames.includes(selectedServerName)) {

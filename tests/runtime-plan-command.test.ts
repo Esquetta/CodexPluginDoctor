@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -23,7 +23,52 @@ function createIo() {
   };
 }
 
+async function createRuntimePlanPackage(config: unknown): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-layout-"));
+
+  await mkdir(path.join(targetPath, ".codex-plugin"));
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify({
+      name: "runtime-plan-layout",
+      version: "1.0.0",
+      description: "Runtime plan MCP layout fixture.",
+      mcpServers: ".mcp.json"
+    }),
+    "utf8"
+  );
+  await writeFile(path.join(targetPath, ".mcp.json"), JSON.stringify(config), "utf8");
+
+  return targetPath;
+}
+
 describe("doctor runtime-plan command", () => {
+  it.each([
+    { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+  ])("includes a $layout package-source server in the runtime plan", async ({ config }) => {
+    const targetPath = await createRuntimePlanPackage(config);
+    const { io, stdout } = createIo();
+
+    await runCli(["doctor", "runtime-plan", targetPath, "--json"], io);
+
+    expect(JSON.parse(stdout.join("")).servers).toEqual([
+      expect.objectContaining({ name: "layoutServer", command: "node", args: ["server.mjs"] })
+    ]);
+  });
+
+  it("does not include ambiguous source layout servers in the runtime plan", async () => {
+    const targetPath = await createRuntimePlanPackage({
+      mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } },
+      mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } }
+    });
+    const { io, stdout } = createIo();
+
+    await runCli(["doctor", "runtime-plan", targetPath, "--json"], io);
+
+    expect(JSON.parse(stdout.join("")).servers).toEqual([]);
+  });
+
   it("redacts remote URLs and records the remote approval boundary", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-remote-"));
     const rawUrl = "https://user:credential-secret@example.com/mcp?query-secret=1#fragment-secret";

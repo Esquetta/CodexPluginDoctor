@@ -197,6 +197,25 @@ async function createWindsurfHomeFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createSourceLayoutPlugin(config: unknown): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-source-layout-"));
+
+  await mkdir(path.join(targetPath, ".codex-plugin"));
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify({
+      name: "source-layout",
+      version: "1.0.0",
+      description: "Package source MCP layout fixture.",
+      mcpServers: ".mcp.json"
+    }),
+    "utf8"
+  );
+  await writeFile(path.join(targetPath, ".mcp.json"), JSON.stringify(config), "utf8");
+
+  return targetPath;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
@@ -4161,5 +4180,44 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout.join("")).toContain("x plugin.security.hard_coded_secret");
+  });
+
+  it.each([
+    { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+  ])("uses a $layout package source for Generic MCP and every install preview", async ({ config }) => {
+    const targetPath = await createSourceLayoutPlugin(config);
+    const generic = createIo();
+
+    const genericExitCode = await runCli(
+      ["compat", targetPath, "--client", "generic-mcp", "--json"],
+      generic.io
+    );
+
+    expect(genericExitCode).toBe(0);
+    expect(JSON.parse(generic.stdout.join("")).results).toEqual([
+      expect.objectContaining({ client: "Generic MCP", status: "pass" })
+    ]);
+
+    for (const client of ["claude-desktop", "cursor", "cline", "windsurf"]) {
+      const preview = createIo();
+      const exitCode = await runCli(
+        ["compat", targetPath, "--client", client, "--install-preview"],
+        preview.io,
+        {
+          terminalContext: {
+            stdoutIsTTY: false,
+            stderrIsTTY: false,
+            env: { APPDATA: targetPath, USERPROFILE: targetPath, CLINE_DIR: targetPath },
+            platform: "win32"
+          }
+        }
+      );
+
+      expect(exitCode).toBe(0);
+      expect(preview.stderr).toEqual([]);
+      expect(preview.stdout.join("")).toContain('"mcpServers"');
+      expect(preview.stdout.join("")).toContain('"layoutServer"');
+    }
   });
 });

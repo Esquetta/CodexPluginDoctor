@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { packageVersion } from "../version.js";
 import { discoverPackage } from "./discover-package.js";
+import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 import { readJsonFile } from "./read-json-file.js";
 import {
   buildSecurityAudit,
@@ -225,9 +226,8 @@ export async function buildDoctorRuntimePlan(
     parsedConfig = {};
   }
 
-  const serverEntries = isPlainObject(parsedConfig) && isPlainObject(parsedConfig.mcpServers)
-    ? Object.entries(parsedConfig.mcpServers)
-    : [];
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+  const serverEntries = normalizedConfig.ok ? Object.entries(normalizedConfig.servers) : [];
   const servers = serverEntries
     .filter((entry): entry is [string, Record<string, unknown>] => isPlainObject(entry[1]))
     .map(([serverName, serverConfig]) => {

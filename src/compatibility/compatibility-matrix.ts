@@ -4,6 +4,7 @@ import path from "node:path";
 
 import type { CheckResult } from "../domain/types.js";
 import { validatePlugin } from "../core/validate-plugin.js";
+import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import { readJsonFile } from "../core/read-json-file.js";
 
 export type CompatibilityStatus = "pass" | "warn" | "fail" | "skipped";
@@ -128,17 +129,10 @@ async function checkGenericMcp(targetPath: string): Promise<CompatibilityResult>
   }
 
   try {
-    const parsed = await readJsonFile<{
-      mcpServers?: unknown;
-    }>(mcpConfigPath);
-    const servers = parsed.mcpServers;
+    const parsed = await readJsonFile<unknown>(mcpConfigPath);
+    const normalizedConfig = normalizeMcpConfig(parsed);
 
-    if (
-      typeof servers !== "object" ||
-      servers === null ||
-      Array.isArray(servers) ||
-      Object.keys(servers).length === 0
-    ) {
+    if (!normalizedConfig.ok) {
       return {
         client: "Generic MCP",
         status: "fail",
@@ -171,14 +165,10 @@ async function readMcpServerNames(targetPath: string): Promise<string[]> {
   }
 
   try {
-    const parsed = await readJsonFile<{
-      mcpServers?: unknown;
-    }>(mcpConfigPath);
-    const servers = parsed.mcpServers;
+    const parsed = await readJsonFile<unknown>(mcpConfigPath);
+    const normalizedConfig = normalizeMcpConfig(parsed);
 
-    return typeof servers === "object" && servers !== null && !Array.isArray(servers)
-      ? Object.keys(servers)
-      : [];
+    return normalizedConfig.ok ? Object.keys(normalizedConfig.servers) : [];
   } catch {
     return [];
   }

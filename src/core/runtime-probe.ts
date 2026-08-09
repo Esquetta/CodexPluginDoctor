@@ -29,6 +29,7 @@ import {
   DOCKER_RUNTIME_STARTUP_TIMEOUT_MS,
   RuntimeSandboxError
 } from "./runtime-sandbox.js";
+import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 import {
   formatRequestTranscript as formatRequestTranscriptForLog,
   formatResponseTranscript as formatResponseTranscriptForLog
@@ -416,17 +417,9 @@ async function loadMcpServers(mcpConfigPath: string): Promise<Record<string, unk
     return null;
   }
 
-  if (!isPlainObject(parsedConfig)) {
-    return null;
-  }
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
 
-  const servers = parsedConfig.mcpServers;
-
-  if (!isPlainObject(servers)) {
-    return null;
-  }
-
-  return servers;
+  return normalizedConfig.ok ? normalizedConfig.servers : null;
 }
 
 function getCapabilities(message: JsonObject): JsonObject | null {
