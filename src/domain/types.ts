@@ -65,6 +65,14 @@ export interface PluginManifest {
   description?: string;
   skills?: string;
   mcpServers?: string;
+  author?: unknown;
+  homepage?: unknown;
+  repository?: unknown;
+  license?: unknown;
+  keywords?: unknown;
+  apps?: unknown;
+  hooks?: unknown;
+  interface?: unknown;
 }
 
 export interface DiscoveredPackage {

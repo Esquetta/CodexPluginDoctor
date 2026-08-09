@@ -11,6 +11,7 @@ import type {
 import { withFindingFingerprints } from "../reporting/finding-fingerprint.js";
 import { discoverPackage } from "./discover-package.js";
 import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
+import { validatePluginComponents } from "./plugin-components.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
 import { probeRuntime, remoteReliabilityGatePassed } from "./runtime-probe.js";
 
@@ -386,9 +387,11 @@ async function validateSkillsDirectory(
 ): Promise<Finding[]> {
   const { manifest, rootPath } = discoveredPackage;
 
-  if (!manifest.skills) {
+  if (manifest.skills === undefined) {
     return [];
   }
+
+  if (typeof manifest.skills !== "string") return [];
 
   const skillsPath = path.resolve(rootPath, manifest.skills);
 
@@ -436,7 +439,7 @@ async function validateSkillDefinitions(
 ): Promise<Finding[]> {
   const { manifest, rootPath } = discoveredPackage;
 
-  if (!manifest.skills) {
+  if (typeof manifest.skills !== "string") {
     return [];
   }
 
@@ -563,7 +566,7 @@ async function validateMcpConfig(
 ): Promise<Finding[]> {
   const { manifest, rootPath } = discoveredPackage;
 
-  if (!manifest.mcpServers) {
+  if (typeof manifest.mcpServers !== "string") {
     return [];
   }
 
@@ -796,6 +799,7 @@ export async function validatePlugin(
 
   const staticFindings = [
     ...validateRequiredManifestFields(discoveredPackage),
+    ...(await validatePluginComponents(discoveredPackage)),
     ...(await validateSkillsDirectory(discoveredPackage)),
     ...(await validateSkillDefinitions(discoveredPackage)),
     ...(await validateMcpConfig(discoveredPackage))
