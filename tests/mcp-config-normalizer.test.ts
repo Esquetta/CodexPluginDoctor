@@ -15,6 +15,17 @@ describe("normalizeMcpConfig", () => {
     });
   });
 
+  it("preserves a prototype-sensitive server name from JSON", () => {
+    const result = normalizeMcpConfig(JSON.parse('{"__proto__":{"command":"node"}}'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("Expected a valid direct server map.");
+    }
+    expect(Object.hasOwn(result.servers, "__proto__")).toBe(true);
+    expect(Object.entries(result.servers)).toEqual([["__proto__", { command: "node" }]]);
+  });
+
   it("normalizes the snake_case wrapper", () => {
     const servers = { weather: { command: "npx" } };
 

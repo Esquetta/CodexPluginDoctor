@@ -30,7 +30,7 @@ function normalizeServerMap(
   }
 
   const invalidServerNames: string[] = [];
-  const servers: McpServerMap = {};
+  const servers: McpServerMap = Object.create(null);
   for (const [name, server] of Object.entries(value)) {
     if (!isPlainObject(server)) {
       invalidServerNames.push(name);
