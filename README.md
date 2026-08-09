@@ -518,6 +518,7 @@ The validator is tuned against local fixtures and real marketplace-style plugin 
 - [Real-World Validation Workflow](./docs/guides/real-world-validation.md)
 - [Examples](./examples/README.md)
 - [Rule Catalog](./docs/rules/catalog.md)
+- [Official Plugin Components](./docs/architecture/official-plugin-components.md)
 
 Recent validation waves covered:
 

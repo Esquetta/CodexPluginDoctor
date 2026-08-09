@@ -96,6 +96,48 @@ describe("public repository readiness", () => {
     );
   });
 
+  it("documents official plugin component validation and its static boundary", async () => {
+    const readme = await readText("README.md");
+    const docsReadme = await readText("docs/README.md");
+    const catalog = await readText("docs/rules/catalog.md");
+    const guide = await readText("docs/architecture/official-plugin-components.md");
+
+    expect(readme).toContain("Official Plugin Components");
+    expect(docsReadme).toContain("Official Plugin Components");
+    expect(guide).toContain("direct top-level server map");
+    expect(guide).toContain("`mcp_servers`");
+    expect(guide).toContain("`mcpServers`");
+    expect(guide).toContain("ambiguous");
+    expect(guide).toContain("camel-case `mcpServers`");
+    expect(guide).toMatch(/optional metadata/i);
+    expect(guide).toContain("`hooks/hooks.json`");
+    expect(guide).toContain("PreToolUse");
+    expect(guide).toContain("SessionEnd");
+    expect(guide).toContain("unsupported");
+    expect(guide).toContain("ignored");
+    expect(guide).toContain("not published");
+    expect(guide).toContain("does not execute hooks or apps");
+
+    for (const [id, severity] of [
+      ["plugin.mcp.ambiguous_shape", "fail"],
+      ["plugin.manifest.invalid_field", "fail"],
+      ["plugin.manifest.invalid_path", "fail"],
+      ["plugin.app.missing_file", "fail"],
+      ["plugin.app.invalid_json", "fail"],
+      ["plugin.app.invalid_path", "fail"],
+      ["plugin.hook.missing_file", "fail"],
+      ["plugin.hook.invalid_json", "fail"],
+      ["plugin.hook.invalid_shape", "fail"],
+      ["plugin.hook.invalid_path", "fail"],
+      ["plugin.hook.unsupported_event", "fail"],
+      ["plugin.hook.unsupported_handler", "warn"],
+      ["plugin.hook.async_unsupported", "warn"],
+      ["plugin.hook.matcher_ignored", "warn"]
+    ]) {
+      expect(catalog).toContain(`| \`${id}\` | ${severity} |`);
+    }
+  });
+
   it("publishes the remote MCP readiness boundary without exposing internal planning", async () => {
     const readme = await readText("README.md");
     const actionGuide = await readText("docs/guides/github-action.md");

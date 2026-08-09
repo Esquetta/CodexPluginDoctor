@@ -16,6 +16,19 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.manifest.name.missing` | fail | Plugin manifest is missing `name`. |
 | `plugin.manifest.version.missing` | fail | Plugin manifest is missing `version`. |
 | `plugin.manifest.description.missing` | fail | Plugin manifest is missing `description`. |
+| `plugin.manifest.invalid_field` | fail | A plugin manifest optional field is invalid. |
+| `plugin.manifest.invalid_path` | fail | A plugin manifest path is not a safe package-relative path. |
+| `plugin.app.missing_file` | fail | Manifest points to a missing `.app.json` file. |
+| `plugin.app.invalid_json` | fail | Referenced `.app.json` file is not valid JSON. |
+| `plugin.app.invalid_path` | fail | A plugin app path is not a safe package-relative path. |
+| `plugin.hook.missing_file` | fail | Plugin lifecycle hook source file is missing. |
+| `plugin.hook.invalid_json` | fail | Plugin lifecycle hook source is not valid JSON. |
+| `plugin.hook.invalid_shape` | fail | Plugin lifecycle hook configuration has an invalid shape. |
+| `plugin.hook.invalid_path` | fail | Plugin lifecycle hook source is not a safe package-relative path. |
+| `plugin.hook.unsupported_event` | fail | Plugin lifecycle hook event is not supported. |
+| `plugin.hook.unsupported_handler` | warn | Plugin lifecycle hook uses a handler type the host skips. |
+| `plugin.hook.async_unsupported` | warn | Plugin lifecycle hook requests unsupported asynchronous execution. |
+| `plugin.hook.matcher_ignored` | warn | Plugin lifecycle hook matcher is ignored for this event. |
 | `plugin.heuristic.description.too_long` | warn | Plugin description is likely too verbose. |
 
 ## Skill Rules
@@ -35,7 +48,8 @@ codex-plugin-doctor explain plugin.manifest.missing
 | --- | --- | --- |
 | `plugin.mcp.path.missing` | fail | Manifest references a missing `.mcp.json` file. |
 | `plugin.mcp.invalid_json` | fail | MCP config is not valid JSON. |
-| `plugin.mcp.invalid_shape` | fail | MCP config does not contain a valid `mcpServers` object. |
+| `plugin.mcp.invalid_shape` | fail | MCP config does not contain one non-empty direct map, `mcp_servers`, or legacy `mcpServers` wrapper. |
+| `plugin.mcp.ambiguous_shape` | fail | MCP config mixes multiple supported layout forms. |
 | `plugin.mcp.server.invalid` | fail | MCP server entry is not an object. |
 | `plugin.mcp.server.transport.missing` | fail | MCP server entry is missing both `command` and `url`. |
 | `mcp.server.transport.conflict` | fail | An MCP server defines both command and URL transports. |

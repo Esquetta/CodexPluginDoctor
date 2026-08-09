@@ -197,6 +197,25 @@ async function createWindsurfHomeFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createInvalidOptionalMetadataPlugin(): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-public-output-"));
+  const manifestDirectory = path.join(targetPath, ".codex-plugin");
+
+  await mkdir(manifestDirectory, { recursive: true });
+  await writeFile(
+    path.join(manifestDirectory, "plugin.json"),
+    JSON.stringify({
+      name: "public-output-contract",
+      version: "1.0.0",
+      description: "Exercises public reporting for a relative manifest field.",
+      author: 42
+    }),
+    "utf8"
+  );
+
+  return targetPath;
+}
+
 async function createSourceLayoutPlugin(config: unknown): Promise<string> {
   const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-source-layout-"));
 
@@ -4180,6 +4199,44 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout.join("")).toContain("x plugin.security.hard_coded_secret");
+  });
+
+  it("renders official plugin findings with relative evidence across public report formats", async () => {
+    const targetPath = await createInvalidOptionalMetadataPlugin();
+    const markdownPath = await createTempFilePath("official-plugin.md");
+    const sarifPath = await createTempFilePath("official-plugin.sarif");
+    const text = createIo();
+    const json = createIo();
+    const markdown = createIo();
+    const sarif = createIo();
+
+    expect(await runCli(["check", targetPath], text.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--json"], json.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--markdown", "--output", markdownPath], markdown.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--sarif", "--output", sarifPath], sarif.io)).toBe(1);
+
+    const jsonReport = JSON.parse(json.stdout.join(""));
+    const markdownReport = await readFile(markdownPath, "utf8");
+    const sarifReport = JSON.parse(await readFile(sarifPath, "utf8"));
+    const jsonFinding = jsonReport.findings.find(
+      (finding: { id: string }) => finding.id === "plugin.manifest.invalid_field"
+    );
+    const sarifResult = sarifReport.runs[0].results.find(
+      (result: { ruleId: string }) => result.ruleId === "plugin.manifest.invalid_field"
+    );
+
+    expect(jsonReport.schemaVersion).toBe("1.0.0");
+    expect(sarifReport.version).toBe("2.1.0");
+    expect(text.stdout.join("")).toContain("Evidence: manifestPath=.codex-plugin/plugin.json, field=author");
+    expect(markdownReport).toContain("Evidence: manifestPath=.codex-plugin/plugin.json, field=author");
+    expect(jsonFinding.evidence).toEqual({ manifestPath: ".codex-plugin/plugin.json", field: "author" });
+    expect(sarifResult.properties.evidence).toEqual({ manifestPath: ".codex-plugin/plugin.json", field: "author" });
+    expect(sarifReport.runs[0].tool.driver.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "plugin.manifest.invalid_field",
+        shortDescription: { text: "A plugin manifest optional field is invalid." }
+      })
+    ]));
   });
 
   it.each([
