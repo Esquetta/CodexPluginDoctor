@@ -4184,7 +4184,8 @@ describe("runCli", () => {
 
   it.each([
     { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
-    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
   ])("uses a $layout package source for Generic MCP and every install preview", async ({ config }) => {
     const targetPath = await createSourceLayoutPlugin(config);
     const generic = createIo();
@@ -4219,5 +4220,42 @@ describe("runCli", () => {
       expect(preview.stdout.join("")).toContain('"mcpServers"');
       expect(preview.stdout.join("")).toContain('"layoutServer"');
     }
+  });
+
+  it.each([
+    { layout: "direct", config: { weather: { command: "node", args: ["weather.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { weather: { command: "node", args: ["weather.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { weather: { command: "node", args: ["weather.mjs"] } } } }
+  ])("reports the same Cursor duplicate warning for a $layout package source", async ({ config }) => {
+    const targetPath = await createSourceLayoutPlugin(config);
+    const cursorDirectory = path.join(targetPath, ".cursor");
+    await mkdir(cursorDirectory);
+    await writeFile(
+      path.join(cursorDirectory, "mcp.json"),
+      JSON.stringify({ mcpServers: { weather: { command: "node", args: ["existing-weather.mjs"] } } }),
+      "utf8"
+    );
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", targetPath, "--client", "cursor", "--json"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: targetPath }
+        }
+      }
+    );
+    const [result] = JSON.parse(stdout.join("")).results;
+
+    expect(exitCode).toBe(0);
+    expect(result).toEqual(expect.objectContaining({
+      client: "Cursor",
+      status: "warn",
+      summary: "Cursor already has MCP server names from this package.",
+      details: expect.arrayContaining(["Duplicate server: weather"])
+    }));
   });
 });

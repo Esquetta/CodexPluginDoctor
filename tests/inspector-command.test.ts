@@ -45,7 +45,8 @@ async function createInspectorPackage(config: unknown): Promise<string> {
 describe("doctor inspector command", () => {
   it.each([
     { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
-    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
   ])("builds an Inspector command for a $layout package-source server", async ({ config }) => {
     const targetPath = await createInspectorPackage(config);
     const { io, stdout } = createIo();

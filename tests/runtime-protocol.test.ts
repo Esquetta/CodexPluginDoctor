@@ -106,7 +106,8 @@ async function createRuntimeLayoutPackage(
 describe("runtime protocol probing", () => {
   it.each([
     { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
-    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
   ])("probes a $layout package-source server layout", async ({ config }) => {
     const fixture = await createRuntimeLayoutPackage(config);
 
@@ -135,8 +136,10 @@ describe("runtime protocol probing", () => {
     );
 
     try {
+      const validation = await validatePlugin(fixture.rootPath);
       const result = await probeRuntime(fixture.discoveredPackage, { startupTimeoutMs: 2_000 });
 
+      expect(validation.findings.map((finding) => finding.id)).toContain("plugin.mcp.ambiguous_shape");
       expect(result.scorecard.initialize).toBe("skipped");
       await expect(access(fixture.markerPath)).rejects.toThrow();
     } finally {

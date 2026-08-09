@@ -45,7 +45,8 @@ async function createRuntimePlanPackage(config: unknown): Promise<string> {
 describe("doctor runtime-plan command", () => {
   it.each([
     { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
-    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
   ])("includes a $layout package-source server in the runtime plan", async ({ config }) => {
     const targetPath = await createRuntimePlanPackage(config);
     const { io, stdout } = createIo();
