@@ -91,9 +91,10 @@ function validateHandler(
   value: unknown,
   sourcePath: string,
   event: string,
+  groupIndex: number,
   handlerIndex: number
 ): Finding[] {
-  const field = `hooks.${event}.hooks[${handlerIndex}]`;
+  const field = `hooks.${event}[${groupIndex}].hooks[${handlerIndex}]`;
   if (!isPlainObject(value) || typeof value.type !== "string") {
     return [invalidShape(sourcePath, field)];
   }
@@ -117,13 +118,13 @@ function validateHandler(
   if (typeof value.command !== "string") {
     findings.push(invalidShape(sourcePath, `${field}.command`));
   } else {
-    findings.push(...auditHookCommand(rootPath, sourcePath, event, value.command));
+    findings.push(...auditHookCommand(rootPath, sourcePath, event, `${field}.command`, value.command));
   }
   if (value.commandWindows !== undefined) {
     if (typeof value.commandWindows !== "string") {
       findings.push(invalidShape(sourcePath, `${field}.commandWindows`));
     } else {
-      findings.push(...auditHookCommand(rootPath, sourcePath, event, value.commandWindows));
+      findings.push(...auditHookCommand(rootPath, sourcePath, event, `${field}.commandWindows`, value.commandWindows));
     }
   }
   if (value.timeout !== undefined && (
@@ -183,7 +184,7 @@ function validateConfig(rootPath: string, config: unknown, sourcePath: string): 
         return;
       }
       group.hooks.forEach((handler, handlerIndex) => {
-        findings.push(...validateHandler(rootPath, handler, sourcePath, event, handlerIndex));
+        findings.push(...validateHandler(rootPath, handler, sourcePath, event, groupIndex, handlerIndex));
       });
     });
   }

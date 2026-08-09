@@ -113,9 +113,10 @@ export function auditHookCommand(
   rootPath: string,
   sourcePath: string,
   event: string,
+  field: string,
   command: string
 ): Finding[] {
-  const evidence = { sourcePath: relativeSourcePath(rootPath, sourcePath), event };
+  const evidence = { sourcePath: relativeSourcePath(rootPath, sourcePath), event, field };
   const findings: Finding[] = [];
 
   if (/(?:^|\s)[/-]enc(?:odedcommand)?(?=\s|$)/i.test(command)) {
@@ -129,7 +130,7 @@ export function auditHookCommand(
     ));
   }
 
-  if (containsPipeInstaller(command.split(/\s+/))) {
+  if (containsHookRemotePipeInstaller(command)) {
     findings.push(buildFinding(
       "fail",
       "plugin.security.remote_pipe_install",
@@ -152,6 +153,18 @@ export function auditHookCommand(
   }
 
   return findings;
+}
+
+function containsHookRemotePipeInstaller(command: string): boolean {
+  const firstPipeIndex = command.indexOf("|");
+  if (firstPipeIndex === -1) return false;
+
+  const leftHandSide = command.slice(0, firstPipeIndex);
+  const rightHandSide = command.slice(firstPipeIndex + 1).trim();
+  const downloader = /\b(?:curl|wget)(?:\.exe)?\b|\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b/i;
+  const interpreter = /^(?:\/(?:[^/\s|]+\/)*(?:sh|bash)\b|(?:sh|bash)\b|(?:powershell|pwsh)(?:\.exe)?\s+-(?:command|c)\s+-\s*(?:$|[;&|])|(?:iex|invoke-expression)\b)/i;
+
+  return downloader.test(leftHandSide) && interpreter.test(rightHandSide);
 }
 
 const pathLikeArgFlags = new Set([
