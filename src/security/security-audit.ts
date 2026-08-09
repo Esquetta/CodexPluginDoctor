@@ -161,10 +161,18 @@ function containsHookRemotePipeInstaller(command: string): boolean {
 
   const leftHandSide = command.slice(0, firstPipeIndex);
   const rightHandSide = command.slice(firstPipeIndex + 1).trim();
-  const downloader = /\b(?:curl|wget)(?:\.exe)?\b|\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b/i;
   const interpreter = /^(?:\/(?:[^/\s|]+\/)*(?:sh|bash)\b|(?:sh|bash)\b|(?:powershell|pwsh)(?:\.exe)?\s+-(?:command|c)\s+-\s*(?:$|[;&|])|(?:iex|invoke-expression)\b)/i;
 
-  return downloader.test(leftHandSide) && interpreter.test(rightHandSide);
+  return isInvokedHookDownloader(leftHandSide) && interpreter.test(rightHandSide);
+}
+
+function isInvokedHookDownloader(command: string): boolean {
+  const downloader = "(?:curl|wget)(?:\\.exe)?|iwr|irm|invoke-webrequest|invoke-restmethod";
+
+  return new RegExp(
+    `^\\s*(?:${downloader})\\b|^\\s*(?:powershell|pwsh)(?:\\.exe)?\\s+-(?:command|c)\\s+(?:${downloader})\\b`,
+    "i"
+  ).test(command);
 }
 
 const pathLikeArgFlags = new Set([
@@ -750,7 +758,10 @@ function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
 
   return findings.filter((finding) => {
-    const key = `${finding.id}\n${finding.message}`;
+    const hookLocation = finding.evidence?.sourcePath && finding.evidence.event && finding.evidence.field
+      ? `${finding.evidence.sourcePath}\n${finding.evidence.event}\n${finding.evidence.field}`
+      : "";
+    const key = `${finding.id}\n${finding.message}\n${hookLocation}`;
 
     if (seen.has(key)) {
       return false;
