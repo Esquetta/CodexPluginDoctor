@@ -182,6 +182,7 @@ function buildRuntimePlanDigest(
 
 const secretRuntimeArgumentFlag = /^--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer)$/i;
 const secretRuntimeArgumentInline = /^(--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer))[=:].*$/i;
+const authorizationBearerHeader = /^authorization\s*:\s*bearer\s+\S+/i;
 
 function redactRuntimeArguments(args: string[]): string[] {
   return args.map((arg, index) => {
@@ -189,6 +190,10 @@ function redactRuntimeArguments(args: string[]): string[] {
 
     if (inlineMatch) {
       return `${inlineMatch[1]}=[REDACTED]`;
+    }
+
+    if (authorizationBearerHeader.test(arg)) {
+      return "[REDACTED]";
     }
 
     if (index > 0 && secretRuntimeArgumentFlag.test(args[index - 1])) {
