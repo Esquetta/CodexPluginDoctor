@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/run-cli.js";
+import { buildDoctorReviewBundle } from "../src/core/review-bundle.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -140,6 +141,45 @@ describe("doctor runtime-plan command", () => {
 
     expect(json.stdout.join("")).not.toContain(sentinel);
     expect(markdown.stdout.join("")).not.toContain(sentinel);
+    expect(JSON.parse(secondJson.stdout.join("")).digest).not.toBe(JSON.parse(json.stdout.join("")).digest);
+  });
+
+  it("redacts split secret flag values from runtime plans and generated release artifacts", async () => {
+    const sentinel = "n7xQ4pV9";
+    const firstTarget = await createRuntimePlanPackage({
+      mcpServers: { server: { command: "node", args: ["server.mjs", "--api-key", sentinel, "safe-positional"] } }
+    });
+    const secondTarget = await createRuntimePlanPackage({
+      mcpServers: { server: { command: "node", args: ["server.mjs", "--api-key", `${sentinel}-changed`, "safe-positional"] } }
+    });
+    const json = createIo();
+    const markdown = createIo();
+    const secondJson = createIo();
+    const bundleDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-bundle-"));
+
+    await runCli(["doctor", "runtime-plan", firstTarget, "--json"], json.io);
+    await runCli(["doctor", "runtime-plan", firstTarget, "--markdown"], markdown.io);
+    await runCli(["doctor", "runtime-plan", secondTarget, "--json"], secondJson.io);
+    const bundle = await buildDoctorReviewBundle(firstTarget, {
+      outputDirectory: bundleDirectory,
+      signingKey: "runtime-plan-test-signing-key",
+      signingKeyEnv: "DOCTOR_SIGNING_KEY",
+      allowDirty: true,
+      allowUntagged: true
+    });
+    const reviewPlanJson = await readFile(path.join(bundleDirectory, bundle.manifest.files.runtimePlanJson), "utf8");
+    const reviewPlanMarkdown = await readFile(path.join(bundleDirectory, bundle.manifest.files.runtimePlanMarkdown), "utf8");
+    const releaseEvidence = await readFile(path.join(bundleDirectory, bundle.manifest.files.releaseEvidenceJson), "utf8");
+
+    for (const artifact of [json.stdout.join(""), markdown.stdout.join(""), reviewPlanJson, reviewPlanMarkdown, releaseEvidence]) {
+      expect(artifact).not.toContain(sentinel);
+    }
+    expect(JSON.parse(json.stdout.join("")).servers[0].args).toEqual([
+      "server.mjs",
+      "--api-key",
+      "[REDACTED]",
+      "safe-positional"
+    ]);
     expect(JSON.parse(secondJson.stdout.join("")).digest).not.toBe(JSON.parse(json.stdout.join("")).digest);
   });
 

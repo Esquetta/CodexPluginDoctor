@@ -180,10 +180,23 @@ function buildRuntimePlanDigest(
   return sha256(stableStringify(planDigestPayload(plan, rawServerArgs)));
 }
 
-function redactRuntimeArgument(value: string): string {
-  return /(?:api[_-]?key|authorization|credential|password|secret|token)/i.test(value)
-    ? "<redacted>"
-    : value;
+const secretRuntimeArgumentFlag = /^--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer)$/i;
+const secretRuntimeArgumentInline = /^(--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer))[=:].*$/i;
+
+function redactRuntimeArguments(args: string[]): string[] {
+  return args.map((arg, index) => {
+    const inlineMatch = arg.match(secretRuntimeArgumentInline);
+
+    if (inlineMatch) {
+      return `${inlineMatch[1]}=[REDACTED]`;
+    }
+
+    if (index > 0 && secretRuntimeArgumentFlag.test(args[index - 1])) {
+      return "[REDACTED]";
+    }
+
+    return arg;
+  });
 }
 
 export async function buildDoctorRuntimePlan(
@@ -310,7 +323,7 @@ export async function buildDoctorRuntimePlan(
         name: serverName,
         transport: command ? "stdio" as const : "http" as const,
         command,
-        args: args.map(redactRuntimeArgument),
+        args: redactRuntimeArguments(args),
         cwd: command ? normalizeCwd(discoveredPackage.rootPath, serverConfig.cwd) : null,
         url: sanitizedUrl,
         ...(networkClass ? { networkClass } : {}),
