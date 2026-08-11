@@ -30,6 +30,24 @@ const largeFileThreshold = 1024 * 1024;
 const packageSizeWarnThreshold = 10 * 1024 * 1024;
 const packageSizeFailThreshold = 50 * 1024 * 1024;
 
+function npmPackCommand(): { command: string; args: string[] } {
+  if (process.platform === "win32") {
+    const npmExecPath = process.env.npm_execpath;
+    // Only use the inherited npm CLI path when it is an absolute npm entrypoint.
+    const npmCliPath =
+      npmExecPath && path.isAbsolute(npmExecPath) && path.basename(npmExecPath).toLowerCase() === "npm-cli.js"
+        ? npmExecPath
+        : path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+
+    return {
+      command: process.execPath,
+      args: [npmCliPath, "pack", "--dry-run"]
+    };
+  }
+
+  return { command: "npm", args: ["pack", "--dry-run"] };
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -111,10 +129,12 @@ export async function buildDoctorSize(
   if (options.npmPack) {
     try {
       const packOutput = await new Promise<string>((resolve, reject) => {
+        const npmPack = npmPackCommand();
+
         execFile(
-          "npm",
-          ["pack", "--dry-run"],
-          { cwd: resolvedPath, timeout: 30000, shell: process.platform === "win32" },
+          npmPack.command,
+          npmPack.args,
+          { cwd: resolvedPath, timeout: 30000 },
           (error, stdout, stderr) => {
             if (error) {
               reject(new Error(stderr.trim() || error.message));

@@ -1,7 +1,16 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const childProcessMocks = vi.hoisted(() => ({
+  execFile: vi.fn()
+}));
+
+vi.mock("node:child_process", () => ({
+  execFile: childProcessMocks.execFile
+}));
+
 import { runCli } from "../src/run-cli.js";
 import { buildDoctorSize, renderDoctorSize, renderDoctorSizeJson } from "../src/core/doctor-size.js";
 
@@ -20,6 +29,10 @@ function createIo() {
 }
 
 describe("doctor size", () => {
+  beforeEach(() => {
+    childProcessMocks.execFile.mockReset();
+  });
+
   describe("buildDoctorSize", () => {
     it("analyzes a small package", async () => {
       const dir = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-size-"));
@@ -55,6 +68,43 @@ describe("doctor size", () => {
       const report = await buildDoctorSize(dir);
 
       expect(report.fileCount).toBe(1);
+    });
+
+    it("launches npm pack on Windows with explicit Node arguments and no shell", async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-size-"));
+      const npmCliPath = path.join(dir, "npm-cli.js");
+      const originalNpmExecPath = process.env.npm_execpath;
+      childProcessMocks.execFile.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          _options: object,
+          callback: (error: Error | null, stdout: string, stderr: string) => void
+        ) => {
+          callback(null, "package size: 1.0 kB", "");
+          return {};
+        }
+      );
+
+      process.env.npm_execpath = npmCliPath;
+
+      try {
+        await buildDoctorSize(dir, { npmPack: true });
+
+        expect(childProcessMocks.execFile).toHaveBeenCalledWith(
+          process.execPath,
+          [npmCliPath, "pack", "--dry-run"],
+          expect.objectContaining({ cwd: path.resolve(dir), timeout: 30_000 }),
+          expect.any(Function)
+        );
+        expect(childProcessMocks.execFile.mock.calls[0][2]).not.toHaveProperty("shell");
+      } finally {
+        if (originalNpmExecPath === undefined) {
+          delete process.env.npm_execpath;
+        } else {
+          process.env.npm_execpath = originalNpmExecPath;
+        }
+      }
     });
   });
 
