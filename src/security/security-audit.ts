@@ -167,13 +167,70 @@ function containsHookRemotePipeInstaller(command: string): boolean {
 }
 
 function isInvokedHookDownloader(command: string): boolean {
-  const downloader = "(?:curl|wget)(?:\\.exe)?|iwr|irm|invoke-webrequest|invoke-restmethod";
-  const transparentPrefix = "(?:(?:env(?:\\s+[A-Za-z_][A-Za-z0-9_]*=[^\\s|]+)*|command)\\s+)?";
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  let index = 0;
+  let wrapperCount = 0;
 
-  return new RegExp(
-    `^\\s*${transparentPrefix}(?:${downloader})\\b|^\\s*${transparentPrefix}(?:powershell|pwsh)(?:\\.exe)?\\s+-(?:command|c)\\s+(?:${downloader})\\b`,
-    "i"
-  ).test(command);
+  while (index < tokens.length && wrapperCount < 4) {
+    const token = tokens[index].toLowerCase();
+
+    if (token === "env") {
+      wrapperCount += 1;
+      index += 1;
+
+      while (index < tokens.length) {
+        const envToken = tokens[index];
+
+        if (envToken === "--") {
+          index += 1;
+          break;
+        }
+
+        if (envToken === "-i" || envToken === "--ignore-environment") {
+          index += 1;
+          continue;
+        }
+
+        if (/^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
+        break;
+      }
+      continue;
+    }
+
+    if (token === "command") {
+      wrapperCount += 1;
+      index += 1;
+
+      if (tokens[index] === "-p" || tokens[index]?.toLowerCase() === "--default-search-path") {
+        index += 1;
+      }
+      if (tokens[index] === "--") {
+        index += 1;
+      }
+      continue;
+    }
+
+    break;
+  }
+
+  const downloader = normalizeCommandName(tokens[index] ?? "");
+
+  if (new Set(["curl", "wget", "iwr", "irm", "invoke-webrequest", "invoke-restmethod"]).has(downloader)) {
+    return true;
+  }
+
+  const shell = normalizeCommandName(tokens[index] ?? "");
+
+  return (
+    (shell === "powershell" || shell === "pwsh") &&
+    /^-(?:command|c)$/i.test(tokens[index + 1] ?? "") &&
+    new Set(["curl", "wget", "iwr", "irm", "invoke-webrequest", "invoke-restmethod"])
+      .has(normalizeCommandName(tokens[index + 2] ?? ""))
+  );
 }
 
 const pathLikeArgFlags = new Set([

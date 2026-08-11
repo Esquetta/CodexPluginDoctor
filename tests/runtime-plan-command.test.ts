@@ -224,6 +224,45 @@ describe("doctor runtime-plan command", () => {
     expect(JSON.parse(secondJson.stdout.join("")).digest).not.toBe(JSON.parse(json.stdout.join("")).digest);
   });
 
+  it("redacts inline header credentials from runtime plans and generated release artifacts", async () => {
+    const sentinel = "k5T9wN3p";
+    const firstTarget = await createRuntimePlanPackage({
+      mcpServers: { server: { command: "node", args: ["server.mjs", `--header=Authorization: Bearer ${sentinel}`, "-H=Accept: application/json", "safe-positional"] } }
+    });
+    const secondTarget = await createRuntimePlanPackage({
+      mcpServers: { server: { command: "node", args: ["server.mjs", `--header=Authorization: Bearer ${sentinel}-changed`, "-H=Accept: application/json", "safe-positional"] } }
+    });
+    const json = createIo();
+    const markdown = createIo();
+    const secondJson = createIo();
+    const bundleDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-inline-header-bundle-"));
+
+    await runCli(["doctor", "runtime-plan", firstTarget, "--json"], json.io);
+    await runCli(["doctor", "runtime-plan", firstTarget, "--markdown"], markdown.io);
+    await runCli(["doctor", "runtime-plan", secondTarget, "--json"], secondJson.io);
+    const bundle = await buildDoctorReviewBundle(firstTarget, {
+      outputDirectory: bundleDirectory,
+      signingKey: "runtime-plan-test-signing-key",
+      signingKeyEnv: "DOCTOR_SIGNING_KEY",
+      allowDirty: true,
+      allowUntagged: true
+    });
+    const reviewPlanJson = await readFile(path.join(bundleDirectory, bundle.manifest.files.runtimePlanJson), "utf8");
+    const reviewPlanMarkdown = await readFile(path.join(bundleDirectory, bundle.manifest.files.runtimePlanMarkdown), "utf8");
+    const releaseEvidence = await readFile(path.join(bundleDirectory, bundle.manifest.files.releaseEvidenceJson), "utf8");
+
+    for (const artifact of [json.stdout.join(""), markdown.stdout.join(""), reviewPlanJson, reviewPlanMarkdown, releaseEvidence]) {
+      expect(artifact).not.toContain(sentinel);
+    }
+    expect(JSON.parse(json.stdout.join("")).servers[0].args).toEqual([
+      "server.mjs",
+      "[REDACTED]",
+      "-H=Accept: application/json",
+      "safe-positional"
+    ]);
+    expect(JSON.parse(secondJson.stdout.join("")).digest).not.toBe(JSON.parse(json.stdout.join("")).digest);
+  });
+
   it("redacts remote URLs and records the remote approval boundary", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-remote-"));
     const rawUrl = "https://user:credential-secret@example.com/mcp?query-secret=1#fragment-secret";

