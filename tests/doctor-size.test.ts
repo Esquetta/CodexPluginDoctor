@@ -74,6 +74,7 @@ describe("doctor size", () => {
       const dir = await mkdtemp(path.join(os.tmpdir(), "codex-doctor-size-"));
       const npmCliPath = path.join(dir, "npm-cli.js");
       const originalNpmExecPath = process.env.npm_execpath;
+      const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
       childProcessMocks.execFile.mockImplementation(
         (
           _command: string,
@@ -86,9 +87,10 @@ describe("doctor size", () => {
         }
       );
 
-      process.env.npm_execpath = npmCliPath;
-
       try {
+        process.env.npm_execpath = npmCliPath;
+        Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+
         await buildDoctorSize(dir, { npmPack: true });
 
         expect(childProcessMocks.execFile).toHaveBeenCalledWith(
@@ -103,6 +105,12 @@ describe("doctor size", () => {
           delete process.env.npm_execpath;
         } else {
           process.env.npm_execpath = originalNpmExecPath;
+        }
+
+        if (originalPlatformDescriptor) {
+          Object.defineProperty(process, "platform", originalPlatformDescriptor);
+        } else {
+          Reflect.deleteProperty(process, "platform");
         }
       }
     });

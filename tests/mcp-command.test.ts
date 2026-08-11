@@ -553,11 +553,14 @@ describe("mcp command", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toEqual([]);
+    expect(output.mcpConfigPath).toBeNull();
+    expect(output.serverCount).toBe(0);
     expect(output.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "mcp.config.path_outside_root" })
       ])
     );
+    expect(stdout.join("")).not.toContain(externalPath);
     await expect(access(markerPath)).rejects.toThrow();
   });
 
