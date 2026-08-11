@@ -34,11 +34,29 @@ async function createRuntimePlanPackage(config: unknown): Promise<string> {
       name: "runtime-plan-layout",
       version: "1.0.0",
       description: "Runtime plan MCP layout fixture.",
-      mcpServers: ".mcp.json"
+      mcpServers: "./.mcp.json"
     }),
     "utf8"
   );
   await writeFile(path.join(targetPath, ".mcp.json"), JSON.stringify(config), "utf8");
+
+  return targetPath;
+}
+
+async function createRuntimePlanPackageWithMcpServers(mcpServers: unknown): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-plan-invalid-manifest-"));
+
+  await mkdir(path.join(targetPath, ".codex-plugin"));
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify({
+      name: "runtime-plan-invalid-manifest",
+      version: "1.0.0",
+      description: "Runtime plan invalid manifest fixture.",
+      mcpServers
+    }),
+    "utf8"
+  );
 
   return targetPath;
 }
@@ -86,6 +104,23 @@ describe("doctor runtime-plan command", () => {
     expect(exitCode).toBe(1);
     expect(output.status).toBe("fail");
     expect(output.summary.highRiskServerCount).toBe(0);
+  });
+
+  it.each([
+    ["object", { injected: "manifest-mcp-secret" }],
+    ["empty string", ""],
+    ["null", null]
+  ])("fails closed without disclosing a declared invalid mcpServers $s", async (_kind, mcpServers) => {
+    const targetPath = await createRuntimePlanPackageWithMcpServers(mcpServers);
+    const { io, stdout } = createIo();
+
+    await expect(runCli(["doctor", "runtime-plan", targetPath, "--json"], io)).resolves.toBe(1);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(output.status).toBe("fail");
+    expect(output.exitCode).toBe(1);
+    expect(output.servers).toEqual([]);
+    expect(stdout.join("")).not.toContain("manifest-mcp-secret");
   });
 
   it.each([
@@ -309,7 +344,7 @@ describe("doctor runtime-plan command", () => {
     await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
     await (await import("node:fs/promises")).writeFile(
       path.join(targetPath, ".codex-plugin", "plugin.json"),
-      JSON.stringify({ name: "remote-plan", version: "1.0.0", description: "Remote plan test.", mcpServers: ".mcp.json" }),
+      JSON.stringify({ name: "remote-plan", version: "1.0.0", description: "Remote plan test.", mcpServers: "./.mcp.json" }),
       "utf8"
     );
     await (await import("node:fs/promises")).writeFile(
@@ -359,7 +394,7 @@ describe("doctor runtime-plan command", () => {
     await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
     await (await import("node:fs/promises")).writeFile(
       path.join(targetPath, ".codex-plugin", "plugin.json"),
-      JSON.stringify({ name: "loopback-plan", version: "1.0.0", description: "Loopback plan test.", mcpServers: ".mcp.json" }),
+      JSON.stringify({ name: "loopback-plan", version: "1.0.0", description: "Loopback plan test.", mcpServers: "./.mcp.json" }),
       "utf8"
     );
     await (await import("node:fs/promises")).writeFile(

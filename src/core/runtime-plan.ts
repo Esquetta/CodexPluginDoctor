@@ -209,6 +209,38 @@ function redactRuntimeArguments(args: string[]): string[] {
   });
 }
 
+function buildFailedRuntimePlan(
+  targetPath: string,
+  generatedAt: string,
+  execution: RuntimeExecutionEvidence,
+  finding: Finding
+): DoctorRuntimePlan {
+  const partialPlan = {
+    schemaVersion: "1.0.0" as const,
+    kind: "doctor.runtime.plan" as const,
+    version: packageVersion,
+    targetPath,
+    status: "fail" as const,
+    exitCode: 1 as const,
+    runtimeExecution: "not_started" as const,
+    execution,
+    summary: {
+      serverCount: 0,
+      executableServerCount: 0,
+      highRiskServerCount: 0,
+      findings: { fail: 1, warn: 0, total: 1 }
+    },
+    servers: [],
+    findings: [finding]
+  };
+
+  return {
+    ...partialPlan,
+    generatedAt,
+    digest: buildRuntimePlanDigest(partialPlan)
+  };
+}
+
 export async function buildDoctorRuntimePlan(
   targetPath: string,
   generatedAt = new Date().toISOString(),
@@ -225,7 +257,7 @@ export async function buildDoctorRuntimePlan(
       }
     : { backend: "native", image: null, network: "host", packageMount: "host" };
 
-  if (!discoveredPackage?.manifest.mcpServers) {
+  if (!discoveredPackage || !Object.hasOwn(discoveredPackage.manifest, "mcpServers")) {
     const security = await buildSecurityAudit(rootPath);
     const partialPlan = {
       schemaVersion: "1.0.0" as const,
@@ -253,50 +285,49 @@ export async function buildDoctorRuntimePlan(
     };
   }
 
+  const manifestMcpServers = discoveredPackage.manifest.mcpServers;
+
+  if (
+    typeof manifestMcpServers !== "string" ||
+    !manifestMcpServers ||
+    !manifestMcpServers.startsWith("./")
+  ) {
+    return buildFailedRuntimePlan(
+      discoveredPackage.rootPath,
+      generatedAt,
+      execution,
+      {
+        id: typeof manifestMcpServers === "string"
+          ? "plugin.manifest.invalid_path"
+          : "plugin.manifest.invalid_field",
+        severity: "fail",
+        message: "The plugin manifest mcpServers field must be a non-empty package-relative path.",
+        impact: "Runtime planning cannot safely resolve malformed MCP server configuration metadata.",
+        suggestedFix: "Use a non-empty ./ path for mcpServers that remains inside the package.",
+        evidence: { manifestPath: ".codex-plugin/plugin.json", field: "mcpServers" }
+      }
+    );
+  }
+
   const mcpConfigPath = await resolveContainedPackagePath(
     discoveredPackage.rootPath,
-    discoveredPackage.manifest.mcpServers
+    manifestMcpServers
   );
 
   if (!mcpConfigPath) {
-    const security = {
-      targetPath: discoveredPackage.rootPath,
-      status: "fail" as const,
-      score: 0,
-      findingCounts: { fail: 1, warn: 0, total: 1 },
-      findings: [{
+    return buildFailedRuntimePlan(
+      discoveredPackage.rootPath,
+      generatedAt,
+      execution,
+      {
         id: "plugin.security.mcp_config_path",
-        severity: "fail" as const,
+        severity: "fail",
         message: "The MCP server config path resolves outside the package root.",
         impact: "Runtime planning cannot safely inspect MCP server metadata outside the package.",
         suggestedFix: "Use an MCP server config path that remains inside the package root.",
         evidence: { manifestPath: ".codex-plugin/plugin.json", field: "mcpServers" }
-      }]
-    };
-    const partialPlan = {
-      schemaVersion: "1.0.0" as const,
-      kind: "doctor.runtime.plan" as const,
-      version: packageVersion,
-      targetPath: discoveredPackage.rootPath,
-      status: "fail" as const,
-      exitCode: 1 as const,
-      runtimeExecution: "not_started" as const,
-      execution,
-      summary: {
-        serverCount: 0,
-        executableServerCount: 0,
-        highRiskServerCount: 0,
-        findings: security.findingCounts
-      },
-      servers: [],
-      findings: security.findings
-    };
-
-    return {
-      ...partialPlan,
-      generatedAt,
-      digest: buildRuntimePlanDigest(partialPlan)
-    };
+      }
+    );
   }
 
   const security = await buildSecurityAudit(rootPath);
