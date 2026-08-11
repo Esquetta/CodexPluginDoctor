@@ -169,13 +169,11 @@ function containsHookRemotePipeInstaller(command: string): boolean {
 function isInvokedHookDownloader(command: string): boolean {
   const tokens = command.trim().split(/\s+/).filter(Boolean);
   let index = 0;
-  let wrapperCount = 0;
 
-  while (index < tokens.length && wrapperCount < 4) {
+  while (index < tokens.length) {
     const token = tokens[index].toLowerCase();
 
     if (token === "env") {
-      wrapperCount += 1;
       index += 1;
 
       while (index < tokens.length) {
@@ -191,6 +189,32 @@ function isInvokedHookDownloader(command: string): boolean {
           continue;
         }
 
+        if (envToken === "-u" || envToken === "--unset") {
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tokens[index + 1] ?? "")) {
+            return false;
+          }
+          index += 2;
+          continue;
+        }
+
+        if (/^--unset=[A-Za-z_][A-Za-z0-9_]*$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
+        if (envToken === "-C" || envToken === "--chdir") {
+          if (!tokens[index + 1] || tokens[index + 1].startsWith("-")) {
+            return false;
+          }
+          index += 2;
+          continue;
+        }
+
+        if (/^--chdir=\S+$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
         if (/^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(envToken)) {
           index += 1;
           continue;
@@ -202,7 +226,6 @@ function isInvokedHookDownloader(command: string): boolean {
     }
 
     if (token === "command") {
-      wrapperCount += 1;
       index += 1;
 
       if (tokens[index] === "-p" || tokens[index]?.toLowerCase() === "--default-search-path") {
