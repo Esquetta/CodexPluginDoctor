@@ -202,8 +202,8 @@ export async function initPluginPackage(
         name: packageName,
         version: "0.1.0",
         description: "A Codex plugin package scaffolded by Codex Plugin Doctor.",
-        skills: "skills",
-        ...(template === "skill-only" ? {} : { mcpServers: ".mcp.json" })
+        skills: "./skills",
+        ...(template === "skill-only" ? {} : { mcpServers: "./.mcp.json" })
       },
       null,
       2

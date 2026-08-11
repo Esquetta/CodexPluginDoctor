@@ -67,7 +67,86 @@ async function createRuntimeCwdPackage(
   };
 }
 
+async function createRuntimeLayoutPackage(
+  config: unknown
+): Promise<{ discoveredPackage: DiscoveredPackage; markerPath: string; rootPath: string }> {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-runtime-layout-"));
+  const markerPath = path.join(rootPath, "runtime-started");
+  const manifestPath = path.join(rootPath, ".codex-plugin", "plugin.json");
+
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      name: "runtime-layout",
+      version: "1.0.0",
+      description: "Runtime MCP layout fixture.",
+      mcpServers: "./.mcp.json"
+    })
+  );
+  await writeFile(path.join(rootPath, "server.mjs"), markerServerSource(markerPath));
+  await writeFile(path.join(rootPath, ".mcp.json"), JSON.stringify(config));
+
+  return {
+    rootPath,
+    markerPath,
+    discoveredPackage: {
+      rootPath,
+      manifestPath,
+      manifest: {
+        name: "runtime-layout",
+        version: "1.0.0",
+        description: "Runtime MCP layout fixture.",
+        mcpServers: "./.mcp.json"
+      }
+    }
+  };
+}
+
 describe("runtime protocol probing", () => {
+  it.each([
+    { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+  ])("probes a $layout package-source server layout", async ({ config }) => {
+    const fixture = await createRuntimeLayoutPackage(config);
+
+    try {
+      const result = await probeRuntime(fixture.discoveredPackage, { startupTimeoutMs: 2_000 });
+
+      expect(result.scorecard.initialize).toBe("pass");
+      await expect(access(fixture.markerPath)).resolves.toBeUndefined();
+    } finally {
+      await rm(fixture.rootPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+  });
+
+  it("does not launch an ambiguous MCP source layout", async () => {
+    const fixture = await createRuntimeLayoutPackage({});
+    const commandConfig = {
+      command: "node",
+      args: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(fixture.markerPath)}, 'started')`]
+    };
+    await writeFile(
+      path.join(fixture.rootPath, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { layoutServer: commandConfig },
+        mcp_servers: { layoutServer: commandConfig }
+      })
+    );
+
+    try {
+      const validation = await validatePlugin(fixture.rootPath);
+      const result = await probeRuntime(fixture.discoveredPackage, { startupTimeoutMs: 2_000 });
+
+      expect(validation.findings.map((finding) => finding.id)).toContain("plugin.mcp.ambiguous_shape");
+      expect(result.scorecard.initialize).toBe("skipped");
+      await expect(access(fixture.markerPath)).rejects.toThrow();
+    } finally {
+      await rm(fixture.rootPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+  });
+
   it("does not start runtime probes when static validation fails", async () => {
     const packageRoot = await mkdtemp(
       path.join(os.tmpdir(), "codex-plugin-doctor-static-first-")

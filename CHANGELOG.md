@@ -4,6 +4,40 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.58.0] - 2026-08-11
+
+### Added
+
+- added support for current official MCP layouts, including direct server maps, `mcp_servers`, and legacy `mcpServers` wrappers
+- added static validation for optional manifest component fields and referenced app and lifecycle-hook definitions
+
+### Changed
+
+- normalized supported MCP layouts before static validation, compatibility planning, and runtime planning consume server definitions
+
+### Security
+
+- kept app and hook validation local, static, and non-executing while applying hook command security checks with relative, redacted evidence
+- constrained MCP consumer previews to the canonical package root
+- made runtime plans fail closed when security input is invalid or cannot be safely inspected
+- redacted credential-bearing runtime arguments from portable plans while keeping approval digests bound to the exact arguments
+- hardened lifecycle-hook detection for remote content piped into shells
+
+## [1.57.0] - 2026-08-08
+
+### Added
+
+- added `doctor size --npm` to measure the real npm pack dry-run publish size and warn when local and publish sizes differ by more than 50%
+- added repeatable `check --fail-on <rule-id>` so CI can promote selected warning rules to failures
+
+## [1.56.0] - 2026-08-02
+
+### Added
+
+- added `doctor size <path> [--json]` with total size, file count, and the ten largest files
+- added package-size findings for files larger than 1 MB, warnings above 10 MB, and failures above 50 MB
+- exported the package-size analysis surfaces for programmatic consumers
+
 ## [1.55.0] - 2026-07-30
 
 ### Added

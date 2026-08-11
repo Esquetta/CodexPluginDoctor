@@ -65,7 +65,61 @@ export interface PluginManifest {
   description?: string;
   skills?: string;
   mcpServers?: string;
+  author?: unknown;
+  homepage?: unknown;
+  repository?: unknown;
+  license?: unknown;
+  keywords?: unknown;
+  apps?: unknown;
+  hooks?: PluginHooks;
+  interface?: unknown;
 }
+
+export const pluginHookEvents = [
+  "PreToolUse",
+  "PermissionRequest",
+  "PostToolUse",
+  "PreCompact",
+  "PostCompact",
+  "UserPromptSubmit",
+  "SubagentStop",
+  "Stop",
+  "SessionStart",
+  "SubagentStart",
+  "SessionEnd"
+] as const;
+
+export type PluginHookEvent = (typeof pluginHookEvents)[number];
+
+export interface PluginHookCommandHandler {
+  type: "command";
+  command: string;
+  commandWindows?: string;
+  timeout?: number;
+  statusMessage?: string;
+  additionalContextLimit?: number;
+  async?: boolean;
+}
+
+export interface PluginHookUnsupportedHandler {
+  type: "prompt" | "agent";
+  async?: boolean;
+  [key: string]: unknown;
+}
+
+export type PluginHookHandler = PluginHookCommandHandler | PluginHookUnsupportedHandler;
+
+export interface PluginHookMatcherGroup {
+  matcher?: string;
+  hooks: PluginHookHandler[];
+}
+
+export interface PluginHookConfig {
+  description?: string;
+  hooks: Partial<Record<PluginHookEvent, PluginHookMatcherGroup[]>>;
+}
+
+export type PluginHooks = string | string[] | PluginHookConfig | PluginHookConfig[];
 
 export interface DiscoveredPackage {
   rootPath: string;

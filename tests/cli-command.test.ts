@@ -197,6 +197,44 @@ async function createWindsurfHomeFixture(config?: unknown): Promise<string> {
   return directory;
 }
 
+async function createInvalidOptionalMetadataPlugin(): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-public-output-"));
+  const manifestDirectory = path.join(targetPath, ".codex-plugin");
+
+  await mkdir(manifestDirectory, { recursive: true });
+  await writeFile(
+    path.join(manifestDirectory, "plugin.json"),
+    JSON.stringify({
+      name: "public-output-contract",
+      version: "1.0.0",
+      description: "Exercises public reporting for a relative manifest field.",
+      author: 42
+    }),
+    "utf8"
+  );
+
+  return targetPath;
+}
+
+async function createSourceLayoutPlugin(config: unknown): Promise<string> {
+  const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-source-layout-"));
+
+  await mkdir(path.join(targetPath, ".codex-plugin"));
+  await writeFile(
+    path.join(targetPath, ".codex-plugin", "plugin.json"),
+    JSON.stringify({
+      name: "source-layout",
+      version: "1.0.0",
+      description: "Package source MCP layout fixture.",
+      mcpServers: ".mcp.json"
+    }),
+    "utf8"
+  );
+  await writeFile(path.join(targetPath, ".mcp.json"), JSON.stringify(config), "utf8");
+
+  return targetPath;
+}
+
 const codexHomeFixture = path.resolve("tests/fixtures/codex-home");
 
 describe("runCli", () => {
@@ -3097,7 +3135,7 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Initialized Codex plugin package");
     expect(manifest.name).toBe(path.basename(targetPath).toLowerCase());
-    expect(manifest.skills).toBe("skills");
+    expect(manifest.skills).toBe("./skills");
     expect(skill).toContain("name: hello");
   });
 
@@ -3116,7 +3154,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Template: mcp-stdio");
-    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(manifest.mcpServers).toBe("./.mcp.json");
     expect(serverConfig.command).toBe("node");
     expect(serverConfig.args).toEqual(["./mock-server.js"]);
     expect(server).toContain("method === \"initialize\"");
@@ -3136,7 +3174,7 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Template: mcp-http");
-    expect(manifest.mcpServers).toBe(".mcp.json");
+    expect(manifest.mcpServers).toBe("./.mcp.json");
     expect(serverConfig.url).toBe("http://localhost:8787/mcp");
   });
 
@@ -3213,7 +3251,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       manifestPath,
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3229,7 +3267,7 @@ describe("runCli", () => {
     expect(output).toContain("No files changed.");
     expect(output).toContain(".codex-plugin/plugin.json");
     expect(output).toContain("skills");
-    expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "skills" });
+    expect(manifestAfter).toEqual({ name: "broken-plugin", skills: "./skills" });
   });
 
   it("renders a dry-run fix plan as JSON", async () => {
@@ -3238,7 +3276,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       path.join(manifestDirectory, "plugin.json"),
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3277,7 +3315,7 @@ describe("runCli", () => {
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(
       manifestPath,
-      JSON.stringify({ name: "broken-plugin", skills: "skills" }, null, 2),
+      JSON.stringify({ name: "broken-plugin", skills: "./skills" }, null, 2),
       "utf8"
     );
     const { io, stdout, stderr } = createIo();
@@ -3569,7 +3607,7 @@ describe("runCli", () => {
     expect(writtenReport.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "plugin.security.path_traversal",
+          id: "plugin.manifest.invalid_path",
           severity: "fail"
         })
       ])
@@ -4161,5 +4199,120 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout.join("")).toContain("x plugin.security.hard_coded_secret");
+  });
+
+  it("renders official plugin findings with relative evidence across public report formats", async () => {
+    const targetPath = await createInvalidOptionalMetadataPlugin();
+    const markdownPath = await createTempFilePath("official-plugin.md");
+    const sarifPath = await createTempFilePath("official-plugin.sarif");
+    const text = createIo();
+    const json = createIo();
+    const markdown = createIo();
+    const sarif = createIo();
+
+    expect(await runCli(["check", targetPath], text.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--json"], json.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--markdown", "--output", markdownPath], markdown.io)).toBe(1);
+    expect(await runCli(["check", targetPath, "--sarif", "--output", sarifPath], sarif.io)).toBe(1);
+
+    const jsonReport = JSON.parse(json.stdout.join(""));
+    const markdownReport = await readFile(markdownPath, "utf8");
+    const sarifReport = JSON.parse(await readFile(sarifPath, "utf8"));
+    const jsonFinding = jsonReport.findings.find(
+      (finding: { id: string }) => finding.id === "plugin.manifest.invalid_field"
+    );
+    const sarifResult = sarifReport.runs[0].results.find(
+      (result: { ruleId: string }) => result.ruleId === "plugin.manifest.invalid_field"
+    );
+
+    expect(jsonReport.schemaVersion).toBe("1.0.0");
+    expect(sarifReport.version).toBe("2.1.0");
+    expect(text.stdout.join("")).toContain("Evidence: manifestPath=.codex-plugin/plugin.json, field=author");
+    expect(markdownReport).toContain("Evidence: manifestPath=.codex-plugin/plugin.json, field=author");
+    expect(jsonFinding.evidence).toEqual({ manifestPath: ".codex-plugin/plugin.json", field: "author" });
+    expect(sarifResult.properties.evidence).toEqual({ manifestPath: ".codex-plugin/plugin.json", field: "author" });
+    expect(sarifReport.runs[0].tool.driver.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "plugin.manifest.invalid_field",
+        shortDescription: { text: "A plugin manifest optional field is invalid." }
+      })
+    ]));
+  });
+
+  it.each([
+    { layout: "direct", config: { layoutServer: { command: "node", args: ["server.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } } } }
+  ])("uses a $layout package source for Generic MCP and every install preview", async ({ config }) => {
+    const targetPath = await createSourceLayoutPlugin(config);
+    const generic = createIo();
+
+    const genericExitCode = await runCli(
+      ["compat", targetPath, "--client", "generic-mcp", "--json"],
+      generic.io
+    );
+
+    expect(genericExitCode).toBe(0);
+    expect(JSON.parse(generic.stdout.join("")).results).toEqual([
+      expect.objectContaining({ client: "Generic MCP", status: "pass" })
+    ]);
+
+    for (const client of ["claude-desktop", "cursor", "cline", "windsurf"]) {
+      const preview = createIo();
+      const exitCode = await runCli(
+        ["compat", targetPath, "--client", client, "--install-preview"],
+        preview.io,
+        {
+          terminalContext: {
+            stdoutIsTTY: false,
+            stderrIsTTY: false,
+            env: { APPDATA: targetPath, USERPROFILE: targetPath, CLINE_DIR: targetPath },
+            platform: "win32"
+          }
+        }
+      );
+
+      expect(exitCode).toBe(0);
+      expect(preview.stderr).toEqual([]);
+      expect(preview.stdout.join("")).toContain('"mcpServers"');
+      expect(preview.stdout.join("")).toContain('"layoutServer"');
+    }
+  });
+
+  it.each([
+    { layout: "direct", config: { weather: { command: "node", args: ["weather.mjs"] } } },
+    { layout: "snake case", config: { mcp_servers: { weather: { command: "node", args: ["weather.mjs"] } } } },
+    { layout: "legacy camel case", config: { mcpServers: { weather: { command: "node", args: ["weather.mjs"] } } } }
+  ])("reports the same Cursor duplicate warning for a $layout package source", async ({ config }) => {
+    const targetPath = await createSourceLayoutPlugin(config);
+    const cursorDirectory = path.join(targetPath, ".cursor");
+    await mkdir(cursorDirectory);
+    await writeFile(
+      path.join(cursorDirectory, "mcp.json"),
+      JSON.stringify({ mcpServers: { weather: { command: "node", args: ["existing-weather.mjs"] } } }),
+      "utf8"
+    );
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(
+      ["compat", targetPath, "--client", "cursor", "--json"],
+      io,
+      {
+        terminalContext: {
+          stdoutIsTTY: false,
+          stderrIsTTY: false,
+          env: { USERPROFILE: targetPath }
+        }
+      }
+    );
+    const [result] = JSON.parse(stdout.join("")).results;
+
+    expect(exitCode).toBe(0);
+    expect(result).toEqual(expect.objectContaining({
+      client: "Cursor",
+      status: "warn",
+      summary: "Cursor already has MCP server names from this package.",
+      details: expect.arrayContaining(["Duplicate server: weather"])
+    }));
   });
 });

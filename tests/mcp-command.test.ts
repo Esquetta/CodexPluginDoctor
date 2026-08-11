@@ -314,6 +314,28 @@ describe("mcp command", () => {
     );
   });
 
+  it.each([
+    "valid-plugin-with-mcp-direct",
+    "valid-plugin-with-mcp-snake-case"
+  ])("diagnoses the official %s MCP config layout", async (fixtureName) => {
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli([
+      "mcp",
+      path.resolve("tests/fixtures", fixtureName),
+      "--json"
+    ], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({
+      status: "pass",
+      serverCount: 1,
+      security: { status: "pass", findings: [] }
+    });
+  });
+
   it("accepts an explicit localhost HTTP development transport", async () => {
     const targetPath = await createStandaloneMcpPackage({
       mcpServers: {
@@ -531,12 +553,50 @@ describe("mcp command", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.mcpConfigPath).toBeNull();
+    expect(output.serverCount).toBe(0);
+    expect(output.runtimeExecution).toBeUndefined();
+    expect(output.security.status).toBe("fail");
     expect(output.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "mcp.config.path_outside_root" })
       ])
     );
+    expect(output.findings.filter((finding: { id: string }) => (
+      finding.id === "mcp.config.path_outside_root"
+    ))).toHaveLength(1);
+    expect(stdout.join("")).not.toContain(externalPath);
     await expect(access(markerPath)).rejects.toThrow();
+  });
+
+  it("fails security when a manifest MCP config lexically escapes the package root", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-root-"));
+    const externalPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-mcp-external-"));
+    const { io, stdout, stderr } = createIo();
+
+    await mkdir(path.join(targetPath, ".codex-plugin"));
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ mcpServers: path.join(externalPath, ".mcp.json") }),
+      "utf8"
+    );
+
+    const exitCode = await runCli(["mcp", targetPath, "--runtime", "--json"], io);
+    const serialized = stdout.join("");
+    const output = JSON.parse(serialized);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.status).toBe("fail");
+    expect(output.mcpConfigPath).toBeNull();
+    expect(output.serverCount).toBe(0);
+    expect(output.runtimeExecution).toBeUndefined();
+    expect(output.security.status).toBe("fail");
+    expect(output.findings.filter((finding: { id: string }) => (
+      finding.id === "mcp.config.path_outside_root"
+    ))).toHaveLength(1);
+    expect(serialized).not.toContain(externalPath);
   });
 
   it("fails a standalone MCP package with unsafe server commands", async () => {

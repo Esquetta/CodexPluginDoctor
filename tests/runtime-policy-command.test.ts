@@ -29,7 +29,7 @@ describe("doctor runtime-policy command", () => {
     await (await import("node:fs/promises")).mkdir(path.join(targetPath, ".codex-plugin"));
     await (await import("node:fs/promises")).writeFile(
       path.join(targetPath, ".codex-plugin", "plugin.json"),
-      JSON.stringify({ name: "remote-policy", version: "1.0.0", description: "Remote policy test.", mcpServers: ".mcp.json" }),
+      JSON.stringify({ name: "remote-policy", version: "1.0.0", description: "Remote policy test.", mcpServers: "./.mcp.json" }),
       "utf8"
     );
     await (await import("node:fs/promises")).writeFile(

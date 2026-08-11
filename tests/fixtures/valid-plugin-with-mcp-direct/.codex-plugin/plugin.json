@@ -1,0 +1,6 @@
+{
+  "name": "valid-plugin-with-mcp-direct",
+  "version": "1.0.0",
+  "description": "Fixture with a direct official MCP config.",
+  "mcpServers": "./.mcp.json"
+}

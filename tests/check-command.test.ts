@@ -250,6 +250,31 @@ describe("runCheck", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it.each([
+    "valid-plugin-with-mcp-direct",
+    "valid-plugin-with-mcp-snake-case"
+  ])("passes the official %s MCP config layout", async (fixtureName) => {
+    const result = await runCheck(path.resolve("tests/fixtures", fixtureName));
+
+    expect(result.status).toBe("pass");
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("fails an MCP config with both supported wrapper keys as ambiguous", async () => {
+    const result = await runCheck(path.resolve("tests/fixtures/mcp-config-ambiguous"));
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "plugin.mcp.ambiguous_shape",
+          severity: "fail"
+        })
+      ])
+    );
+  });
+
   it("fails when plugin paths escape the package root", async () => {
     const targetPath = path.resolve("tests/fixtures/security-path-traversal");
 
@@ -259,7 +284,7 @@ describe("runCheck", () => {
     expect(result.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "plugin.security.path_traversal",
+          id: "plugin.manifest.invalid_path",
           severity: "fail"
         })
       ])

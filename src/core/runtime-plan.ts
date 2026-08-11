@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { packageVersion } from "../version.js";
 import { discoverPackage } from "./discover-package.js";
+import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
 import { readJsonFile } from "./read-json-file.js";
 import {
   buildSecurityAudit,
@@ -12,6 +13,7 @@ import type { Finding } from "../domain/types.js";
 import type { RuntimeExecutionEvidence, RuntimeSandboxMode } from "../domain/types.js";
 import { DOCKER_RUNTIME_IMAGE } from "./runtime-sandbox.js";
 import { inspectRemoteMcpUrl } from "./remote-url-policy.js";
+import { resolveContainedPackagePath } from "./package-path.js";
 
 type RuntimePlanStatus = "pass" | "warn" | "fail";
 type RuntimePlanRiskLevel = "low" | "medium" | "high";
@@ -148,7 +150,10 @@ function remoteNetworkClass(rawUrl: string): RemoteNetworkClass {
   return "public_https";
 }
 
-function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">): unknown {
+function planDigestPayload(
+  plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">,
+  rawServerArgs: Record<string, string[]> = {}
+): unknown {
   return {
     schemaVersion: plan.schemaVersion,
     kind: "doctor.runtime.plan.digest.v1",
@@ -156,7 +161,10 @@ function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest
     execution: plan.execution,
     status: plan.status,
     summary: plan.summary,
-    servers: plan.servers,
+    servers: plan.servers.map((server) => ({
+      ...server,
+      args: rawServerArgs[server.name] ?? server.args
+    })),
     findings: plan.findings.map((finding) => ({
       id: finding.id,
       severity: finding.severity,
@@ -166,9 +174,71 @@ function planDigestPayload(plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest
 }
 
 function buildRuntimePlanDigest(
-  plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">
+  plan: Omit<DoctorRuntimePlan, "generatedAt" | "digest">,
+  rawServerArgs: Record<string, string[]> = {}
 ): string {
-  return sha256(stableStringify(planDigestPayload(plan)));
+  return sha256(stableStringify(planDigestPayload(plan, rawServerArgs)));
+}
+
+const secretRuntimeArgumentFlag = /^--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer)$/i;
+const secretRuntimeArgumentInline = /^(--?(?:token|api[-_]?key|apikey|password|secret|credential|authorization|bearer))[=:].*$/i;
+const authorizationBearerHeader = /^authorization\s*:\s*bearer\s+\S+/i;
+const inlineAuthorizationBearerHeader = /^(?:--header|-H)=authorization\s*:\s*bearer\s+\S+/i;
+
+function redactRuntimeArguments(args: string[]): string[] {
+  return args.map((arg, index) => {
+    const inlineMatch = arg.match(secretRuntimeArgumentInline);
+
+    if (inlineMatch) {
+      return `${inlineMatch[1]}=[REDACTED]`;
+    }
+
+    if (authorizationBearerHeader.test(arg)) {
+      return "[REDACTED]";
+    }
+
+    if (inlineAuthorizationBearerHeader.test(arg)) {
+      return "[REDACTED]";
+    }
+
+    if (index > 0 && secretRuntimeArgumentFlag.test(args[index - 1])) {
+      return "[REDACTED]";
+    }
+
+    return arg;
+  });
+}
+
+function buildFailedRuntimePlan(
+  targetPath: string,
+  generatedAt: string,
+  execution: RuntimeExecutionEvidence,
+  finding: Finding
+): DoctorRuntimePlan {
+  const partialPlan = {
+    schemaVersion: "1.0.0" as const,
+    kind: "doctor.runtime.plan" as const,
+    version: packageVersion,
+    targetPath,
+    status: "fail" as const,
+    exitCode: 1 as const,
+    runtimeExecution: "not_started" as const,
+    execution,
+    summary: {
+      serverCount: 0,
+      executableServerCount: 0,
+      highRiskServerCount: 0,
+      findings: { fail: 1, warn: 0, total: 1 }
+    },
+    servers: [],
+    findings: [finding]
+  };
+
+  return {
+    ...partialPlan,
+    generatedAt,
+    digest: buildRuntimePlanDigest(partialPlan)
+  };
 }
 
 export async function buildDoctorRuntimePlan(
@@ -178,7 +248,6 @@ export async function buildDoctorRuntimePlan(
 ): Promise<DoctorRuntimePlan> {
   const rootPath = path.resolve(targetPath);
   const discoveredPackage = await discoverPackage(rootPath);
-  const security = await buildSecurityAudit(rootPath);
   const execution: RuntimeExecutionEvidence = options.sandbox === "docker"
     ? {
         backend: "docker",
@@ -188,7 +257,8 @@ export async function buildDoctorRuntimePlan(
       }
     : { backend: "native", image: null, network: "host", packageMount: "host" };
 
-  if (!discoveredPackage?.manifest.mcpServers) {
+  if (!discoveredPackage || !Object.hasOwn(discoveredPackage.manifest, "mcpServers")) {
+    const security = await buildSecurityAudit(rootPath);
     const partialPlan = {
       schemaVersion: "1.0.0" as const,
       kind: "doctor.runtime.plan" as const,
@@ -215,19 +285,66 @@ export async function buildDoctorRuntimePlan(
     };
   }
 
+  const manifestMcpServers = discoveredPackage.manifest.mcpServers;
+
+  if (
+    typeof manifestMcpServers !== "string" ||
+    !manifestMcpServers ||
+    !manifestMcpServers.startsWith("./")
+  ) {
+    return buildFailedRuntimePlan(
+      discoveredPackage.rootPath,
+      generatedAt,
+      execution,
+      {
+        id: typeof manifestMcpServers === "string"
+          ? "plugin.manifest.invalid_path"
+          : "plugin.manifest.invalid_field",
+        severity: "fail",
+        message: "The plugin manifest mcpServers field must be a non-empty package-relative path.",
+        impact: "Runtime planning cannot safely resolve malformed MCP server configuration metadata.",
+        suggestedFix: "Use a non-empty ./ path for mcpServers that remains inside the package.",
+        evidence: { manifestPath: ".codex-plugin/plugin.json", field: "mcpServers" }
+      }
+    );
+  }
+
+  const mcpConfigPath = await resolveContainedPackagePath(
+    discoveredPackage.rootPath,
+    manifestMcpServers
+  );
+
+  if (!mcpConfigPath) {
+    return buildFailedRuntimePlan(
+      discoveredPackage.rootPath,
+      generatedAt,
+      execution,
+      {
+        id: "plugin.security.mcp_config_path",
+        severity: "fail",
+        message: "The MCP server config path resolves outside the package root.",
+        impact: "Runtime planning cannot safely inspect MCP server metadata outside the package.",
+        suggestedFix: "Use an MCP server config path that remains inside the package root.",
+        evidence: { manifestPath: ".codex-plugin/plugin.json", field: "mcpServers" }
+      }
+    );
+  }
+
+  const security = await buildSecurityAudit(rootPath);
+
   let parsedConfig: unknown;
 
   try {
     parsedConfig = await readJsonFile<unknown>(
-      path.resolve(discoveredPackage.rootPath, discoveredPackage.manifest.mcpServers)
+      mcpConfigPath
     );
   } catch {
     parsedConfig = {};
   }
 
-  const serverEntries = isPlainObject(parsedConfig) && isPlainObject(parsedConfig.mcpServers)
-    ? Object.entries(parsedConfig.mcpServers)
-    : [];
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+  const serverEntries = normalizedConfig.ok ? Object.entries(normalizedConfig.servers) : [];
+  const rawServerArgs: Record<string, string[]> = {};
   const servers = serverEntries
     .filter((entry): entry is [string, Record<string, unknown>] => isPlainObject(entry[1]))
     .map(([serverName, serverConfig]) => {
@@ -238,13 +355,16 @@ export async function buildDoctorRuntimePlan(
       const networkClass = url ? remoteNetworkClass(url) : undefined;
       const sanitizedUrl = url ? inspectRemoteMcpUrl(url).sanitizedUrl : null;
 
+      const args = Array.isArray(serverConfig.args)
+        ? serverConfig.args.filter((arg): arg is string => typeof arg === "string")
+        : [];
+      rawServerArgs[serverName] = args;
+
       return {
         name: serverName,
         transport: command ? "stdio" as const : "http" as const,
         command,
-        args: Array.isArray(serverConfig.args)
-          ? serverConfig.args.filter((arg): arg is string => typeof arg === "string")
-          : [],
+        args: redactRuntimeArguments(args),
         cwd: command ? normalizeCwd(discoveredPackage.rootPath, serverConfig.cwd) : null,
         url: sanitizedUrl,
         ...(networkClass ? { networkClass } : {}),
@@ -278,12 +398,12 @@ export async function buildDoctorRuntimePlan(
     kind: "doctor.runtime.plan" as const,
     version: packageVersion,
     targetPath: discoveredPackage.rootPath,
-    status: highRiskServerCount > 0
+    status: !normalizedConfig.ok || highRiskServerCount > 0 || security.status === "fail"
       ? "fail" as const
       : security.status === "warn"
         ? "warn" as const
         : "pass" as const,
-    exitCode: (highRiskServerCount > 0 ? 1 : 0) as 0 | 1,
+    exitCode: (!normalizedConfig.ok || highRiskServerCount > 0 || security.status === "fail" ? 1 : 0) as 0 | 1,
     runtimeExecution: "not_started" as const,
     execution,
     summary: {
@@ -299,7 +419,7 @@ export async function buildDoctorRuntimePlan(
   return {
     ...partialPlan,
     generatedAt,
-    digest: buildRuntimePlanDigest(partialPlan)
+    digest: buildRuntimePlanDigest(partialPlan, rawServerArgs)
   };
 }
 

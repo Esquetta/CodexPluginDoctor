@@ -7,6 +7,7 @@ import {
   type CompatibilityMatrix,
   readMcpConfigPath
 } from "../compatibility/compatibility-matrix.js";
+import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import { readJsonFile } from "../core/read-json-file.js";
 import { probeRuntimeConfig, remoteReliabilityGatePassed } from "../core/runtime-probe.js";
 import type {
@@ -65,10 +66,6 @@ function buildFinding(
   };
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 async function fileExists(targetPath: string): Promise<boolean> {
   try {
     const details = await stat(targetPath);
@@ -84,6 +81,24 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
   return (
     relativePath === "" ||
     (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function isMcpConfigPathOutsideRootError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message === "MCP config path resolves outside the package root." ||
+    error.message === "Manifest MCP config path resolves outside the package root."
+  );
+}
+
+function buildMcpConfigPathOutsideRootFinding(configPath: string): Finding {
+  return buildFinding(
+    "fail",
+    "mcp.config.path_outside_root",
+    "The MCP config path resolves outside the target root.",
+    "A package that reads MCP configuration outside its root is harder to audit and can depend on unreviewed local files.",
+    "Keep `.mcp.json` or the manifest `mcpServers` reference inside the package root.",
+    { configPath, field: "configPath" }
   );
 }
 
@@ -107,57 +122,45 @@ function buildStaticMcpFindings(
     };
   }
 
-  if (!isPlainObject(parsedConfig)) {
-    return {
-      serverCount: 0,
-      findings: [
-        buildFinding(
-          "fail",
-          "mcp.config.invalid_shape",
-          "The MCP config must be a JSON object.",
-          "MCP clients expect object-shaped configuration so server entries can be resolved deterministically.",
-          `Wrap the MCP config in a top-level object inside \`${configPath}\`.`,
-          { configPath, field: "root" }
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+
+  if (!normalizedConfig.ok) {
+    if (normalizedConfig.field === "server" && normalizedConfig.invalidServerNames) {
+      return {
+        serverCount: 0,
+        findings: normalizedConfig.invalidServerNames.map((serverName) =>
+          buildFinding(
+            "fail",
+            "mcp.server.invalid",
+            `The MCP server \`${serverName}\` must be configured as an object.`,
+            "MCP clients cannot interpret a server entry unless it is represented as an object with server options.",
+            `Change the \`${serverName}\` entry in \`${configPath}\` to an object.`,
+            { configPath, serverName, field: "server" }
+          )
         )
-      ]
-    };
-  }
+      };
+    }
 
-  const servers = parsedConfig.mcpServers;
-
-  if (!isPlainObject(servers) || Object.keys(servers).length === 0) {
     return {
       serverCount: 0,
       findings: [
         buildFinding(
           "fail",
           "mcp.config.invalid_shape",
-          "The MCP config must contain a non-empty `mcpServers` object.",
+          "The MCP config must contain a valid MCP server map.",
           "Without server entries, MCP clients cannot discover any package capabilities.",
-          `Define MCP servers under \`mcpServers\` in \`${configPath}\`.`,
-          { configPath, field: "mcpServers" }
+          `Use a direct server map, \`mcp_servers\`, or \`mcpServers\` in \`${configPath}\`.`,
+          { configPath, field: normalizedConfig.field }
         )
       ]
     };
   }
+
+  const servers = normalizedConfig.servers;
 
   const findings: Finding[] = [];
 
   for (const [serverName, serverConfig] of Object.entries(servers)) {
-    if (!isPlainObject(serverConfig)) {
-      findings.push(
-        buildFinding(
-          "fail",
-          "mcp.server.invalid",
-          `The MCP server \`${serverName}\` must be configured as an object.`,
-          "MCP clients cannot interpret a server entry unless it is represented as an object with server options.",
-          `Change the \`${serverName}\` entry in \`${configPath}\` to an object.`,
-          { configPath, serverName, field: "server" }
-        )
-      );
-      continue;
-    }
-
     const command = serverConfig.command;
     const url = serverConfig.url;
 
@@ -217,7 +220,20 @@ export async function buildGenericMcpDoctor(
 ): Promise<GenericMcpDoctorReport> {
   const rootPath = path.resolve(targetPath);
   const compatibility = await buildCompatibilityMatrix(rootPath, environment);
-  const mcpConfigPath = await readMcpConfigPath(rootPath);
+  let mcpConfigPath: string | null;
+  let mcpConfigPathOutsideRoot = false;
+
+  try {
+    mcpConfigPath = await readMcpConfigPath(rootPath);
+  } catch (error) {
+    if (!isMcpConfigPathOutsideRootError(error)) {
+      throw error;
+    }
+
+    mcpConfigPath = null;
+    mcpConfigPathOutsideRoot = true;
+  }
+
   const canonicalRootPath = await realpath(rootPath).catch(() => null);
   const canonicalMcpConfigPath = mcpConfigPath
     ? await realpath(mcpConfigPath).catch(() => null)
@@ -226,7 +242,9 @@ export async function buildGenericMcpDoctor(
   let staticFindings: Finding[] = [];
   let serverCount = 0;
 
-  if (!mcpConfigPath || !(await fileExists(mcpConfigPath))) {
+  if (mcpConfigPathOutsideRoot) {
+    staticFindings = [buildMcpConfigPathOutsideRootFinding(".mcp.json")];
+  } else if (!mcpConfigPath || !(await fileExists(mcpConfigPath))) {
     staticFindings = buildStaticMcpFindings(null, null).findings;
   } else if (
     !canonicalRootPath ||
@@ -234,17 +252,8 @@ export async function buildGenericMcpDoctor(
     !isPathWithinRoot(canonicalRootPath, canonicalMcpConfigPath)
   ) {
     staticFindings = [
-      buildFinding(
-        "fail",
-        "mcp.config.path_outside_root",
-        "The MCP config path resolves outside the target root.",
-        "A package that reads MCP configuration outside its root is harder to audit and can depend on unreviewed local files.",
-        "Keep `.mcp.json` or the manifest `mcpServers` reference inside the package root.",
-        {
-          configPath: path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/"),
-          resolvedPath: canonicalMcpConfigPath ?? mcpConfigPath,
-          field: "configPath"
-        }
+      buildMcpConfigPathOutsideRootFinding(
+        path.relative(rootPath, mcpConfigPath).replaceAll("\\", "/")
       )
     ];
   } else {
@@ -275,9 +284,12 @@ export async function buildGenericMcpDoctor(
 
   const security = buildSecurityAuditFromFindings(
     rootPath,
-    mcpConfigPath && parsedConfig !== null
-      ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
-      : []
+    [
+      ...staticFindings.filter((finding) => finding.id === "mcp.config.path_outside_root"),
+      ...(mcpConfigPath && parsedConfig !== null
+        ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
+        : [])
+    ]
   );
   const runtimeResult =
     options.runtime &&
@@ -309,7 +321,12 @@ export async function buildGenericMcpDoctor(
     exitCode: status === "fail" ? 1 : 0,
     mcpConfigPath,
     serverCount,
-    findings: [...fingerprintedFindings, ...security.findings],
+    findings: [
+      ...fingerprintedFindings,
+      ...security.findings.filter((finding) => !fingerprintedFindings.some(
+        (staticFinding) => staticFinding.fingerprint === finding.fingerprint
+      ))
+    ],
     security,
     compatibility,
     ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {}),

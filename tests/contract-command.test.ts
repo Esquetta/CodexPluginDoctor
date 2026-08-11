@@ -55,6 +55,16 @@ describe("doctor contract command", () => {
           id: "plugin.runtime.initialize.timeout",
           category: "runtime",
           defaultSeverity: "fail"
+        }),
+        expect.objectContaining({
+          id: "plugin.hook.async_unsupported",
+          category: "package",
+          defaultSeverity: "warn"
+        }),
+        expect.objectContaining({
+          id: "plugin.app.invalid_json",
+          category: "package",
+          defaultSeverity: "fail"
         })
       ])
     );

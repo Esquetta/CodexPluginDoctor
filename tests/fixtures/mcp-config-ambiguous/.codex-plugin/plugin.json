@@ -1,0 +1,6 @@
+{
+  "name": "mcp-config-ambiguous",
+  "version": "1.0.0",
+  "description": "Fixture with ambiguous MCP config wrappers.",
+  "mcpServers": "./.mcp.json"
+}

@@ -73,6 +73,123 @@ export const ruleCatalog: RuleDefinition[] = [
     example: '{ "description": "Validates GitHub PR automation workflows before release." }'
   },
   {
+    id: "plugin.manifest.invalid_field",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "A plugin manifest optional field is invalid.",
+    why: "Malformed optional metadata cannot be interpreted reliably by Codex clients.",
+    fix: "Use the official type for the affected field in `.codex-plugin/plugin.json`.",
+    example: '{ "keywords": ["validation", "mcp"] }'
+  },
+  {
+    id: "plugin.manifest.invalid_path",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "A plugin manifest path is not a safe package-relative path.",
+    why: "Paths outside the plugin package can expose files that are not part of the plugin bundle.",
+    fix: "Use a `./` path that remains inside the plugin package.",
+    example: '{ "skills": "./skills" }'
+  },
+  {
+    id: "plugin.app.missing_file",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The plugin manifest points to a missing .app.json file.",
+    why: "Codex cannot load an app manifest that is absent or not a regular file.",
+    fix: "Create the referenced app manifest as a regular JSON file inside the plugin package.",
+    example: '{ "apps": "./apps/example.app.json" }'
+  },
+  {
+    id: "plugin.app.invalid_json",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The referenced .app.json file is not valid JSON.",
+    why: "Codex cannot parse the app manifest.",
+    fix: "Fix the JSON syntax in the referenced app manifest.",
+    example: "Use syntactically valid JSON in the referenced .app.json file."
+  },
+  {
+    id: "plugin.app.invalid_path",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "A plugin app path is not a safe package-relative path.",
+    why: "Paths outside the plugin package can expose files that are not part of the plugin bundle.",
+    fix: "Use an `./` app path that remains inside the plugin package.",
+    example: '{ "apps": "./apps/example.app.json" }'
+  },
+  {
+    id: "plugin.hook.missing_file",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The plugin lifecycle hook source file is missing.",
+    why: "Codex cannot load a hook configuration file that is absent or not a regular file.",
+    fix: "Create the referenced hook configuration JSON file inside the plugin package.",
+    example: '{ "hooks": "./hooks/hooks.json" }'
+  },
+  {
+    id: "plugin.hook.invalid_json",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The plugin lifecycle hook source is not valid JSON.",
+    why: "Codex cannot parse the hook configuration.",
+    fix: "Fix the JSON syntax in the hook configuration file.",
+    example: "Use syntactically valid JSON in the hook configuration file."
+  },
+  {
+    id: "plugin.hook.invalid_shape",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The plugin lifecycle hook configuration has an invalid shape.",
+    why: "Codex cannot safely interpret malformed lifecycle hook metadata.",
+    fix: "Use the official hook configuration schema for the affected field.",
+    example: '{ "hooks": { "PreToolUse": [{ "hooks": [{ "type": "command", "command": "node hooks/check.js" }] }] } }'
+  },
+  {
+    id: "plugin.hook.invalid_path",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "The plugin lifecycle hook source is not a safe package-relative path.",
+    why: "Paths outside the plugin package can expose unreviewed files to hook configuration loading.",
+    fix: "Use a `./` hook configuration path that stays within the plugin package.",
+    example: '{ "hooks": "./hooks/hooks.json" }'
+  },
+  {
+    id: "plugin.hook.unsupported_event",
+    category: "package",
+    defaultSeverity: "fail",
+    summary: "A plugin lifecycle hook event is not supported.",
+    why: "Codex will not invoke hook events outside the official lifecycle event set.",
+    fix: "Use one of the official plugin lifecycle hook events.",
+    example: '{ "hooks": { "SessionStart": [] } }'
+  },
+  {
+    id: "plugin.hook.unsupported_handler",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "A plugin lifecycle hook uses a handler type the host skips.",
+    why: "Prompt and agent lifecycle handlers are not executed by this host.",
+    fix: "Use a command handler for behavior that must run in this host.",
+    example: '{ "type": "command", "command": "node hooks/check.js" }'
+  },
+  {
+    id: "plugin.hook.async_unsupported",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "A plugin lifecycle hook requests unsupported asynchronous execution.",
+    why: "The host does not support asynchronous lifecycle hook execution.",
+    fix: "Remove `async: true` or run the command synchronously.",
+    example: '{ "type": "command", "command": "node hooks/check.js" }'
+  },
+  {
+    id: "plugin.hook.matcher_ignored",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "A plugin lifecycle hook matcher is ignored for this event.",
+    why: "This lifecycle event does not use matcher filtering.",
+    fix: "Remove the matcher from this event group.",
+    example: '{ "hooks": { "Stop": [{ "hooks": [] }] } }'
+  },
+  {
     id: "plugin.heuristic.description.too_long",
     category: "package",
     defaultSeverity: "warn",
@@ -157,10 +274,19 @@ export const ruleCatalog: RuleDefinition[] = [
     id: "plugin.mcp.invalid_shape",
     category: "mcp",
     defaultSeverity: "fail",
-    summary: "The `.mcp.json` file does not expose a valid `mcpServers` object.",
-    why: "Codex expects MCP configuration to be object-shaped with named server entries.",
-    fix: "Define a non-empty top-level `mcpServers` object.",
-    example: '{ "mcpServers": { "doctor": { "command": "node", "args": ["server.js"] } } }'
+    summary: "The `.mcp.json` file does not contain one non-empty supported server map.",
+    why: "Codex accepts exactly a direct server map, an `mcp_servers` wrapper, or the legacy `mcpServers` wrapper.",
+    fix: "Use exactly one non-empty direct server map, `mcp_servers`, or legacy `mcpServers` wrapper.",
+    example: '{ "doctor": { "command": "node", "args": ["server.js"] } }'
+  },
+  {
+    id: "plugin.mcp.ambiguous_shape",
+    category: "mcp",
+    defaultSeverity: "fail",
+    summary: "The `.mcp.json` file uses an ambiguous MCP config layout.",
+    why: "Codex cannot safely choose between multiple wrapper layouts when they appear in one configuration file.",
+    fix: "Use exactly one supported layout: a direct server map, `mcp_servers`, or `mcpServers`.",
+    example: '{ "weather": { "command": "node", "args": ["server.js"] } }'
   },
   {
     id: "plugin.mcp.server.invalid",

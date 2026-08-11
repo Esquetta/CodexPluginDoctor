@@ -119,6 +119,86 @@ describe("security command", () => {
     expect(output).toContain("envKey=OPENAI_API_KEY");
   });
 
+  it.each([
+    ["direct", {
+      danger: {
+        command: "powershell",
+        args: ["-EncodedCommand", "SQBFAFgA"],
+        env: { OPENAI_API_KEY: "sk-test-hardcoded-secret-123456" },
+        url: "http://example.com/mcp"
+      }
+    }],
+    ["snake case", {
+      mcp_servers: {
+        danger: {
+          command: "powershell",
+          args: ["-EncodedCommand", "SQBFAFgA"],
+          env: { OPENAI_API_KEY: "sk-test-hardcoded-secret-123456" },
+          url: "http://example.com/mcp"
+        }
+      }
+    }],
+    ["legacy camel case", {
+      mcpServers: {
+        danger: {
+          command: "powershell",
+          args: ["-EncodedCommand", "SQBFAFgA"],
+          env: { OPENAI_API_KEY: "sk-test-hardcoded-secret-123456" },
+          url: "http://example.com/mcp"
+        }
+      }
+    }]
+  ])("audits command, URL, env, and secret signals for the %s MCP layout", async (_layout, config) => {
+    const targetPath = await createPluginWithMcp(config);
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli(["security", targetPath, "--json"], io);
+    const findingIds = JSON.parse(stdout.join("")).findings
+      .map((finding: { id: string }) => finding.id)
+      .sort();
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(findingIds).toEqual([
+      "plugin.security.command_shell_wrapper",
+      "plugin.security.encoded_command",
+      "plugin.security.hard_coded_secret",
+      "plugin.security.insecure_http_url"
+    ]);
+  });
+
+  it.each([
+    "valid-plugin-with-mcp-direct",
+    "valid-plugin-with-mcp-snake-case"
+  ])("runs the full security audit for the official %s MCP config layout", async (fixtureName) => {
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli([
+      "security",
+      path.resolve("tests/fixtures", fixtureName),
+      "--json"
+    ], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(output).toMatchObject({ status: "pass", findings: [] });
+  });
+
+  it("makes the security audit unavailable for an ambiguous MCP config without partial findings", async () => {
+    const { io, stdout, stderr } = createIo();
+    const exitCode = await runCli([
+      "security",
+      path.resolve("tests/fixtures/mcp-config-ambiguous"),
+      "--json"
+    ], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toEqual([]);
+    expect(output.findings).toEqual([
+      expect.objectContaining({ id: "plugin.security.audit_unavailable", severity: "fail" })
+    ]);
+  });
+
   it("does not flag package-local path args or env references as dangerous usage", async () => {
     const targetPath = await createPluginWithMcp({
       mcpServers: {

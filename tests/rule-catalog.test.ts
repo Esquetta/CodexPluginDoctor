@@ -122,7 +122,48 @@ const remoteReliabilityWarnRules = [
   "plugin.runtime.remote.reliability.resume.inconclusive"
 ] as const;
 
+const officialPluginCompatibilityRules = [
+  { id: "plugin.mcp.ambiguous_shape", category: "mcp", defaultSeverity: "fail" },
+  { id: "plugin.manifest.invalid_field", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.manifest.invalid_path", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.app.missing_file", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.app.invalid_json", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.app.invalid_path", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.missing_file", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.invalid_json", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.invalid_shape", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.invalid_path", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.unsupported_event", category: "package", defaultSeverity: "fail" },
+  { id: "plugin.hook.unsupported_handler", category: "package", defaultSeverity: "warn" },
+  { id: "plugin.hook.async_unsupported", category: "package", defaultSeverity: "warn" },
+  { id: "plugin.hook.matcher_ignored", category: "package", defaultSeverity: "warn" }
+] as const;
+
 describe("MCP 2025-11 conformance rule catalog", () => {
+  it("publishes complete remediation metadata for official plugin compatibility findings", () => {
+    for (const expectedRule of officialPluginCompatibilityRules) {
+      const rule = findRuleDefinition(expectedRule.id);
+
+      expect(rule).toMatchObject(expectedRule);
+      expect(rule?.summary).toBeTruthy();
+      expect(rule?.why).toBeTruthy();
+      expect(rule?.fix).toBeTruthy();
+      expect(rule?.example).toBeTruthy();
+    }
+  });
+
+  it("publishes remediation metadata for ambiguous MCP config layouts", () => {
+    expect(findRuleDefinition("plugin.mcp.ambiguous_shape")).toEqual({
+      id: "plugin.mcp.ambiguous_shape",
+      category: "mcp",
+      defaultSeverity: "fail",
+      summary: "The `.mcp.json` file uses an ambiguous MCP config layout.",
+      why: "Codex cannot safely choose between multiple wrapper layouts when they appear in one configuration file.",
+      fix: "Use exactly one supported layout: a direct server map, `mcp_servers`, or `mcpServers`.",
+      example: '{ "weather": { "command": "node", "args": ["server.js"] } }'
+    });
+  });
+
   it("resolves every evaluator finding with its public remediation contract", () => {
     expect(ruleCatalog.filter((rule) => rule.id.startsWith("mcp.conformance."))).toEqual(
       mcpConformanceRules

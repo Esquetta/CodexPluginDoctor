@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import {
   getClaudeDesktopConfigPath,
   readMcpConfigPath,
@@ -69,12 +70,9 @@ export async function buildClaudeDesktopInstallPreview(
     throw new Error("No MCP config found for install preview.");
   }
 
-  const parsed = JSON.parse(await readFile(mcpConfigPath, "utf8")) as {
-    mcpServers?: unknown;
-  };
-  const servers = parsed.mcpServers;
+  const normalizedConfig = normalizeMcpConfig(JSON.parse(await readFile(mcpConfigPath, "utf8")));
 
-  if (!isRecord(servers) || Object.keys(servers).length === 0) {
+  if (!normalizedConfig.ok) {
     throw new Error("MCP config does not contain a non-empty `mcpServers` object.");
   }
 
@@ -83,7 +81,7 @@ export async function buildClaudeDesktopInstallPreview(
     configPath,
     snippet: {
       mcpServers: Object.fromEntries(
-        Object.entries(servers).map(([serverName, serverConfig]) => [
+        Object.entries(normalizedConfig.servers).map(([serverName, serverConfig]) => [
           serverName,
           normalizeServerConfig(serverConfig, rootPath)
         ])

@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { discoverPackage } from "../core/discover-package.js";
+import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import { readJsonFile } from "../core/read-json-file.js";
 import { inspectRemoteMcpUrl } from "../core/remote-url-policy.js";
 import { validatePlugin } from "../core/validate-plugin.js";
@@ -101,6 +102,157 @@ function containsPipeInstaller(args: unknown): boolean {
     /\b(curl|wget)\b[^|]*\|\s*(sh|bash)\b/.test(joinedArgs) ||
     /\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|]*\|\s*(iex|invoke-expression)\b/.test(joinedArgs) ||
     /\binvoke-expression\b/.test(joinedArgs)
+  );
+}
+
+function relativeSourcePath(rootPath: string, sourcePath: string): string {
+  return relativePackagePath(rootPath, path.resolve(rootPath, sourcePath));
+}
+
+export function auditHookCommand(
+  rootPath: string,
+  sourcePath: string,
+  event: string,
+  field: string,
+  command: string
+): Finding[] {
+  const evidence = { sourcePath: relativeSourcePath(rootPath, sourcePath), event, field };
+  const findings: Finding[] = [];
+
+  if (/(?:^|\s)[/-]enc(?:odedcommand)?(?=\s|$)/i.test(command)) {
+    findings.push(buildFinding(
+      "fail",
+      "plugin.security.encoded_command",
+      "A plugin lifecycle hook uses an encoded shell command flag.",
+      "Encoded command payloads hide the executed script from reviewers and increase supply-chain risk.",
+      "Replace encoded shell payloads with a checked-in script or readable direct command.",
+      evidence
+    ));
+  }
+
+  if (containsHookRemotePipeInstaller(command)) {
+    findings.push(buildFinding(
+      "fail",
+      "plugin.security.remote_pipe_install",
+      "A plugin lifecycle hook appears to pipe remote content into a shell.",
+      "Download-and-execute patterns can run unreviewed remote code when a host invokes the hook.",
+      "Pin dependencies through the package manager or use a reviewed local script instead of piping remote content to a shell.",
+      evidence
+    ));
+  }
+
+  if (/^\s*(?:cmd(?:\.exe)?\s+\/c|(?:powershell|pwsh)(?:\.exe)?\s+-(?:command|c)\b)/i.test(command)) {
+    findings.push(buildFinding(
+      "warn",
+      "plugin.security.command_shell_wrapper",
+      "A plugin lifecycle hook starts through a shell wrapper.",
+      "Shell wrappers expand quoting, pipes, aliases, and platform-specific behavior, which makes the execution path harder to audit.",
+      "Prefer a concrete executable or checked-in script with explicit arguments.",
+      evidence
+    ));
+  }
+
+  return findings;
+}
+
+function containsHookRemotePipeInstaller(command: string): boolean {
+  const firstPipeIndex = command.indexOf("|");
+  if (firstPipeIndex === -1) return false;
+
+  const leftHandSide = command.slice(0, firstPipeIndex);
+  const rightHandSide = command.slice(firstPipeIndex + 1).trim();
+  const interpreter = /^(?:\/(?:[^/\s|]+\/)*(?:sh|bash)\b|(?:sh|bash)\b|(?:powershell|pwsh)(?:\.exe)?\s+-(?:command|c)\s+-\s*(?:$|[;&|])|(?:iex|invoke-expression)\b)/i;
+
+  return isInvokedHookDownloader(leftHandSide) && interpreter.test(rightHandSide);
+}
+
+function isInvokedHookDownloader(command: string): boolean {
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  let index = 0;
+
+  while (index < tokens.length) {
+    const token = tokens[index].toLowerCase();
+
+    if (token === "env") {
+      index += 1;
+
+      while (index < tokens.length) {
+        const envToken = tokens[index];
+
+        if (envToken === "--") {
+          index += 1;
+          break;
+        }
+
+        if (envToken === "-i" || envToken === "--ignore-environment") {
+          index += 1;
+          continue;
+        }
+
+        if (envToken === "-u" || envToken === "--unset") {
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tokens[index + 1] ?? "")) {
+            return false;
+          }
+          index += 2;
+          continue;
+        }
+
+        if (/^--unset=[A-Za-z_][A-Za-z0-9_]*$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
+        if (envToken === "-C" || envToken === "--chdir") {
+          if (!tokens[index + 1] || tokens[index + 1].startsWith("-")) {
+            return false;
+          }
+          index += 2;
+          continue;
+        }
+
+        if (/^--chdir=\S+$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
+        if (/^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(envToken)) {
+          index += 1;
+          continue;
+        }
+
+        break;
+      }
+      continue;
+    }
+
+    if (token === "command") {
+      index += 1;
+
+      if (tokens[index] === "-p" || tokens[index]?.toLowerCase() === "--default-search-path") {
+        index += 1;
+      }
+      if (tokens[index] === "--") {
+        index += 1;
+      }
+      continue;
+    }
+
+    break;
+  }
+
+  const downloader = normalizeCommandName(tokens[index] ?? "");
+
+  if (new Set(["curl", "wget", "iwr", "irm", "invoke-webrequest", "invoke-restmethod"]).has(downloader)) {
+    return true;
+  }
+
+  const shell = normalizeCommandName(tokens[index] ?? "");
+
+  return (
+    (shell === "powershell" || shell === "pwsh") &&
+    /^-(?:command|c)$/i.test(tokens[index + 1] ?? "") &&
+    new Set(["curl", "wget", "iwr", "irm", "invoke-webrequest", "invoke-restmethod"])
+      .has(normalizeCommandName(tokens[index + 2] ?? ""))
   );
 }
 
@@ -300,14 +452,16 @@ export function auditMcpServerConfig(
     ? relativePackagePath(rootPath, options.configPath)
     : ".mcp.json";
 
-  if (!isPlainObject(parsedConfig) || !isPlainObject(parsedConfig.mcpServers)) {
+  const normalizedConfig = normalizeMcpConfig(parsedConfig);
+
+  if (!normalizedConfig.ok) {
     return [
       buildFinding(
         "fail",
         "plugin.security.audit_unavailable",
-        "The MCP security audit could not find a valid `mcpServers` object.",
+        "The MCP security audit could not find a valid MCP server map.",
         "Without server entries, the audit cannot evaluate command execution or remote transport risk.",
-        "Define MCP servers under a top-level `mcpServers` object.",
+        "Use a direct server map, `mcp_servers`, or `mcpServers`.",
         { configPath }
       )
     ];
@@ -315,10 +469,7 @@ export function auditMcpServerConfig(
 
   const findings: Finding[] = [];
 
-  for (const [serverName, serverConfig] of Object.entries(parsedConfig.mcpServers)) {
-    if (!isPlainObject(serverConfig)) {
-      continue;
-    }
+  for (const [serverName, serverConfig] of Object.entries(normalizedConfig.servers)) {
 
     const command = serverConfig.command;
     const args = serverConfig.args;
@@ -688,7 +839,10 @@ function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
 
   return findings.filter((finding) => {
-    const key = `${finding.id}\n${finding.message}`;
+    const hookLocation = finding.evidence?.sourcePath && finding.evidence.event && finding.evidence.field
+      ? `${finding.evidence.sourcePath}\n${finding.evidence.event}\n${finding.evidence.field}`
+      : "";
+    const key = `${finding.id}\n${finding.message}\n${hookLocation}`;
 
     if (seen.has(key)) {
       return false;
