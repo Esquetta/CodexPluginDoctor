@@ -4,7 +4,7 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
-## [1.58.0] - 2026-08-09
+## [1.58.0] - 2026-08-11
 
 ### Added
 
@@ -18,6 +18,10 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Security
 
 - kept app and hook validation local, static, and non-executing while applying hook command security checks with relative, redacted evidence
+- constrained MCP consumer previews to the canonical package root
+- made runtime plans fail closed when security input is invalid or cannot be safely inspected
+- redacted credential-bearing runtime arguments from portable plans while keeping approval digests bound to the exact arguments
+- hardened lifecycle-hook detection for remote content piped into shells
 
 ## [1.57.0] - 2026-08-08
 
