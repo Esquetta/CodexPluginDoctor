@@ -168,9 +168,10 @@ function containsHookRemotePipeInstaller(command: string): boolean {
 
 function isInvokedHookDownloader(command: string): boolean {
   const downloader = "(?:curl|wget)(?:\\.exe)?|iwr|irm|invoke-webrequest|invoke-restmethod";
+  const transparentPrefix = "(?:(?:env(?:\\s+[A-Za-z_][A-Za-z0-9_]*=[^\\s|]+)*|command)\\s+)?";
 
   return new RegExp(
-    `^\\s*(?:${downloader})\\b|^\\s*(?:powershell|pwsh)(?:\\.exe)?\\s+-(?:command|c)\\s+(?:${downloader})\\b`,
+    `^\\s*${transparentPrefix}(?:${downloader})\\b|^\\s*${transparentPrefix}(?:powershell|pwsh)(?:\\.exe)?\\s+-(?:command|c)\\s+(?:${downloader})\\b`,
     "i"
   ).test(command);
 }

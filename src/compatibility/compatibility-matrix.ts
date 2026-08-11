@@ -6,6 +6,7 @@ import type { CheckResult } from "../domain/types.js";
 import { validatePlugin } from "../core/validate-plugin.js";
 import { normalizeMcpConfig } from "../core/mcp-config-normalizer.js";
 import { readJsonFile } from "../core/read-json-file.js";
+import { resolveContainedPackagePath } from "../core/package-path.js";
 
 export type CompatibilityStatus = "pass" | "warn" | "fail" | "skipped";
 
@@ -57,21 +58,18 @@ function statusFromCheckResult(result: CheckResult): CompatibilityStatus {
   return "pass";
 }
 
-function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
-  const relativePath = path.relative(rootPath, candidatePath);
-
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
-  );
-}
-
 export async function readMcpConfigPath(targetPath: string): Promise<string | null> {
   const rootPath = path.resolve(targetPath);
   const directMcpPath = path.join(rootPath, ".mcp.json");
 
   if (await fileExists(directMcpPath)) {
-    return directMcpPath;
+    const containedDirectMcpPath = await resolveContainedPackagePath(rootPath, directMcpPath);
+
+    if (!containedDirectMcpPath) {
+      throw new Error("MCP config path resolves outside the package root.");
+    }
+
+    return containedDirectMcpPath;
   }
 
   const manifestPath = path.join(rootPath, ".codex-plugin", "plugin.json");
@@ -92,9 +90,9 @@ export async function readMcpConfigPath(targetPath: string): Promise<string | nu
     return null;
   }
 
-  const mcpConfigPath = path.resolve(rootPath, manifest.mcpServers);
+  const mcpConfigPath = await resolveContainedPackagePath(rootPath, manifest.mcpServers);
 
-  if (!isPathWithinRoot(rootPath, mcpConfigPath)) {
+  if (!mcpConfigPath) {
     throw new Error("Manifest MCP config path resolves outside the package root.");
   }
 

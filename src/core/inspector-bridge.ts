@@ -3,6 +3,7 @@ import path from "node:path";
 import { readJsonFile } from "./read-json-file.js";
 import { discoverPackage } from "./discover-package.js";
 import { normalizeMcpConfig } from "./mcp-config-normalizer.js";
+import { resolveContainedPackagePath } from "./package-path.js";
 
 export interface DoctorInspectorReport {
   schemaVersion: "1.0.0";
@@ -22,15 +23,6 @@ export interface DoctorInspectorReport {
 
 export interface BuildDoctorInspectorReportOptions {
   serverName?: string | null;
-}
-
-function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
-  const relativePath = path.relative(rootPath, candidatePath);
-
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
-  );
 }
 
 function buildFailure(targetPath: string, message: string, mcpConfigPath: string | null = null): DoctorInspectorReport {
@@ -61,13 +53,16 @@ export async function buildDoctorInspectorReport(
     );
   }
 
-  const mcpConfigPath = path.resolve(discoveredPackage.rootPath, discoveredPackage.manifest.mcpServers);
+  const mcpConfigPath = await resolveContainedPackagePath(
+    discoveredPackage.rootPath,
+    discoveredPackage.manifest.mcpServers
+  );
 
-  if (!isPathWithinRoot(discoveredPackage.rootPath, mcpConfigPath)) {
+  if (!mcpConfigPath) {
     return buildFailure(
       discoveredPackage.rootPath,
       "The target package points the MCP server config outside the package root.",
-      mcpConfigPath
+      null
     );
   }
 

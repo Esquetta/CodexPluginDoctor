@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -64,6 +64,27 @@ describe("doctor inspector command", () => {
       mcpServers: { layoutServer: { command: "node", args: ["server.mjs"] } },
       mcp_servers: { layoutServer: { command: "node", args: ["server.mjs"] } }
     });
+    const { io, stdout } = createIo();
+
+    const exitCode = await runCli(["doctor", "inspector", targetPath, "--json"], io);
+    const output = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(1);
+    expect(output.status).toBe("fail");
+    expect(output.command).toBeNull();
+  });
+
+  it("does not build an Inspector command for a canonical MCP config escape", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-inspector-escape-"));
+    const outsidePath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-inspector-outside-"));
+    await mkdir(path.join(targetPath, ".codex-plugin"));
+    await writeFile(path.join(outsidePath, ".mcp.json"), JSON.stringify({ mcpServers: { outside: { command: "node" } } }), "utf8");
+    await symlink(outsidePath, path.join(targetPath, "linked"), "junction");
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "inspector-escape", version: "1.0.0", description: "Inspector escape fixture.", mcpServers: "./linked/.mcp.json" }),
+      "utf8"
+    );
     const { io, stdout } = createIo();
 
     const exitCode = await runCli(["doctor", "inspector", targetPath, "--json"], io);
