@@ -10,7 +10,7 @@ import {
 describe("extractReleaseSection", () => {
   it("records the latest release and restores the two shipped release sections", async () => {
     const changelog = await readFile("CHANGELOG.md", "utf8");
-    const latestRelease = changelog.indexOf("## [1.58.0] - 2026-08-09");
+    const latestRelease = changelog.indexOf("## [1.58.0] - 2026-08-11");
     const previousRelease = changelog.indexOf("## [1.57.0] - 2026-08-08");
     const olderRelease = changelog.indexOf("## [1.56.0] - 2026-08-02");
 
