@@ -284,9 +284,12 @@ export async function buildGenericMcpDoctor(
 
   const security = buildSecurityAuditFromFindings(
     rootPath,
-    mcpConfigPath && parsedConfig !== null
-      ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
-      : []
+    [
+      ...staticFindings.filter((finding) => finding.id === "mcp.config.path_outside_root"),
+      ...(mcpConfigPath && parsedConfig !== null
+        ? auditMcpServerConfig(rootPath, parsedConfig, { configPath: mcpConfigPath })
+        : [])
+    ]
   );
   const runtimeResult =
     options.runtime &&
@@ -318,7 +321,12 @@ export async function buildGenericMcpDoctor(
     exitCode: status === "fail" ? 1 : 0,
     mcpConfigPath,
     serverCount,
-    findings: [...fingerprintedFindings, ...security.findings],
+    findings: [
+      ...fingerprintedFindings,
+      ...security.findings.filter((finding) => !fingerprintedFindings.some(
+        (staticFinding) => staticFinding.fingerprint === finding.fingerprint
+      ))
+    ],
     security,
     compatibility,
     ...(runtimeResult ? { runtimeScorecard: runtimeResult.scorecard } : {}),
