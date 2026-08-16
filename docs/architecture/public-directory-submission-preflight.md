@@ -132,7 +132,7 @@ The preflight requires `logo` and `composerIcon` assets. Each asset must:
 
 Raster metadata and SVG dimensions are parsed without executing external tools. SVG handling uses safe XML parsing and rejects external entities or remote references needed for validation.
 
-When `.app.json` is referenced, the preflight validates the documented shared-package connection-mapping shape. A structurally valid app manifest is not treated as proof of public-directory eligibility.
+When `.app.json` is referenced, the preflight validates only the publicly documented package boundary: the declaration points to the root `.app.json`, resolves to a contained regular file, and contains parseable JSON. The public documentation does not define the internal registered-connection mapping schema, so the preflight does not invent or enforce one. A valid local app file is not treated as proof of public-directory eligibility.
 
 A `skills-only` target that declares screenshot components receives a submission blocker. A package that declares MCP or app components is classified as `mcp-backed` instead.
 
@@ -232,7 +232,7 @@ Implementation is complete only when tests cover:
 
 - valid and invalid `skills-only` and `mcp-backed` fixtures
 - listing limits, duplicate prompts, and Unicode edge cases
-- `.app.json` shape and duplicate connection identities
+- `.app.json` root path, regular-file, containment, and JSON parsing rules
 - safe YAML shapes and path traversal in `agents/openai.yaml`
 - asset magic bytes, extension mismatch, dimensions, square ratio, and size limit
 - URL requirements
