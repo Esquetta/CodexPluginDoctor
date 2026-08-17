@@ -4,6 +4,23 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.59.0] - 2026-08-17
+
+### Added
+
+- added offline `doctor submission <path>` reports in text, JSON, and Markdown, with advisory defaults and `--require-ready` as the strict automatic blocker gate
+- added automatic public-directory listing and classification, root `.app.json` boundary checks, bounded branding asset validation, and safe skill and `openai.yaml` identity and metadata validation
+- added opt-in GitHub Action submission inputs, artifacts, and step-summary output while preserving existing defaults
+
+### Changed
+
+- kept portal-only review items explicit: automatic passing results still require manual review and do not submit a package or claim directory acceptance
+
+### Security
+
+- bounded raster, SVG, and YAML parsing; canonical containment; no process execution or network access; and redacted evidence with absolute Action paths
+- added `yaml` and `fast-xml-parser` parsing dependencies without package scripts; includes the transitive `nanoid` remediation
+
 ## [1.58.0] - 2026-08-11
 
 ### Added
