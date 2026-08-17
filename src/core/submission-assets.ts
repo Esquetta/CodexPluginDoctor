@@ -9,6 +9,7 @@ import { resolveSafePackagePath } from "./plugin-components.js";
 import type { SubmissionFinding } from "./submission-preflight.js";
 
 const maxAssetBytes = 5 * 1024 * 1024;
+const MAX_DECODED_PNG_BYTES = 72 * 1024 * 1024;
 const minimumDimension = 48;
 const maximumDimension = 4096;
 const assetFields = ["logo", "composerIcon"] as const;
@@ -111,6 +112,7 @@ function readPng(buffer: Uint8Array): Dimensions | null {
     } else if (type === "IEND") {
       if (length !== 0 || dimensions === null || scanlines === null || idatBytes === 0 || dataEnd + 4 !== buffer.length) return null;
       const expectedBytes = scanlines.reduce((total, rowBytes) => total + rowBytes + 1, 0);
+      if (expectedBytes > MAX_DECODED_PNG_BYTES) return null;
       const idat = new Uint8Array(idatBytes);
       let idatOffset = 0;
       for (const part of idatParts) { idat.set(part, idatOffset); idatOffset += part.length; }
@@ -251,18 +253,68 @@ function numberFrom(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function svgDimensions(content: string): Dimensions | null {
-  if (/<!DOCTYPE|<!ENTITY|@\s*import\b/iu.test(content) || /\b(?:xlink:)?href\s*=\s*(["'])\s*(?!#)[^"']+\1/iu.test(content)) {
-    return null;
+function normalizeCssEscapes(source: string): string | null {
+  if (source.length > maxAssetBytes) return null;
+  let normalized = "";
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] !== "\\") {
+      normalized += source[index];
+      continue;
+    }
+    index += 1;
+    if (index >= source.length) return null;
+    if (/[0-9A-Fa-f]/u.test(source[index])) {
+      let digits = "";
+      while (digits.length < 6 && index < source.length && /[0-9A-Fa-f]/u.test(source[index])) {
+        digits += source[index++];
+      }
+      const codePoint = Number.parseInt(digits, 16);
+      if (codePoint === 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+      normalized += String.fromCodePoint(codePoint);
+      if (source[index] === "\r" && source[index + 1] === "\n") index += 1;
+      else if (/[ \t\r\n\f]/u.test(source[index] ?? "")) index += 1;
+      index -= 1;
+      continue;
+    }
+    normalized += source[index];
   }
-  for (const match of content.matchAll(/url\s*\(\s*(?:(["'])(.*?)\1|([^)]*))\s*\)/giu)) {
-    if (!/^#[^\s]*$/u.test((match[2] ?? match[3] ?? "").trim())) return null;
+  return normalized;
+}
+
+function isSafeCss(source: string): boolean {
+  const css = normalizeCssEscapes(source);
+  if (css === null || /@\s*import\b/iu.test(css)) return false;
+  for (const match of css.matchAll(/url\s*\(\s*(?:(["'])(.*?)\1|([^)]*))\s*\)/giu)) {
+    if (!/^#[^\s]*$/u.test((match[2] ?? match[3] ?? "").trim())) return false;
+  }
+  return true;
+}
+
+function inspectSvgValue(value: unknown, context: "css" | "href" | undefined = undefined): boolean {
+  if (typeof value === "string") {
+    if (context === "css") return isSafeCss(value);
+    return context !== "href" || value.trim() === "" || /^#[^\s]*$/u.test(value.trim());
+  }
+  if (Array.isArray(value)) return value.every((item) => inspectSvgValue(item, context));
+  if (!isRecord(value)) return true;
+  return Object.entries(value).every(([key, item]) => {
+    const childContext = context === "css" || key === "style" || key === "@_style"
+      ? "css"
+      : key === "@_href" || key === "@_xlink:href" ? "href" : undefined;
+    return inspectSvgValue(item, childContext);
+  });
+}
+
+function svgDimensions(content: string): Dimensions | null {
+  if (/<!DOCTYPE|<!ENTITY/iu.test(content)) {
+    return null;
   }
   if (XMLValidator.validate(content) !== true) return null;
   try {
     const parsed = new XMLParser({ ignoreAttributes: false, processEntities: false }).parse(content);
     if (!isRecord(parsed) || !isRecord(parsed.svg)) return null;
     const root = parsed.svg;
+    if (!inspectSvgValue(root)) return null;
     const viewBox = root["@_viewBox"];
     if (typeof viewBox === "string") {
       const parts = viewBox.trim().split(/[\s,]+/u).map(numberFrom);
@@ -352,6 +404,7 @@ async function validateAsset(rootPath: string, field: typeof assetFields[number]
 export async function validateSubmissionAssets(discoveredPackage: DiscoveredPackage): Promise<SubmissionAssetResult> {
   const listing = discoveredPackage.manifest.interface;
   const interfaceValues = isRecord(listing) ? listing : {};
-  const result = await Promise.all(assetFields.map((field) => validateAsset(discoveredPackage.rootPath, field, interfaceValues[field])));
-  return { findings: result.flat() };
+  const findings: SubmissionFinding[] = [];
+  for (const field of assetFields) findings.push(...await validateAsset(discoveredPackage.rootPath, field, interfaceValues[field]));
+  return { findings };
 }

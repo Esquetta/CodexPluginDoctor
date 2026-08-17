@@ -54,6 +54,18 @@ const pngWithIdat = (idat: Uint8Array) => {
   return image;
 };
 
+const pngWithHeader = (width: number, height: number, bitDepth: number, colorType: number, idat: Uint8Array) => {
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, width); view.setUint32(4, height);
+  header.set([bitDepth, colorType, 0, 0, 0], 8);
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())];
+  const image = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { image.set(part, offset); offset += part.length; }
+  return image;
+};
+
 const jpegSof = (width: number, height: number) => {
   const data = new Uint8Array(21);
   data.set([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8]);
@@ -150,6 +162,12 @@ describe("submission assets", () => {
       .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
   });
 
+  it("rejects a PNG whose declared decoded raster exceeds 72 MiB before inflation", async () => {
+    const compressedByte = new Uint8Array(deflateSync(new Uint8Array([0])));
+    expect(await findingIds({ logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": pngWithHeader(4096, 4096, 16, 6, compressedByte) }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
+  });
+
   it("rejects an unpadded odd-length VP8L payload", async () => {
     expect(await findingIds({ logo: "./logo.webp", composerIcon: "./logo.webp" }, { "logo.webp": webp("VP8L", 48, 48).slice(0, -1) }))
       .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
@@ -237,8 +255,31 @@ describe("submission assets", () => {
       .toEqual(["plugin.submission.asset.unsafe_svg", "plugin.submission.asset.unsafe_svg"]);
   });
 
+  it("rejects XML-character-reference and CSS-escaped remote imports", async () => {
+    const content = '<svg width="48" height="48"><style>@&#x69;mport u\\72l(https://example.test/theme.css);</style></svg>';
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": content }))
+      .toEqual(["plugin.submission.asset.unsafe_svg", "plugin.submission.asset.unsafe_svg"]);
+  });
+
+  it("consumes CRLF after CSS hexadecimal escapes", async () => {
+    const content = '<svg width="48" height="48"><style>@\\69\r\nmport url(https://example.test/theme.css);</style></svg>';
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": content }))
+      .toEqual(["plugin.submission.asset.unsafe_svg", "plugin.submission.asset.unsafe_svg"]);
+  });
+
+  it("rejects XML-character-reference href values after parsing", async () => {
+    const content = '<svg width="48" height="48"><image href="&#x68;ttps://example.test/remote.svg"/></svg>';
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": content }))
+      .toEqual(["plugin.submission.asset.unsafe_svg", "plugin.submission.asset.unsafe_svg"]);
+  });
+
   it("allows fragment-only SVG CSS URLs", async () => {
     expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": '<svg width="48" height="48"><style>fill:url(#gradient)</style></svg>' }))
+      .toEqual([]);
+  });
+
+  it("allows inline SVG CSS without a remote reference", async () => {
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": '<svg width="48" height="48" style="fill: #112233"/>' }))
       .toEqual([]);
   });
 
