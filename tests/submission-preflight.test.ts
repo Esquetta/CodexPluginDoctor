@@ -16,23 +16,35 @@ const validManifest = {
     longDescription: "A local submission checker.\nIt remains offline.",
     developerName: "Example Developer",
     category: "Developer Tools",
+    logo: "./assets/logo.png",
+    composerIcon: "./assets/composer-icon.png",
     capabilities: ["Checks public listing metadata"],
     defaultPrompt: "Check my plugin submission"
   }
 };
 
-async function writePackage(manifest: unknown, files: Record<string, string> = {}): Promise<string> {
+const validPng = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+  0, 0, 0, 48, 0, 0, 0, 48
+]);
+
+const validAssetFiles: Record<string, Uint8Array> = {
+  "assets/logo.png": validPng,
+  "assets/composer-icon.png": validPng
+};
+
+async function writePackage(manifest: unknown, files: Record<string, string | Uint8Array> = {}): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-"));
   const manifestDirectory = path.join(directory, ".codex-plugin");
 
   await mkdir(manifestDirectory, { recursive: true });
   await writeFile(path.join(manifestDirectory, "plugin.json"), JSON.stringify(manifest), "utf8");
 
-  for (const [relativePath, content] of Object.entries(files)) {
+  for (const [relativePath, content] of Object.entries({ ...validAssetFiles, ...files })) {
     const filePath = path.join(directory, relativePath);
 
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, "utf8");
+    await writeFile(filePath, content);
   }
 
   return directory;
