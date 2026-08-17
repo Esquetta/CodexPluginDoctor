@@ -47,7 +47,8 @@ async function writeSubmissionPackage(blocked = false): Promise<string> {
           ...validManifest.interface,
           websiteURL: "https://user:url-credential-sentinel@example.com"
         },
-        mcpServers: "./.mcp.json"
+        mcpServers: "./.mcp.json",
+        apps: "./.app.json"
       }
     : validManifest;
 
@@ -57,6 +58,9 @@ async function writeSubmissionPackage(blocked = false): Promise<string> {
   await writeFile(path.join(target, ".codex-plugin", "plugin.json"), JSON.stringify(manifest), "utf8");
   await writeFile(path.join(target, "assets", "logo.svg"), validSvg, "utf8");
   await writeFile(path.join(target, "assets", "composer-icon.svg"), validSvg, "utf8");
+  if (blocked) {
+    await writeFile(path.join(target, ".app.json"), '{"name":"app-json-sentinel"}', "utf8");
+  }
   await writeFile(
     path.join(target, "skills", "check", "SKILL.md"),
     "---\nname: check\ndescription: skill-description-sentinel\n---\n\nSkill body tool-value-sentinel\n",
@@ -71,6 +75,7 @@ function expectRedacted(output: string, target: string): void {
   expect(output).not.toContain("submission-description-sentinel");
   expect(output).not.toContain("submission-prompt-sentinel");
   expect(output).not.toContain("url-credential-sentinel");
+  expect(output).not.toContain("app-json-sentinel");
   expect(output).not.toContain("skill-description-sentinel");
   expect(output).not.toContain("tool-value-sentinel");
 }
