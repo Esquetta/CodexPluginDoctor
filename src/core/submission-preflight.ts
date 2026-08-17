@@ -213,6 +213,7 @@ async function validateApp(rootPath: string, declaration: unknown): Promise<Subm
     return [];
   }
   const invalid = () => [finding("plugin.submission.component.app", "fail", "App declaration must reference a contained parseable root file.", { path: ".app.json" })];
+  const invalidPath = () => [finding("plugin.submission.app.invalid_path", "fail", "App declaration resolves outside the package.", { path: ".app.json" })];
   if (declaration !== "./.app.json") {
     return invalid();
   }
@@ -223,7 +224,10 @@ async function validateApp(rootPath: string, declaration: unknown): Promise<Subm
       realpath(candidatePath),
       stat(candidatePath)
     ]);
-    if (!isWithin(canonicalRoot, canonicalCandidate) || !details.isFile() || details.size > 5 * 1024 * 1024) {
+    if (!isWithin(canonicalRoot, canonicalCandidate)) {
+      return invalidPath();
+    }
+    if (!details.isFile() || details.size > 5 * 1024 * 1024) {
       return invalid();
     }
     JSON.parse(await readFile(candidatePath, "utf8"));
@@ -269,6 +273,9 @@ function invalidPackageReport(): SubmissionPreflightReport {
 }
 
 export async function buildSubmissionPreflight(targetPath: string): Promise<SubmissionPreflightReport> {
+  if (typeof targetPath !== "string") {
+    return invalidPackageReport();
+  }
   const discovered = await discoverPackage(targetPath);
   if (!discovered || !isRecord(discovered.manifest)) {
     return invalidPackageReport();

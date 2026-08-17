@@ -151,6 +151,18 @@ describe("submission preflight", () => {
     }
   });
 
+  it("fails closed for a non-string public target input", async () => {
+    const report = await buildSubmissionPreflight(null as unknown as string);
+
+    expect(report).toMatchObject({
+      targetType: "skills-only",
+      status: "fail",
+      readiness: "blocked"
+    });
+    expect(findingIds(report)).toEqual(["plugin.submission.package.invalid"]);
+    expect(JSON.stringify(report)).not.toContain("null");
+  });
+
   it.each([
     ["package name", { ...validManifest, name: "a".repeat(64) }, false],
     ["package name one over", { ...validManifest, name: "a".repeat(65) }, true],
@@ -295,23 +307,30 @@ describe("submission preflight", () => {
     expect(report.status).toBe("pass");
   });
 
-  it("rejects an app file whose canonical path escapes the package", async () => {
-    const target = await writePackage({ ...validMcpManifest(), apps: "./.app.json" });
-    const external = path.join(os.tmpdir(), `submission-app-escape-${Date.now()}.json`);
+  if (process.platform !== "win32") {
+    it("rejects a file symlink whose canonical app path escapes the package", async () => {
+      const target = await writePackage({ ...validMcpManifest(), apps: "./.app.json" });
+      const external = path.join(os.tmpdir(), `submission-app-escape-${Date.now()}.json`);
 
-    await writeFile(external, "{}", "utf8");
-    try {
+      await writeFile(external, "{}", "utf8");
       await symlink(external, path.join(target, ".app.json"), "file");
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code === "EPERM") {
-        return;
-      }
-      throw error;
-    }
+
+      const report = await buildSubmissionPreflight(target);
+
+      expect(findingIds(report)).toContain("plugin.submission.app.invalid_path");
+      expect(JSON.stringify(report)).not.toContain(external);
+    });
+  }
+
+  it("rejects a junction whose canonical app path escapes the package before file classification", async () => {
+    const target = await writePackage({ ...validMcpManifest(), apps: "./.app.json" });
+    const external = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-app-escape-"));
+
+    await symlink(external, path.join(target, ".app.json"), "junction");
 
     const report = await buildSubmissionPreflight(target);
 
-    expect(findingIds(report)).toContain("plugin.submission.component.app");
+    expect(findingIds(report)).toContain("plugin.submission.app.invalid_path");
     expect(JSON.stringify(report)).not.toContain(external);
   });
 
