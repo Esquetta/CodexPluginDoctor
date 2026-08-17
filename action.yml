@@ -456,7 +456,7 @@ runs:
 
         const enabled = (name) => process.env[name] === "true";
         const displayTargetPath = (value) => {
-          if (path.isAbsolute(value) || path.win32.isAbsolute(value)) return "[absolute-path-redacted]";
+          if (/^file:/iu.test(value) || path.isAbsolute(value) || path.win32.isAbsolute(value)) return "[absolute-path-redacted]";
           return value === "" ? "" : path.posix.normalize(value.replace(/\\/gu, "/"));
         };
         const report = (key, enabledEnv, pathEnv) => ({

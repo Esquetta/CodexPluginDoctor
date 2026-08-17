@@ -45,6 +45,21 @@ describe("GitHub Action metadata", () => {
     expect((relative.target as { path: string }).path).toBe("plugins/relative-target");
   });
 
+  it("redacts file URI target paths from the Action manifest", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    for (const [targetPath, sentinel] of [
+      ["file:///uri-sentinel", "uri-sentinel"],
+      ["file://server-sentinel/share", "server-sentinel"],
+      ["FiLe:///case-sentinel", "case-sentinel"]
+    ]) {
+      const manifest = await renderActionManifest(actionMetadata, targetPath);
+
+      expect(JSON.stringify(manifest)).not.toContain(sentinel);
+      expect((manifest.target as { path: string }).path).toBe("[absolute-path-redacted]");
+    }
+  });
+
   it("exposes a composite action that installs and runs codex-plugin-doctor", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
 
