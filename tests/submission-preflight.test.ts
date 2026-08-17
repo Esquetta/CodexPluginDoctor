@@ -60,15 +60,22 @@ const validAssetFiles: Record<string, Uint8Array> = {
   "assets/logo.png": validPng,
   "assets/composer-icon.png": validPng
 };
+const validSkillFiles: Record<string, string> = {
+  "skills/check/SKILL.md": "---\nname: check\ndescription: Check a plugin submission\n---\n\nCheck the plugin submission.\n"
+};
 
-async function writePackage(manifest: unknown, files: Record<string, string | Uint8Array> = {}): Promise<string> {
+async function writePackage(
+  manifest: unknown,
+  files: Record<string, string | Uint8Array> = {},
+  includeSkill = true
+): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-"));
   const manifestDirectory = path.join(directory, ".codex-plugin");
 
   await mkdir(manifestDirectory, { recursive: true });
   await writeFile(path.join(manifestDirectory, "plugin.json"), JSON.stringify(manifest), "utf8");
 
-  for (const [relativePath, content] of Object.entries({ ...validAssetFiles, ...files })) {
+  for (const [relativePath, content] of Object.entries({ ...validAssetFiles, ...(includeSkill ? validSkillFiles : {}), ...files })) {
     const filePath = path.join(directory, relativePath);
 
     await mkdir(path.dirname(filePath), { recursive: true });
@@ -174,6 +181,22 @@ describe("submission preflight", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("integrates bounded skill metadata into the skills check without requiring skills for MCP-only packages", async () => {
+    const missingSkill = await buildSubmissionPreflight(await writePackage(validManifest, {}, false));
+    const mcpOnly = await buildSubmissionPreflight(await writePackage({
+      ...validMcpManifest(),
+      skills: undefined
+    }, {}, false));
+
+    expect(missingSkill.checks.find((item) => item.id === "skills")).toMatchObject({
+      status: "fail",
+      findingIds: expect.arrayContaining(["plugin.submission.skill.invalid_path"])
+    });
+    expect(missingSkill).toMatchObject({ status: "fail", readiness: "blocked" });
+    expect(mcpOnly.checks.find((item) => item.id === "skills")).toEqual({ id: "skills", status: "pass", findingIds: [] });
+    expect(mcpOnly).toMatchObject({ status: "pass", readiness: "manual_review_required" });
+  });
+
   it("blocks missing and malformed manifests without exposing the package path", async () => {
     const missing = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-missing-"));
     const malformed = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-malformed-"));
@@ -204,7 +227,7 @@ describe("submission preflight", () => {
   });
 
   it.each([
-    ["package name", { ...validManifest, name: "a".repeat(64) }, false],
+    ["package name", { ...validMcpManifest({ skills: undefined }), name: "a".repeat(64) }, false],
     ["package name one over", { ...validManifest, name: "a".repeat(65) }, true],
     ["version", { ...validManifest, version: "1.2.3+" + "a".repeat(58) }, false],
     ["version one over", { ...validManifest, version: "1.2.3+" + "a".repeat(59) }, true],

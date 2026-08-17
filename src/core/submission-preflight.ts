@@ -4,6 +4,7 @@ import path from "node:path";
 import { discoverPackage } from "./discover-package.js";
 import { validateSubmissionAssets } from "./submission-assets.js";
 import { submissionManualChecks, submissionRuleset } from "./submission-ruleset.js";
+import { validateSubmissionSkillMetadata } from "./submission-skill-metadata.js";
 
 export interface SubmissionFinding {
   id: `plugin.submission.${string}`;
@@ -289,16 +290,17 @@ export async function buildSubmissionPreflight(targetPath: string): Promise<Subm
   const listingFindings = validateListing(manifest, targetType);
   const componentFindings = await validateApp(discovered.rootPath, manifest.apps);
   const assetFindings = (await validateSubmissionAssets(discovered)).findings;
+  const skillFindings = (await validateSubmissionSkillMetadata(discovered, targetType)).findings;
   const interfaceValue = manifest.interface;
   if (targetType === "skills-only" && isRecord(interfaceValue) && interfaceValue.screenshots !== undefined) {
     componentFindings.push(finding("plugin.submission.component.excluded", "fail", "Screenshots are excluded for skills-only submissions.", { field: "screenshots" }));
   }
-  const findings = [...listingFindings, ...componentFindings, ...assetFindings];
+  const findings = [...listingFindings, ...componentFindings, ...assetFindings, ...skillFindings];
   const checks = [
     check("listing", listingFindings),
     check("components", componentFindings),
     check("assets", assetFindings),
-    check("skills", [])
+    check("skills", skillFindings)
   ];
   const blockers = findings.filter((item) => item.severity === "fail").length;
   const manualChecklist = checklist(targetType);
