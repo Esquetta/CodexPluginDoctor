@@ -126,6 +126,36 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("registryReport: report(");
   });
 
+  it("supports opt-in offline submission preflight reports with strict readiness gating", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toMatch(/submission:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toMatch(/require-submission-ready:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toContain("submission-json-path:");
+    expect(actionMetadata).toContain("submission-summary-path:");
+    expect(actionMetadata).toContain('SUBMISSION_INPUT: ${{ inputs.submission }}');
+    expect(actionMetadata).toContain('REQUIRE_SUBMISSION_READY_INPUT: ${{ inputs[\'require-submission-ready\'] }}');
+    expect(actionMetadata).toContain('submission_json_path="$report_dir/codex-plugin-doctor-submission.json"');
+    expect(actionMetadata).toContain('submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"');
+    expect(actionMetadata).toContain('if [[ "$REQUIRE_SUBMISSION_READY_INPUT" == "true" && "$SUBMISSION_INPUT" != "true" ]]; then');
+    expect(actionMetadata).toContain('echo "require-submission-ready requires submission." >&2');
+    expect(actionMetadata).toContain("record_status 2");
+    expect(actionMetadata).toContain('submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain("submission_args+=(--require-ready)");
+    expect(actionMetadata).toContain('run_doctor "submission preflight" "${submission_args[@]}"');
+    expect(actionMetadata).toContain('run_doctor "submission summary" doctor submission "${{ inputs.path }}" --markdown --output "$submission_summary_path"');
+    expect(actionMetadata).toContain('submissionJson: report("submissionJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH")');
+    expect(actionMetadata).toContain('submissionSummary: report("submissionSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH")');
+    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_path"');
+    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_path"');
+    expect(actionMetadata).toContain('cat "$submission_summary_path" >> "$GITHUB_STEP_SUMMARY"');
+    expect(actionMetadata).toContain('run_doctor "check" "${args[@]}" "${history_args[@]}" --no-animations');
+    expect(actionMetadata).not.toContain("SUBMISSION_RUNTIME_INPUT");
+    expect(actionMetadata).not.toContain("SUBMISSION_ALLOW_NETWORK_INPUT");
+    expect(actionMetadata).not.toContain("submission_args+=(--runtime");
+    expect(actionMetadata).not.toContain("submission_args+=(--allow-network");
+  });
+
   it("documents loopback-only consent without permitting private or reserved ranges", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
     const actionUsage = await readFile("docs/guides/github-action.md", "utf8");

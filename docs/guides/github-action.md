@@ -37,6 +37,23 @@ Use local Registry metadata gating when the repository contains a `server.json` 
 
 The Action writes `mcp-registry-readiness.json` and exposes `registry-report-path`. This path is checked locally; the Action does not inspect the live Registry and does not grant network access. `require-registry-readiness` requires `registry-metadata` and blocks warnings as well as failures.
 
+## Public Directory Submission Preflight
+
+Use the submission preflight only when a workflow needs its separate offline report:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v1.59.0
+  with:
+    version: "1.59.0"
+    path: .
+    submission: "true"
+    require-submission-ready: "true"
+```
+
+`submission` writes `codex-plugin-doctor-submission.json` and `codex-plugin-doctor-submission.md` under `output-dir`, uploads them with the existing artifact directory, appends the Markdown report after the primary summary, and exposes `submission-json-path` and `submission-summary-path` outputs. It does not require runtime or network access, forwards neither runtime nor network consent, and does not start MCP servers or use portal, domain-verification, or OAuth credentials.
+
+The report's automatic status is separate from manual review: a passing automatic result is still `manual_review_required`, not portal approval. The Action never submits a package or claims acceptance. `require-submission-ready` makes automatic blockers fail the Action status; it requires `submission: "true"`, otherwise the Action records usage status `2` without running a submission command.
+
 ## Recommended Workflow
 
 ```yaml
@@ -126,6 +143,8 @@ The action also exposes these workflow outputs for follow-up steps:
 - `output-contract-path`
 - `action-manifest-path`
 - `registry-report-path`
+- `submission-json-path`
+- `submission-summary-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 
