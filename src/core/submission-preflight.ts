@@ -282,7 +282,7 @@ export async function buildSubmissionPreflight(targetPath: string): Promise<Subm
   const componentFindings = await validateApp(discovered.rootPath, manifest.apps);
   const interfaceValue = manifest.interface;
   if (targetType === "skills-only" && isRecord(interfaceValue) && interfaceValue.screenshots !== undefined) {
-    componentFindings.push(finding("plugin.submission.component.excluded", "warn", "Screenshots are excluded for skills-only submissions.", { field: "screenshots" }));
+    componentFindings.push(finding("plugin.submission.component.excluded", "fail", "Screenshots are excluded for skills-only submissions.", { field: "screenshots" }));
   }
   const findings = [...listingFindings, ...componentFindings];
   const checks = [

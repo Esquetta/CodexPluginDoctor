@@ -258,7 +258,7 @@ describe("submission preflight", () => {
     expect(report.manualChecklist.filter((item) => item.state === "required")).toHaveLength(9);
   });
 
-  it("warns for unknown interface fields without retaining values and excludes skills-only screenshots", async () => {
+  it("warns for unknown interface fields without retaining values and blocks skills-only screenshots", async () => {
     const sentinel = "unknown-value-sentinel";
     const report = await buildSubmissionPreflight(await writePackage({
       ...validManifest,
@@ -269,8 +269,11 @@ describe("submission preflight", () => {
       "plugin.submission.interface.unknown_field",
       "plugin.submission.component.excluded"
     ]));
-    expect(report.status).toBe("pass");
-    expect(report.summary).toMatchObject({ warnings: 2, blockers: 0, passed: 2 });
+    expect(report.status).toBe("fail");
+    expect(report.readiness).toBe("blocked");
+    expect(report.summary).toMatchObject({ warnings: 1, blockers: 1, passed: 2 });
+    expect(report.findings.find((finding) => finding.id === "plugin.submission.component.excluded"))
+      .toMatchObject({ severity: "fail" });
     expect(JSON.stringify(report)).not.toContain(sentinel);
   });
 
