@@ -146,14 +146,40 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('run_doctor "submission summary" doctor submission "${{ inputs.path }}" --markdown --output "$submission_summary_path"');
     expect(actionMetadata).toContain('submissionJson: report("submissionJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH")');
     expect(actionMetadata).toContain('submissionSummary: report("submissionSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH")');
-    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_path"');
-    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_path"');
+    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_output"');
+    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_output"');
     expect(actionMetadata).toContain('cat "$submission_summary_path" >> "$GITHUB_STEP_SUMMARY"');
     expect(actionMetadata).toContain('run_doctor "check" "${args[@]}" "${history_args[@]}" --no-animations');
     expect(actionMetadata).not.toContain("SUBMISSION_RUNTIME_INPUT");
     expect(actionMetadata).not.toContain("SUBMISSION_ALLOW_NETWORK_INPUT");
     expect(actionMetadata).not.toContain("submission_args+=(--runtime");
     expect(actionMetadata).not.toContain("submission_args+=(--allow-network");
+  });
+
+  it("rejects installed-cache submission preflight requests without producing submission reports", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${{ inputs.installed }}" == "true" ]]; then');
+    expect(actionMetadata).toContain('echo "Submission preflight requires a single package path, not installed-cache mode." >&2');
+    expect(actionMetadata).toContain('record_status 2');
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" ]]; then\n          submission_ran=true\n          submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain('submission_json_output=""');
+    expect(actionMetadata).toContain('submission_summary_output=""');
+    expect(actionMetadata).toContain('submission_json_output="$submission_json_path"');
+    expect(actionMetadata).toContain('submission_summary_output="$submission_summary_path"');
+  });
+
+  it("leaves optional submission paths empty unless submission reports actually ran", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toContain('submission_ran=false');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION="$submission_ran"');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH="$submission_json_output"');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH="$submission_summary_output"');
+    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_output"');
+    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_output"');
+    expect(actionMetadata).toContain('submission_ran="$(cat "$submission_state_file")"');
+    expect(actionMetadata).toContain('if [[ -n "${GITHUB_STEP_SUMMARY:-}" && "$submission_ran" == "true" && -f "$submission_summary_path" ]]; then');
   });
 
   it("documents loopback-only consent without permitting private or reserved ranges", async () => {
