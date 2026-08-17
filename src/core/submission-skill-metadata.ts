@@ -13,10 +13,10 @@ type Metadata = Record<string, unknown>;
 const maxSkillBytes = 1024 * 1024;
 const maxAgentBytes = 256 * 1024;
 const unsupportedText = /[\u0000-\u001F\u007F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/u;
-const interfaceKeys = new Set(["display_name", "short_description"]);
+const interfaceKeys = new Set(["display_name", "short_description", "icon_small", "icon_large", "brand_color", "default_prompt"]);
 const policyKeys = new Set(["products", "allow_implicit_invocation"]);
 const dependencyKeys = new Set(["tools"]);
-const agentKeys = new Set(["interface", "icon_small", "icon_large", "brand_color", "default_prompt", "policy", "dependencies"]);
+const agentKeys = new Set(["interface", "policy", "dependencies"]);
 
 export interface SubmissionSkillMetadataResult {
   findings: SubmissionFinding[];
@@ -137,17 +137,17 @@ async function validateAgentFile(
     || !supportedText(metadata.interface.display_name) || !supportedText(metadata.interface.short_description)) {
     return [finding("plugin.submission.skill.agent.invalid_shape", "Optional agent metadata has an unsupported shape.", { path: packagePath(rootPath, agentPath) })];
   }
-  if (metadata.brand_color !== undefined && (typeof metadata.brand_color !== "string" || !/^#[0-9A-Fa-f]{6}$/u.test(metadata.brand_color))) {
+  if (metadata.interface.brand_color !== undefined && (typeof metadata.interface.brand_color !== "string" || !/^#[0-9A-Fa-f]{6}$/u.test(metadata.interface.brand_color))) {
     return [finding("plugin.submission.skill.agent.invalid_shape", "Optional agent metadata has an invalid brand color.", { path: packagePath(rootPath, agentPath), field: "brand_color" })];
   }
-  if (metadata.default_prompt !== undefined && !supportedText(metadata.default_prompt)) {
+  if (metadata.interface.default_prompt !== undefined && !supportedText(metadata.interface.default_prompt)) {
     return [finding("plugin.submission.skill.agent.invalid_shape", "Optional agent metadata has an invalid default prompt.", { path: packagePath(rootPath, agentPath), field: "default_prompt" })];
   }
   if (metadata.policy !== undefined && (!isRecord(metadata.policy) || rejectUnknownKeys(metadata.policy, policyKeys)
-    || !Array.isArray(metadata.policy.products) || metadata.policy.products.length === 0
-    || new Set(metadata.policy.products).size !== metadata.policy.products.length
-    || metadata.policy.products.some((product) => product !== "CHAT" && product !== "CODEX")
-    || typeof metadata.policy.allow_implicit_invocation !== "boolean")) {
+    || (metadata.policy.products !== undefined && (!Array.isArray(metadata.policy.products) || metadata.policy.products.length === 0
+      || new Set(metadata.policy.products).size !== metadata.policy.products.length
+      || metadata.policy.products.some((product) => product !== "CHAT" && product !== "CODEX")))
+    || (metadata.policy.allow_implicit_invocation !== undefined && typeof metadata.policy.allow_implicit_invocation !== "boolean"))) {
     return [finding("plugin.submission.skill.agent.invalid_shape", "Optional agent policy has an unsupported shape.", { path: packagePath(rootPath, agentPath), field: "policy" })];
   }
   if (metadata.dependencies !== undefined && (!isRecord(metadata.dependencies) || rejectUnknownKeys(metadata.dependencies, dependencyKeys)
@@ -158,7 +158,7 @@ async function validateAgentFile(
   }
 
   for (const field of ["icon_small", "icon_large"] as const) {
-    const value = metadata[field];
+    const value = metadata.interface[field];
     if (value === undefined) continue;
     if (typeof value !== "string" || !value.startsWith("./")) {
       return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field })];
@@ -213,6 +213,20 @@ export async function validateSubmissionSkillMetadata(
       if (!isWithin(safe.canonicalSkills, canonicalSkill)) throw new Error("unsafe skill root");
     } catch {
       findings.push(finding("plugin.submission.skill.invalid_path", "Skill directory resolves outside the declared skills directory.", { path: packagePath(rootPath, skillRoot) }));
+      continue;
+    }
+    try {
+      const details = await lstat(skillFile);
+      if (details.isSymbolicLink()) {
+        findings.push(finding("plugin.submission.skill.invalid_path", "Skill entrypoint must not be a symbolic link.", { path: relativeSkillPath }));
+        continue;
+      }
+      if (!details.isFile() || !isWithin(canonicalSkill, await realpath(skillFile))) {
+        findings.push(finding("plugin.submission.skill.invalid_file", "Skill entrypoint must be a contained regular file.", { path: relativeSkillPath }));
+        continue;
+      }
+    } catch {
+      findings.push(finding("plugin.submission.skill.invalid_file", "Skill entrypoint must be a contained regular file.", { path: relativeSkillPath }));
       continue;
     }
     const source = await readSafeUtf8(skillFile, maxSkillBytes);

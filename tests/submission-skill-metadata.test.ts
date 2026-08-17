@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -77,10 +77,20 @@ describe("submission skill metadata", () => {
     ]));
   });
 
-  it("accepts complete safe agent metadata", async () => {
+  it("rejects agent fields at the top level", async () => {
     const result = await validateSubmissionSkillMetadata(await packageWith("./skills/", {
       "skills/check/SKILL.md": skill(),
       "skills/check/agents/openai.yaml": `${agent}icon_small: ./icon.png\nicon_large: ./icon.png\nbrand_color: \"#123ABC\"\ndefault_prompt: Check this plugin\npolicy:\n  products: [CHAT, CODEX]\n  allow_implicit_invocation: true\ndependencies:\n  tools: [read_file]\n`,
+      "skills/check/icon.png": "not-inspected-as-image"
+    }), "skills-only");
+
+    expect(ids(result)).toContain("plugin.submission.skill.agent.invalid_shape");
+  });
+
+  it("accepts complete safe agent metadata inside interface", async () => {
+    const result = await validateSubmissionSkillMetadata(await packageWith("./skills/", {
+      "skills/check/SKILL.md": skill(),
+      "skills/check/agents/openai.yaml": `interface:\n  display_name: Check\n  short_description: Check plugin metadata\n  icon_small: ./icon.png\n  icon_large: ./icon.png\n  brand_color: \"#123ABC\"\n  default_prompt: Check this plugin\npolicy:\n  products: [CHAT, CODEX]\n  allow_implicit_invocation: true\ndependencies:\n  tools: [read_file]\n`,
       "skills/check/icon.png": "not-inspected-as-image"
     }), "skills-only");
 
@@ -151,6 +161,19 @@ describe("submission skill metadata", () => {
     expect(ids(result)).toContain(expected);
   });
 
+  it.each([
+    "policy: { products: [CHAT] }\n",
+    "policy: { allow_implicit_invocation: false }\n",
+    "policy: {}\n"
+  ])("accepts partial policy metadata %j", async (policy) => {
+    const result = await validateSubmissionSkillMetadata(await packageWith("./skills", {
+      "skills/check/SKILL.md": skill(),
+      "skills/check/agents/openai.yaml": `${agent}${policy}`
+    }), "skills-only");
+
+    expect(result).toEqual({ findings: [], skillCount: 1 });
+  });
+
   it("rejects oversized and invalid UTF-8 agent metadata", async () => {
     const invalidUtf8 = await validateSubmissionSkillMetadata(await packageWith("./skills", {
       "skills/check/SKILL.md": skill(),
@@ -169,7 +192,7 @@ describe("submission skill metadata", () => {
     const sentinel = "agent-secret-sentinel";
     const result = await validateSubmissionSkillMetadata(await packageWith("./skills", {
       "skills/check/SKILL.md": skill(),
-      "skills/check/agents/openai.yaml": `${agent}icon_small: ../${sentinel}.png\n`
+      "skills/check/agents/openai.yaml": `interface:\n  display_name: Check\n  short_description: Check plugin metadata\n  icon_small: ../${sentinel}.png\n`
     }), "skills-only");
 
     expect(ids(result)).toContain("plugin.submission.skill.agent.invalid_path");
@@ -188,6 +211,50 @@ describe("submission skill metadata", () => {
     expect(ids(result)).toContain("plugin.submission.skill.invalid_path");
     expect(JSON.stringify(result)).not.toContain(external);
   });
+
+  if (process.platform !== "win32") {
+    it("rejects a SKILL.md symlink that escapes its skill without reading external content", async () => {
+      const sentinel = "external-skill-secret";
+      const discovered = await packageWith("./skills", { "skills/check/SKILL.md": skill() });
+      const external = path.join(os.tmpdir(), `codex-plugin-doctor-external-${Date.now()}.md`);
+      const skillFile = path.join(discovered.rootPath, "skills", "check", "SKILL.md");
+      await writeFile(external, `---\nname: check\ndescription: ${sentinel}\n---\nbody\n`, "utf8");
+      await unlink(skillFile);
+      await symlink(external, skillFile, "file");
+
+      const result = await validateSubmissionSkillMetadata(discovered, "skills-only");
+
+      expect(ids(result)).toEqual(expect.arrayContaining([
+        "plugin.submission.skill.invalid_path",
+        "plugin.submission.skill.required"
+      ]));
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+      expect(JSON.stringify(result)).not.toContain(external);
+    });
+  }
+
+  if (process.platform === "win32") {
+    it("rejects a SKILL.md junction without following its reparse target", async () => {
+      const sentinel = "external-junction-secret";
+      const discovered = await packageWith("./skills", { "skills/check/SKILL.md": skill() });
+      const external = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-external-skill-junction-"));
+      const skillFile = path.join(discovered.rootPath, "skills", "check", "SKILL.md");
+      await writeFile(path.join(external, "secret.md"), sentinel, "utf8");
+      await unlink(skillFile);
+      await symlink(external, skillFile, "junction");
+
+      const result = await validateSubmissionSkillMetadata(discovered, "skills-only");
+
+      expect(ids(result)).toEqual(expect.arrayContaining([
+        "plugin.submission.skill.required"
+      ]));
+      expect(ids(result)).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^plugin\.submission\.skill\.invalid_(path|file)$/u)
+      ]));
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+      expect(JSON.stringify(result)).not.toContain(external);
+    });
+  }
 
   it("does not fetch, spawn processes, or expose untrusted skill content", async () => {
     const sentinel = "skill-secret-sentinel";
