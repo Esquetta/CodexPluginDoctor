@@ -1,8 +1,50 @@
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 
+const execFileAsync = promisify(execFile);
+
+async function renderActionManifest(actionMetadata: string, targetPath: string): Promise<Record<string, unknown>> {
+  const start = actionMetadata.indexOf('        const fs = require("node:fs");');
+  const end = actionMetadata.indexOf("\n        NODE", start);
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-action-manifest-"));
+  const manifestPath = path.join(manifestDirectory, "manifest.json");
+  const script = actionMetadata.slice(start, end).replace(/^        /gmu, "");
+
+  try {
+    await execFileAsync(process.execPath, ["-e", script], {
+      env: {
+        ...process.env,
+        CODEX_PLUGIN_DOCTOR_ACTION_MANIFEST_PATH: manifestPath,
+        CODEX_PLUGIN_DOCTOR_ACTION_PATH: targetPath
+      }
+    });
+    return JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+  } finally {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  }
+}
+
 describe("GitHub Action metadata", () => {
+  it("redacts absolute POSIX, drive, and UNC target paths from the Action manifest", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    for (const targetPath of ["/absolute-posix-sentinel", "C:\\\\absolute-drive-sentinel", "\\\\server-sentinel\\share"]) {
+      const manifest = await renderActionManifest(actionMetadata, targetPath);
+      const target = manifest.target as { path: string };
+
+      expect(JSON.stringify(manifest)).not.toContain(targetPath);
+      expect(target.path).toBe("[absolute-path-redacted]");
+    }
+
+    const relative = await renderActionManifest(actionMetadata, "plugins\\\\relative-target");
+    expect((relative.target as { path: string }).path).toBe("plugins/relative-target");
+  });
+
   it("exposes a composite action that installs and runs codex-plugin-doctor", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
 

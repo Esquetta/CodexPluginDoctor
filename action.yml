@@ -452,8 +452,13 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
         const fs = require("node:fs");
+        const path = require("node:path");
 
         const enabled = (name) => process.env[name] === "true";
+        const displayTargetPath = (value) => {
+          if (path.isAbsolute(value) || path.win32.isAbsolute(value)) return "[absolute-path-redacted]";
+          return value === "" ? "" : path.posix.normalize(value.replace(/\\/gu, "/"));
+        };
         const report = (key, enabledEnv, pathEnv) => ({
           enabled: enabled(enabledEnv),
           path: process.env[pathEnv] || ""
@@ -467,7 +472,7 @@ runs:
           reportDirectory: process.env.CODEX_PLUGIN_DOCTOR_ACTION_REPORT_DIR || "",
           artifactName: process.env.CODEX_PLUGIN_DOCTOR_ACTION_ARTIFACT_NAME || "",
           target: {
-            path: process.env.CODEX_PLUGIN_DOCTOR_ACTION_PATH || "",
+            path: displayTargetPath(process.env.CODEX_PLUGIN_DOCTOR_ACTION_PATH || ""),
             installed: enabled("CODEX_PLUGIN_DOCTOR_ACTION_INSTALLED"),
             runtime: enabled("CODEX_PLUGIN_DOCTOR_ACTION_RUNTIME")
           },
