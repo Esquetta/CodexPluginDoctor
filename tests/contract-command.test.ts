@@ -75,6 +75,11 @@ describe("doctor contract command", () => {
           command: "codex-plugin-doctor check <path> --json"
         }),
         expect.objectContaining({
+          id: "doctor.submission.json",
+          command: "codex-plugin-doctor doctor submission <path> --json",
+          outputKind: null
+        }),
+        expect.objectContaining({
           id: "doctor.installed.check.json",
           command: "codex-plugin-doctor check --installed --json"
         }),
@@ -226,6 +231,9 @@ describe("doctor contract command", () => {
     const checkSchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.check.json"
     );
+    const submissionSchema = output.schemas.find(
+      (surface: { id: string }) => surface.id === "doctor.submission.json"
+    );
     const mcpSchema = output.schemas.find(
       (surface: { id: string }) => surface.id === "doctor.mcp.json"
     );
@@ -248,6 +256,26 @@ describe("doctor contract command", () => {
       "summary",
       "findings"
     ]);
+    expect(submissionSchema.schema.required).toEqual([
+      "schemaVersion",
+      "rulesetVersion",
+      "targetType",
+      "status",
+      "readiness",
+      "summary",
+      "checks",
+      "findings",
+      "manualChecklist"
+    ]);
+    expect(submissionSchema.schema.properties).toMatchObject({
+      targetType: { enum: ["skills-only", "mcp-backed"] },
+      status: { enum: ["pass", "fail"] },
+      readiness: { enum: ["blocked", "manual_review_required"] },
+      summary: { type: "object" },
+      checks: { type: "array" },
+      findings: { type: "array" },
+      manualChecklist: { type: "array" }
+    });
     expect(mcpSchema.schema.required).toEqual([
       "schemaVersion",
       "kind",

@@ -247,6 +247,82 @@ const publicSchemaDefinitions: Array<{
     }
   },
   {
+    id: "doctor.submission.json",
+    command: "codex-plugin-doctor doctor submission <path> --json",
+    required: [
+      "schemaVersion",
+      "rulesetVersion",
+      "targetType",
+      "status",
+      "readiness",
+      "summary",
+      "checks",
+      "findings",
+      "manualChecklist"
+    ],
+    properties: {
+      rulesetVersion: { const: "openai-directory-2026-08-15" },
+      targetType: { type: "string", enum: ["skills-only", "mcp-backed"] },
+      status: { type: "string", enum: ["pass", "fail"] },
+      readiness: { type: "string", enum: ["blocked", "manual_review_required"] },
+      summary: {
+        type: "object",
+        required: ["passed", "warnings", "blockers", "manualChecks"],
+        properties: {
+          passed: { type: "integer", minimum: 0 },
+          warnings: { type: "integer", minimum: 0 },
+          blockers: { type: "integer", minimum: 0 },
+          manualChecks: { type: "integer", minimum: 0 }
+        },
+        additionalProperties: false
+      },
+      checks: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "status", "findingIds"],
+          properties: {
+            id: { type: "string", enum: ["listing", "components", "assets", "skills"] },
+            status: { type: "string", enum: ["pass", "warn", "fail"] },
+            findingIds: { type: "array", items: { type: "string" } }
+          },
+          additionalProperties: false
+        }
+      },
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "severity", "message"],
+          properties: {
+            id: { type: "string", pattern: "^plugin\\.submission\\." },
+            severity: { type: "string", enum: ["warn", "fail"] },
+            message: { type: "string" },
+            portalCode: { type: "string" },
+            evidence: {
+              type: "object",
+              additionalProperties: { type: ["string", "number", "boolean", "null"] }
+            }
+          },
+          additionalProperties: false
+        }
+      },
+      manualChecklist: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "label", "state"],
+          properties: {
+            id: { type: "string" },
+            label: { type: "string" },
+            state: { type: "string", enum: ["required", "not_applicable"] }
+          },
+          additionalProperties: false
+        }
+      }
+    }
+  },
+  {
     id: "doctor.installed.check.json",
     command: "codex-plugin-doctor check --installed --json",
     outputKind: "doctor.installed.check",

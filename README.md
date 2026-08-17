@@ -134,6 +134,19 @@ version is an immutable collision and must be replaced by a version bump. The
 command is advisory: it never authenticates, publishes, or changes npm or
 Registry records. See [MCP Registry Publication Preflight](./docs/architecture/mcp-registry-publication-preflight.md).
 
+### Public Directory Submission Preflight
+
+Check a plugin package for deterministic public-directory submission issues without contacting a portal:
+
+```bash
+codex-plugin-doctor doctor submission <path>
+codex-plugin-doctor doctor submission <path> --json
+codex-plugin-doctor doctor submission <path> --markdown
+codex-plugin-doctor doctor submission <path> --require-ready
+```
+
+The preflight is offline and non-executing: it does not submit a package, make network requests, start MCP servers, verify domains, or handle OAuth credentials. Its automatic `status` is `pass` or `fail`; a passing automatic result remains `manual_review_required` until portal-only review is complete. It never claims directory acceptance. See [Public Directory Submission Preflight](./docs/architecture/public-directory-submission-preflight.md).
+
 Output formats:
 
 - human text output
@@ -480,9 +493,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.58.0
+      - uses: Esquetta/CodexPluginDoctor@v1.59.0
         with:
-          version: "1.58.0"
+          version: "1.59.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -494,7 +507,7 @@ jobs:
           review-bundle-verify: "true"
 ```
 
-The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, `codex-plugin-doctor-action-manifest.json`, optional `codex-plugin-doctor.sarif`, optional validation corpus and quality metrics reports, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus quality regression gates, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/guides/github-action.md).
+The action writes `codex-plugin-doctor-summary.md`, `codex-plugin-doctor-report.json`, `codex-plugin-doctor-action-manifest.json`, optional `codex-plugin-doctor.sarif`, optional validation corpus and quality metrics reports, optional `output-contract.json`, and optional signed `review-bundle/` files to `codex-plugin-doctor-reports`, appends the Markdown report to the GitHub Actions step summary, uploads the report directory as an artifact, and then returns the real validation exit code. Set `submission: "true"` to add offline submission preflight reports; set `require-submission-ready: "true"` only with that opt-in to make automatic blockers fail the job. Review bundle generation requires a signing key environment variable such as `CODEX_PLUGIN_DOCTOR_SIGNING_KEY`. For runtime probing, SARIF output, corpus quality regression gates, corpus and contract artifacts, review bundle artifacts, installed plugin cache checks, CI policy presets, and pinned release examples, see [GitHub Action Usage](./docs/guides/github-action.md).
 
 To self-test this repository after cloning it:
 

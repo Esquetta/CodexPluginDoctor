@@ -10,16 +10,32 @@ import {
 describe("extractReleaseSection", () => {
   it("records the latest release and restores the two shipped release sections", async () => {
     const changelog = await readFile("CHANGELOG.md", "utf8");
-    const latestRelease = changelog.indexOf("## [1.58.0] - 2026-08-11");
-    const previousRelease = changelog.indexOf("## [1.57.0] - 2026-08-08");
-    const olderRelease = changelog.indexOf("## [1.56.0] - 2026-08-02");
+    const latestRelease = changelog.indexOf("## [1.59.0] - 2026-08-17");
+    const previousRelease = changelog.indexOf("## [1.58.0] - 2026-08-11");
+    const olderRelease = changelog.indexOf("## [1.57.0] - 2026-08-08");
 
     expect(latestRelease).toBeGreaterThanOrEqual(0);
     expect(previousRelease).toBeGreaterThan(latestRelease);
     expect(olderRelease).toBeGreaterThan(previousRelease);
+    expect(extractReleaseSection(changelog, "1.59.0")).toContain(
+      "offline `doctor submission <path>`"
+    );
     expect(extractReleaseSection(changelog, "1.58.0")).toContain("current official MCP layouts");
     expect(extractReleaseSection(changelog, "1.57.0")).toContain("npm pack dry-run");
-    expect(extractReleaseSection(changelog, "1.56.0")).toContain("doctor size <path>");
+  });
+
+  it("keeps current README and Action examples pinned to the latest release", async () => {
+    const [readme, actionGuide] = await Promise.all([
+      readFile("README.md", "utf8"),
+      readFile("docs/guides/github-action.md", "utf8")
+    ]);
+
+    expect(readme).toContain("Esquetta/CodexPluginDoctor@v1.59.0");
+    expect(readme).toContain('version: "1.59.0"');
+    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.59.0");
+    expect(actionGuide).toContain('version: "1.59.0"');
+    expect(actionGuide).not.toContain("Esquetta/CodexPluginDoctor@v1.58.0");
+    expect(actionGuide).not.toContain('version: "1.58.0"');
   });
 
   it("extracts the matching version section from the changelog", () => {

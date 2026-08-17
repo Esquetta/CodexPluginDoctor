@@ -203,4 +203,44 @@ describe("public repository readiness", () => {
     expect(releaseGating).toContain("--require-registry-readiness");
     expect(security).toContain("Registry publication proves namespace control");
   });
+
+  it("documents offline public directory submission preflight without implying portal approval", async () => {
+    const readme = await readText("README.md");
+    const docsReadme = await readText("docs/README.md");
+    const architecture = await readText("docs/architecture/public-directory-submission-preflight.md");
+    const actionGuide = await readText("docs/guides/github-action.md");
+    const catalog = await readText("docs/rules/catalog.md");
+
+    expect(readme).toContain("codex-plugin-doctor doctor submission <path>");
+    expect(readme).toContain("--json");
+    expect(readme).toContain("--markdown");
+    expect(readme).toContain("--require-ready");
+    expect(readme).toContain("manual_review_required");
+    expect(docsReadme).toContain("Public Directory Submission Preflight");
+    expect(architecture).toContain("no network requests");
+    expect(architecture).toContain("does not submit a package");
+    expect(architecture).toContain("manual_review_required");
+    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.59.0");
+    expect(actionGuide).toContain('submission: "true"');
+    expect(actionGuide).toContain('require-submission-ready: "true"');
+    expect(actionGuide).toContain("submission-json-path");
+    expect(actionGuide).toContain("submission-summary-path");
+    expect(actionGuide).toContain("does not require runtime or network access");
+    expect(actionGuide).toContain("requires `submission: \"true\"`");
+    expect(actionGuide).not.toMatch(/internal (implementation )?plan/i);
+    expect(actionGuide).not.toMatch(/portal acceptance|automatic manual pass/i);
+
+    for (const [id, severity] of [
+      ["plugin.submission.package.invalid", "fail"],
+      ["plugin.submission.interface.unknown_field", "warn"],
+      ["plugin.submission.asset.extension_mismatch", "fail"],
+      ["plugin.submission.package.too_large", "fail"],
+      ["plugin.submission.skill.agent.invalid_yaml", "fail"],
+      ["plugin.submission.skill.required", "fail"],
+      ["plugin.submission.skill.too_many", "fail"],
+      ["plugin.submission.skill.budget_exceeded", "fail"]
+    ]) {
+      expect(catalog).toContain(`| \`${id}\` | ${severity} |`);
+    }
+  });
 });

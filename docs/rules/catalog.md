@@ -42,6 +42,52 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.heuristic.skill_description.too_long` | warn | Skill description is likely too verbose. |
 | `plugin.skill.asset_reference.missing` | warn | Skill references a missing local support asset such as `scripts/...`, `templates/...`, `assets/...`, or `examples/...`. |
 
+## Public Directory Submission Preflight Rules
+
+| Rule ID | Severity | Meaning |
+| --- | --- | --- |
+| `plugin.submission.package.invalid` | fail | Plugin manifest is missing or invalid for submission preflight. |
+| `plugin.submission.package.too_large` | fail | Plugin manifest exceeds the submission preflight size limit. |
+| `plugin.submission.package.name` | fail | Plugin package name is invalid for the listing. |
+| `plugin.submission.package.version` | fail | Plugin version is not valid semantic versioning. |
+| `plugin.submission.interface.required` | fail | Listing interface metadata is required. |
+| `plugin.submission.interface.display_name` | fail | Listing display name is missing or invalid. |
+| `plugin.submission.interface.short_description` | fail | Listing short description is missing or invalid. |
+| `plugin.submission.interface.long_description` | fail | Listing long description is missing or invalid. |
+| `plugin.submission.interface.developer_name` | fail | Listing developer name is missing or invalid. |
+| `plugin.submission.interface.category` | fail | Listing category is missing or unsupported. |
+| `plugin.submission.interface.capabilities` | fail | Listing capabilities are not a valid bounded list. |
+| `plugin.submission.interface.capability` | fail | A listing capability is invalid. |
+| `plugin.submission.interface.default_prompt` | fail | Listing starter prompts are invalid or duplicated. |
+| `plugin.submission.interface.url` | fail | A required listing URL is invalid. |
+| `plugin.submission.interface.unknown_field` | warn | Listing metadata includes an unsupported field. |
+| `plugin.submission.component.app` | fail | App declaration must reference a contained parseable root file. |
+| `plugin.submission.component.excluded` | fail | A component is not allowed for this submission target type. |
+| `plugin.submission.app.invalid_path` | fail | App declaration resolves outside the package. |
+| `plugin.submission.asset.required` | fail | A required branding asset is missing. |
+| `plugin.submission.asset.invalid_path` | fail | Branding asset path is invalid. |
+| `plugin.submission.asset.missing` | fail | Branding asset cannot be found or read. |
+| `plugin.submission.asset.unsupported_format` | fail | Branding asset format or file type is unsupported. |
+| `plugin.submission.asset.too_large` | fail | Branding asset exceeds the size limit. |
+| `plugin.submission.asset.unsafe_svg` | fail | SVG branding asset is unsafe or invalid. |
+| `plugin.submission.asset.decode_failed` | fail | Branding asset cannot be decoded safely. |
+| `plugin.submission.asset.extension_mismatch` | fail | Branding asset extension does not match its content. |
+| `plugin.submission.asset.dimensions` | fail | Branding asset dimensions are outside the allowed range. |
+| `plugin.submission.asset.not_square` | fail | Branding asset must be square. |
+| `plugin.submission.skill.required` | fail | Skills-only submission requires a valid skill. |
+| `plugin.submission.skill.invalid_manifest` | fail | Skills declaration must use the root skills directory. |
+| `plugin.submission.skill.invalid_path` | fail | Skill path is not safely contained in the package. |
+| `plugin.submission.skill.invalid_file` | fail | Skill entrypoint is not a valid contained file. |
+| `plugin.submission.skill.invalid_yaml` | fail | Skill frontmatter YAML is invalid or unsafe. |
+| `plugin.submission.skill.invalid_shape` | fail | Skill frontmatter has an unsupported shape. |
+| `plugin.submission.skill.identity` | fail | Skill identity metadata is invalid or duplicated. |
+| `plugin.submission.skill.too_many` | fail | Skills directory exceeds the bounded submission preflight entry or skill limit. |
+| `plugin.submission.skill.budget_exceeded` | fail | Skill metadata exceeds the aggregate submission preflight size limit. |
+| `plugin.submission.skill.agent.invalid_path` | fail | Optional agent metadata path is invalid. |
+| `plugin.submission.skill.agent.invalid_file` | fail | Optional agent metadata is not a valid contained file. |
+| `plugin.submission.skill.agent.invalid_yaml` | fail | Optional agent metadata YAML is invalid or unsafe. |
+| `plugin.submission.skill.agent.invalid_shape` | fail | Optional agent metadata has an unsupported shape. |
+
 ## MCP Rules
 
 | Rule ID | Severity | Meaning |

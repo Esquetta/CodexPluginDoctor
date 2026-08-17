@@ -1,8 +1,65 @@
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 
+const execFileAsync = promisify(execFile);
+
+async function renderActionManifest(actionMetadata: string, targetPath: string): Promise<Record<string, unknown>> {
+  const start = actionMetadata.indexOf('        const fs = require("node:fs");');
+  const end = actionMetadata.indexOf("\n        NODE", start);
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-action-manifest-"));
+  const manifestPath = path.join(manifestDirectory, "manifest.json");
+  const script = actionMetadata.slice(start, end).replace(/^        /gmu, "");
+
+  try {
+    await execFileAsync(process.execPath, ["-e", script], {
+      env: {
+        ...process.env,
+        CODEX_PLUGIN_DOCTOR_ACTION_MANIFEST_PATH: manifestPath,
+        CODEX_PLUGIN_DOCTOR_ACTION_PATH: targetPath
+      }
+    });
+    return JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+  } finally {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  }
+}
+
 describe("GitHub Action metadata", () => {
+  it("redacts absolute POSIX, drive, and UNC target paths from the Action manifest", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    for (const targetPath of ["/absolute-posix-sentinel", "C:\\\\absolute-drive-sentinel", "\\\\server-sentinel\\share"]) {
+      const manifest = await renderActionManifest(actionMetadata, targetPath);
+      const target = manifest.target as { path: string };
+
+      expect(JSON.stringify(manifest)).not.toContain(targetPath);
+      expect(target.path).toBe("[absolute-path-redacted]");
+    }
+
+    const relative = await renderActionManifest(actionMetadata, "plugins\\\\relative-target");
+    expect((relative.target as { path: string }).path).toBe("plugins/relative-target");
+  });
+
+  it("redacts file URI target paths from the Action manifest", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    for (const [targetPath, sentinel] of [
+      ["file:///uri-sentinel", "uri-sentinel"],
+      ["file://server-sentinel/share", "server-sentinel"],
+      ["FiLe:///case-sentinel", "case-sentinel"]
+    ]) {
+      const manifest = await renderActionManifest(actionMetadata, targetPath);
+
+      expect(JSON.stringify(manifest)).not.toContain(sentinel);
+      expect((manifest.target as { path: string }).path).toBe("[absolute-path-redacted]");
+    }
+  });
+
   it("exposes a composite action that installs and runs codex-plugin-doctor", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
 
@@ -124,6 +181,62 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('registry_args+=(--require-registry-readiness)');
     expect(actionMetadata).toContain('echo "registry-report-path=$registry_report_path"');
     expect(actionMetadata).toContain("registryReport: report(");
+  });
+
+  it("supports opt-in offline submission preflight reports with strict readiness gating", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toMatch(/submission:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toMatch(/require-submission-ready:[\s\S]*?default: "false"/);
+    expect(actionMetadata).toContain("submission-json-path:");
+    expect(actionMetadata).toContain("submission-summary-path:");
+    expect(actionMetadata).toContain('SUBMISSION_INPUT: ${{ inputs.submission }}');
+    expect(actionMetadata).toContain('REQUIRE_SUBMISSION_READY_INPUT: ${{ inputs[\'require-submission-ready\'] }}');
+    expect(actionMetadata).toContain('submission_json_path="$report_dir/codex-plugin-doctor-submission.json"');
+    expect(actionMetadata).toContain('submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"');
+    expect(actionMetadata).toContain('if [[ "$REQUIRE_SUBMISSION_READY_INPUT" == "true" && "$SUBMISSION_INPUT" != "true" ]]; then');
+    expect(actionMetadata).toContain('echo "require-submission-ready requires submission." >&2');
+    expect(actionMetadata).toContain("record_status 2");
+    expect(actionMetadata).toContain('submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain("submission_args+=(--require-ready)");
+    expect(actionMetadata).toContain('run_doctor "submission preflight" "${submission_args[@]}"');
+    expect(actionMetadata).toContain('run_doctor "submission summary" doctor submission "${{ inputs.path }}" --markdown --output "$submission_summary_path"');
+    expect(actionMetadata).toContain('submissionJson: report("submissionJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH")');
+    expect(actionMetadata).toContain('submissionSummary: report("submissionSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH")');
+    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_output"');
+    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_output"');
+    expect(actionMetadata).toContain('cat "$submission_summary_path" >> "$GITHUB_STEP_SUMMARY"');
+    expect(actionMetadata).toContain('run_doctor "check" "${args[@]}" "${history_args[@]}" --no-animations');
+    expect(actionMetadata).not.toContain("SUBMISSION_RUNTIME_INPUT");
+    expect(actionMetadata).not.toContain("SUBMISSION_ALLOW_NETWORK_INPUT");
+    expect(actionMetadata).not.toContain("submission_args+=(--runtime");
+    expect(actionMetadata).not.toContain("submission_args+=(--allow-network");
+  });
+
+  it("rejects installed-cache submission preflight requests without producing submission reports", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${{ inputs.installed }}" == "true" ]]; then');
+    expect(actionMetadata).toContain('echo "Submission preflight requires a single package path, not installed-cache mode." >&2');
+    expect(actionMetadata).toContain('record_status 2');
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" ]]; then\n          submission_ran=true\n          submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain('submission_json_output=""');
+    expect(actionMetadata).toContain('submission_summary_output=""');
+    expect(actionMetadata).toContain('submission_json_output="$submission_json_path"');
+    expect(actionMetadata).toContain('submission_summary_output="$submission_summary_path"');
+  });
+
+  it("leaves optional submission paths empty unless submission reports actually ran", async () => {
+    const actionMetadata = await readFile("action.yml", "utf8");
+
+    expect(actionMetadata).toContain('submission_ran=false');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION="$submission_ran"');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH="$submission_json_output"');
+    expect(actionMetadata).toContain('export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH="$submission_summary_output"');
+    expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_output"');
+    expect(actionMetadata).toContain('echo "submission-summary-path=$submission_summary_output"');
+    expect(actionMetadata).toContain('submission_ran="$(cat "$submission_state_file")"');
+    expect(actionMetadata).toContain('if [[ -n "${GITHUB_STEP_SUMMARY:-}" && "$submission_ran" == "true" && -f "$submission_summary_path" ]]; then');
   });
 
   it("documents loopback-only consent without permitting private or reserved ranges", async () => {
