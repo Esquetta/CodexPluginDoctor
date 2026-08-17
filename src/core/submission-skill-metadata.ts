@@ -16,6 +16,7 @@ const unsupportedText = /[\u0000-\u001F\u007F\u2028\u2029\u200B-\u200F\u202A-\u2
 const interfaceKeys = new Set(["display_name", "short_description", "icon_small", "icon_large", "brand_color", "default_prompt"]);
 const policyKeys = new Set(["products", "allow_implicit_invocation"]);
 const dependencyKeys = new Set(["tools"]);
+const toolDescriptorKeys = new Set(["type", "value", "description", "transport", "url"]);
 const agentKeys = new Set(["interface", "policy", "dependencies"]);
 
 export interface SubmissionSkillMetadataResult {
@@ -96,26 +97,68 @@ function rejectUnknownKeys(value: Metadata, allowed: Set<string>): boolean {
   return Object.keys(value).some((key) => !allowed.has(key));
 }
 
+function isToolDescriptor(value: unknown): value is Metadata {
+  return isRecord(value) && !rejectUnknownKeys(value, toolDescriptorKeys)
+    && (value.type === "mcp" || value.type === "cli")
+    && supportedText(value.value)
+    && (value.description === undefined || supportedText(value.description))
+    && (value.transport === undefined || supportedText(value.transport))
+    && (value.url === undefined || supportedText(value.url));
+}
+
+async function validateIconPath(
+  rootPath: string,
+  canonicalRoot: string,
+  skillRoot: string,
+  skillPath: string,
+  field: "icon_small" | "icon_large",
+  value: unknown
+): Promise<SubmissionFinding | null> {
+  if (typeof value !== "string" || value.trim() !== value || !supportedText(value)
+    || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/u.test(value)) {
+    return finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field });
+  }
+  const iconPath = path.resolve(skillRoot, value);
+  if (!isWithin(rootPath, iconPath)) {
+    return finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field });
+  }
+  try {
+    const [canonicalIcon, details] = await Promise.all([realpath(iconPath), stat(iconPath)]);
+    if (!details.isFile() || !isWithin(canonicalRoot, canonicalIcon)) throw new Error("unsafe icon");
+    return null;
+  } catch {
+    return finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field });
+  }
+}
+
 async function validateAgentFile(
   rootPath: string,
   skillRoot: string,
   skillPath: string
 ): Promise<SubmissionFinding[]> {
   const agentPath = path.join(skillRoot, "agents", "openai.yaml");
+  let agentDetails;
   try {
-    await lstat(agentPath);
+    agentDetails = await lstat(agentPath);
   } catch {
     return [];
   }
+  if (agentDetails.isSymbolicLink()) {
+    return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent metadata must not be a symbolic link.", { path: skillPath })];
+  }
+  if (!agentDetails.isFile()) {
+    return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a regular file.", { path: packagePath(rootPath, agentPath) })];
+  }
 
+  let canonicalRoot: string;
   let canonicalSkill: string;
   let canonicalAgent: string;
   try {
-    [canonicalSkill, canonicalAgent] = await Promise.all([realpath(skillRoot), realpath(agentPath)]);
+    [canonicalRoot, canonicalSkill, canonicalAgent] = await Promise.all([realpath(rootPath), realpath(skillRoot), realpath(agentPath)]);
   } catch {
     return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a readable regular file.", { path: packagePath(rootPath, agentPath) })];
   }
-  if (!isWithin(canonicalSkill, canonicalAgent)) {
+  if (!isWithin(canonicalRoot, canonicalAgent) || !isWithin(canonicalSkill, canonicalAgent)) {
     return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent metadata resolves outside its skill.", { path: skillPath })];
   }
 
@@ -152,24 +195,15 @@ async function validateAgentFile(
   }
   if (metadata.dependencies !== undefined && (!isRecord(metadata.dependencies) || rejectUnknownKeys(metadata.dependencies, dependencyKeys)
     || !Array.isArray(metadata.dependencies.tools) || metadata.dependencies.tools.length === 0
-    || new Set(metadata.dependencies.tools).size !== metadata.dependencies.tools.length
-    || metadata.dependencies.tools.some((tool) => !supportedText(tool)))) {
+    || metadata.dependencies.tools.some((tool) => !isToolDescriptor(tool)))) {
     return [finding("plugin.submission.skill.agent.invalid_shape", "Optional agent dependencies have an unsupported shape.", { path: packagePath(rootPath, agentPath), field: "dependencies" })];
   }
 
   for (const field of ["icon_small", "icon_large"] as const) {
     const value = metadata.interface[field];
     if (value === undefined) continue;
-    if (typeof value !== "string" || !value.startsWith("./")) {
-      return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field })];
-    }
-    const iconPath = path.resolve(skillRoot, value);
-    try {
-      const [canonicalIcon, details] = await Promise.all([realpath(iconPath), stat(iconPath)]);
-      if (!details.isFile() || !isWithin(canonicalSkill, canonicalIcon)) throw new Error("unsafe icon");
-    } catch {
-      return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent icon path is invalid.", { path: skillPath, field })];
-    }
+    const iconFinding = await validateIconPath(rootPath, canonicalRoot, skillRoot, skillPath, field, value);
+    if (iconFinding) return [iconFinding];
   }
   return [];
 }
