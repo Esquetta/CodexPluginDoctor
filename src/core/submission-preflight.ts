@@ -1,7 +1,7 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { discoverPackage } from "./discover-package.js";
+import type { DiscoveredPackage, PluginManifest } from "../domain/types.js";
 import { validateSubmissionAssets } from "./submission-assets.js";
 import { submissionManualChecks, submissionRuleset } from "./submission-ruleset.js";
 import { validateSubmissionSkillMetadata } from "./submission-skill-metadata.js";
@@ -50,6 +50,7 @@ const knownInterfaceFields = new Set([
   "capabilities", "websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL",
   "brandColor", "brandColorDark", "defaultPrompt", "composerIcon", "logo", "screenshots"
 ]);
+const maxSubmissionManifestBytes = 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -274,11 +275,47 @@ function invalidPackageReport(): SubmissionPreflightReport {
   };
 }
 
+function oversizedPackageReport(): SubmissionPreflightReport {
+  const findings = [finding("plugin.submission.package.too_large", "fail", "Plugin manifest exceeds the submission preflight size limit.", {
+    path: ".codex-plugin/plugin.json", limit: maxSubmissionManifestBytes
+  })];
+  const checks = [check("listing", findings), check("components", []), check("assets", []), check("skills", [])];
+  return {
+    schemaVersion: "1.0.0",
+    rulesetVersion: submissionRuleset.version,
+    targetType: "skills-only",
+    status: "fail",
+    readiness: "blocked",
+    summary: { passed: 3, warnings: 0, blockers: 1, manualChecks: 3 },
+    checks,
+    findings,
+    manualChecklist: checklist("skills-only")
+  };
+}
+
+async function discoverSubmissionPackage(targetPath: string): Promise<DiscoveredPackage | "too_large" | null> {
+  const rootPath = path.resolve(targetPath);
+  const manifestPath = path.join(rootPath, ".codex-plugin", "plugin.json");
+  try {
+    const linkDetails = await lstat(manifestPath);
+    if (!linkDetails.isFile()) return null;
+    const details = await stat(manifestPath);
+    if (details.size > maxSubmissionManifestBytes) return "too_large";
+    const content = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(manifestPath));
+    return { rootPath, manifestPath, manifest: JSON.parse(content) as PluginManifest };
+  } catch {
+    return null;
+  }
+}
+
 export async function buildSubmissionPreflight(targetPath: string): Promise<SubmissionPreflightReport> {
   if (typeof targetPath !== "string") {
     return invalidPackageReport();
   }
-  const discovered = await discoverPackage(targetPath);
+  const discovered = await discoverSubmissionPackage(targetPath);
+  if (discovered === "too_large") {
+    return oversizedPackageReport();
+  }
   if (!discovered || !isRecord(discovered.manifest)) {
     return invalidPackageReport();
   }

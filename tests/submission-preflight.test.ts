@@ -214,6 +214,20 @@ describe("submission preflight", () => {
     }
   });
 
+  it("bounds the submission manifest before decoding or parsing it", async () => {
+    const target = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-large-manifest-"));
+    const sentinel = "submission-manifest-secret";
+    await mkdir(path.join(target, ".codex-plugin"));
+    await writeFile(path.join(target, ".codex-plugin", "plugin.json"), sentinel.padEnd(1024 * 1024 + 1, "x"), "utf8");
+
+    const report = await buildSubmissionPreflight(target);
+
+    expect(report).toMatchObject({ status: "fail", readiness: "blocked" });
+    expect(findingIds(report)).toEqual(["plugin.submission.package.too_large"]);
+    expect(JSON.stringify(report)).not.toContain(sentinel);
+    expect(JSON.stringify(report)).not.toContain(target);
+  });
+
   it("fails closed for a non-string public target input", async () => {
     const report = await buildSubmissionPreflight(null as unknown as string);
 

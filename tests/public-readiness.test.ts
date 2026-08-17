@@ -234,8 +234,11 @@ describe("public repository readiness", () => {
       ["plugin.submission.package.invalid", "fail"],
       ["plugin.submission.interface.unknown_field", "warn"],
       ["plugin.submission.asset.extension_mismatch", "fail"],
+      ["plugin.submission.package.too_large", "fail"],
       ["plugin.submission.skill.agent.invalid_yaml", "fail"],
-      ["plugin.submission.skill.required", "fail"]
+      ["plugin.submission.skill.required", "fail"],
+      ["plugin.submission.skill.too_many", "fail"],
+      ["plugin.submission.skill.budget_exceeded", "fail"]
     ]) {
       expect(catalog).toContain(`| \`${id}\` | ${severity} |`);
     }

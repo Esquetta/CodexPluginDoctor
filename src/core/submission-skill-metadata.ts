@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { lstat, opendir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { isAlias, isNode, parseDocument, visit } from "yaml";
@@ -12,6 +12,9 @@ type Metadata = Record<string, unknown>;
 
 const maxSkillBytes = 1024 * 1024;
 const maxAgentBytes = 256 * 1024;
+const maxAggregateMetadataBytes = 16 * 1024 * 1024;
+const maxDirectoryEntries = 256;
+const maxSkillDirectories = 100;
 const unsupportedText = /[\u0000-\u001F\u007F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/u;
 const interfaceKeys = new Set(["display_name", "short_description", "icon_small", "icon_large", "brand_color", "default_prompt"]);
 const policyKeys = new Set(["products", "allow_implicit_invocation"]);
@@ -83,13 +86,28 @@ async function safeDirectory(rootPath: string, skillsPath: string): Promise<{ ca
   }
 }
 
-async function readSafeUtf8(filePath: string, maximum: number): Promise<string | null> {
+type AggregateRead = { kind: "source"; source: string } | { kind: "invalid" } | { kind: "budget"; nextBytes: number };
+
+interface AggregateBudget {
+  bytes: number;
+}
+
+function budgetFinding(bytes: number): SubmissionFinding {
+  return finding("plugin.submission.skill.budget_exceeded", "Skill metadata exceeds the aggregate submission preflight size limit.", {
+    count: bytes, limit: maxAggregateMetadataBytes
+  });
+}
+
+async function readSafeUtf8(filePath: string, maximum: number, budget: AggregateBudget): Promise<AggregateRead> {
   try {
     const details = await stat(filePath);
-    if (!details.isFile() || details.size > maximum) return null;
-    return new TextDecoder("utf-8", { fatal: true }).decode(await readFile(filePath));
+    if (!details.isFile() || details.size > maximum) return { kind: "invalid" };
+    const nextBytes = budget.bytes + details.size;
+    if (nextBytes > maxAggregateMetadataBytes) return { kind: "budget", nextBytes };
+    budget.bytes = nextBytes;
+    return { kind: "source", source: new TextDecoder("utf-8", { fatal: true }).decode(await readFile(filePath)) };
   } catch {
-    return null;
+    return { kind: "invalid" };
   }
 }
 
@@ -135,7 +153,8 @@ async function validateIconPath(
 async function validateAgentFile(
   rootPath: string,
   skillRoot: string,
-  skillPath: string
+  skillPath: string,
+  budget: AggregateBudget
 ): Promise<SubmissionFinding[]> {
   const agentPath = path.join(skillRoot, "agents", "openai.yaml");
   let agentDetails;
@@ -163,11 +182,14 @@ async function validateAgentFile(
     return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent metadata resolves outside its skill.", { path: skillPath })];
   }
 
-  const source = await readSafeUtf8(agentPath, maxAgentBytes);
-  if (source === null) {
+  const source = await readSafeUtf8(agentPath, maxAgentBytes, budget);
+  if (source.kind === "budget") {
+    return [budgetFinding(source.nextBytes)];
+  }
+  if (source.kind === "invalid") {
     return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a bounded UTF-8 regular file.", { path: packagePath(rootPath, agentPath), limit: maxAgentBytes })];
   }
-  const parsed = parseSafeYaml(source);
+  const parsed = parseSafeYaml(source.source);
   if ("error" in parsed) {
     return [finding(
       parsed.error === "yaml" ? "plugin.submission.skill.agent.invalid_yaml" : "plugin.submission.skill.agent.invalid_shape",
@@ -229,16 +251,30 @@ export async function validateSubmissionSkillMetadata(
     return { findings: [finding("plugin.submission.skill.invalid_path", "Skills directory must be canonically contained in the package.", { path: "skills" })], skillCount: 0 };
   }
 
-  let entries;
-  try {
-    entries = await readdir(skillsPath, { withFileTypes: true });
-  } catch {
-    return { findings: [finding("plugin.submission.skill.invalid_path", "Skills directory cannot be inspected safely.", { path: "skills" })], skillCount: 0 };
-  }
   const findings: SubmissionFinding[] = [];
   const identities = new Set<string>();
   let skillCount = 0;
-  for (const entry of entries.filter((candidate) => !candidate.name.startsWith(".") && candidate.isDirectory())) {
+  const budget: AggregateBudget = { bytes: 0 };
+  let entries;
+  try {
+    entries = await opendir(skillsPath);
+  } catch {
+    return { findings: [finding("plugin.submission.skill.invalid_path", "Skills directory cannot be inspected safely.", { path: "skills" })], skillCount: 0 };
+  }
+  let entryCount = 0;
+  let skillDirectoryCount = 0;
+  for await (const entry of entries) {
+    entryCount += 1;
+    if (entryCount > maxDirectoryEntries) {
+      findings.push(finding("plugin.submission.skill.too_many", "Skills directory exceeds the submission preflight entry limit.", { count: entryCount, limit: maxDirectoryEntries }));
+      break;
+    }
+    if (entry.name.startsWith(".") || !entry.isDirectory()) continue;
+    skillDirectoryCount += 1;
+    if (skillDirectoryCount > maxSkillDirectories) {
+      findings.push(finding("plugin.submission.skill.too_many", "Skills directory exceeds the submission preflight skill limit.", { count: skillDirectoryCount, limit: maxSkillDirectories }));
+      break;
+    }
     const skillRoot = path.join(skillsPath, entry.name);
     const skillFile = path.join(skillRoot, "SKILL.md");
     const relativeSkillPath = packagePath(rootPath, skillFile);
@@ -264,12 +300,16 @@ export async function validateSubmissionSkillMetadata(
       findings.push(finding("plugin.submission.skill.invalid_file", "Skill entrypoint must be a contained regular file.", { path: relativeSkillPath }));
       continue;
     }
-    const source = await readSafeUtf8(skillFile, maxSkillBytes);
-    if (source === null) {
+    const source = await readSafeUtf8(skillFile, maxSkillBytes, budget);
+    if (source.kind === "budget") {
+      findings.push(budgetFinding(source.nextBytes));
+      break;
+    }
+    if (source.kind === "invalid") {
       findings.push(finding("plugin.submission.skill.invalid_file", "Skill entrypoint must be a bounded UTF-8 regular file.", { path: relativeSkillPath, limit: maxSkillBytes }));
       continue;
     }
-    const split = splitSkillFile(source);
+    const split = splitSkillFile(source.source);
     if (!split) {
       findings.push(finding("plugin.submission.skill.invalid_file", "Skill entrypoint requires delimited frontmatter and a nonempty body.", { path: relativeSkillPath }));
       continue;
@@ -294,7 +334,9 @@ export async function validateSubmissionSkillMetadata(
     }
     identities.add(normalizedName);
     skillCount += 1;
-    findings.push(...await validateAgentFile(rootPath, skillRoot, packagePath(rootPath, skillRoot)));
+    const agentFindings = await validateAgentFile(rootPath, skillRoot, packagePath(rootPath, skillRoot), budget);
+    findings.push(...agentFindings);
+    if (agentFindings.some((item) => item.id === "plugin.submission.skill.budget_exceeded")) break;
   }
   if (targetType === "skills-only" && skillCount === 0 && !findings.some((item) => item.id === "plugin.submission.skill.required")) {
     findings.push(finding("plugin.submission.skill.required", "Skills-only submissions require at least one valid skill.", { count: 0 }));

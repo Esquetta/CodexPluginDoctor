@@ -142,7 +142,8 @@ For each skill, `skills/*/agents/openai.yaml` is optional. When present, it is p
 
 - `interface.display_name`
 - `interface.short_description`
-- `interface.icons`
+- `interface.icon_small`
+- `interface.icon_large`
 - `interface.brand_color`
 - `interface.default_prompt`
 - `policy.products`

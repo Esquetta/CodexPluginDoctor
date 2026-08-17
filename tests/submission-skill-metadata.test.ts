@@ -67,6 +67,31 @@ describe("submission skill metadata", () => {
     expect(result).toEqual({ findings: [], skillCount: 1 });
   });
 
+  it("limits immediate non-hidden skill directories without exposing their paths", async () => {
+    const sentinel = "too-many-skill-secret";
+    const files = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [
+      `skills/check-${index}/SKILL.md`,
+      skill(`check-${index}`, `Checks ${sentinel}`)
+    ]));
+    const result = await validateSubmissionSkillMetadata(await packageWith("./skills", files), "skills-only");
+
+    expect(ids(result).filter((id) => id === "plugin.submission.skill.too_many")).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+  });
+
+  it("limits aggregate skill metadata bytes before reading more content", async () => {
+    const sentinel = "aggregate-skill-secret";
+    const body = sentinel.padEnd(1024 * 1024 - 80, "x");
+    const files = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [
+      `skills/check-${index}/SKILL.md`,
+      `---\nname: check-${index}\ndescription: Check aggregate metadata\n---\n\n${body}\n`
+    ]));
+    const result = await validateSubmissionSkillMetadata(await packageWith("./skills", files), "skills-only");
+
+    expect(ids(result).filter((id) => id === "plugin.submission.skill.budget_exceeded")).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+  });
+
   it("rejects a visible immediate skill directory without a regular entrypoint", async () => {
     const result = await validateSubmissionSkillMetadata(await packageWith("./skills", {
       "skills/check/.keep": ""

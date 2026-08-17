@@ -47,6 +47,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | Rule ID | Severity | Meaning |
 | --- | --- | --- |
 | `plugin.submission.package.invalid` | fail | Plugin manifest is missing or invalid for submission preflight. |
+| `plugin.submission.package.too_large` | fail | Plugin manifest exceeds the submission preflight size limit. |
 | `plugin.submission.package.name` | fail | Plugin package name is invalid for the listing. |
 | `plugin.submission.package.version` | fail | Plugin version is not valid semantic versioning. |
 | `plugin.submission.interface.required` | fail | Listing interface metadata is required. |
@@ -80,6 +81,8 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.submission.skill.invalid_yaml` | fail | Skill frontmatter YAML is invalid or unsafe. |
 | `plugin.submission.skill.invalid_shape` | fail | Skill frontmatter has an unsupported shape. |
 | `plugin.submission.skill.identity` | fail | Skill identity metadata is invalid or duplicated. |
+| `plugin.submission.skill.too_many` | fail | Skills directory exceeds the bounded submission preflight entry or skill limit. |
+| `plugin.submission.skill.budget_exceeded` | fail | Skill metadata exceeds the aggregate submission preflight size limit. |
 | `plugin.submission.skill.agent.invalid_path` | fail | Optional agent metadata path is invalid. |
 | `plugin.submission.skill.agent.invalid_file` | fail | Optional agent metadata is not a valid contained file. |
 | `plugin.submission.skill.agent.invalid_yaml` | fail | Optional agent metadata YAML is invalid or unsafe. |
