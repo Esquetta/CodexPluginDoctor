@@ -140,8 +140,10 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
   }
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   let dimensions: Dimensions | null = null;
+  let scans = 0;
   let offset = 2;
-  for (let steps = 0; steps < 128 && offset < buffer.length; steps += 1) {
+  for (let steps = 0; steps < 512 && offset < buffer.length; steps += 1) {
+    if (buffer[offset] !== 0xff) return null;
     while (offset < buffer.length && buffer[offset] === 0xff) {
       offset += 1;
     }
@@ -150,7 +152,7 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
     }
     const marker = buffer[offset++];
     if (marker === 0xd9) {
-      return null;
+      return dimensions !== null && scans > 0 && offset === buffer.length ? dimensions : null;
     }
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
       continue;
@@ -173,6 +175,7 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
       if (dimensions === null) return null;
       const componentCount = buffer[offset + 2];
       if (componentCount < 1 || length !== 6 + (componentCount * 2)) return null;
+      scans += 1;
       offset += length;
       for (let entropySteps = 0; entropySteps < buffer.length && offset < buffer.length; entropySteps += 1) {
         if (buffer[offset] !== 0xff) {
@@ -185,9 +188,9 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
           offset += 2;
           continue;
         }
-        return entropyMarker === 0xd9 && offset + 2 === buffer.length ? dimensions : null;
+        break;
       }
-      return null;
+      continue;
     }
     offset += length;
   }
@@ -207,29 +210,33 @@ function readWebp(buffer: Uint8Array): Dimensions | null {
   if (riffSize !== buffer.length - 8) {
     return null;
   }
-  const chunkType = fourCc(buffer, 12);
-  const chunkLength = view.getUint32(16, true);
-  const payload = 20;
-  const paddedLength = chunkLength + (chunkLength % 2);
-  if (paddedLength !== buffer.length - payload) {
-    return null;
+  let dimensions: Dimensions | null = null;
+  let offset = 12;
+  for (let chunks = 0; chunks < 128 && offset + 8 <= buffer.length; chunks += 1) {
+    const chunkType = fourCc(buffer, offset);
+    const chunkLength = view.getUint32(offset + 4, true);
+    const payload = offset + 8;
+    const paddedLength = chunkLength + (chunkLength % 2);
+    if (paddedLength > buffer.length - payload) return null;
+    let detected: Dimensions | null = null;
+    if (chunkType === "VP8X") {
+      if (chunkLength < 10) return null;
+      detected = {
+        width: 1 + buffer[payload + 4] + (buffer[payload + 5] << 8) + (buffer[payload + 6] << 16),
+        height: 1 + buffer[payload + 7] + (buffer[payload + 8] << 8) + (buffer[payload + 9] << 16)
+      };
+    } else if (chunkType === "VP8L") {
+      if (chunkLength < 5 || buffer[payload] !== 0x2f) return null;
+      const packed = view.getUint32(payload + 1, true);
+      detected = { width: (packed & 0x3fff) + 1, height: ((packed >>> 14) & 0x3fff) + 1 };
+    } else if (chunkType === "VP8 ") {
+      if (chunkLength < 10 || buffer[payload + 3] !== 0x9d || buffer[payload + 4] !== 0x01 || buffer[payload + 5] !== 0x2a) return null;
+      detected = { width: view.getUint16(payload + 6, true) & 0x3fff, height: view.getUint16(payload + 8, true) & 0x3fff };
+    }
+    dimensions ??= detected;
+    offset = payload + paddedLength;
   }
-  if (chunkType === "VP8X") {
-    if (chunkLength < 10) return null;
-    const width = 1 + buffer[payload + 4] + (buffer[payload + 5] << 8) + (buffer[payload + 6] << 16);
-    const height = 1 + buffer[payload + 7] + (buffer[payload + 8] << 8) + (buffer[payload + 9] << 16);
-    return { width, height };
-  }
-  if (chunkType === "VP8L") {
-    if (chunkLength < 5 || buffer[payload] !== 0x2f) return null;
-    const packed = view.getUint32(payload + 1, true);
-    return { width: (packed & 0x3fff) + 1, height: ((packed >>> 14) & 0x3fff) + 1 };
-  }
-  if (chunkType === "VP8 ") {
-    if (chunkLength < 10 || buffer[payload + 3] !== 0x9d || buffer[payload + 4] !== 0x01 || buffer[payload + 5] !== 0x2a) return null;
-    return { width: view.getUint16(payload + 6, true) & 0x3fff, height: view.getUint16(payload + 8, true) & 0x3fff };
-  }
-  return null;
+  return offset === buffer.length ? dimensions : null;
 }
 
 function rasterAsset(buffer: Uint8Array): { format: Exclude<AssetFormat, "svg">; dimensions: Dimensions } | null {

@@ -66,9 +66,9 @@ const pngWithHeader = (width: number, height: number, bitDepth: number, colorTyp
   return image;
 };
 
-const jpegSof = (width: number, height: number) => {
+const jpegSof = (width: number, height: number, marker = 0xc0) => {
   const data = new Uint8Array(21);
-  data.set([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8]);
+  data.set([0xff, 0xd8, 0xff, marker, 0, 17, 8]);
   const view = new DataView(data.buffer);
   view.setUint16(7, height);
   view.setUint16(9, width);
@@ -86,6 +86,24 @@ const jpegWithSos = (width: number, height: number, includeEoi: boolean) => {
 };
 
 const jpeg = (width: number, height: number) => jpegWithSos(width, height, true);
+
+const jpegSos = (component: number, spectralStart = 0, spectralEnd = 63) => new Uint8Array([0xff, 0xda, 0, 8, 1, component, 0, spectralStart, spectralEnd, 0]);
+
+const jpegDht = () => new Uint8Array([0xff, 0xc4, 0, 20, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+const concat = (...parts: Uint8Array[]) => {
+  const result = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.length; }
+  return result;
+};
+
+const progressiveMultiScanJpeg = (width: number, height: number) => concat(
+  jpegSof(width, height, 0xc2),
+  jpegSos(1, 0, 0), new Uint8Array([0x11, 0xff, 0x00, 0xff, 0xd0, 0x22]),
+  jpegDht(),
+  jpegSos(1, 1, 63), new Uint8Array([0x33, 0xff, 0xd9])
+);
 
 const webp = (variant: "VP8X" | "VP8L" | "VP8", width: number, height: number) => {
   const payload = variant === "VP8X" ? new Uint8Array(10) : variant === "VP8L" ? new Uint8Array(5) : new Uint8Array(10);
@@ -108,6 +126,25 @@ const webp = (variant: "VP8X" | "VP8L" | "VP8", width: number, height: number) =
   data.set([87, 69, 66, 80, ...variant.padEnd(4, " ").split("").map((character) => character.charCodeAt(0))], 8);
   new DataView(data.buffer).setUint32(16, payload.length, true);
   data.set(payload, 20);
+  return data;
+};
+
+const webpChunk = (type: string, payload: Uint8Array) => {
+  const chunk = new Uint8Array(8 + payload.length + (payload.length % 2));
+  chunk.set(type.split("").map((character) => character.charCodeAt(0)), 0);
+  new DataView(chunk.buffer).setUint32(4, payload.length, true);
+  chunk.set(payload, 8);
+  return chunk;
+};
+
+const webpWithTrailingExif = () => {
+  const base = webp("VP8L", 48, 48);
+  const chunks = concat(base.slice(12), webpChunk("EXIF", new Uint8Array([1])));
+  const data = new Uint8Array(12 + chunks.length);
+  data.set([82, 73, 70, 70]);
+  new DataView(data.buffer).setUint32(4, data.length - 8, true);
+  data.set([87, 69, 66, 80], 8);
+  data.set(chunks, 12);
   return data;
 };
 
@@ -146,6 +183,16 @@ describe("submission assets", () => {
 
   it("requires both branding assets", async () => {
     expect(await findingIds({}, {})).toEqual(["plugin.submission.asset.required", "plugin.submission.asset.required"]);
+  });
+
+  it("accepts a structurally complete progressive multi-scan JPEG", async () => {
+    expect(await findingIds({ logo: "./logo.jpg", composerIcon: "./logo.jpg" }, { "logo.jpg": progressiveMultiScanJpeg(48, 48) }))
+      .toEqual([]);
+  });
+
+  it("accepts a WebP image chunk followed by padded EXIF metadata", async () => {
+    expect(await findingIds({ logo: "./logo.webp", composerIcon: "./logo.webp" }, { "logo.webp": webpWithTrailingExif() }))
+      .toEqual([]);
   });
 
   it("rejects a PNG whose declared IHDR is truncated", async () => {
