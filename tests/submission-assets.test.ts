@@ -33,7 +33,7 @@ const png = (width: number, height: number) => {
   const view = new DataView(header.buffer);
   view.setUint32(0, width); view.setUint32(4, height);
   header.set([1, 0, 0, 0, 0], 8);
-  const scanlines = new Uint8Array((1 + Math.ceil(width / 8)) * height);
+  const scanlines = new Uint8Array(width > 4096 || height > 4096 ? 1 : (1 + Math.ceil(width / 8)) * height);
   const idat = new Uint8Array(deflateSync(scanlines));
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())];
   const image = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
@@ -42,8 +42,20 @@ const png = (width: number, height: number) => {
   return image;
 };
 
-const jpeg = (width: number, height: number) => {
-  const data = new Uint8Array(23);
+const pngWithIdat = (idat: Uint8Array) => {
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 48); view.setUint32(4, 48);
+  header.set([1, 0, 0, 0, 0], 8);
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())];
+  const image = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { image.set(part, offset); offset += part.length; }
+  return image;
+};
+
+const jpegSof = (width: number, height: number) => {
+  const data = new Uint8Array(21);
   data.set([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8]);
   const view = new DataView(data.buffer);
   view.setUint16(7, height);
@@ -51,6 +63,17 @@ const jpeg = (width: number, height: number) => {
   data.set([3, 1, 17, 0, 2, 17, 0, 3, 17, 0], 11);
   return data;
 };
+
+const jpegWithSos = (width: number, height: number, includeEoi: boolean) => {
+  const sof = jpegSof(width, height);
+  const data = new Uint8Array(sof.length + 15 + (includeEoi ? 2 : 0));
+  data.set(sof);
+  data.set([0xff, 0xda, 0, 12, 3, 1, 0, 2, 0, 3, 0, 0, 63, 0, 0], sof.length);
+  if (includeEoi) data.set([0xff, 0xd9], data.length - 2);
+  return data;
+};
+
+const jpeg = (width: number, height: number) => jpegWithSos(width, height, true);
 
 const webp = (variant: "VP8X" | "VP8L" | "VP8", width: number, height: number) => {
   const payload = variant === "VP8X" ? new Uint8Array(10) : variant === "VP8L" ? new Uint8Array(5) : new Uint8Array(10);
@@ -67,7 +90,7 @@ const webp = (variant: "VP8X" | "VP8L" | "VP8", width: number, height: number) =
     payload.set([0, 0, 0, 0x9d, 0x01, 0x2a]);
     view.setUint16(6, width, true); view.setUint16(8, height, true);
   }
-  const data = new Uint8Array(20 + payload.length);
+  const data = new Uint8Array(20 + payload.length + (payload.length % 2));
   data.set([82, 73, 70, 70]);
   new DataView(data.buffer).setUint32(4, data.length - 8, true);
   data.set([87, 69, 66, 80, ...variant.padEnd(4, " ").split("").map((character) => character.charCodeAt(0))], 8);
@@ -103,6 +126,7 @@ describe("submission assets", () => {
     ["WebP VP8", "./logo.webp", webp("VP8", 48, 48)],
     ["largest PNG", "./logo.png", png(4096, 4096)],
     ["SVG viewBox", "./logo.svg", svg('viewBox="0 0 48 48"')],
+    ["SVG comma viewBox", "./logo.svg", svg('viewBox="0,0,48,48"')],
     ["SVG dimensions", "./logo.svg", svg('width="48" height="48"')]
   ])("accepts a valid %s asset", async (_name, assetPath, content) => {
     expect(await findingIds({ logo: assetPath, composerIcon: assetPath }, { [assetPath.slice(2)]: content })).toEqual([]);
@@ -118,6 +142,28 @@ describe("submission assets", () => {
     new DataView(truncated.buffer).setUint32(16, 48);
     new DataView(truncated.buffer).setUint32(20, 48);
     expect(await findingIds({ logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": truncated }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
+  });
+
+  it("rejects a CRC-valid PNG with invalid IDAT zlib data", async () => {
+    expect(await findingIds({ logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": pngWithIdat(new Uint8Array([1, 2, 3])) }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
+  });
+
+  it("rejects an unpadded odd-length VP8L payload", async () => {
+    expect(await findingIds({ logo: "./logo.webp", composerIcon: "./logo.webp" }, { "logo.webp": webp("VP8L", 48, 48).slice(0, -1) }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
+  });
+
+  it("rejects a JPEG scan without terminal EOI", async () => {
+    expect(await findingIds({ logo: "./logo.jpg", composerIcon: "./logo.jpg" }, { "logo.jpg": jpegWithSos(48, 48, false) }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
+  });
+
+  it("rejects a JPEG with an invalid SOS header", async () => {
+    const malformed = jpegWithSos(48, 48, true);
+    malformed[25] = 0;
+    expect(await findingIds({ logo: "./logo.jpg", composerIcon: "./logo.jpg" }, { "logo.jpg": malformed }))
       .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
   });
 
@@ -178,6 +224,22 @@ describe("submission assets", () => {
   ].map(([name, content, expected = "plugin.submission.asset.unsafe_svg"]) => [name, content, expected] as const))("rejects unsafe SVG %s", async (_name, content, expected) => {
     const ids = await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": content });
     expect(ids).toContain(expected);
+  });
+
+  it.each([
+    ["CSS import", '<svg width="48" height="48"><style>@import url(https://example.com/a.css)</style></svg>'],
+    ["CSS url", '<svg width="48" height="48"><style>fill:url(https://example.com/a.svg)</style></svg>'],
+    ["inline CSS url", '<svg width="48" height="48" style="fill:url(https://example.com/a.svg)"/>'],
+    ["non-fragment CSS url", '<svg width="48" height="48"><style>fill:url(#gradient https://example.com/a.svg)</style></svg>'],
+    ["case and whitespace import", '<svg width="48" height="48"><style>@ IMPORT url(https://example.com/a.css)</style></svg>']
+  ])("rejects SVG %s remote CSS", async (_name, content) => {
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": content }))
+      .toEqual(["plugin.submission.asset.unsafe_svg", "plugin.submission.asset.unsafe_svg"]);
+  });
+
+  it("allows fragment-only SVG CSS URLs", async () => {
+    expect(await findingIds({ logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": '<svg width="48" height="48"><style>fill:url(#gradient)</style></svg>' }))
+      .toEqual([]);
   });
 
   it("rejects invalid UTF-8 SVG", async () => {

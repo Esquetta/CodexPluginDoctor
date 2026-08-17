@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
@@ -51,13 +52,41 @@ function crc32(buffer: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+function pngScanlines(width: number, height: number, bitDepth: number, channels: number, interlace: number): number[] | null {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
+    || width > maximumDimension || height > maximumDimension) {
+    return null;
+  }
+  const bytesPerRow = (pixels: number) => Math.ceil((pixels * bitDepth * channels) / 8);
+  if (interlace === 0) return Array.from({ length: height }, () => bytesPerRow(width));
+  if (interlace !== 1) return null;
+  const passes = [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]] as const;
+  const rows: number[] = [];
+  for (const [left, top, horizontal, vertical] of passes) {
+    const passWidth = width <= left ? 0 : Math.ceil((width - left) / horizontal);
+    const passHeight = height <= top ? 0 : Math.ceil((height - top) / vertical);
+    for (let row = 0; row < passHeight; row += 1) rows.push(bytesPerRow(passWidth));
+  }
+  return rows;
+}
+
+function validPngEncoding(bitDepth: number, colorType: number, compression: number, filter: number, interlace: number): boolean {
+  const supportedBitDepths: Record<number, readonly number[]> = {
+    0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16]
+  };
+  return compression === 0 && filter === 0 && (interlace === 0 || interlace === 1)
+    && supportedBitDepths[colorType]?.includes(bitDepth) === true;
+}
+
 function readPng(buffer: Uint8Array): Dimensions | null {
   if (buffer.length < 33 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => buffer[index] === byte)) {
     return null;
   }
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   let dimensions: Dimensions | null = null;
-  let sawIdat = false;
+  let scanlines: number[] | null = null;
+  const idatParts: Uint8Array[] = [];
+  let idatBytes = 0;
   let offset = 8;
   for (let chunks = 0; chunks < 128 && offset + 12 <= buffer.length; chunks += 1) {
     const length = view.getUint32(offset);
@@ -70,10 +99,33 @@ function readPng(buffer: Uint8Array): Dimensions | null {
     if (offset === 8) {
       if (type !== "IHDR" || length !== 13) return null;
       dimensions = { width: view.getUint32(dataOffset), height: view.getUint32(dataOffset + 4) };
+      const bitDepth = buffer[dataOffset + 8];
+      const colorType = buffer[dataOffset + 9];
+      if (!validPngEncoding(bitDepth, colorType, buffer[dataOffset + 10], buffer[dataOffset + 11], buffer[dataOffset + 12])) return null;
+      const channels = colorType === 0 || colorType === 3 ? 1 : colorType === 2 ? 3 : colorType === 4 ? 2 : 4;
+      scanlines = pngScanlines(dimensions.width, dimensions.height, bitDepth, channels, buffer[dataOffset + 12]);
+      if (scanlines === null) return null;
     } else if (type === "IDAT") {
-      sawIdat ||= length > 0;
+      idatParts.push(buffer.slice(dataOffset, dataEnd));
+      idatBytes += length;
     } else if (type === "IEND") {
-      return length === 0 && sawIdat && dataEnd + 4 === buffer.length ? dimensions : null;
+      if (length !== 0 || dimensions === null || scanlines === null || idatBytes === 0 || dataEnd + 4 !== buffer.length) return null;
+      const expectedBytes = scanlines.reduce((total, rowBytes) => total + rowBytes + 1, 0);
+      const idat = new Uint8Array(idatBytes);
+      let idatOffset = 0;
+      for (const part of idatParts) { idat.set(part, idatOffset); idatOffset += part.length; }
+      try {
+        const output = inflateSync(idat, { maxOutputLength: expectedBytes });
+        if (output.length !== expectedBytes) return null;
+        let outputOffset = 0;
+        for (const rowBytes of scanlines) {
+          if (output[outputOffset] > 4) return null;
+          outputOffset += rowBytes + 1;
+        }
+        return outputOffset === output.length ? dimensions : null;
+      } catch {
+        return null;
+      }
     }
     offset = dataEnd + 4;
   }
@@ -85,6 +137,7 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
     return null;
   }
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let dimensions: Dimensions | null = null;
   let offset = 2;
   for (let steps = 0; steps < 128 && offset < buffer.length; steps += 1) {
     while (offset < buffer.length && buffer[offset] === 0xff) {
@@ -94,7 +147,7 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
       return null;
     }
     const marker = buffer[offset++];
-    if (marker === 0xd9 || marker === 0xda) {
+    if (marker === 0xd9) {
       return null;
     }
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
@@ -112,7 +165,27 @@ function readJpeg(buffer: Uint8Array): Dimensions | null {
       if (start + 5 > offset + length) {
         return null;
       }
-      return { height: view.getUint16(start + 1), width: view.getUint16(start + 3) };
+      dimensions = { height: view.getUint16(start + 1), width: view.getUint16(start + 3) };
+    }
+    if (marker === 0xda) {
+      if (dimensions === null) return null;
+      const componentCount = buffer[offset + 2];
+      if (componentCount < 1 || length !== 6 + (componentCount * 2)) return null;
+      offset += length;
+      for (let entropySteps = 0; entropySteps < buffer.length && offset < buffer.length; entropySteps += 1) {
+        if (buffer[offset] !== 0xff) {
+          offset += 1;
+          continue;
+        }
+        if (offset + 1 >= buffer.length) return null;
+        const entropyMarker = buffer[offset + 1];
+        if (entropyMarker === 0x00 || (entropyMarker >= 0xd0 && entropyMarker <= 0xd7)) {
+          offset += 2;
+          continue;
+        }
+        return entropyMarker === 0xd9 && offset + 2 === buffer.length ? dimensions : null;
+      }
+      return null;
     }
     offset += length;
   }
@@ -135,7 +208,8 @@ function readWebp(buffer: Uint8Array): Dimensions | null {
   const chunkType = fourCc(buffer, 12);
   const chunkLength = view.getUint32(16, true);
   const payload = 20;
-  if (chunkLength > buffer.length - payload) {
+  const paddedLength = chunkLength + (chunkLength % 2);
+  if (paddedLength !== buffer.length - payload) {
     return null;
   }
   if (chunkType === "VP8X") {
@@ -178,8 +252,11 @@ function numberFrom(value: unknown): number | null {
 }
 
 function svgDimensions(content: string): Dimensions | null {
-  if (/<!DOCTYPE|<!ENTITY/iu.test(content) || /\b(?:xlink:)?href\s*=\s*(["'])\s*(?!#)[^"']+\1/iu.test(content)) {
+  if (/<!DOCTYPE|<!ENTITY|@\s*import\b/iu.test(content) || /\b(?:xlink:)?href\s*=\s*(["'])\s*(?!#)[^"']+\1/iu.test(content)) {
     return null;
+  }
+  for (const match of content.matchAll(/url\s*\(\s*(?:(["'])(.*?)\1|([^)]*))\s*\)/giu)) {
+    if (!/^#[^\s]*$/u.test((match[2] ?? match[3] ?? "").trim())) return null;
   }
   if (XMLValidator.validate(content) !== true) return null;
   try {
@@ -188,7 +265,7 @@ function svgDimensions(content: string): Dimensions | null {
     const root = parsed.svg;
     const viewBox = root["@_viewBox"];
     if (typeof viewBox === "string") {
-      const parts = viewBox.trim().split(/\s+/u).map(numberFrom);
+      const parts = viewBox.trim().split(/[\s,]+/u).map(numberFrom);
       if (parts.length !== 4 || parts.some((part) => part === null)) return null;
       return { width: parts[2]!, height: parts[3]! };
     }
