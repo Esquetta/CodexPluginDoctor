@@ -83,6 +83,7 @@ import {
   renderDoctorOutputContract,
   renderDoctorOutputContractJson
 } from "./core/output-contract.js";
+import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import {
   buildDoctorValidationCorpusReport,
   renderDoctorValidationCorpusJson,
@@ -231,6 +232,12 @@ import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
 import {
+  renderSubmissionPreflightJson,
+  renderSubmissionPreflightMarkdown,
+  renderSubmissionPreflightText,
+  submissionPreflightExitCode
+} from "./reporting/render-submission-report.js";
+import {
   applyPolicyToDepAudit,
   applyPolicyToDoctorConfig,
   applyPolicyToSecurityAudit,
@@ -309,6 +316,14 @@ const defaultIo: CliIo = {
     }
   }
 };
+
+function writeExactStdout(io: CliIo, message: string): void {
+  if (io === defaultIo) {
+    process.stdout.write(message);
+    return;
+  }
+  io.writeStdout(message);
+}
 
 class CliUsageError extends Error {}
 
@@ -433,6 +448,9 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(
     "Remote MCP runtime flags (check, mcp, release check, and doctor release-evidence): --runtime --allow-network [--allow-local-network] [--allow-session-lifecycle] [--require-remote-reliability]\n       --allow-session-lifecycle requires --runtime --allow-network and can terminate a remote session.\n       --require-remote-reliability requires --runtime --allow-network, blocks non-pass reliability, and does not grant network consent."
+  );
+  io.writeStderr(
+    "       codex-plugin-doctor doctor submission <path> [--json|--markdown] [--output <path>] [--require-ready]"
   );
 }
 
@@ -1587,6 +1605,51 @@ function parseSelectedFixActionIndexes(
     : null;
 }
 
+function parseSubmissionCommandArgs(args: string[]): {
+  targetPath: string;
+  jsonOutput: boolean;
+  markdownOutput: boolean;
+  outputPath: string | null;
+  requireReady: boolean;
+} | CliUsageError {
+  let targetPath: string | null = null;
+  let jsonOutput = false;
+  let markdownOutput = false;
+  let outputPath: string | null = null;
+  let requireReady = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+
+    if (argument === "--json") {
+      if (jsonOutput) return new CliUsageError("Duplicate submission flag: --json.");
+      jsonOutput = true;
+    } else if (argument === "--markdown") {
+      if (markdownOutput) return new CliUsageError("Duplicate submission flag: --markdown.");
+      markdownOutput = true;
+    } else if (argument === "--require-ready") {
+      if (requireReady) return new CliUsageError("Duplicate submission flag: --require-ready.");
+      requireReady = true;
+    } else if (argument === "--output") {
+      if (outputPath !== null) return new CliUsageError("Duplicate submission flag: --output.");
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) return new CliUsageError("Missing path after --output.");
+      outputPath = value;
+      index += 1;
+    } else if (argument.startsWith("--")) {
+      return new CliUsageError(`Unknown submission flag: ${argument}.`);
+    } else if (targetPath === null) {
+      targetPath = argument;
+    } else {
+      return new CliUsageError(`Unexpected submission argument: ${argument}.`);
+    }
+  }
+
+  if (targetPath === null) return new CliUsageError("Missing target path for submission.");
+  if (jsonOutput && markdownOutput) return new CliUsageError("Use either --json or --markdown, not both.");
+  return { targetPath, jsonOutput, markdownOutput, outputPath, requireReady };
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -1727,6 +1790,29 @@ export async function runCli(
           : renderDoctorOutputContract(contract, { outputPath })
       );
       return 0;
+    }
+
+    if (maybePath === "submission") {
+      const parsedSubmissionArgs = parseSubmissionCommandArgs(remainingArgs);
+
+      if (parsedSubmissionArgs instanceof CliUsageError) {
+        io.writeStderr(parsedSubmissionArgs.message);
+        return 2;
+      }
+
+      const report = await buildSubmissionPreflight(parsedSubmissionArgs.targetPath);
+      const renderedReport = parsedSubmissionArgs.jsonOutput
+        ? renderSubmissionPreflightJson(report)
+        : parsedSubmissionArgs.markdownOutput
+          ? renderSubmissionPreflightMarkdown(report)
+          : renderSubmissionPreflightText(report);
+
+      if (parsedSubmissionArgs.outputPath) {
+        await writeFile(parsedSubmissionArgs.outputPath, renderedReport, "utf8");
+      }
+
+      writeExactStdout(io, renderedReport);
+      return submissionPreflightExitCode(report, parsedSubmissionArgs.requireReady);
     }
 
     if (maybePath === "mcp") {

@@ -26,6 +26,9 @@ describe("shell completion", () => {
       expect(output).toContain("check");
       expect(output).toContain("audit");
       expect(output).toContain("init-git-hooks");
+      expect(output).toContain("submission");
+      expect(output).toContain("--markdown");
+      expect(output).toContain("--require-ready");
     });
 
     it("generates zsh completion script", () => {
@@ -34,6 +37,8 @@ describe("shell completion", () => {
       expect(output).toContain("#compdef codex-plugin-doctor");
       expect(output).toContain("_arguments");
       expect(output).toContain("check");
+      expect(output).toContain("submission");
+      expect(output).toContain("--markdown");
     });
 
     it("generates fish completion script", () => {
@@ -42,6 +47,8 @@ describe("shell completion", () => {
       expect(output).toContain("complete -c codex-plugin-doctor");
       expect(output).toContain("__fish_seen_subcommand_from");
       expect(output).toContain("codex-publish");
+      expect(output).toContain("submission");
+      expect(output).toContain("-l markdown");
     });
   });
 

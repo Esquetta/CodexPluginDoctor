@@ -146,6 +146,31 @@ export {
   type OutputContractSchema
 } from "./core/output-contract.js";
 export {
+  submissionRuleset,
+  submissionManualChecks
+} from "./core/submission-ruleset.js";
+export {
+  buildSubmissionPreflight,
+  type SubmissionCheck,
+  type SubmissionFinding,
+  type SubmissionManualCheck,
+  type SubmissionPreflightReport
+} from "./core/submission-preflight.js";
+export {
+  validateSubmissionAssets,
+  type SubmissionAssetResult
+} from "./core/submission-assets.js";
+export {
+  validateSubmissionSkillMetadata,
+  type SubmissionSkillMetadataResult
+} from "./core/submission-skill-metadata.js";
+export {
+  renderSubmissionPreflightJson,
+  renderSubmissionPreflightMarkdown,
+  renderSubmissionPreflightText,
+  submissionPreflightExitCode
+} from "./reporting/render-submission-report.js";
+export {
   buildDoctorValidationCorpusReport,
   renderDoctorValidationCorpusJson,
   renderDoctorValidationCorpusReport,
