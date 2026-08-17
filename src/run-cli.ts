@@ -1617,11 +1617,20 @@ function parseSubmissionCommandArgs(args: string[]): {
   let markdownOutput = false;
   let outputPath: string | null = null;
   let requireReady = false;
+  let optionsEnded = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
 
-    if (argument === "--json") {
+    if (argument === "--" && !optionsEnded) {
+      optionsEnded = true;
+    } else if (optionsEnded) {
+      if (targetPath === null) {
+        targetPath = argument;
+      } else {
+        return new CliUsageError(`Unexpected submission argument: ${argument}.`);
+      }
+    } else if (argument === "--json") {
       if (jsonOutput) return new CliUsageError("Duplicate submission flag: --json.");
       jsonOutput = true;
     } else if (argument === "--markdown") {
@@ -1636,6 +1645,11 @@ function parseSubmissionCommandArgs(args: string[]): {
       if (!value || value.startsWith("--")) return new CliUsageError("Missing path after --output.");
       outputPath = value;
       index += 1;
+    } else if (argument.startsWith("--output=")) {
+      if (outputPath !== null) return new CliUsageError("Duplicate submission flag: --output.");
+      const value = argument.slice("--output=".length);
+      if (!value) return new CliUsageError("Missing path after --output.");
+      outputPath = value;
     } else if (argument.startsWith("--")) {
       return new CliUsageError(`Unknown submission flag: ${argument}.`);
     } else if (targetPath === null) {

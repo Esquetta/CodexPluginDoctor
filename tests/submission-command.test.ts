@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -123,12 +123,42 @@ describe("doctor submission command", () => {
     expect(required.stderr).toEqual([]);
   });
 
+  it("accepts dash-prefixed paths after -- and treats later flags as positionals", async () => {
+    const accepted = createIo();
+    const extra = createIo();
+
+    expect(await runCli(["doctor", "submission", "--", "--literal-target"], accepted.io)).toBe(0);
+    expect(accepted.stderr).toEqual([]);
+    expect(await runCli(["doctor", "submission", "--", "--literal-target", "--require-ready"], extra.io)).toBe(2);
+    expect(extra.stderr.join("")).toContain("Unexpected submission argument: --require-ready.");
+  });
+
+  it("accepts --output=<path> when the output filename begins with dashes", async () => {
+    const target = await writeSubmissionPackage();
+    const outputPath = `--submission-output-${Date.now()}.json`;
+    const { io, stdout, stderr } = createIo();
+
+    try {
+      const exitCode = await runCli(
+        ["doctor", "submission", target, "--json", `--output=${outputPath}`],
+        io
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toEqual([]);
+      expect(await readFile(outputPath, "utf8")).toBe(stdout.join(""));
+    } finally {
+      await rm(outputPath, { force: true });
+    }
+  });
+
   it.each([
     [[], "Missing target path"],
     [["--json", "--markdown"], "Use either --json or --markdown"],
     [["--json", "--json"], "Duplicate submission flag"],
     [["--output"], "Missing path after --output"],
     [["--wat"], "Unknown submission flag"],
+    [["--wat", "--", "--literal-target"], "Unknown submission flag"],
     [["one", "two"], "Unexpected submission argument"]
   ])("rejects invalid arguments %#", async (suffix, message) => {
     const target = suffix.length === 0 ? [] : [await writeSubmissionPackage(), ...suffix];

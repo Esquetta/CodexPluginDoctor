@@ -18,7 +18,7 @@ function createIo() {
 
 describe("shell completion", () => {
   describe("generateCompletion", () => {
-    it("generates bash completion script", () => {
+    it("scopes bash submission flags to doctor submission", () => {
       const output = generateCompletion("bash");
 
       expect(output).toContain("_codex_plugin_doctor");
@@ -27,28 +27,33 @@ describe("shell completion", () => {
       expect(output).toContain("audit");
       expect(output).toContain("init-git-hooks");
       expect(output).toContain("submission");
-      expect(output).toContain("--markdown");
-      expect(output).toContain("--require-ready");
+      expect(output).toContain('local submission_flags="--json --markdown --output --require-ready"');
+      expect(output).toContain('local flags="--json --output --runtime --policy --help"');
+      expect(output).toContain('${COMP_WORDS[1]} == "doctor"');
     });
 
-    it("generates zsh completion script", () => {
+    it("scopes zsh submission flags to doctor submission", () => {
       const output = generateCompletion("zsh");
 
       expect(output).toContain("#compdef codex-plugin-doctor");
       expect(output).toContain("_arguments");
       expect(output).toContain("check");
       expect(output).toContain("submission");
-      expect(output).toContain("--markdown");
+      expect(output).toContain('[[ "$words[2]" == "doctor" && "$words[3]" == "submission" ]]');
+      expect(output).toContain("'*--require-ready[Fail when automatic checks are blocked]'");
+      expect(output).toContain("'*--runtime[Enable runtime probes]'");
     });
 
-    it("generates fish completion script", () => {
+    it("scopes fish submission flags to doctor submission", () => {
       const output = generateCompletion("fish");
 
       expect(output).toContain("complete -c codex-plugin-doctor");
       expect(output).toContain("__fish_seen_subcommand_from");
       expect(output).toContain("codex-publish");
       expect(output).toContain("submission");
-      expect(output).toContain("-l markdown");
+      expect(output).toContain('__fish_seen_subcommand_from doctor; and __fish_seen_subcommand_from submission');
+      expect(output).toContain('-l require-ready');
+      expect(output).not.toContain('complete -c codex-plugin-doctor -l require-ready');
     });
   });
 

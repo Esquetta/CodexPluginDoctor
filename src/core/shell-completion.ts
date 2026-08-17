@@ -21,6 +21,8 @@ const topLevelCommands = [
 ];
 
 const doctorCommands = ["submission"];
+const submissionFlags = ["--json", "--markdown", "--output", "--require-ready"];
+const fishSubmissionCondition = "__fish_seen_subcommand_from doctor; and __fish_seen_subcommand_from submission";
 
 function bashCompletion(): string {
   return [
@@ -32,6 +34,7 @@ function bashCompletion(): string {
     "",
     `  local commands="${topLevelCommands.join(" ")}"`,
     `  local doctor_commands="${doctorCommands.join(" ")}"`,
+    `  local submission_flags="${submissionFlags.join(" ")}"`,
     "",
     "  case \"${prev}\" in",
     "    codex-plugin-doctor)",
@@ -46,7 +49,11 @@ function bashCompletion(): string {
     "",
     "  case \"${cur}\" in",
     "    --*)",
-    "      local flags=\"--json --markdown --output --require-ready --runtime --policy --help\"",
+    "      if [[ ${COMP_WORDS[1]} == \"doctor\" && ${COMP_WORDS[2]} == \"submission\" ]]; then",
+    "        COMPREPLY=( $(compgen -W \"${submission_flags}\" -- \"${cur}\") )",
+    "        return 0",
+    "      fi",
+    "      local flags=\"--json --output --runtime --policy --help\"",
     "      COMPREPLY=( $(compgen -W \"${flags}\" -- \"${cur}\") )",
     "      return 0",
     "      ;;",
@@ -73,13 +80,20 @@ function zshCompletion(): string {
     `  local commands=(${topLevelCommands.join(" ")})`,
     `  local doctor_commands=(${doctorCommands.join(" ")})`,
     "",
+    "  if [[ \"$words[2]\" == \"doctor\" && \"$words[3]\" == \"submission\" ]]; then",
+    "    _arguments -C \\",
+    "      '*--json[Output as JSON]' \\",
+    "      '*--markdown[Output as Markdown]' \\",
+    "      '*--output[Write to file]:file:_files' \\",
+    "      '*--require-ready[Fail when automatic checks are blocked]'",
+    "    return",
+    "  fi",
+    "",
     "  _arguments -C \\",
     "    '1:command:(${commands})' \\",
     "    '2:doctor command:(${doctor_commands})' \\",
     "    '*--json[Output as JSON]' \\",
-    "    '*--markdown[Output as Markdown]' \\",
     "    '*--output[Write to file]:file:_files' \\",
-    "    '*--require-ready[Fail when automatic checks are blocked]' \\",
     "    '*--runtime[Enable runtime probes]' \\",
     "    '*--policy[Apply policy]:policy:(codex-publish mcp-strict security)'",
     "}",
@@ -95,9 +109,11 @@ function fishCompletion(): string {
     `complete -c codex-plugin-doctor -n "not __fish_seen_subcommand_from ${topLevelCommands.join(" ")}" -a "${topLevelCommands.join(" ")}"`,
     "complete -c codex-plugin-doctor -s h -l help -d 'Show help'",
     "complete -c codex-plugin-doctor -l json -d 'Output as JSON'",
-    "complete -c codex-plugin-doctor -l markdown -d 'Output as Markdown'",
     "complete -c codex-plugin-doctor -l output -d 'Write to file' -r",
-    "complete -c codex-plugin-doctor -l require-ready -d 'Fail when automatic checks are blocked'",
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l json -d 'Output as JSON'`,
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l markdown -d 'Output as Markdown'`,
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l output -d 'Write to file' -r`,
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l require-ready -d 'Fail when automatic checks are blocked'`,
     `complete -c codex-plugin-doctor -n "__fish_seen_subcommand_from doctor; and not __fish_seen_subcommand_from ${doctorCommands.join(" ")}" -a "${doctorCommands.join(" ")}"`,
     "complete -c codex-plugin-doctor -l runtime -d 'Enable runtime probes'",
     "complete -c codex-plugin-doctor -l policy -d 'Apply policy' -x -a 'codex-publish mcp-strict security'",
