@@ -1,19 +1,45 @@
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { deflateSync } from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { DiscoveredPackage } from "../src/domain/types.js";
-import { validateSubmissionAssets } from "../src/core/submission-assets.js";
+import { type SubmissionAssetResult, validateSubmissionAssets } from "../src/core/submission-assets.js";
 
 type AssetFiles = Record<string, string | Uint8Array>;
 
+const crc32 = (data: Uint8Array) => {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const pngChunk = (type: string, content: Uint8Array) => {
+  const chunk = new Uint8Array(content.length + 12);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, content.length);
+  chunk.set(type.split("").map((character) => character.charCodeAt(0)), 4);
+  chunk.set(content, 8);
+  view.setUint32(content.length + 8, crc32(chunk.slice(4, content.length + 8)));
+  return chunk;
+};
+
 const png = (width: number, height: number) => {
-  const data = new Uint8Array(24);
-  data.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
-  new DataView(data.buffer).setUint32(16, width);
-  new DataView(data.buffer).setUint32(20, height);
-  return data;
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, width); view.setUint32(4, height);
+  header.set([1, 0, 0, 0, 0], 8);
+  const scanlines = new Uint8Array((1 + Math.ceil(width / 8)) * height);
+  const idat = new Uint8Array(deflateSync(scanlines));
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())];
+  const image = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { image.set(part, offset); offset += part.length; }
+  return image;
 };
 
 const jpeg = (width: number, height: number) => {
@@ -64,7 +90,8 @@ async function packageWithAssets(interfaceValues: Record<string, unknown>, files
 }
 
 async function findingIds(interfaceValues: Record<string, unknown>, files: AssetFiles = {}): Promise<string[]> {
-  return (await validateSubmissionAssets(await packageWithAssets(interfaceValues, files))).findings.map((finding) => finding.id);
+  const result: SubmissionAssetResult = await validateSubmissionAssets(await packageWithAssets(interfaceValues, files));
+  return result.findings.map((finding) => finding.id);
 }
 
 describe("submission assets", () => {
@@ -83,6 +110,15 @@ describe("submission assets", () => {
 
   it("requires both branding assets", async () => {
     expect(await findingIds({}, {})).toEqual(["plugin.submission.asset.required", "plugin.submission.asset.required"]);
+  });
+
+  it("rejects a PNG whose declared IHDR is truncated", async () => {
+    const truncated = new Uint8Array(24);
+    truncated.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+    new DataView(truncated.buffer).setUint32(16, 48);
+    new DataView(truncated.buffer).setUint32(20, 48);
+    expect(await findingIds({ logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": truncated }))
+      .toEqual(["plugin.submission.asset.decode_failed", "plugin.submission.asset.decode_failed"]);
   });
 
   it.each([undefined, "logo.png", "../logo.png", "./../logo.png", "/logo.png", 42])("rejects invalid asset paths", async (value) => {

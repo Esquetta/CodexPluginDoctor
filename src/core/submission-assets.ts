@@ -19,6 +19,10 @@ type AssetFormat = "png" | "jpeg" | "webp" | "svg";
 type Dimensions = { width: number; height: number };
 type Evidence = SubmissionFinding["evidence"];
 
+export interface SubmissionAssetResult {
+  findings: SubmissionFinding[];
+}
+
 function finding(
   id: `plugin.submission.asset.${string}`,
   message: string,
@@ -36,14 +40,44 @@ function assetEvidence(field: string, packagePath?: string, format?: AssetFormat
   };
 }
 
+function crc32(buffer: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function readPng(buffer: Uint8Array): Dimensions | null {
-  if (buffer.length < 24 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => buffer[index] === byte)
-    || buffer[8] !== 0 || buffer[9] !== 0 || buffer[10] !== 0 || buffer[11] !== 13
-    || buffer[12] !== 73 || buffer[13] !== 72 || buffer[14] !== 68 || buffer[15] !== 82) {
+  if (buffer.length < 33 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => buffer[index] === byte)) {
     return null;
   }
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  return { width: view.getUint32(16), height: view.getUint32(20) };
+  let dimensions: Dimensions | null = null;
+  let sawIdat = false;
+  let offset = 8;
+  for (let chunks = 0; chunks < 128 && offset + 12 <= buffer.length; chunks += 1) {
+    const length = view.getUint32(offset);
+    const typeOffset = offset + 4;
+    const dataOffset = offset + 8;
+    if (length > buffer.length - dataOffset - 4) return null;
+    const dataEnd = dataOffset + length;
+    if (crc32(buffer.slice(typeOffset, dataEnd)) !== view.getUint32(dataEnd)) return null;
+    const type = fourCc(buffer, typeOffset);
+    if (offset === 8) {
+      if (type !== "IHDR" || length !== 13) return null;
+      dimensions = { width: view.getUint32(dataOffset), height: view.getUint32(dataOffset + 4) };
+    } else if (type === "IDAT") {
+      sawIdat ||= length > 0;
+    } else if (type === "IEND") {
+      return length === 0 && sawIdat && dataEnd + 4 === buffer.length ? dimensions : null;
+    }
+    offset = dataEnd + 4;
+  }
+  return null;
 }
 
 function readJpeg(buffer: Uint8Array): Dimensions | null {
@@ -238,7 +272,7 @@ async function validateAsset(rootPath: string, field: typeof assetFields[number]
   return invalidDimensions === null ? [] : [invalidDimensions];
 }
 
-export async function validateSubmissionAssets(discoveredPackage: DiscoveredPackage): Promise<{ findings: SubmissionFinding[] }> {
+export async function validateSubmissionAssets(discoveredPackage: DiscoveredPackage): Promise<SubmissionAssetResult> {
   const listing = discoveredPackage.manifest.interface;
   const interfaceValues = isRecord(listing) ? listing : {};
   const result = await Promise.all(assetFields.map((field) => validateAsset(discoveredPackage.rootPath, field, interfaceValues[field])));

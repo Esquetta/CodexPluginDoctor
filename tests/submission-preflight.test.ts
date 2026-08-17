@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildSubmissionPreflight } from "../src/core/submission-preflight.js";
@@ -23,10 +24,37 @@ const validManifest = {
   }
 };
 
-const validPng = new Uint8Array([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
-  0, 0, 0, 48, 0, 0, 0, 48
-]);
+const crc32 = (data: Uint8Array) => {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const pngChunk = (type: string, content: Uint8Array) => {
+  const chunk = new Uint8Array(content.length + 12);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, content.length);
+  chunk.set(type.split("").map((character) => character.charCodeAt(0)), 4);
+  chunk.set(content, 8);
+  view.setUint32(content.length + 8, crc32(chunk.slice(4, content.length + 8)));
+  return chunk;
+};
+
+const validPng = (() => {
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 48); view.setUint32(4, 48);
+  header.set([1, 0, 0, 0, 0], 8);
+  const idat = new Uint8Array(deflateSync(new Uint8Array((1 + Math.ceil(48 / 8)) * 48)));
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())];
+  const image = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { image.set(part, offset); offset += part.length; }
+  return image;
+})();
 
 const validAssetFiles: Record<string, Uint8Array> = {
   "assets/logo.png": validPng,
