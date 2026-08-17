@@ -100,6 +100,7 @@ function rejectUnknownKeys(value: Metadata, allowed: Set<string>): boolean {
 function isToolDescriptor(value: unknown): value is Metadata {
   return isRecord(value) && !rejectUnknownKeys(value, toolDescriptorKeys)
     && (value.type === "mcp" || value.type === "cli")
+    && (value.type !== "cli" || (value.transport === undefined && value.url === undefined))
     && supportedText(value.value)
     && (value.description === undefined || supportedText(value.description))
     && (value.transport === undefined || supportedText(value.transport))

@@ -154,7 +154,9 @@ describe("submission skill metadata", () => {
     ["policy shape", `${agent}policy: { products: [CHAT, CHAT], allow_implicit_invocation: yes }\n`, "plugin.submission.skill.agent.invalid_shape"],
     ["string dependency", `${agent}dependencies: { tools: [read_file] }\n`, "plugin.submission.skill.agent.invalid_shape"],
     ["unsupported descriptor", `${agent}dependencies: { tools: [{ type: mcp, value: figma, unsupported: no }] }\n`, "plugin.submission.skill.agent.invalid_shape"],
-    ["blank descriptor", `${agent}dependencies: { tools: [{ type: cli, value: \" \" }] }\n`, "plugin.submission.skill.agent.invalid_shape"]
+    ["blank descriptor", `${agent}dependencies: { tools: [{ type: cli, value: \" \" }] }\n`, "plugin.submission.skill.agent.invalid_shape"],
+    ["CLI transport", `${agent}dependencies: { tools: [{ type: cli, value: adb, transport: streamable_http }] }\n`, "plugin.submission.skill.agent.invalid_shape"],
+    ["CLI URL", `${agent}dependencies: { tools: [{ type: cli, value: adb, url: https://example.com }] }\n`, "plugin.submission.skill.agent.invalid_shape"]
   ] as const)("rejects agent metadata with %s", async (_caseName, contents, expected) => {
     const result = await validateSubmissionSkillMetadata(await packageWith("./skills", {
       "skills/check/SKILL.md": skill(),
