@@ -445,6 +445,30 @@ describe("submission skill metadata", () => {
     expect(outsideSkill?.evidence).toEqual({ path: "skills/check" });
   });
 
+  it("rejects reader agent metadata with a contained-looking traversal target", async () => {
+    const result = await validateSubmissionSkillMetadataFromReader(
+      { name: "submission-plugin", skills: "./skills" },
+      "skills-only",
+      createMemorySubmissionPackageReader({
+        skills: { kind: "directory" },
+        "skills/check": { kind: "directory" },
+        "skills/other": { kind: "directory" },
+        "skills/check/SKILL.md": { content: skill() },
+        "skills/check/agents": { kind: "directory" },
+        "skills/check/agents/openai.yaml": {
+          content: agent,
+          resolvedPackagePath: "skills/check/agents/../../other/agents/openai.yaml"
+        }
+      })
+    );
+    const outsideSkill = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_path"
+    );
+
+    expect(outsideSkill?.message).toBe("Optional agent metadata resolves outside its skill.");
+    expect(outsideSkill?.evidence).toEqual({ path: "skills/check" });
+  });
+
   if (process.platform !== "win32") {
     it("rejects an in-skill agent-file symlink before parsing its content", async () => {
       const discovered = await packageWith("./skills", {

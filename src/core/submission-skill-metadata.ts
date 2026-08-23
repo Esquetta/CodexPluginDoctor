@@ -78,6 +78,14 @@ function relativePackagePath(base: string, value: string): string | null {
   return resolved === ".." || resolved.startsWith("../") || resolved === "." ? null : resolved;
 }
 
+function normalizeResolvedPackagePath(value: unknown): string | null {
+  if (typeof value !== "string" || value === "" || value.includes("\\") || path.posix.isAbsolute(value)
+    || /^[A-Za-z]:/u.test(value) || /[\u0000-\u001F\u007F]/u.test(value)) return null;
+  const normalized = path.posix.normalize(value);
+  if (normalized === "" || normalized === "." || normalized === ".." || normalized.startsWith("../")) return null;
+  return normalized;
+}
+
 function isWithinPackagePath(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(`${root}/`);
 }
@@ -150,8 +158,9 @@ async function validateAgentFile(reader: SubmissionPackageReader, skillRoot: str
   if (agentDetails.resolvedKind !== "file") {
     return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a regular file.", { path: agentPath })];
   }
-  const resolvedAgentPath = agentDetails.resolvedPackagePath ?? agentPath;
-  if (!isWithinPackagePath(resolvedSkillRoot, resolvedAgentPath)) {
+  const normalizedSkillRoot = normalizeResolvedPackagePath(resolvedSkillRoot);
+  const resolvedAgentPath = normalizeResolvedPackagePath(agentDetails.resolvedPackagePath ?? agentPath);
+  if (normalizedSkillRoot === null || resolvedAgentPath === null || !isWithinPackagePath(normalizedSkillRoot, resolvedAgentPath)) {
     return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent metadata resolves outside its skill.", { path: skillPath })];
   }
   const source = await readSafeUtf8(reader, agentPath, maxAgentBytes, budget);
