@@ -8,6 +8,10 @@ import packageJson from "../package.json" with { type: "json" };
 
 const execFileAsync = promisify(execFile);
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/gu, "\n");
+}
+
 async function renderActionManifest(actionMetadata: string, targetPath: string): Promise<Record<string, unknown>> {
   const start = actionMetadata.indexOf('        const fs = require("node:fs");');
   const end = actionMetadata.indexOf("\n        NODE", start);
@@ -214,7 +218,7 @@ describe("GitHub Action metadata", () => {
   });
 
   it("rejects installed-cache submission preflight requests without producing submission reports", async () => {
-    const actionMetadata = await readFile("action.yml", "utf8");
+    const actionMetadata = normalizeNewlines(await readFile("action.yml", "utf8"));
 
     expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${{ inputs.installed }}" == "true" ]]; then');
     expect(actionMetadata).toContain('echo "Submission preflight requires a single package path, not installed-cache mode." >&2');
