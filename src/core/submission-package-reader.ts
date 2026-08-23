@@ -14,6 +14,7 @@ export interface SubmissionPackageEntry {
   packagePath: string;
   kind: SubmissionPackageEntryKind;
   resolvedKind: Exclude<SubmissionPackageEntryKind, "symlink"> | null;
+  resolvedPackagePath?: string;
   size: number;
   safeResolution: "safe" | "outside" | "unavailable";
 }
@@ -190,8 +191,11 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
 
         const targetStats = await stat(candidatePath);
 
+        const resolvedPackagePath = path.relative(rootCanonicalPath, canonicalCandidatePath).split(path.sep).join("/");
+
         return {
           packagePath,
+          ...(resolvedPackagePath === packagePath ? {} : { resolvedPackagePath }),
           kind,
           resolvedKind: resolvedEntryKind(targetStats),
           size: targetStats.size,

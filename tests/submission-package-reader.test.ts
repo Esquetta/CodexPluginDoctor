@@ -156,6 +156,7 @@ describe("directory submission package reader", () => {
       packagePath: "contained-link.txt",
       kind: "symlink",
       resolvedKind: "file",
+      resolvedPackagePath: "a-first.txt",
       size: expect.any(Number),
       safeResolution: "safe"
     });

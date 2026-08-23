@@ -10,6 +10,7 @@ export interface MemorySubmissionPackageEntry {
   content?: string | Uint8Array;
   kind?: SubmissionPackageEntryKind;
   resolvedKind?: ResolvedEntryKind | null;
+  resolvedPackagePath?: string;
   safeResolution?: SubmissionPackageEntry["safeResolution"];
   size?: number;
 }
@@ -55,6 +56,7 @@ function entryFor(packagePath: string, source: MemorySubmissionPackageEntry): Su
   return {
     packagePath,
     kind,
+    ...(source.resolvedPackagePath === undefined ? {} : { resolvedPackagePath: source.resolvedPackagePath }),
     resolvedKind: source.resolvedKind ?? (kind === "symlink" ? null : kind),
     size: source.size ?? content?.byteLength ?? 0,
     safeResolution: source.safeResolution ?? "safe"

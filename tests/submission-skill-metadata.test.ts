@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { validateSubmissionSkillMetadata } from "../src/core/submission-skill-metadata.js";
+import { validateSubmissionSkillMetadata, validateSubmissionSkillMetadataFromReader } from "../src/core/submission-skill-metadata.js";
+import { createMemorySubmissionPackageReader } from "./helpers/submission-memory-reader.js";
 
 const skill = (name = "check", description = "Checks plugin metadata") => `---\nname: ${name}\ndescription: ${description}\n---\n\nUse the checker.\n`;
 const agent = `interface:\n  display_name: Check\n  short_description: Check plugin metadata\n`;
@@ -339,6 +340,54 @@ describe("submission skill metadata", () => {
     });
   }
 
+  it("rejects an agents junction that resolves into a sibling skill", async () => {
+    const discovered = await packageWith("./skills", {
+      "skills/check/SKILL.md": skill(),
+      "skills/other/SKILL.md": skill("other"),
+      "skills/other/agents/openai.yaml": agent
+    });
+    await symlink(
+      path.join(discovered.rootPath, "skills", "other", "agents"),
+      path.join(discovered.rootPath, "skills", "check", "agents"),
+      "junction"
+    );
+
+    const result = await validateSubmissionSkillMetadata(discovered, "skills-only");
+    const outsideSkill = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_path"
+    );
+
+    expect(outsideSkill?.message).toBe("Optional agent metadata resolves outside its skill.");
+    expect(outsideSkill?.evidence).toEqual({ path: "skills/check" });
+  });
+
+  it("rejects reader agent metadata resolved into a sibling skill", async () => {
+    const result = await validateSubmissionSkillMetadataFromReader(
+      { name: "submission-plugin", skills: "./skills" },
+      "skills-only",
+      createMemorySubmissionPackageReader({
+        skills: { kind: "directory" },
+        "skills/check": { kind: "directory" },
+        "skills/other": { kind: "directory" },
+        "skills/check/SKILL.md": { content: skill() },
+        "skills/other/SKILL.md": { content: skill("other") },
+        "skills/check/agents": { kind: "directory" },
+        "skills/check/agents/openai.yaml": {
+          content: agent,
+          resolvedPackagePath: "skills/other/agents/openai.yaml"
+        },
+        "skills/other/agents": { kind: "directory" },
+        "skills/other/agents/openai.yaml": { content: agent }
+      })
+    );
+    const outsideSkill = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_path"
+    );
+
+    expect(outsideSkill?.message).toBe("Optional agent metadata resolves outside its skill.");
+    expect(outsideSkill?.evidence).toEqual({ path: "skills/check" });
+  });
+
   if (process.platform !== "win32") {
     it("rejects an in-skill agent-file symlink before parsing its content", async () => {
       const discovered = await packageWith("./skills", {
@@ -379,5 +428,35 @@ describe("submission skill metadata", () => {
     expect(JSON.stringify(result)).not.toContain(sentinel);
     expect(await readFile(new URL("../src/core/submission-skill-metadata.ts", import.meta.url), "utf8"))
       .not.toMatch(/child_process|node:child_process/u);
+  });
+});
+
+describe("submission skill metadata reader parity", () => {
+  it("matches the directory wrapper for a normalized skills root and contained agent assets", async () => {
+    const agentMetadata = `${agent}  icon_small: ./icon.svg\n  icon_large: ../../assets/logo.svg\n`;
+    const reader = createMemorySubmissionPackageReader({
+      skills: { kind: "directory" },
+      "skills/check": { kind: "directory" },
+      "skills/check/SKILL.md": { content: skill() },
+      "skills/check/agents": { kind: "directory" },
+      "skills/check/agents/openai.yaml": { content: agentMetadata },
+      "skills/check/icon.svg": { content: "icon" },
+      assets: { kind: "directory" },
+      "assets/logo.svg": { content: "logo" }
+    });
+
+    const fromReader = await validateSubmissionSkillMetadataFromReader(
+      { name: "submission-plugin", skills: "./skills/./" },
+      "skills-only",
+      reader
+    );
+    const fromDirectory = await validateSubmissionSkillMetadata(await packageWith("./skills", {
+      "skills/check/SKILL.md": skill(),
+      "skills/check/agents/openai.yaml": agentMetadata,
+      "skills/check/icon.svg": "icon",
+      "assets/logo.svg": "logo"
+    }), "skills-only");
+
+    expect(fromReader).toEqual(fromDirectory);
   });
 });
