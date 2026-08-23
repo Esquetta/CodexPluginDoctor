@@ -386,8 +386,11 @@ async function validateAsset(
   if (details === null) {
     return [finding("plugin.submission.asset.missing", "Branding asset is missing.", assetEvidence(field, packagePath, extension))];
   }
-  if (details.safeResolution !== "safe") {
+  if (details.safeResolution === "outside") {
     return [finding("plugin.submission.asset.invalid_path", "Branding asset path is invalid.", assetEvidence(field))];
+  }
+  if (details.safeResolution !== "safe") {
+    return [finding("plugin.submission.asset.missing", "Branding asset is missing.", assetEvidence(field, packagePath, extension))];
   }
   if (details.resolvedKind !== "file") {
     return [finding("plugin.submission.asset.unsupported_format", "Branding asset must be a regular file.", assetEvidence(field, packagePath, extension))];

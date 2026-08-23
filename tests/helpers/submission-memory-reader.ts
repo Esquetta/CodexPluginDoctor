@@ -94,7 +94,12 @@ export function createMemorySubmissionPackageReader(
       if (sourceEntry === undefined) return null;
       const entry = entryFor(normalizedPackagePath, sourceEntry);
       const content = bytesFor(sourceEntry);
-      if (entry.resolvedKind !== "file" || entry.safeResolution !== "safe" || entry.size > maxBytes || content === null) return null;
+      if (entry.resolvedKind !== "file"
+        || entry.safeResolution !== "safe"
+        || entry.size > maxBytes
+        || content === null
+        || content.byteLength > maxBytes
+        || entry.size !== content.byteLength) return null;
       return Uint8Array.from(content);
     }
   };

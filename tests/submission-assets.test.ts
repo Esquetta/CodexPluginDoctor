@@ -416,6 +416,44 @@ describe("submission asset reader parity", () => {
     expect(JSON.stringify(result)).not.toContain(external);
   });
 
+  it("preserves missing findings for unavailable asset links", async () => {
+    const result = await validateSubmissionAssetsFromReader({
+      interface: {
+        logo: "./broken.png",
+        composerIcon: "./icon.png"
+      }
+    }, createMemorySubmissionPackageReader({
+      "broken.png": {
+        kind: "symlink",
+        resolvedKind: null,
+        safeResolution: "unavailable"
+      },
+      "icon.png": { content: png(48, 48) }
+    }));
+
+    expect(result.findings).toEqual([{
+      id: "plugin.submission.asset.missing",
+      severity: "fail",
+      message: "Branding asset is missing.",
+      evidence: { field: "logo", path: "broken.png", format: "png" }
+    }]);
+  });
+
+  it("keeps memory-reader byte bounds independent of declared metadata", async () => {
+    const reader = createMemorySubmissionPackageReader({
+      "mismatch.bin": { content: new Uint8Array([1, 2]), size: 1 },
+      "exact.bin": { content: new Uint8Array([3, 4]), size: 2 }
+    });
+
+    await expect(reader.read("mismatch.bin", 1)).resolves.toBeNull();
+    await expect(reader.read("mismatch.bin", 2)).resolves.toBeNull();
+    const first = await reader.read("exact.bin", 2);
+    const second = await reader.read("exact.bin", 2);
+    expect(first).toEqual(new Uint8Array([3, 4]));
+    expect(second).toEqual(new Uint8Array([3, 4]));
+    expect(first).not.toBe(second);
+  });
+
   it("requires exact interface fields and keeps host paths and content private", async () => {
     const reader = createMemorySubmissionPackageReader({ "secret.png": { content: "private-payload" } });
     await expect(validateSubmissionAssetsFromReader({ interface: null }, reader)).resolves.toEqual({
