@@ -225,21 +225,33 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
         }
 
         const childNames = await readdir(directoryPath);
-        const entries = await Promise.all(childNames.map(async (childName) => {
-          const childPackagePath = normalizedDirectory === ""
-            ? childName
-            : `${normalizedDirectory}/${childName}`;
+        const entries: Array<SubmissionPackageEntry | null> = new Array(childNames.length).fill(null);
+        let nextChildIndex = 0;
 
-          try {
-            const normalizedChildPath = normalizePackagePath(childPackagePath, {
-              allowRoot: false,
-              allowTrailingSlash: false
-            });
-            return entryFor(normalizedChildPath);
-          } catch {
-            return null;
+        async function readNextChild(): Promise<void> {
+          while (nextChildIndex < childNames.length) {
+            const childIndex = nextChildIndex;
+            nextChildIndex += 1;
+            const childName = childNames[childIndex];
+            const childPackagePath = normalizedDirectory === ""
+              ? childName
+              : `${normalizedDirectory}/${childName}`;
+
+            try {
+              const normalizedChildPath = normalizePackagePath(childPackagePath, {
+                allowRoot: false,
+                allowTrailingSlash: false
+              });
+              entries[childIndex] = await entryFor(normalizedChildPath);
+            } catch {
+              entries[childIndex] = null;
+            }
           }
-        }));
+        }
+
+        const workerCount = Math.min(16, childNames.length);
+        const workers = Array.from({ length: workerCount }, async () => readNextChild());
+        await Promise.all(workers);
 
         return entries
           .filter((entry): entry is SubmissionPackageEntry => entry !== null)

@@ -71,6 +71,30 @@ describe("directory submission package reader", () => {
     expect(entries.map((entry) => entry.packagePath)).not.toContain("nested/child.txt");
   });
 
+  it("returns complete sorted listings with bounded metadata workers", async () => {
+    const { rootPath, reader } = await createReaderFixture();
+    const bulkNames = Array.from(
+      { length: 300 },
+      (_, index) => `bulk-${String(index).padStart(3, "0")}.txt`
+    );
+
+    for (const name of bulkNames) {
+      await writeFile(path.join(rootPath, name), name);
+    }
+
+    const listedPaths = (await reader.list("")).map((entry) => entry.packagePath);
+    const expectedPaths = [
+      "a-first.txt",
+      "empty",
+      "nested",
+      "z-last.txt",
+      ...bulkNames
+    ].sort((left, right) => left.localeCompare(right));
+
+    expect(listedPaths).toEqual(expectedPaths);
+    expect(new Set(listedPaths).size).toBe(listedPaths.length);
+  });
+
   it("returns list entries that round-trip through stat", async () => {
     const { reader } = await createReaderFixture();
     const entries = await reader.list("");
