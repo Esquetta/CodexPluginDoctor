@@ -380,10 +380,26 @@ describe("submission asset reader parity", () => {
     await expectReaderParity({ logo: assetPath, composerIcon: assetPath }, { [assetPath.slice(2)]: content });
   });
 
+  it("preserves contained dot-segment asset paths", async () => {
+    const content = png(48, 48);
+    const interfaceValues = {
+      logo: "./assets/../logo.png",
+      composerIcon: "./assets/../logo.png"
+    };
+    const discoveredPackage = await packageWithAssets(interfaceValues, { "logo.png": content });
+    const directoryResult = await validateSubmissionAssets(discoveredPackage);
+    const readerResult = await validateSubmissionAssetsFromReader(
+      discoveredPackage.manifest,
+      createMemorySubmissionPackageReader({ "logo.png": { content } })
+    );
+
+    expect(directoryResult.findings).toEqual([]);
+    expect(readerResult.findings).toEqual([]);
+  });
+
   it.each([
     ["missing", { logo: "./missing.png", composerIcon: "./missing.png" }, {}],
     ["non-dot-relative", { logo: "logo.png", composerIcon: "./logo.png" }, { "logo.png": png(48, 48) }],
-    ["lexical traversal", { logo: "./assets/../logo.png", composerIcon: "./logo.png" }, { "logo.png": png(48, 48) }],
     ["unsupported extension", { logo: "./logo.gif", composerIcon: "./logo.gif" }, { "logo.gif": png(48, 48) }],
     ["decode failure", { logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": new Uint8Array([1, 2, 3]) }],
     ["extension mismatch", { logo: "./logo.jpg", composerIcon: "./logo.jpg" }, { "logo.jpg": png(48, 48) }],

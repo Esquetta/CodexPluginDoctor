@@ -359,8 +359,13 @@ function assetPackagePath(value: string): string | null {
     || /[\u0000-\u001F\u007F]/u.test(packagePath)) {
     return null;
   }
-  const segments = packagePath.split("/");
-  return segments.some((segment) => segment === "" || segment === "." || segment === "..") ? null : packagePath;
+  const normalizedPackagePath = path.posix.normalize(packagePath);
+  if (normalizedPackagePath === "."
+    || normalizedPackagePath === ""
+    || normalizedPackagePath === ".."
+    || normalizedPackagePath.startsWith("../")
+    || path.posix.isAbsolute(normalizedPackagePath)) return null;
+  return normalizedPackagePath;
 }
 
 async function validateAsset(
