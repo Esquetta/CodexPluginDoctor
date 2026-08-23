@@ -15,6 +15,15 @@ const maxMemberBytes = 100 * 1024 * 1024;
 const maxTotalBytes = 512 * 1024 * 1024;
 const maxPathSegments = 20;
 const invalidPackagePathMessage = "Invalid package path.";
+const unsafeArchiveFileName = /[\u0000-\u001F\u007F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/u;
+
+function sanitizedArchiveFileName(value: unknown): string {
+  if (typeof value !== "string") return "archive.zip";
+  const fileName = path.basename(value);
+  return fileName === "" || fileName.trim() !== fileName || unsafeArchiveFileName.test(fileName)
+    ? "archive.zip"
+    : fileName;
+}
 
 export interface SubmissionArchiveFinding extends SubmissionFinding {
   id: `plugin.submission.archive.${string}`;
@@ -367,6 +376,9 @@ async function readArchiveMetadata(
       if (disk !== 0 || centralDisk !== 0 || entriesOnDisk !== entryCount
         || centralStart32 > eocdOffset
         || centralSize32 > eocdOffset - centralStart32) return null;
+      if (entryCount === 0 && centralSize32 === 0 && centralStart32 === eocdOffset) {
+        return { centralStart: centralStart32, metadataStart: centralStart32 };
+      }
       const signature = await readExactly(fileDescriptor, centralStart32, 4);
       return signature?.readUInt32LE(0) === 0x02014b50
         ? { centralStart: centralStart32, metadataStart: centralStart32 }
@@ -488,7 +500,7 @@ function createArchiveReader(zipPath: string, checkedEntries: readonly CheckedEn
 }
 
 export async function inspectSubmissionArchive(zipPath: string): Promise<SubmissionArchiveInspection> {
-  const fileName = typeof zipPath === "string" ? path.basename(zipPath) : "archive.zip";
+  const fileName = sanitizedArchiveFileName(zipPath);
   let details: Stats;
   try {
     if (typeof zipPath !== "string" || path.extname(zipPath).toLowerCase() !== ".zip") {

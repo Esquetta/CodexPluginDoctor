@@ -39,7 +39,8 @@ export interface SubmissionPreflightReport {
 }
 
 type Evidence = SubmissionFinding["evidence"];
-type TargetType = SubmissionPreflightReport["targetType"];
+export type SubmissionTargetType = SubmissionPreflightReport["targetType"];
+type TargetType = SubmissionTargetType;
 
 const packageNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -167,7 +168,7 @@ function isValidHttpsUrl(value: unknown): value is string {
   }
 }
 
-function validateListing(manifest: Record<string, unknown>, targetType: TargetType): SubmissionFinding[] {
+export function validateSubmissionListing(manifest: Record<string, unknown>, targetType: SubmissionTargetType): SubmissionFinding[] {
   const findings: SubmissionFinding[] = [];
   validatePackage(manifest, findings);
 
@@ -324,7 +325,7 @@ export async function buildSubmissionPreflight(targetPath: string): Promise<Subm
   const targetType: TargetType = manifest.mcpServers !== undefined || manifest.apps !== undefined
     ? "mcp-backed"
     : "skills-only";
-  const listingFindings = validateListing(manifest, targetType);
+  const listingFindings = validateSubmissionListing(manifest, targetType);
   const componentFindings = await validateApp(discovered.rootPath, manifest.apps);
   const assetFindings = (await validateSubmissionAssets(discovered)).findings;
   const skillFindings = (await validateSubmissionSkillMetadata(discovered, targetType)).findings;

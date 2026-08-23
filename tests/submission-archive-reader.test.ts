@@ -54,6 +54,17 @@ describe("submission archive reader", () => {
     await expect(inspection.reader?.read("skills/check/SKILL.md", 100)).resolves.toEqual(new TextEncoder().encode("# check"));
   });
 
+  it("accepts a structurally valid zero-entry ZIP for root-level policy diagnostics", async () => {
+    const inspection = await inspectFixture(createZipFixture([]), "empty.zip");
+
+    expect(inspection).toMatchObject({
+      entryCount: 0,
+      entries: [],
+      findings: []
+    });
+    expect(inspection.reader).not.toBeNull();
+  });
+
   it("rejects non-ZIP, empty, truncated, multi-disk, and encrypted inputs without throwing", async () => {
     for (const [name, content] of [
       ["not-a-zip.txt", new Uint8Array([1])],
