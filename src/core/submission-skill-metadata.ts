@@ -144,8 +144,11 @@ async function validateAgentFile(reader: SubmissionPackageReader, skillRoot: str
   if (agentDetails.safeResolution === "outside") {
     return [finding("plugin.submission.skill.agent.invalid_path", "Optional agent metadata resolves outside its skill.", { path: skillPath })];
   }
-  if (agentDetails.safeResolution !== "safe" || agentDetails.resolvedKind !== "file") {
+  if (agentDetails.safeResolution !== "safe") {
     return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a readable regular file.", { path: agentPath })];
+  }
+  if (agentDetails.resolvedKind !== "file") {
+    return [finding("plugin.submission.skill.agent.invalid_file", "Optional agent metadata must be a regular file.", { path: agentPath })];
   }
   const resolvedAgentPath = agentDetails.resolvedPackagePath ?? agentPath;
   if (!isWithinPackagePath(resolvedSkillRoot, resolvedAgentPath)) {

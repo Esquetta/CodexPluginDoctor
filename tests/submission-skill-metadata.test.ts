@@ -192,6 +192,63 @@ describe("submission skill metadata", () => {
     expect(ids(result)).toContain(expected);
   });
 
+  it("reports an existing directory agent entry as a non-file through the directory wrapper", async () => {
+    const discovered = await packageWith("./skills", { "skills/check/SKILL.md": skill() });
+    await mkdir(path.join(discovered.rootPath, "skills", "check", "agents", "openai.yaml"), { recursive: true });
+
+    const result = await validateSubmissionSkillMetadata(discovered, "skills-only");
+    const invalidFile = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_file"
+    );
+
+    expect(invalidFile?.message).toBe("Optional agent metadata must be a regular file.");
+    expect(invalidFile?.evidence).toEqual({ path: "skills/check/agents/openai.yaml" });
+  });
+
+  it("reports an existing directory agent entry as a non-file through a memory reader", async () => {
+    const result = await validateSubmissionSkillMetadataFromReader(
+      { name: "submission-plugin", skills: "./skills" },
+      "skills-only",
+      createMemorySubmissionPackageReader({
+        skills: { kind: "directory" },
+        "skills/check": { kind: "directory" },
+        "skills/check/SKILL.md": { content: skill() },
+        "skills/check/agents": { kind: "directory" },
+        "skills/check/agents/openai.yaml": { kind: "directory" }
+      })
+    );
+    const invalidFile = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_file"
+    );
+
+    expect(invalidFile?.message).toBe("Optional agent metadata must be a regular file.");
+    expect(invalidFile?.evidence).toEqual({ path: "skills/check/agents/openai.yaml" });
+  });
+
+  it("reports an unavailable agent entry as unreadable through a memory reader", async () => {
+    const result = await validateSubmissionSkillMetadataFromReader(
+      { name: "submission-plugin", skills: "./skills" },
+      "skills-only",
+      createMemorySubmissionPackageReader({
+        skills: { kind: "directory" },
+        "skills/check": { kind: "directory" },
+        "skills/check/SKILL.md": { content: skill() },
+        "skills/check/agents": { kind: "directory" },
+        "skills/check/agents/openai.yaml": {
+          kind: "file",
+          resolvedKind: null,
+          safeResolution: "unavailable"
+        }
+      })
+    );
+    const invalidFile = result.findings.find(
+      (item) => item.id === "plugin.submission.skill.agent.invalid_file"
+    );
+
+    expect(invalidFile?.message).toBe("Optional agent metadata must be a readable regular file.");
+    expect(invalidFile?.evidence).toEqual({ path: "skills/check/agents/openai.yaml" });
+  });
+
   it.each([
     "policy: { products: [CHAT] }\n",
     "policy: { allow_implicit_invocation: false }\n",
