@@ -15,6 +15,7 @@ This directory contains public documentation for users, contributors, and securi
 - [MCP Registry Readiness](architecture/mcp-registry-readiness.md)
 - [MCP Registry Publication Preflight](architecture/mcp-registry-publication-preflight.md)
 - [Public Directory Submission Preflight](architecture/public-directory-submission-preflight.md)
+- [Public Directory Archive Preflight](architecture/public-directory-archive-preflight.md)
 - [Real-World Corpus Quality Metrics](architecture/real-world-corpus-quality-metrics.md)
 - [Corpus Metrics Regression Diff](architecture/corpus-metrics-regression-diff.md)
 
