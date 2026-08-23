@@ -127,6 +127,9 @@ describe("directory submission package reader", () => {
       safeResolution: "outside"
     });
     await expect(reader.read("outside-link", 100)).resolves.toBeNull();
+    await expect(reader.stat("outside-link/private.txt")).resolves.toBeNull();
+    await expect(reader.read("outside-link/private.txt", 100)).resolves.toBeNull();
+    await expect(reader.list("outside-link")).resolves.toEqual([]);
   });
 
   fileSymlinkIt("marks broken links as unavailable", async () => {

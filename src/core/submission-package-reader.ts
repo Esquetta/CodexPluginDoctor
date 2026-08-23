@@ -1,7 +1,7 @@
 import {
   lstat,
+  open,
   readdir,
-  readFile,
   realpath,
   stat
 } from "node:fs/promises";
@@ -119,6 +119,29 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
     }
   }
 
+  async function ancestorsStayWithinRoot(
+    packagePath: string,
+    rootCanonicalPath: string
+  ): Promise<boolean> {
+    const segments = packagePath.split("/");
+    let ancestorPath = nativeRootPath;
+
+    for (const segment of segments.slice(0, -1)) {
+      ancestorPath = path.join(ancestorPath, segment);
+
+      try {
+        const canonicalAncestorPath = await realpath(ancestorPath);
+        if (!isWithinRoot(rootCanonicalPath, canonicalAncestorPath)) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async function entryFor(packagePath: string): Promise<SubmissionPackageEntry | null> {
     const candidatePath = nativePathFor(nativeRootPath, packagePath);
 
@@ -127,13 +150,15 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
     }
 
     try {
-      const entryStats = await lstat(candidatePath);
-      const kind = packageEntryKind(entryStats);
       const rootCanonicalPath = await canonicalRootPath();
 
-      if (rootCanonicalPath === null) {
+      if (rootCanonicalPath === null
+        || !(await ancestorsStayWithinRoot(packagePath, rootCanonicalPath))) {
         return null;
       }
+
+      const entryStats = await lstat(candidatePath);
+      const kind = packageEntryKind(entryStats);
 
       try {
         const canonicalCandidatePath = await realpath(candidatePath);
@@ -241,10 +266,53 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
         return null;
       }
 
+      let fileHandle: Awaited<ReturnType<typeof open>> | null = null;
+
       try {
-        return new Uint8Array(await readFile(candidatePath));
+        fileHandle = await open(candidatePath, "r");
+        const handleStats = await fileHandle.stat();
+
+        if (!handleStats.isFile()
+          || !Number.isSafeInteger(handleStats.size)
+          || handleStats.size < 0
+          || handleStats.size > maxBytes) {
+          return null;
+        }
+
+        const rootCanonicalPath = await canonicalRootPath();
+        const canonicalCandidatePath = await realpath(candidatePath);
+        const pathStats = await stat(candidatePath);
+
+        if (rootCanonicalPath === null
+          || !isWithinRoot(rootCanonicalPath, canonicalCandidatePath)
+          || !pathStats.isFile()
+          || handleStats.dev !== pathStats.dev
+          || handleStats.ino !== pathStats.ino) {
+          return null;
+        }
+
+        const content = Buffer.alloc(handleStats.size);
+        let offset = 0;
+
+        while (offset < content.length) {
+          const { bytesRead } = await fileHandle.read(content, offset, content.length - offset, offset);
+          if (bytesRead === 0) {
+            return null;
+          }
+          offset += bytesRead;
+        }
+
+        const probe = Buffer.alloc(1);
+        const { bytesRead: extraBytesRead } = await fileHandle.read(probe, 0, 1, offset);
+        if (extraBytesRead !== 0) {
+          return null;
+        }
+
+        return Uint8Array.from(content);
       } catch {
         return null;
+      } finally {
+        await fileHandle?.close().catch(() => undefined);
       }
     }
   };
