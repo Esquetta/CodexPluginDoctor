@@ -225,9 +225,21 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
         }
 
         const childNames = await readdir(directoryPath);
-        const entries = await Promise.all(childNames.map(async (childName) => entryFor(
-          normalizedDirectory === "" ? childName : `${normalizedDirectory}/${childName}`
-        )));
+        const entries = await Promise.all(childNames.map(async (childName) => {
+          const childPackagePath = normalizedDirectory === ""
+            ? childName
+            : `${normalizedDirectory}/${childName}`;
+
+          try {
+            const normalizedChildPath = normalizePackagePath(childPackagePath, {
+              allowRoot: false,
+              allowTrailingSlash: false
+            });
+            return entryFor(normalizedChildPath);
+          } catch {
+            return null;
+          }
+        }));
 
         return entries
           .filter((entry): entry is SubmissionPackageEntry => entry !== null)

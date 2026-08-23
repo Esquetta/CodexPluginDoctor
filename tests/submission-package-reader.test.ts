@@ -11,6 +11,7 @@ import {
 
 const temporaryDirectories: string[] = [];
 const fileSymlinkIt = process.platform === "win32" ? it.skip : it;
+const unsafeNameIt = process.platform === "linux" ? it : it.skip;
 
 async function createTemporaryDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -68,6 +69,31 @@ describe("directory submission package reader", () => {
     const entries = await reader.list("");
 
     expect(entries.map((entry) => entry.packagePath)).not.toContain("nested/child.txt");
+  });
+
+  it("returns list entries that round-trip through stat", async () => {
+    const { reader } = await createReaderFixture();
+    const entries = await reader.list("");
+
+    for (const entry of entries) {
+      await expect(reader.stat(entry.packagePath)).resolves.not.toBeNull();
+    }
+  });
+
+  unsafeNameIt("filters unsafe native child names from package listings", async () => {
+    const { rootPath, reader } = await createReaderFixture();
+    const unsafeNames = [
+      "a\\b",
+      "C:entry",
+      `control${String.fromCharCode(1)}entry`
+    ];
+
+    await Promise.all(unsafeNames.map(async (name) => writeFile(path.join(rootPath, name), "unsafe")));
+
+    const listedPaths = (await reader.list("")).map((entry) => entry.packagePath);
+    for (const unsafeName of unsafeNames) {
+      expect(listedPaths).not.toContain(unsafeName);
+    }
   });
 
   it("returns null for missing stat and read targets", async () => {
