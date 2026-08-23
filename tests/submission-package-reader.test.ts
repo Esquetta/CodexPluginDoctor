@@ -177,7 +177,13 @@ describe("directory submission package reader", () => {
       safeResolution: "outside"
     });
     await expect(reader.read("outside-link", 100)).resolves.toBeNull();
-    await expect(reader.stat("outside-link/private.txt")).resolves.toBeNull();
+    await expect(reader.stat("outside-link/private.txt")).resolves.toEqual({
+      packagePath: "outside-link/private.txt",
+      kind: "other",
+      resolvedKind: null,
+      size: 0,
+      safeResolution: "outside"
+    });
     await expect(reader.read("outside-link/private.txt", 100)).resolves.toBeNull();
     await expect(reader.list("outside-link")).resolves.toEqual([]);
   });

@@ -1,11 +1,10 @@
-import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
-import type { DiscoveredPackage } from "../domain/types.js";
-import { resolveSafePackagePath } from "./plugin-components.js";
+import type { DiscoveredPackage, PluginManifest } from "../domain/types.js";
+import { createDirectorySubmissionPackageReader, type SubmissionPackageReader } from "./submission-package-reader.js";
 import type { SubmissionFinding } from "./submission-preflight.js";
 
 const maxAssetBytes = 5 * 1024 * 1024;
@@ -350,68 +349,94 @@ function dimensionFinding(field: string, packagePath: string, format: AssetForma
   return null;
 }
 
-async function validateAsset(rootPath: string, field: typeof assetFields[number], value: unknown): Promise<SubmissionFinding[]> {
+function assetPackagePath(value: string): string | null {
+  if (!value.startsWith("./")) return null;
+  const packagePath = value.slice(2);
+  if (packagePath === ""
+    || packagePath.startsWith("/")
+    || /^[a-zA-Z]:/u.test(packagePath)
+    || packagePath.includes("\\")
+    || /[\u0000-\u001F\u007F]/u.test(packagePath)) {
+    return null;
+  }
+  const segments = packagePath.split("/");
+  return segments.some((segment) => segment === "" || segment === "." || segment === "..") ? null : packagePath;
+}
+
+async function validateAsset(
+  reader: SubmissionPackageReader,
+  field: typeof assetFields[number],
+  value: unknown
+): Promise<SubmissionFinding[]> {
   if (value === undefined) {
     return [finding("plugin.submission.asset.required", "Branding asset is required.", assetEvidence(field))];
   }
   if (typeof value !== "string") {
     return [finding("plugin.submission.asset.invalid_path", "Branding asset path is invalid.", assetEvidence(field))];
   }
-  const resolved = await resolveSafePackagePath(rootPath, value);
-  if (resolved === null) {
+  const packagePath = assetPackagePath(value);
+  if (packagePath === null) {
     return [finding("plugin.submission.asset.invalid_path", "Branding asset path is invalid.", assetEvidence(field))];
   }
-  const extension = extensions.get(path.extname(resolved.packagePath).toLowerCase() as ".png" | ".jpg" | ".jpeg" | ".webp" | ".svg");
+  const extension = extensions.get(path.extname(packagePath).toLowerCase() as ".png" | ".jpg" | ".jpeg" | ".webp" | ".svg");
   if (extension === undefined) {
-    return [finding("plugin.submission.asset.unsupported_format", "Branding asset format is unsupported.", assetEvidence(field, resolved.packagePath))];
+    return [finding("plugin.submission.asset.unsupported_format", "Branding asset format is unsupported.", assetEvidence(field, packagePath))];
   }
-  let details;
-  try {
-    details = await stat(resolved.path);
-  } catch {
-    return [finding("plugin.submission.asset.missing", "Branding asset is missing.", assetEvidence(field, resolved.packagePath, extension))];
+  const details = await reader.stat(packagePath).catch(() => null);
+  if (details === null) {
+    return [finding("plugin.submission.asset.missing", "Branding asset is missing.", assetEvidence(field, packagePath, extension))];
   }
-  if (!details.isFile()) {
-    return [finding("plugin.submission.asset.unsupported_format", "Branding asset must be a regular file.", assetEvidence(field, resolved.packagePath, extension))];
+  if (details.safeResolution !== "safe") {
+    return [finding("plugin.submission.asset.invalid_path", "Branding asset path is invalid.", assetEvidence(field))];
+  }
+  if (details.resolvedKind !== "file") {
+    return [finding("plugin.submission.asset.unsupported_format", "Branding asset must be a regular file.", assetEvidence(field, packagePath, extension))];
   }
   if (details.size > maxAssetBytes) {
-    return [finding("plugin.submission.asset.too_large", "Branding asset exceeds the size limit.", { ...assetEvidence(field, resolved.packagePath, extension), limit: maxAssetBytes })];
+    return [finding("plugin.submission.asset.too_large", "Branding asset exceeds the size limit.", { ...assetEvidence(field, packagePath, extension), limit: maxAssetBytes })];
   }
-  let content: Uint8Array;
-  try {
-    content = await readFile(resolved.path);
-  } catch {
-    return [finding("plugin.submission.asset.missing", "Branding asset cannot be read.", assetEvidence(field, resolved.packagePath, extension))];
+  const content = await reader.read(packagePath, maxAssetBytes).catch(() => null);
+  if (content === null) {
+    return [finding("plugin.submission.asset.missing", "Branding asset cannot be read.", assetEvidence(field, packagePath, extension))];
   }
   if (extension === "svg") {
     let source: string;
     try {
       source = new TextDecoder("utf-8", { fatal: true }).decode(content);
     } catch {
-      return [finding("plugin.submission.asset.unsafe_svg", "SVG must be valid UTF-8.", assetEvidence(field, resolved.packagePath, extension))];
+      return [finding("plugin.submission.asset.unsafe_svg", "SVG must be valid UTF-8.", assetEvidence(field, packagePath, extension))];
     }
     const dimensions = svgDimensions(source);
     if (dimensions === null) {
-      return [finding("plugin.submission.asset.unsafe_svg", "SVG is unsafe or lacks valid dimensions.", assetEvidence(field, resolved.packagePath, extension))];
+      return [finding("plugin.submission.asset.unsafe_svg", "SVG is unsafe or lacks valid dimensions.", assetEvidence(field, packagePath, extension))];
     }
-    const invalidDimensions = dimensionFinding(field, resolved.packagePath, extension, dimensions);
+    const invalidDimensions = dimensionFinding(field, packagePath, extension, dimensions);
     return invalidDimensions === null ? [] : [invalidDimensions];
   }
   const decoded = rasterAsset(content);
   if (decoded === null) {
-    return [finding("plugin.submission.asset.decode_failed", "Branding asset could not be decoded.", assetEvidence(field, resolved.packagePath, extension))];
+    return [finding("plugin.submission.asset.decode_failed", "Branding asset could not be decoded.", assetEvidence(field, packagePath, extension))];
   }
   if (decoded.format !== extension) {
-    return [finding("plugin.submission.asset.extension_mismatch", "Branding asset extension does not match its content.", assetEvidence(field, resolved.packagePath, decoded.format, decoded.dimensions))];
+    return [finding("plugin.submission.asset.extension_mismatch", "Branding asset extension does not match its content.", assetEvidence(field, packagePath, decoded.format, decoded.dimensions))];
   }
-  const invalidDimensions = dimensionFinding(field, resolved.packagePath, decoded.format, decoded.dimensions);
+  const invalidDimensions = dimensionFinding(field, packagePath, decoded.format, decoded.dimensions);
   return invalidDimensions === null ? [] : [invalidDimensions];
 }
 
-export async function validateSubmissionAssets(discoveredPackage: DiscoveredPackage): Promise<SubmissionAssetResult> {
-  const listing = discoveredPackage.manifest.interface;
-  const interfaceValues = isRecord(listing) ? listing : {};
+export async function validateSubmissionAssetsFromReader(
+  manifest: PluginManifest,
+  reader: SubmissionPackageReader
+): Promise<SubmissionAssetResult> {
+  const interfaceValues = isRecord(manifest.interface) ? manifest.interface : {};
   const findings: SubmissionFinding[] = [];
-  for (const field of assetFields) findings.push(...await validateAsset(discoveredPackage.rootPath, field, interfaceValues[field]));
+  for (const field of assetFields) findings.push(...await validateAsset(reader, field, interfaceValues[field]));
   return { findings };
+}
+
+export async function validateSubmissionAssets(discoveredPackage: DiscoveredPackage): Promise<SubmissionAssetResult> {
+  return validateSubmissionAssetsFromReader(
+    discoveredPackage.manifest,
+    createDirectorySubmissionPackageReader(discoveredPackage.rootPath)
+  );
 }

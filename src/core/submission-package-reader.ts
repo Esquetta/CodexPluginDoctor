@@ -25,6 +25,7 @@ export interface SubmissionPackageReader {
 }
 
 type ResolvedEntryKind = Exclude<SubmissionPackageEntryKind, "symlink">;
+type AncestorResolution = "safe" | "outside" | "unavailable";
 
 const invalidPackagePathMessage = "Invalid package path.";
 const invalidMaxBytesMessage = "maxBytes must be a nonnegative safe integer.";
@@ -122,7 +123,7 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
   async function ancestorsStayWithinRoot(
     packagePath: string,
     rootCanonicalPath: string
-  ): Promise<boolean> {
+  ): Promise<AncestorResolution> {
     const segments = packagePath.split("/");
     let ancestorPath = nativeRootPath;
 
@@ -132,14 +133,14 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
       try {
         const canonicalAncestorPath = await realpath(ancestorPath);
         if (!isWithinRoot(rootCanonicalPath, canonicalAncestorPath)) {
-          return false;
+          return "outside";
         }
       } catch {
-        return false;
+        return "unavailable";
       }
     }
 
-    return true;
+    return "safe";
   }
 
   async function entryFor(packagePath: string): Promise<SubmissionPackageEntry | null> {
@@ -152,8 +153,21 @@ export function createDirectorySubmissionPackageReader(rootPath: string): Submis
     try {
       const rootCanonicalPath = await canonicalRootPath();
 
-      if (rootCanonicalPath === null
-        || !(await ancestorsStayWithinRoot(packagePath, rootCanonicalPath))) {
+      if (rootCanonicalPath === null) {
+        return null;
+      }
+
+      const ancestorResolution = await ancestorsStayWithinRoot(packagePath, rootCanonicalPath);
+      if (ancestorResolution === "outside") {
+        return {
+          packagePath,
+          kind: "other",
+          resolvedKind: null,
+          size: 0,
+          safeResolution: "outside"
+        };
+      }
+      if (ancestorResolution === "unavailable") {
         return null;
       }
 

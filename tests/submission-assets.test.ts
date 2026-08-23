@@ -5,7 +5,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { DiscoveredPackage } from "../src/domain/types.js";
-import { type SubmissionAssetResult, validateSubmissionAssets } from "../src/core/submission-assets.js";
+import { createDirectorySubmissionPackageReader } from "../src/core/submission-package-reader.js";
+import { type SubmissionAssetResult, validateSubmissionAssets, validateSubmissionAssetsFromReader } from "../src/core/submission-assets.js";
+import { createMemorySubmissionPackageReader, type MemorySubmissionPackageEntry } from "./helpers/submission-memory-reader.js";
 
 type AssetFiles = Record<string, string | Uint8Array>;
 
@@ -353,5 +355,78 @@ describe("submission assets", () => {
     expect(JSON.stringify(result)).toContain('"path":"secret.png"');
     const source = await readFile(new URL("../src/core/submission-assets.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/\b(fetch|exec|spawn|http|https)\b/u);
+  });
+});
+describe("submission asset reader parity", () => {
+  async function expectReaderParity(
+    interfaceValues: Record<string, unknown>,
+    files: AssetFiles = {},
+    entries: Readonly<Record<string, MemorySubmissionPackageEntry>> = Object.fromEntries(
+      Object.entries(files).map(([packagePath, content]) => [packagePath, { content }])
+    )
+  ): Promise<void> {
+    const discoveredPackage = await packageWithAssets(interfaceValues, files);
+    const directoryResult = await validateSubmissionAssets(discoveredPackage);
+    const readerResult = await validateSubmissionAssetsFromReader(discoveredPackage.manifest, createMemorySubmissionPackageReader(entries));
+    expect(readerResult.findings).toEqual(directoryResult.findings);
+  }
+
+  it.each([
+    ["PNG", "./logo.png", png(48, 48)],
+    ["JPEG", "./logo.jpg", jpeg(48, 48)],
+    ["WebP", "./logo.webp", webp("VP8X", 48, 48)],
+    ["SVG", "./logo.svg", svg('width="48" height="48"')]
+  ])("matches the directory wrapper for valid %s", async (_name, assetPath, content) => {
+    await expectReaderParity({ logo: assetPath, composerIcon: assetPath }, { [assetPath.slice(2)]: content });
+  });
+
+  it.each([
+    ["missing", { logo: "./missing.png", composerIcon: "./missing.png" }, {}],
+    ["non-dot-relative", { logo: "logo.png", composerIcon: "./logo.png" }, { "logo.png": png(48, 48) }],
+    ["lexical traversal", { logo: "./assets/../logo.png", composerIcon: "./logo.png" }, { "logo.png": png(48, 48) }],
+    ["unsupported extension", { logo: "./logo.gif", composerIcon: "./logo.gif" }, { "logo.gif": png(48, 48) }],
+    ["decode failure", { logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": new Uint8Array([1, 2, 3]) }],
+    ["extension mismatch", { logo: "./logo.jpg", composerIcon: "./logo.jpg" }, { "logo.jpg": png(48, 48) }],
+    ["non-square dimensions", { logo: "./logo.png", composerIcon: "./logo.png" }, { "logo.png": png(48, 49) }],
+    ["unsafe SVG", { logo: "./logo.svg", composerIcon: "./logo.svg" }, { "logo.svg": '<svg width="48" height="48"><image href="https://example.test/a"/></svg>' }]
+  ])("matches the directory wrapper for %s", async (_name, interfaceValues, files) => {
+    await expectReaderParity(interfaceValues, files as AssetFiles);
+  });
+
+  it("matches directory/non-file and size-gated results", async () => {
+    const discoveredPackage = await packageWithAssets(
+      { logo: "./assets.png", composerIcon: "./oversized.png" },
+      { "oversized.png": new Uint8Array(5 * 1024 * 1024 + 1) }
+    );
+    await mkdir(path.join(discoveredPackage.rootPath, "assets.png"));
+    const readerResult = await validateSubmissionAssetsFromReader(discoveredPackage.manifest, createMemorySubmissionPackageReader({
+      "assets.png": { kind: "directory", resolvedKind: "directory" },
+      "oversized.png": { content: new Uint8Array([1]), size: 5 * 1024 * 1024 + 1 }
+    }));
+    expect(readerResult.findings).toEqual((await validateSubmissionAssets(discoveredPackage)).findings);
+  });
+
+  it("matches invalid-path evidence for exact and descendant external junctions", async () => {
+    const discoveredPackage = await packageWithAssets({ logo: "./outside.png", composerIcon: "./outside.png/logo.png" });
+    const external = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-submission-assets-reader-outside-"));
+    await writeFile(path.join(external, "logo.png"), png(48, 48));
+    await symlink(external, path.join(discoveredPackage.rootPath, "outside.png"), "junction");
+    const result = await validateSubmissionAssetsFromReader(discoveredPackage.manifest, createDirectorySubmissionPackageReader(discoveredPackage.rootPath));
+    expect(result.findings).toEqual((await validateSubmissionAssets(discoveredPackage)).findings);
+    expect(JSON.stringify(result)).not.toContain(external);
+  });
+
+  it("requires exact interface fields and keeps host paths and content private", async () => {
+    const reader = createMemorySubmissionPackageReader({ "secret.png": { content: "private-payload" } });
+    await expect(validateSubmissionAssetsFromReader({ interface: null }, reader)).resolves.toEqual({
+      findings: [
+        expect.objectContaining({ id: "plugin.submission.asset.required", evidence: { field: "logo" } }),
+        expect.objectContaining({ id: "plugin.submission.asset.required", evidence: { field: "composerIcon" } })
+      ]
+    });
+    const discoveredPackage = await packageWithAssets({ logo: "./secret.png", composerIcon: "./secret.png" }, { "secret.png": "private-payload" });
+    const result = await validateSubmissionAssetsFromReader(discoveredPackage.manifest, reader);
+    expect(JSON.stringify(result)).not.toContain(discoveredPackage.rootPath);
+    expect(JSON.stringify(result)).not.toContain("private-payload");
   });
 });
