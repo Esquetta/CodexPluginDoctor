@@ -323,6 +323,68 @@ const publicSchemaDefinitions: Array<{
     }
   },
   {
+    id: "doctor.submission.archive.json",
+    command: "codex-plugin-doctor doctor submission archive <zip> --json",
+    required: [
+      "schemaVersion",
+      "rulesetVersion",
+      "status",
+      "readiness",
+      "archive",
+      "summary",
+      "archiveChecks",
+      "submission",
+      "findings",
+      "coverage",
+      "manualChecklist"
+    ],
+    properties: {
+      rulesetVersion: { const: "openai-directory-archive-2026-08-23" },
+      status: { type: "string", enum: ["pass", "fail"] },
+      readiness: { type: "string", enum: ["blocked", "manual_review_required"] },
+      archive: {
+        type: "object",
+        required: ["fileName", "compressedBytes", "uncompressedBytes", "entryCount", "rootLayout"],
+        properties: {
+          fileName: { type: "string" },
+          compressedBytes: { type: "integer", minimum: 0 },
+          uncompressedBytes: { type: "integer", minimum: 0 },
+          entryCount: { type: "integer", minimum: 0 },
+          rootLayout: { type: "string", enum: ["archive-root", "single-top-level-directory", "unavailable"] }
+        },
+        additionalProperties: false
+      },
+      summary: {
+        type: "object",
+        required: ["passed", "warnings", "blockers", "manualChecks"],
+        properties: {
+          passed: { type: "integer", minimum: 0 },
+          warnings: { type: "integer", minimum: 0 },
+          blockers: { type: "integer", minimum: 0 },
+          manualChecks: { type: "integer", minimum: 0 }
+        },
+        additionalProperties: false
+      },
+      archiveChecks: { type: "array" },
+      submission: { type: ["object", "null"] },
+      findings: { type: "array" },
+      coverage: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "status", "reason"],
+          properties: {
+            id: { type: "string", pattern: "^plugin\\.submission\\.archive\\." },
+            status: { type: "string", enum: ["automatic", "manual", "unavailable"] },
+            reason: { type: "string" }
+          },
+          additionalProperties: false
+        }
+      },
+      manualChecklist: { type: "array" }
+    }
+  },
+  {
     id: "doctor.installed.check.json",
     command: "codex-plugin-doctor check --installed --json",
     outputKind: "doctor.installed.check",

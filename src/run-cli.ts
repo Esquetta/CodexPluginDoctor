@@ -83,6 +83,7 @@ import {
   renderDoctorOutputContract,
   renderDoctorOutputContractJson
 } from "./core/output-contract.js";
+import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./core/submission-archive-preflight.js";
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import {
   buildDoctorValidationCorpusReport,
@@ -231,6 +232,11 @@ import {
 import { renderRuleExplanation } from "./reporting/render-rule-explanation.js";
 import { renderSarifReport } from "./reporting/render-sarif-report.js";
 import { renderTextReport } from "./reporting/render-text-report.js";
+import {
+  renderSubmissionArchiveJson,
+  renderSubmissionArchiveMarkdown,
+  renderSubmissionArchiveText
+} from "./reporting/render-submission-archive-report.js";
 import {
   renderSubmissionPreflightJson,
   renderSubmissionPreflightMarkdown,
@@ -451,6 +457,7 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(
     "       codex-plugin-doctor doctor submission <path> [--json|--markdown] [--output <path>] [--require-ready]"
+    + "\n       codex-plugin-doctor doctor submission archive <zip> [--json|--markdown] [--output <path>] [--require-ready]"
   );
 }
 
@@ -1664,6 +1671,70 @@ function parseSubmissionCommandArgs(args: string[]): {
   return { targetPath, jsonOutput, markdownOutput, outputPath, requireReady };
 }
 
+function parseSubmissionArchiveCommandArgs(args: string[]): ReturnType<typeof parseSubmissionCommandArgs> {
+  let targetPath: string | null = null;
+  let jsonOutput = false;
+  let markdownOutput = false;
+  let outputPath: string | null = null;
+  let requireReady = false;
+  let optionsEnded = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--" && !optionsEnded) optionsEnded = true;
+    else if (optionsEnded) {
+      if (targetPath === null) targetPath = argument;
+      else return new CliUsageError(`Unexpected submission archive argument: ${argument}.`);
+    } else if (argument === "--json") {
+      if (jsonOutput) return new CliUsageError("Duplicate submission archive flag: --json.");
+      jsonOutput = true;
+    } else if (argument === "--markdown") {
+      if (markdownOutput) return new CliUsageError("Duplicate submission archive flag: --markdown.");
+      markdownOutput = true;
+    } else if (argument === "--require-ready") {
+      if (requireReady) return new CliUsageError("Duplicate submission archive flag: --require-ready.");
+      requireReady = true;
+    } else if (argument === "--output" || argument.startsWith("--output=")) {
+      if (outputPath !== null) return new CliUsageError("Duplicate submission archive flag: --output.");
+      const value = argument === "--output" ? args[index + 1] : argument.slice("--output=".length);
+      if (!value || (argument === "--output" && value.startsWith("--"))) return new CliUsageError("Missing path after --output.");
+      outputPath = value;
+      if (argument === "--output") index += 1;
+    } else if (argument.startsWith("--")) return new CliUsageError(`Unknown submission archive flag: ${argument}.`);
+    else if (targetPath === null) targetPath = argument;
+    else return new CliUsageError(`Unexpected submission archive argument: ${argument}.`);
+  }
+  if (targetPath === null) return new CliUsageError("Missing archive path for submission.");
+  if (jsonOutput && markdownOutput) return new CliUsageError("Use either --json or --markdown, not both.");
+  return { targetPath, jsonOutput, markdownOutput, outputPath, requireReady };
+}
+
+function hasArchiveSubcommandTarget(args: string[]): boolean {
+  let optionsEnded = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (optionsEnded) return true;
+    if (argument === "--") {
+      optionsEnded = true;
+    } else if (argument === "--output") {
+      index += 1;
+    } else if (!argument.startsWith("--")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function submissionTargetExists(targetPath: string): Promise<boolean> {
+  try {
+    const { stat } = await import("node:fs/promises");
+    await stat(targetPath);
+    return true;
+  } catch (error: unknown) {
+    return !(typeof error === "object" && error !== null && "code" in error
+      && (error as { code?: unknown }).code === "ENOENT");
+  }
+}
+
 export async function runCli(
   args: string[],
   io: CliIo = defaultIo,
@@ -1807,6 +1878,24 @@ export async function runCli(
     }
 
     if (maybePath === "submission") {
+      if (remainingArgs[0] === "archive") {
+        const useLegacyDirectoryTarget = !hasArchiveSubcommandTarget(remainingArgs.slice(1))
+          && await submissionTargetExists("archive");
+        if (!useLegacyDirectoryTarget) {
+        const parsedArchiveArgs = parseSubmissionArchiveCommandArgs(remainingArgs.slice(1));
+        if (parsedArchiveArgs instanceof CliUsageError) {
+          io.writeStderr(parsedArchiveArgs.message);
+          return 2;
+        }
+        const report = await buildSubmissionArchivePreflight(parsedArchiveArgs.targetPath);
+        const renderedReport = parsedArchiveArgs.jsonOutput
+          ? renderSubmissionArchiveJson(report)
+          : parsedArchiveArgs.markdownOutput ? renderSubmissionArchiveMarkdown(report) : renderSubmissionArchiveText(report);
+        if (parsedArchiveArgs.outputPath) await writeFile(parsedArchiveArgs.outputPath, renderedReport, "utf8");
+        writeExactStdout(io, renderedReport);
+        return submissionArchiveExitCode(report, parsedArchiveArgs.requireReady);
+        }
+      }
       const parsedSubmissionArgs = parseSubmissionCommandArgs(remainingArgs);
 
       if (parsedSubmissionArgs instanceof CliUsageError) {

@@ -157,6 +157,12 @@ export {
   type SubmissionPreflightReport
 } from "./core/submission-preflight.js";
 export {
+  buildSubmissionArchivePreflight,
+  submissionArchiveExitCode,
+  type SubmissionArchivePreflightReport,
+  type SubmissionArchiveRootLayout
+} from "./core/submission-archive-preflight.js";
+export {
   validateSubmissionAssets,
   type SubmissionAssetResult
 } from "./core/submission-assets.js";
@@ -170,6 +176,11 @@ export {
   renderSubmissionPreflightText,
   submissionPreflightExitCode
 } from "./reporting/render-submission-report.js";
+export {
+  renderSubmissionArchiveJson,
+  renderSubmissionArchiveMarkdown,
+  renderSubmissionArchiveText
+} from "./reporting/render-submission-archive-report.js";
 export {
   buildDoctorValidationCorpusReport,
   renderDoctorValidationCorpusJson,

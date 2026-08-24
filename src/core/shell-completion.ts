@@ -21,6 +21,7 @@ const topLevelCommands = [
 ];
 
 const doctorCommands = ["submission"];
+const submissionTargets = ["archive"];
 const submissionFlags = ["--json", "--markdown", "--output", "--require-ready"];
 const fishSubmissionCondition = "__fish_seen_subcommand_from doctor; and __fish_seen_subcommand_from submission";
 
@@ -34,6 +35,7 @@ function bashCompletion(): string {
     "",
     `  local commands="${topLevelCommands.join(" ")}"`,
     `  local doctor_commands="${doctorCommands.join(" ")}"`,
+    `  local submission_targets="${submissionTargets.join(" ")}"`,
     `  local submission_flags="${submissionFlags.join(" ")}"`,
     "",
     "  case \"${prev}\" in",
@@ -45,7 +47,24 @@ function bashCompletion(): string {
     "      COMPREPLY=( $(compgen -W \"${doctor_commands}\" -- \"${cur}\") )",
     "      return 0",
     "      ;;",
+    "    submission)",
+    "      COMPREPLY=( $(compgen -W \"${submission_targets}\" -- \"${cur}\") )",
+    "      return 0",
+    "      ;;",
     "  esac",
+    "",
+    "  if [[ ${COMP_WORDS[1]} == \"doctor\" && ${COMP_WORDS[2]} == \"submission\" && ${COMP_WORDS[3]} == \"archive\" ]]; then",
+    "    case \"${cur}\" in",
+    "      --*)",
+    "        COMPREPLY=( $(compgen -W \"${submission_flags}\" -- \"${cur}\") )",
+    "        return 0",
+    "        ;;",
+    "      *)",
+    "        COMPREPLY=( $(compgen -f -- \"${cur}\") )",
+    "        return 0",
+    "        ;;",
+    "    esac",
+    "  fi",
     "",
     "  case \"${cur}\" in",
     "    --*)",
@@ -82,6 +101,8 @@ function zshCompletion(): string {
     "",
     "  if [[ \"$words[2]\" == \"doctor\" && \"$words[3]\" == \"submission\" ]]; then",
     "    _arguments -C \\",
+    "      '3:archive target:(archive)' \\",
+    "      '4:ZIP archive:_files' \\",
     "      '*--json[Output as JSON]' \\",
     "      '*--markdown[Output as Markdown]' \\",
     "      '*--output[Write to file]:file:_files' \\",
@@ -114,6 +135,8 @@ function fishCompletion(): string {
     `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l markdown -d 'Output as Markdown'`,
     `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l output -d 'Write to file' -r`,
     `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}" -l require-ready -d 'Fail when automatic checks are blocked'`,
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}; and __fish_seen_subcommand_from archive" -F`,
+    `complete -c codex-plugin-doctor -n "${fishSubmissionCondition}; and not __fish_seen_subcommand_from archive" -a "${submissionTargets.join(" ")}" -d 'ZIP archive'`,
     `complete -c codex-plugin-doctor -n "__fish_seen_subcommand_from doctor; and not __fish_seen_subcommand_from ${doctorCommands.join(" ")}" -a "${doctorCommands.join(" ")}"`,
     "complete -c codex-plugin-doctor -l runtime -d 'Enable runtime probes'",
     "complete -c codex-plugin-doctor -l policy -d 'Apply policy' -x -a 'codex-publish mcp-strict security'",
