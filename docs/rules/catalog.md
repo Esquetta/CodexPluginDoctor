@@ -88,6 +88,37 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.submission.skill.agent.invalid_yaml` | fail | Optional agent metadata YAML is invalid or unsafe. |
 | `plugin.submission.skill.agent.invalid_shape` | fail | Optional agent metadata has an unsupported shape. |
 
+## Public Directory Archive Preflight Rules
+
+Archive checks validate an existing skills-only ZIP without extraction. `warn` results remain advisory; `fail` results block `--require-ready`. Portal checks whose behavior is not public remain manual or unavailable coverage rather than an automatic pass.
+
+| Rule ID | Severity | Meaning |
+| --- | --- | --- |
+| `plugin.submission.archive.invalid_file` | fail | Input is not a readable, non-empty regular ZIP file. |
+| `plugin.submission.archive.invalid_zip` | fail | Archive is malformed, truncated, or changed during inspection. |
+| `plugin.submission.archive.too_large` | fail | Compressed archive exceeds the supported size limit. |
+| `plugin.submission.archive.entry_count` | fail | Archive entry count exceeds the supported limit. |
+| `plugin.submission.archive.member_too_large` | fail | An archive member exceeds the supported size limit. |
+| `plugin.submission.archive.total_too_large` | fail | Archive cumulative uncompressed size exceeds the supported limit. |
+| `plugin.submission.archive.encrypted` | fail | An encrypted archive entry cannot be inspected. |
+| `plugin.submission.archive.header_mismatch` | fail | Central and local ZIP headers disagree. |
+| `plugin.submission.archive.descriptor_invalid` | fail | A ZIP data descriptor is invalid. |
+| `plugin.submission.archive.range_invalid` | fail | ZIP metadata or entry data ranges are invalid or overlap. |
+| `plugin.submission.archive.crc_mismatch` | fail | Archive entry content does not match its declared CRC or size. |
+| `plugin.submission.archive.path_invalid` | fail | An archive entry path is unsafe or unsupported. |
+| `plugin.submission.archive.path_duplicate` | fail | Archive contains duplicate entry paths. |
+| `plugin.submission.archive.path_conflict` | fail | Archive entry paths conflict as a file and directory. |
+| `plugin.submission.archive.type_unsupported` | fail | Archive entry type is unsupported. |
+| `plugin.submission.archive.normalization_collision` | warn | Paths collide under Doctor's documented local normalization check. |
+| `plugin.submission.archive.root_missing` | fail | Archive does not contain a plugin root. |
+| `plugin.submission.archive.root_ambiguous` | fail | Archive contains more than one plugin root or manifest. |
+| `plugin.submission.archive.root_siblings` | fail | A single top-level plugin directory has siblings. |
+| `plugin.submission.archive.manifest_missing` | fail | Archive root has no valid recognized plugin manifest. |
+| `plugin.submission.archive.skill_missing` | fail | Archive has no immediate `skills/<skill>/SKILL.md` entrypoint. |
+| `plugin.submission.archive.mcp_excluded` | warn | MCP configuration requires the MCP-backed submission flow. |
+| `plugin.submission.archive.app_excluded` | warn | App configuration requires the MCP-backed submission flow. |
+| `plugin.submission.archive.screenshot_excluded` | warn | Screenshots require the MCP-backed submission flow. |
+
 ## MCP Rules
 
 | Rule ID | Severity | Meaning |

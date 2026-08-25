@@ -54,6 +54,25 @@ Use the submission preflight only when a workflow needs its separate offline rep
 
 The report's automatic status is separate from manual review: a passing automatic result is still `manual_review_required`, not portal approval. The Action never submits a package or claims acceptance. `require-submission-ready` makes automatic blockers fail the Action status; it requires `submission: "true"`, otherwise the Action records usage status `2` without running a submission command.
 
+### Archive Submission Preflight
+
+Use archive mode for the existing skills-only ZIP that will be uploaded:
+
+```yaml
+- uses: ./
+  with:
+    submission-archive: ./plugin.zip
+    require-submission-ready: "true"
+```
+
+Archive mode writes `codex-plugin-doctor-submission-archive.json` and `codex-plugin-doctor-submission-archive.md` under `output-dir`, uploads them with the existing artifact directory, appends the Markdown report after the primary summary, and exposes `submission-archive-json-path` and `submission-archive-summary-path` outputs.
+
+It is offline, non-executing, and does not extract archive entries to disk. It forwards no runtime, network, local-network, session-lifecycle, authentication, or portal credentials. It accepts an existing ZIP only; it does not create, rewrite, repair, or upload archives.
+
+Choose exactly one submission mode: directory `submission: "true"` or `submission-archive`. Selecting both modes, or setting `require-submission-ready: "true"` with neither, records usage status `2` and produces no submission reports. The installed-cache guard remains for directory submission mode.
+
+Archive warnings identify MCP configuration, apps, or screenshots that require the MCP-backed portal flow; warnings do not make strict readiness fail. Archive blockers make `--require-ready` fail, but a non-strict report remains advisory. A passing automatic result remains `manual_review_required`, and any portal rule Doctor cannot faithfully implement remains `coverage: unavailable`; the Action never claims portal approval.
+
 ## Recommended Workflow
 
 ```yaml
@@ -145,6 +164,8 @@ The action also exposes these workflow outputs for follow-up steps:
 - `registry-report-path`
 - `submission-json-path`
 - `submission-summary-path`
+- `submission-archive-json-path`
+- `submission-archive-summary-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 

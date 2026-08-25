@@ -143,9 +143,15 @@ codex-plugin-doctor doctor submission <path>
 codex-plugin-doctor doctor submission <path> --json
 codex-plugin-doctor doctor submission <path> --markdown
 codex-plugin-doctor doctor submission <path> --require-ready
+codex-plugin-doctor doctor submission archive <zip>
+codex-plugin-doctor doctor submission archive <zip> --json --output submission-archive.json
+codex-plugin-doctor doctor submission archive <zip> --markdown --output submission-archive.md
+codex-plugin-doctor doctor submission archive <zip> --require-ready
 ```
 
 The preflight is offline and non-executing: it does not submit a package, make network requests, start MCP servers, verify domains, or handle OAuth credentials. Its automatic `status` is `pass` or `fail`; a passing automatic result remains `manual_review_required` until portal-only review is complete. It never claims directory acceptance. See [Public Directory Submission Preflight](./docs/architecture/public-directory-submission-preflight.md).
+
+The archive variant accepts an existing skills-only ZIP and does not extract archive entries to disk, execute package code, or repair the archive. It reports malformed ZIP structures and deterministic package blockers; unsupported portal rules remain manual or `coverage: unavailable` rather than an automatic pass.
 
 Output formats:
 
