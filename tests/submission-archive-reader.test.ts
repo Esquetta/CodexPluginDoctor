@@ -154,6 +154,33 @@ describe("submission archive reader", () => {
     expect(findingIds(invalid)).toContain("plugin.submission.archive.descriptor_invalid");
   });
 
+  it("accepts a 32-bit data descriptor when central metadata uses ZIP64-capable version 45 without ZIP64 sizes", async () => {
+    const archive = createZipFixture([
+      { name: "version-45.txt", content: "descriptor", descriptor: "signed-32" }
+    ]);
+    const centralHeaderOffset = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    archive.writeUInt16LE(45, centralHeaderOffset + 6);
+
+    const inspection = await inspectFixture(archive);
+
+    expect(inspection.findings).toEqual([]);
+    expect(inspection.reader).not.toBeNull();
+  });
+
+  it("never exposes path separators, roots, drive names, or controls in an invalid archive report filename", async () => {
+    for (const [archivePath, expectedFileName] of [
+      ["C:\\private\\secret.zip", "secret.zip"],
+      ["\\\\server\\share\\secret.zip", "secret.zip"],
+      ["/private/secret.zip", "secret.zip"],
+      ["C:\\private\\bad\u0001.zip", "archive.zip"]
+    ] as const) {
+      const inspection = await inspectSubmissionArchive(archivePath);
+
+      expect(inspection.fileName).toBe(expectedFileName);
+      expect(inspection.fileName).not.toMatch(/[\\/\u0000-\u001F]/u);
+    }
+  });
+
   it("accepts local ZIP64 size sentinels and rejects missing or malformed required local ZIP64 data", async () => {
     const name = "local-zip64.txt";
     const archive = createZipFixture([

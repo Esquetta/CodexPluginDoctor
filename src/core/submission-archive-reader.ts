@@ -19,7 +19,7 @@ const unsafeArchiveFileName = /[\u0000-\u001F\u007F\u2028\u2029\u200B-\u200F\u20
 
 function sanitizedArchiveFileName(value: unknown): string {
   if (typeof value !== "string") return "archive.zip";
-  const fileName = path.basename(value);
+  const fileName = path.win32.basename(path.posix.basename(value));
   return fileName === "" || fileName.trim() !== fileName || unsafeArchiveFileName.test(fileName)
     ? "archive.zip"
     : fileName;
@@ -278,10 +278,36 @@ function parseLocalExtraFields(content: Buffer): readonly { id: number; data: Bu
   return fields;
 }
 
+async function readCentralEntryLayout(
+  fileDescriptor: number,
+  offset: number,
+  fileSize: number
+): Promise<{ nextOffset: number; usesZip64Sizes: boolean } | null> {
+  if (!validSafeInteger(offset) || offset + 46 > fileSize) return null;
+  const fixed = await readExactly(fileDescriptor, offset, 46);
+  if (fixed === null || fixed.readUInt32LE(0) !== 0x02014b50) return null;
+  const compressedSize = fixed.readUInt32LE(20);
+  const uncompressedSize = fixed.readUInt32LE(24);
+  const nameLength = fixed.readUInt16LE(28);
+  const extraLength = fixed.readUInt16LE(30);
+  const commentLength = fixed.readUInt16LE(32);
+  const nextOffset = offset + 46 + nameLength + extraLength + commentLength;
+  if (!validSafeInteger(nextOffset) || nextOffset > fileSize) return null;
+
+  const expectedZip64SizeBytes = (uncompressedSize === 0xffffffff ? 8 : 0) + (compressedSize === 0xffffffff ? 8 : 0);
+  if (expectedZip64SizeBytes === 0) return { nextOffset, usesZip64Sizes: false };
+  const extra = await readExactly(fileDescriptor, offset + 46 + nameLength, extraLength);
+  const extraFields = extra === null ? null : parseLocalExtraFields(extra);
+  const zip64Fields = extraFields?.filter((field) => field.id === 0x0001) ?? [];
+  if (zip64Fields.length !== 1 || zip64Fields[0].data.length < expectedZip64SizeBytes) return null;
+  return { nextOffset, usesZip64Sizes: true };
+}
+
 async function readLocalHeader(
   fileDescriptor: number,
   entry: yauzl.Entry,
-  fileSize: number
+  fileSize: number,
+  usesZip64Sizes: boolean
 ): Promise<LocalHeader | null> {
   const offset = entry.relativeOffsetOfLocalHeader;
   if (!validSafeInteger(offset) || offset + 30 > fileSize) return null;
@@ -322,7 +348,7 @@ async function readLocalHeader(
 
   let descriptorLength = 0;
   if ((flags & 0x0008) !== 0) {
-    const zip64Descriptor = entry.versionNeededToExtract >= 45;
+    const zip64Descriptor = usesZip64Sizes;
     const descriptor = await readExactly(fileDescriptor, dataStart + entry.compressedSize, zip64Descriptor ? 24 : 16);
     if (descriptor === null) return null;
     const signed = descriptor.readUInt32LE(0) === 0x08074b50;
@@ -554,9 +580,16 @@ export async function inspectSubmissionArchive(zipPath: string): Promise<Submiss
     let actualTotal = 0;
     let unsupportedCompression = false;
     let index = 0;
+    let centralEntryOffset = metadata.centralStart;
 
     for await (const entry of zip.eachEntry()) {
       const entryIndex = index++;
+      const central = await readCentralEntryLayout(inspectionDescriptor, centralEntryOffset, details.size);
+      if (central === null) {
+        report.findings.push(archiveFinding("plugin.submission.archive.range_invalid", "Archive central directory is invalid.", { entryIndex }));
+        break;
+      }
+      centralEntryOffset = central.nextOffset;
       const rawName = entry.fileName as unknown as Buffer;
       const decodedPath = decodePath(rawName, entry.generalPurposeBitFlag);
       const normalized = decodedPath === null ? null : normalizeArchivePath(decodedPath);
@@ -574,7 +607,7 @@ export async function inspectSubmissionArchive(zipPath: string): Promise<Submiss
         report.findings.push(archiveFinding("plugin.submission.archive.total_too_large", "Archive exceeds the total uncompressed size limit.", { limit: maxTotalBytes }));
         continue;
       }
-      const local = await readLocalHeader(inspectionDescriptor, entry, details.size);
+      const local = await readLocalHeader(inspectionDescriptor, entry, details.size, central.usesZip64Sizes);
       if (local === null) {
         report.findings.push(archiveFinding((entry.generalPurposeBitFlag & 0x0008) !== 0 ? "plugin.submission.archive.descriptor_invalid" : "plugin.submission.archive.range_invalid", "Archive local header or descriptor is invalid.", { entryIndex }));
         continue;
