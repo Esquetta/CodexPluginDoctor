@@ -7,7 +7,7 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const gitBash = "C:\\Program Files\\Git\\bin\\bash.exe";
+const bashExecutable = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash";
 
 type ActionMetadata = {
   inputs: Record<string, { default?: string | boolean }>;
@@ -129,7 +129,7 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
     const runDoctorScriptPath = path.join(root, "run-doctor.sh");
     await writeFile(runDoctorScriptPath, renderInputs(runDoctorScript, inputs), "utf8");
     await chmod(runDoctorScriptPath, 0o755);
-    await execFileAsync(gitBash, [runDoctorScriptPath], { cwd: root, env: environment });
+    await execFileAsync(bashExecutable, [runDoctorScriptPath], { cwd: root, env: environment });
     const output = outputEntries(await readFile(actionOutputPath, "utf8"));
     const manifest = JSON.parse(await readFile(path.join(reportDirectory, "codex-plugin-doctor-action-manifest.json"), "utf8")) as ActionRun["manifest"];
     const invocations = (await readFile(logPath, "utf8").catch(() => "")).split(/\r?\n/gu).filter(Boolean).map((line) => line.split("\t").filter(Boolean));
@@ -150,7 +150,7 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
         const summaryScriptPath = path.join(root, "publish-summary.sh");
         await writeFile(summaryScriptPath, renderInputs(summaryScript, inputs), "utf8");
         await chmod(summaryScriptPath, 0o755);
-        await execFileAsync(gitBash, [summaryScriptPath], { cwd: root, env: environment });
+        await execFileAsync(bashExecutable, [summaryScriptPath], { cwd: root, env: environment });
         return readFile(stepSummaryPath, "utf8");
       },
       cleanup: () => rm(root, { recursive: true, force: true })
