@@ -8,6 +8,10 @@ import packageJson from "../package.json" with { type: "json" };
 
 const execFileAsync = promisify(execFile);
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/gu, "\n");
+}
+
 async function renderActionManifest(actionMetadata: string, targetPath: string): Promise<Record<string, unknown>> {
   const start = actionMetadata.indexOf('        const fs = require("node:fs");');
   const end = actionMetadata.indexOf("\n        NODE", start);
@@ -194,8 +198,10 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('REQUIRE_SUBMISSION_READY_INPUT: ${{ inputs[\'require-submission-ready\'] }}');
     expect(actionMetadata).toContain('submission_json_path="$report_dir/codex-plugin-doctor-submission.json"');
     expect(actionMetadata).toContain('submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"');
-    expect(actionMetadata).toContain('if [[ "$REQUIRE_SUBMISSION_READY_INPUT" == "true" && "$SUBMISSION_INPUT" != "true" ]]; then');
-    expect(actionMetadata).toContain('echo "require-submission-ready requires submission." >&2');
+    expect(actionMetadata).toContain('if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then');
+    expect(actionMetadata).toContain('echo "submission and submission-archive cannot be selected together." >&2');
+    expect(actionMetadata).toContain('elif [[ "$REQUIRE_SUBMISSION_READY_INPUT" == "true" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" ]]; then');
+    expect(actionMetadata).toContain('echo "require-submission-ready requires exactly one submission mode." >&2');
     expect(actionMetadata).toContain("record_status 2");
     expect(actionMetadata).toContain('submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
     expect(actionMetadata).toContain("submission_args+=(--require-ready)");
@@ -213,8 +219,34 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).not.toContain("submission_args+=(--allow-network");
   });
 
+  it("supports one opt-in archive submission mode without forwarding runtime consent", async () => {
+    const actionMetadata = normalizeNewlines(await readFile("action.yml", "utf8"));
+
+    expect(actionMetadata).toMatch(/submission-archive:[\s\S]*?default: ""/);
+    expect(actionMetadata).toContain("submission-archive-json-path:");
+    expect(actionMetadata).toContain("submission-archive-summary-path:");
+    expect(actionMetadata).toContain('SUBMISSION_ARCHIVE_INPUT: ${{ inputs[\'submission-archive\'] }}');
+    expect(actionMetadata).toContain('submission_archive_json_path="$report_dir/codex-plugin-doctor-submission-archive.json"');
+    expect(actionMetadata).toContain('submission_archive_summary_path="$report_dir/codex-plugin-doctor-submission-archive.md"');
+    expect(actionMetadata).toContain('submission_archive_args=(doctor submission archive "$SUBMISSION_ARCHIVE_INPUT" --json --output "$submission_archive_json_path")');
+    expect(actionMetadata).toContain('run_doctor "submission archive preflight" "${submission_archive_args[@]}"');
+    expect(actionMetadata).toContain('run_doctor "submission archive summary" doctor submission archive "$SUBMISSION_ARCHIVE_INPUT" --markdown --output "$submission_archive_summary_path"');
+    expect(actionMetadata).toContain('if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then');
+    expect(actionMetadata).toContain('require-submission-ready requires exactly one submission mode.');
+    expect(actionMetadata).toContain('submission_archive_args+=(--require-ready)');
+    expect(actionMetadata).toContain('submissionArchiveJson: report("submissionArchiveJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_JSON_PATH")');
+    expect(actionMetadata).toContain('submissionArchiveSummary: report("submissionArchiveSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_SUMMARY_PATH")');
+    expect(actionMetadata).toContain('echo "submission-archive-json-path=$submission_archive_json_output"');
+    expect(actionMetadata).toContain('echo "submission-archive-summary-path=$submission_archive_summary_output"');
+    expect(actionMetadata).toContain('cat "$submission_archive_summary_path" >> "$GITHUB_STEP_SUMMARY"');
+    expect(actionMetadata).not.toContain("SUBMISSION_ARCHIVE_RUNTIME_INPUT");
+    expect(actionMetadata).not.toContain("SUBMISSION_ARCHIVE_ALLOW_NETWORK_INPUT");
+    expect(actionMetadata).not.toContain("submission_archive_args+=(--runtime");
+    expect(actionMetadata).not.toContain("submission_archive_args+=(--allow-network");
+  });
+
   it("rejects installed-cache submission preflight requests without producing submission reports", async () => {
-    const actionMetadata = await readFile("action.yml", "utf8");
+    const actionMetadata = normalizeNewlines(await readFile("action.yml", "utf8"));
 
     expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${{ inputs.installed }}" == "true" ]]; then');
     expect(actionMetadata).toContain('echo "Submission preflight requires a single package path, not installed-cache mode." >&2');

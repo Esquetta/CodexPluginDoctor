@@ -1,6 +1,6 @@
 {
   "name": "codex-plugin-doctor",
-  "version": "1.59.0",
+  "version": "1.60.0",
   "description": "CLI-first validator for Codex plugins, skills, and MCP package surfaces with runtime MCP protocol validation.",
   "type": "module",
   "main": "./dist/index.js",
@@ -57,12 +57,15 @@
   },
   "devDependencies": {
     "@types/node": "^24.2.1",
+    "@types/yauzl": "^3.4.0",
     "tsx": "^4.20.4",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.0",
-    "yaml": "^2.9.0"
+    "iconv-lite": "^0.7.3",
+    "yaml": "^2.9.0",
+    "yauzl": "^3.4.0"
   }
 }

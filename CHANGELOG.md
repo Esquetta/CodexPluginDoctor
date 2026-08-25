@@ -4,6 +4,23 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.60.0] - 2026-08-25
+
+### Added
+
+- added existing-ZIP Submission Archive Preflight reports through the CLI, JSON and Markdown output contracts, and opt-in GitHub Action archive inputs and reports
+- added bounded no-extraction ZIP validation for the submission archive layout and supported skill metadata
+
+### Changed
+
+- archive blockers remain advisory by default and `--require-ready` enables strict readiness gating; MCP, app, and screenshot exclusions remain warnings for manual review
+- kept directory submission preflight behavior unchanged
+
+### Security
+
+- validate stored and deflate ZIP entries with full safety passes for CRC, size, ZIP64, descriptors, paths, entry types, overlaps, and resource budgets
+- keep archive preflight offline and non-executing: it performs no extraction, process execution, or network access and redacts paths and content from reports
+
 ## [1.59.0] - 2026-08-17
 
 ### Added
