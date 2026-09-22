@@ -4,6 +4,18 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.61.0] - 2026-09-22
+
+### Added
+
+- added opt-in HTTP MCP 2026-07-28 protocol discovery with `doctor discover`, text and JSON reports, and explicit discovery-only coverage
+- distinguish unsupported discovery/protocol and authentication-required outcomes from malformed responses and network-policy blocks
+
+### Security
+
+- reuse bounded HTTP requests and existing URL/DNS policies; discovery never initializes sessions, invokes tools, follows redirects, or authenticates
+- omit endpoint URLs and server-supplied free text from discovery reports
+
 ## [1.60.0] - 2026-08-25
 
 ### Added

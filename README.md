@@ -81,6 +81,21 @@ Runtime MCP validation with `--runtime`:
 - optional runtime approval gating with a precomputed `doctor runtime-plan` digest
 - optional Docker isolation for local Node.js stdio servers with `--sandbox docker`
 
+### MCP Protocol Discovery
+
+Inspect an HTTP MCP endpoint's advertised protocol versions using a bounded MCP
+2026-07-28 `server/discover` request:
+
+```bash
+codex-plugin-doctor doctor discover https://mcp.example.com/mcp --allow-network
+codex-plugin-doctor doctor discover https://mcp.example.com/mcp --allow-network --json
+```
+
+This is an opt-in discovery-only check. A successful result validates the discovery
+response, not full protocol conformance, tool behavior, or compatibility with a
+particular client. Existing `check --runtime` remains on its 2025-11-25 baseline.
+See [MCP Discovery](docs/guides/mcp-discovery.md) for consent, scope, and exit codes.
+
 ### Remote MCP Readiness
 
 Remote MCP runtime probing is disabled until you explicitly pass `--runtime --allow-network`. Loopback endpoints also require `--allow-local-network`:
@@ -499,9 +514,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.60.0
+      - uses: Esquetta/CodexPluginDoctor@v1.61.0
         with:
-          version: "1.60.0"
+          version: "1.61.0"
           path: .
           runtime: "true"
           policy: codex-publish

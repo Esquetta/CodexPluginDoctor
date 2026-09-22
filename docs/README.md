@@ -21,6 +21,8 @@ This directory contains public documentation for users, contributors, and securi
 
 ## Guides
 
+- [MCP Discovery](guides/mcp-discovery.md)
+
 - [GitHub Action](guides/github-action.md)
 - [Release Gating](guides/release-gating.md)
 - [Real-World Validation](guides/real-world-validation.md)
