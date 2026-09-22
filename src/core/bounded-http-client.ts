@@ -10,6 +10,7 @@ const allowedRequestHeaders = new Set([
   "accept",
   "content-type",
   "last-event-id",
+  "mcp-method",
   "mcp-protocol-version",
   "mcp-session-id",
   "user-agent"
