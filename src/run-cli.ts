@@ -86,6 +86,8 @@ import {
 import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./core/submission-archive-preflight.js";
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
+import { inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
+import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
 import {
   buildDoctorValidationCorpusReport,
@@ -294,6 +296,7 @@ export interface CliTerminalContext {
 }
 
 export interface RunCliOptions {
+  inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -335,6 +338,8 @@ function writeExactStdout(io: CliIo, message: string): void {
 }
 
 class CliUsageError extends Error {}
+
+const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json]";
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json]";
 
@@ -444,6 +449,7 @@ function printUsage(io: CliIo): void {
             "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>] [--fail-on <rule-id>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>] [--upload]|mcp <path> [--runtime [--allow-network [--allow-local-network]]]|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
   io.writeStderr(discoveryUsage);
+  io.writeStderr(toolsUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -1817,6 +1823,35 @@ export async function runCli(
   }
 
   if (command === "doctor") {
+    if (maybePath === "tools") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.`);
+        return 0;
+      }
+      const [url, ...flags] = remainingArgs;
+      if (!url || url.startsWith("-")) {
+        io.writeStderr(toolsUsage);
+        return 2;
+      }
+      const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
+      if (flags.some((flag) => !allowedFlags.has(flag)) || new Set(flags).size !== flags.length) {
+        io.writeStderr(`Invalid or duplicate tool catalog arguments. ${toolsUsage}`);
+        return 2;
+      }
+      if (!flags.includes("--allow-network")) {
+        io.writeStderr("doctor tools requires explicit --allow-network consent.");
+        return 2;
+      }
+      const report = await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(url, {
+        allowNetwork: true,
+        allowLocalNetwork: flags.includes("--allow-local-network")
+      });
+      io.writeStdout(flags.includes("--json")
+        ? JSON.stringify(report, null, 2)
+        : renderMcpToolCatalogReport(report));
+      return report.status === "pass" ? 0
+        : report.status === "incomplete" || report.status === "blocked" ? 2 : 1;
+    }
     if (maybePath === "discover") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
         io.writeStdout(`${discoveryUsage}\nHTTP discovery only; runtime behavior is not tested.`);

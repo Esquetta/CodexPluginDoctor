@@ -701,6 +701,79 @@ const publicSchemaDefinitions: Array<{
     id: "doctor.snapshot.json",
     command: "codex-plugin-doctor doctor snapshot --json",
     required: ["schemaVersion", "generatedAt", "version", "environment", "clients", "installedPlugins", "nextCommands"]
+  },
+  {
+    id: "doctor.tools.json",
+    command: "codex-plugin-doctor doctor tools <url> --allow-network --json",
+    required: ["schemaVersion", "scope", "status", "discovery", "catalog", "coverage", "findings"],
+    properties: {
+      schemaVersion: { const: 1 },
+      scope: { const: "tool-catalog-structure" },
+      status: { enum: ["pass", "warn", "fail", "unsupported", "not-applicable", "incomplete", "blocked"] },
+      discovery: {
+        type: "object",
+        required: ["schemaVersion", "requestedVersion", "scope", "status", "supportedVersions", "findings", "coverage"],
+        properties: {
+          schemaVersion: { const: 1 },
+          requestedVersion: { const: "2026-07-28" },
+          scope: { const: "discovery-only" },
+          status: { enum: ["discovered", "unsupported", "blocked", "failed"] },
+          supportedVersions: { type: "array", maxItems: 32, uniqueItems: true, items: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" } },
+          findings: { type: "array" },
+          coverage: {
+            type: "object", required: ["discovery", "runtime"],
+            properties: { discovery: { enum: ["pass", "fail", "skipped"] }, runtime: { const: "not-tested" } },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      },
+      catalog: {
+        type: "object", required: ["complete", "pagesRead", "toolsChecked", "reason"],
+        properties: {
+          complete: { type: "boolean" },
+          pagesRead: { type: "integer", minimum: 0, maximum: 5 },
+          toolsChecked: { type: "integer", minimum: 0, maximum: 500 },
+          reason: { type: ["string", "null"] }
+        },
+        additionalProperties: false
+      },
+      coverage: {
+        type: "object",
+        required: ["discovery", "catalogEnumeration", "schema", "toolExecution", "fullConformance", "customHeaderAnnotations"],
+        properties: {
+          discovery: { enum: ["pass", "fail", "skipped"] },
+          catalogEnumeration: { enum: ["complete", "incomplete", "not-tested"] },
+          schema: { const: "root-shape-only" },
+          toolExecution: { const: "not-tested" },
+          fullConformance: { const: "not-tested" },
+          customHeaderAnnotations: { const: "not-tested" }
+        },
+        additionalProperties: false
+      },
+      findings: {
+        type: "array", maxItems: 100,
+        items: {
+          type: "object", required: ["id", "severity", "message", "impact", "suggestedFix"],
+          properties: {
+            id: { type: "string", pattern: "^plugin\\.catalog\\." },
+            severity: { enum: ["warn", "fail"] },
+            message: { type: "string" }, impact: { type: "string" }, suggestedFix: { type: "string" },
+            location: {
+              type: "object", required: ["page", "toolIndex"],
+              properties: {
+                page: { type: "integer", minimum: 1, maximum: 5 },
+                toolIndex: { type: "integer", minimum: 1, maximum: 500 },
+                schema: { enum: ["inputSchema", "outputSchema"] },
+                relatedToolIndex: { type: "integer", minimum: 1, maximum: 500 }
+              },
+              additionalProperties: false
+            }
+          },
+          additionalProperties: false
+        }
+      }
+    }
   }
 ];
 

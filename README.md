@@ -96,6 +96,20 @@ response, not full protocol conformance, tool behavior, or compatibility with a
 particular client. Existing `check --runtime` remains on its 2025-11-25 baseline.
 See [MCP Discovery](docs/guides/mcp-discovery.md) for consent, scope, and exit codes.
 
+### HTTP MCP Tool Catalog
+
+Inspect a modern HTTP MCP server's tool definitions without invoking them:
+
+```bash
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --json
+```
+
+This opt-in command performs discovery and bounded `tools/list` pagination. It
+reports tool-definition and root-schema shape findings, explicit completion state,
+and partial inspection limits. It does not claim full schema validation, tool
+execution, or client compatibility. Existing `doctor discover` behavior is unchanged.
+See [HTTP MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
+
 ### Remote MCP Readiness
 
 Remote MCP runtime probing is disabled until you explicitly pass `--runtime --allow-network`. Loopback endpoints also require `--allow-local-network`:
@@ -514,9 +528,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.61.0
+      - uses: Esquetta/CodexPluginDoctor@v1.62.0
         with:
-          version: "1.61.0"
+          version: "1.62.0"
           path: .
           runtime: "true"
           policy: codex-publish
