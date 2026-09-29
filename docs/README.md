@@ -22,6 +22,7 @@ This directory contains public documentation for users, contributors, and securi
 ## Guides
 
 - [MCP Discovery](guides/mcp-discovery.md)
+- [HTTP MCP Tool Catalog](guides/mcp-tool-catalog.md)
 
 - [GitHub Action](guides/github-action.md)
 - [Release Gating](guides/release-gating.md)

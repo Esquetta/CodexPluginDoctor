@@ -4,6 +4,18 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.62.0] - 2026-09-29
+
+### Added
+
+- added opt-in `doctor tools` HTTP MCP discovery and bounded tool-catalog inspection with text/JSON reports and a standalone output contract
+- added structural tool/root-schema checks, duplicate-name warnings, and explicit partial-result handling for pagination, authentication, and resource limits
+
+### Security
+
+- preserve explicit network consent and URL/DNS controls for each catalog request; no tool invocation, schema fetching, authentication, fallback, or redirects
+- omit remote names, schema content, cursors, and endpoint details from catalog reports; use numeric finding locators
+
 ## [1.61.0] - 2026-09-22
 
 ### Added

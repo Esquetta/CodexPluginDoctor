@@ -11,7 +11,7 @@ import { packageVersion } from "../version.js";
 
 const REQUESTED_VERSION = "2026-07-28";
 const REQUEST_ID = "discover-1";
-type JsonObject = Record<string, unknown>;
+export type McpJsonObject = Record<string, unknown>;
 
 export interface McpDiscoveryOptions {
   allowNetwork?: boolean;
@@ -39,11 +39,11 @@ function report(status: McpDiscoveryReport["status"], discovery: McpDiscoveryRep
   return { schemaVersion: 1, requestedVersion: REQUESTED_VERSION, scope: "discovery-only", status, supportedVersions, findings, coverage: { discovery, runtime: "not-tested" } };
 }
 
-function isPlainObject(value: unknown): value is JsonObject {
+function isPlainObject(value: unknown): value is McpJsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseJsonObject(source: string): JsonObject | null {
+function parseJsonObject(source: string): McpJsonObject | null {
   try {
     const parsed: unknown = JSON.parse(source);
     return isPlainObject(parsed) ? parsed : null;
@@ -58,7 +58,7 @@ function mediaType(response: BoundedHttpResponse): string | null {
   return typeof value === "string" ? value.split(";", 1)[0]?.trim().toLowerCase() ?? null : null;
 }
 
-function findSseResponse(body: Buffer): JsonObject | null {
+export function findMcpSseResponse(body: Buffer, requestId = REQUEST_ID): McpJsonObject | null {
   const text = body.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   let offset = 0;
   while (offset < text.length) {
@@ -68,16 +68,16 @@ function findSseResponse(body: Buffer): JsonObject | null {
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).replace(/^ /, ""));
     const candidate = data.length === 0 ? null : parseJsonObject(data.join("\n"));
-    if (candidate?.id === REQUEST_ID) return candidate;
+    if (candidate?.id === requestId) return candidate;
     offset = boundary + 2;
   }
   return null;
 }
 
-function parseResponse(response: BoundedHttpResponse): JsonObject | null {
+export function parseMcpResponse(response: BoundedHttpResponse, requestId = REQUEST_ID): McpJsonObject | null {
   const contentType = mediaType(response);
   return contentType === "application/json" ? parseJsonObject(response.body.toString("utf8"))
-    : contentType === "text/event-stream" ? findSseResponse(response.body)
+    : contentType === "text/event-stream" ? findMcpSseResponse(response.body, requestId)
       : null;
 }
 
@@ -92,36 +92,48 @@ function validVersions(value: unknown): value is string[] {
   return Array.isArray(value) && value.length > 0 && value.length <= 32 && value.every(isValidVersion) && new Set(value).size === value.length;
 }
 
-function hasMatchingResponseEnvelope(message: JsonObject): boolean {
-  return message.jsonrpc === "2.0" && message.id === REQUEST_ID
+function hasMatchingResponseEnvelope(message: McpJsonObject, requestId = REQUEST_ID): boolean {
+  return message.jsonrpc === "2.0" && message.id === requestId
     && Object.hasOwn(message, "result") !== Object.hasOwn(message, "error");
 }
 
-function validDiscoverResult(value: unknown): value is JsonObject & { supportedVersions: string[] } {
+function validDiscoverResult(value: unknown): value is McpJsonObject & { supportedVersions: string[] } {
   return isPlainObject(value) && value.resultType === "complete" && validVersions(value.supportedVersions)
     && validCapabilities(value.capabilities) && typeof value.ttlMs === "number" && Number.isFinite(value.ttlMs) && value.ttlMs >= 0
     && (value.cacheScope === "public" || value.cacheScope === "private") && validOptionalServerInfo(value);
 }
 
 
-function validCapabilities(value: unknown): value is JsonObject {
+function validCapabilities(value: unknown): value is McpJsonObject {
   return isPlainObject(value) && ["tools", "resources", "prompts", "completions", "logging", "tasks", "extensions"]
     .every((name) => !Object.hasOwn(value, name) || isPlainObject(value[name]));
 }
-function validOptionalServerInfo(value: JsonObject): boolean {
+function validOptionalServerInfo(value: McpJsonObject): boolean {
   if (!Object.hasOwn(value, "_meta")) return true;
   if (!isPlainObject(value._meta)) return false;
   const serverInfo = value._meta["io.modelcontextprotocol/serverInfo"];
   return serverInfo === undefined || (isPlainObject(serverInfo) && typeof serverInfo.name === "string" && typeof serverInfo.version === "string");
 }
 
-function validError(value: unknown): value is JsonObject & { code: number; message: string } {
+function validError(value: unknown): value is McpJsonObject & { code: number; message: string } {
   return isPlainObject(value) && typeof value.code === "number" && Number.isFinite(value.code) && typeof value.message === "string";
 }
 
 function unsupportedVersions(error: unknown): string[] | null {
   if (!validError(error) || error.code !== -32022 || !isPlainObject(error.data)) return null;
   return error.data.requested === REQUESTED_VERSION && validVersions(error.data.supported) ? error.data.supported : null;
+}
+
+export function discoverMcpCapabilities(response: BoundedHttpResponse, requestId = REQUEST_ID): McpJsonObject | null {
+  const message = parseMcpResponse(response, requestId);
+  if (!message || !hasMatchingResponseEnvelope(message, requestId) || !Object.hasOwn(message, "result")) {
+    return null;
+  }
+  const result = message.result;
+  if (!validDiscoverResult(result)) return null;
+  const capabilities = result.capabilities;
+  if (!isPlainObject(capabilities)) return null;
+  return result.supportedVersions.includes(REQUESTED_VERSION) ? capabilities : null;
 }
 
 function failureReport(id: string, message: string): McpDiscoveryReport {
@@ -152,7 +164,7 @@ export async function discoverMcpServer(rawUrl: string, options: McpDiscoveryOpt
       allowLocalNetwork: options.allowLocalNetwork, lookup: options.lookup, timeoutMs: options.requestTimeoutMs,
       method: "POST", body,
       headers: { Accept: "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": REQUESTED_VERSION, "Mcp-Method": "server/discover" },
-      stopAfter: (received) => findSseResponse(received) !== null
+      stopAfter: (received) => findMcpSseResponse(received) !== null
     });
   } catch (error) {
     if (error instanceof RemoteNetworkPolicyError) {
@@ -164,7 +176,7 @@ export async function discoverMcpServer(rawUrl: string, options: McpDiscoveryOpt
   if (response.statusCode === 401 || response.statusCode === 403) {
     return unsupportedReport("plugin.discovery.authorization.required", "The MCP endpoint requires authorization before discovery can be assessed.");
   }
-  const message = parseResponse(response);
+  const message = parseMcpResponse(response);
   if (!message || !hasMatchingResponseEnvelope(message)) return failureReport("plugin.discovery.response.invalid", "The MCP endpoint returned an invalid discovery response.");
   if (Object.hasOwn(message, "error")) {
     if (!validError(message.error)) return failureReport("plugin.discovery.response.error", "The MCP endpoint returned an invalid discovery error.");
