@@ -87,6 +87,8 @@ import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./co
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
 import { inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
+import { inspectMcpToolFile } from "./core/mcp-tool-file.js";
+import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
 import {
@@ -296,6 +298,7 @@ export interface CliTerminalContext {
 }
 
 export interface RunCliOptions {
+  inspectMcpToolFileImpl?: typeof inspectMcpToolFile;
   inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
@@ -338,6 +341,8 @@ function writeExactStdout(io: CliIo, message: string): void {
 }
 
 class CliUsageError extends Error {}
+
+const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json]";
 
@@ -450,6 +455,7 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(discoveryUsage);
   io.writeStderr(toolsUsage);
+  io.writeStderr(toolsFileUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -1823,6 +1829,23 @@ export async function runCli(
   }
 
   if (command === "doctor") {
+    if (maybePath === "tools-file") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${toolsFileUsage}\nInspects one saved UTF-8 MCP tools/list response. No server connection or tool execution.`);
+        return 0;
+      }
+      const [filePath, ...flags] = remainingArgs;
+      if (!filePath || filePath.startsWith("-") || flags.some((flag) => flag !== "--json") || flags.length > 1) {
+        io.writeStderr(`Invalid file inspection arguments. ${toolsFileUsage}`);
+        return 2;
+      }
+      const report = await (options.inspectMcpToolFileImpl ?? inspectMcpToolFile)(filePath);
+      io.writeStdout(flags.includes("--json")
+        ? JSON.stringify(report, null, 2)
+        : renderMcpToolFileReport(report));
+      return report.status === "pass" ? 0
+        : report.status === "warn" || report.status === "fail" ? 1 : 2;
+    }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
         io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.`);

@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.63.0] - 2026-10-02
+
+### Added
+
+- added offline `doctor tools-file <path> [--json]` inspection of saved modern MCP `tools/list` responses, with bounded file reads, tool-definition findings, and a standalone output contract
+- report supplied-page completion separately from untested server inventory, discovery, execution, and full conformance
+
+### Security
+
+- reject explicit network/device paths, final symbolic links, non-regular files, invalid UTF-8, and detected file changes; omit paths, tool names, schema content, and cursors from reports
+
 ## [1.62.0] - 2026-09-29
 
 ### Added

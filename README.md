@@ -96,6 +96,19 @@ response, not full protocol conformance, tool behavior, or compatibility with a
 particular client. Existing `check --runtime` remains on its 2025-11-25 baseline.
 See [MCP Discovery](docs/guides/mcp-discovery.md) for consent, scope, and exit codes.
 
+### Offline MCP Tool Definitions
+
+Inspect a saved MCP 2026-07-28 `tools/list` response without contacting a server:
+
+```bash
+codex-plugin-doctor doctor tools-file ./tools-list.json --json
+```
+
+This checks the supplied tool definitions and root-schema shapes within fixed file,
+tool, and finding limits. It does not establish server inventory completeness or
+execute tools. See [Offline MCP Tool Definitions](docs/guides/offline-tool-definitions.md)
+for the accepted input format, coverage, and exit codes.
+
 ### HTTP MCP Tool Catalog
 
 Inspect a modern HTTP MCP server's tool definitions without invoking them:
@@ -528,9 +541,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.62.0
+      - uses: Esquetta/CodexPluginDoctor@v1.63.0
         with:
-          version: "1.62.0"
+          version: "1.63.0"
           path: .
           runtime: "true"
           policy: codex-publish

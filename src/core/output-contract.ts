@@ -774,6 +774,57 @@ const publicSchemaDefinitions: Array<{
         }
       }
     }
+  },
+  {
+    id: "doctor.tools.file.json",
+    command: "codex-plugin-doctor doctor tools-file <path> --json",
+    required: ["schemaVersion", "scope", "status", "source", "inspection", "coverage", "findings"],
+    properties: {
+      schemaVersion: { const: 1 },
+      scope: { const: "tool-definitions-file" },
+      status: { enum: ["pass", "warn", "fail", "incomplete", "blocked"] },
+      source: {
+        type: "object", required: ["kind", "format", "bytesRead"],
+        properties: {
+          kind: { const: "file" }, format: { const: "mcp-tools-list-response" },
+          bytesRead: { type: "integer", minimum: 0, maximum: 1048577 }
+        }, additionalProperties: false
+      },
+      inspection: {
+        type: "object", required: ["complete", "toolsChecked", "hasNextCursor", "reason"],
+        properties: {
+          complete: { type: "boolean" }, toolsChecked: { type: "integer", minimum: 0, maximum: 500 },
+          hasNextCursor: { type: ["boolean", "null"] }, reason: { type: ["string", "null"] }
+        }, additionalProperties: false
+      },
+      coverage: {
+        type: "object", required: ["schema", "discovery", "serverCatalog", "toolExecution", "fullConformance", "customHeaderAnnotations"],
+        properties: {
+          schema: { const: "root-shape-only" }, discovery: { const: "not-tested" },
+          serverCatalog: { const: "not-tested" }, toolExecution: { const: "not-tested" },
+          fullConformance: { const: "not-tested" }, customHeaderAnnotations: { const: "not-tested" }
+        }, additionalProperties: false
+      },
+      findings: {
+        type: "array", maxItems: 100,
+        items: {
+          type: "object", required: ["id", "severity", "message", "impact", "suggestedFix"],
+          properties: {
+            id: { type: "string", pattern: "^plugin\\.(tools_file|catalog)\\." },
+            severity: { enum: ["warn", "fail"] },
+            message: { type: "string" }, impact: { type: "string" }, suggestedFix: { type: "string" },
+            location: {
+              type: "object", required: ["page", "toolIndex"],
+              properties: {
+                page: { const: 1 }, toolIndex: { type: "integer", minimum: 1, maximum: 500 },
+                schema: { enum: ["inputSchema", "outputSchema"] },
+                relatedToolIndex: { type: "integer", minimum: 1, maximum: 500 }
+              }, additionalProperties: false
+            }
+          }, additionalProperties: false
+        }
+      }
+    }
   }
 ];
 

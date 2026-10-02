@@ -12,7 +12,7 @@ import {
 } from "../scripts/release-check.mjs";
 
 describe("release check registry version gate", () => {
-  it("keeps package and lockfile roots on the 1.62.0 release version", async () => {
+  it("keeps package and lockfile roots on the 1.63.0 release version", async () => {
     const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
       version: string;
     };
@@ -21,7 +21,7 @@ describe("release check registry version gate", () => {
       packages: { "": { version: string } };
     };
 
-    expect(packageJson.version).toBe("1.62.0");
+    expect(packageJson.version).toBe("1.63.0");
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages[""].version).toBe(packageJson.version);
   });
