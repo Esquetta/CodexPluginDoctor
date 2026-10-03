@@ -37,6 +37,15 @@ export interface McpToolFileReport {
   findings: CatalogFinding[];
 }
 
+export interface McpToolFileSnapshot {
+  report: McpToolFileReport;
+  tools: unknown[] | null;
+}
+
+function snapshot(report: McpToolFileReport, tools: unknown[] | null = null): McpToolFileSnapshot {
+  return { report, tools };
+}
+
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -211,72 +220,72 @@ async function readBoundedRegularFile(filePath: string): Promise<
   }
 }
 
-export async function inspectMcpToolFile(filePath: string): Promise<McpToolFileReport> {
+export async function loadMcpToolFileSnapshot(filePath: string): Promise<McpToolFileSnapshot> {
   if (isBlockedOfflinePath(filePath)) {
-    return blockedFileReport("offline-path-blocked", fileFinding(
+    return snapshot(blockedFileReport("offline-path-blocked", fileFinding(
       "plugin.tools_file.path.blocked", "fail", "The local tool definition path is not permitted for offline inspection.",
       "The offline tool definition inspection does not access remote or device paths.", "Provide a local regular file path."
-    ));
+    )));
   }
 
   const file = await readBoundedRegularFile(filePath);
   if (file.kind === "unavailable") {
-    return incompleteFileReport(file.bytesRead, "file-unavailable", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "file-unavailable", fileFinding(
       "plugin.tools_file.file.unavailable", "fail", "The local tool definition file could not be read.",
       "The offline tool definition inspection could not start.", "Provide a readable local regular file."
-    ));
+    )));
   }
   if (file.kind === "too-large") {
-    return incompleteFileReport(file.bytesRead, "file-size-limit", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "file-size-limit", fileFinding(
       "plugin.tools_file.file.too_large", "fail", "The local tool definition file exceeds the one MiB inspection limit.",
       "The offline tool definition inspection cannot safely read this file within its byte limit.", "Provide a tool definition file no larger than one MiB."
-    ));
+    )));
   }
   if (file.kind === "changed") {
-    return incompleteFileReport(file.bytesRead, "file-changed", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "file-changed", fileFinding(
       "plugin.tools_file.file.changed", "fail", "The local tool definition file changed during inspection.",
       "The offline tool definition inspection cannot rely on an inconsistent file snapshot.", "Retry after the file is stable."
-    ));
+    )));
   }
   if (file.kind === "symlink") {
-    return blockedFileReport("final-symlink", fileFinding(
+    return snapshot(blockedFileReport("final-symlink", fileFinding(
       "plugin.tools_file.file.symlink", "fail", "The local tool definition target is a symbolic link.",
       "The offline tool definition inspection does not follow final symbolic links.", "Provide a regular file directly."
-    ));
+    )));
   }
   if (file.kind === "not-regular") {
-    return blockedFileReport("non-regular-file", fileFinding(
+    return snapshot(blockedFileReport("non-regular-file", fileFinding(
       "plugin.tools_file.file.not_regular", "fail", "The local tool definition target is not a regular file.",
       "The offline tool definition inspection reads only bounded regular files.", "Provide a regular file directly."
-    ));
+    )));
   }
 
   let decoded: string;
   try {
     decoded = new TextDecoder("utf-8", { fatal: true }).decode(file.content);
   } catch {
-    return incompleteFileReport(file.bytesRead, "invalid-utf8", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "invalid-utf8", fileFinding(
       "plugin.tools_file.encoding.invalid", "fail", "The local tool definition file is not valid UTF-8.",
       "The offline tool definition inspection cannot parse the file safely.", "Save the tools/list response as UTF-8 JSON."
-    ));
+    )));
   }
 
   let value: unknown;
   try {
     value = JSON.parse(decoded) as unknown;
   } catch {
-    return incompleteFileReport(file.bytesRead, "invalid-json", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "invalid-json", fileFinding(
       "plugin.tools_file.json.invalid", "fail", "The local tool definition file is not valid JSON.",
       "The offline tool definition inspection cannot parse the file safely.", "Provide one UTF-8 JSON-RPC tools/list response."
-    ));
+    )));
   }
 
   const parsed = parseToolsResult(value);
   if (parsed === null) {
-    return incompleteFileReport(file.bytesRead, "response-invalid", fileFinding(
+    return snapshot(incompleteFileReport(file.bytesRead, "response-invalid", fileFinding(
       "plugin.tools_file.response.invalid", "fail", "The local JSON value is not a supported complete tools/list response.",
       "The offline tool definition inspection cannot identify a valid tool list.", "Provide one JSON-RPC 2.0 complete tools/list result with valid cache metadata."
-    ));
+    )));
   }
 
   const findings: CatalogFinding[] = [];
@@ -325,17 +334,21 @@ export async function inspectMcpToolFile(filePath: string): Promise<McpToolFileR
   if (reason === null && parsed.tools.length > MAX_TOOLS) reason = "tool-limit";
   if (reason === null && parsed.hasNextCursor) reason = "more-pages-present";
   if (reason !== null) {
-    return report(file.bytesRead, "incomplete", {
+    return snapshot(report(file.bytesRead, "incomplete", {
       complete: false,
       toolsChecked,
       hasNextCursor: parsed.hasNextCursor,
       reason
-    }, findings);
+    }, findings), parsed.tools);
   }
-  return report(file.bytesRead, finalStatus(findings), {
+  return snapshot(report(file.bytesRead, finalStatus(findings), {
     complete: true,
     toolsChecked,
     hasNextCursor: false,
     reason: null
-  }, findings);
+  }, findings), parsed.tools);
+}
+
+export async function inspectMcpToolFile(filePath: string): Promise<McpToolFileReport> {
+  return (await loadMcpToolFileSnapshot(filePath)).report;
 }

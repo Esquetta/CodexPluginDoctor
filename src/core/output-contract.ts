@@ -828,6 +828,59 @@ const publicSchemaDefinitions: Array<{
   }
 ];
 
+
+const toolFileReportDefinition = publicSchemaDefinitions.find((definition) => definition.id === "doctor.tools.file.json")!;
+const embeddedToolFileReportSchema = {
+  type: "object",
+  required: toolFileReportDefinition.required,
+  properties: toolFileReportDefinition.properties,
+  additionalProperties: true
+};
+
+publicSchemaDefinitions.push({
+  id: "doctor.tools.diff.json",
+  command: "codex-plugin-doctor doctor tools-diff --before <path> --after <path> --json",
+  required: ["schemaVersion", "scope", "status", "before", "after", "comparison", "coverage", "changes"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "tool-definitions-diff" },
+    status: { enum: ["pass", "warn", "incomplete", "blocked"] },
+    before: embeddedToolFileReportSchema,
+    after: embeddedToolFileReportSchema,
+    comparison: {
+      type: "object", required: ["complete", "reason", "added", "removed", "changed", "unchanged"],
+      properties: {
+        complete: { type: "boolean" },
+        reason: { enum: [null, "input-blocked", "input-incomplete", "invalid-definitions", "ambiguous-names"] },
+        added: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        removed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        changed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 }
+      }, additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["comparison", "schema", "compatibility", "serverCatalog", "toolExecution"],
+      properties: {
+        comparison: { const: "structural-only" }, schema: { const: "root-shape-only" },
+        compatibility: { const: "not-tested" }, serverCatalog: { const: "not-tested" },
+        toolExecution: { const: "not-tested" }
+      }, additionalProperties: false
+    },
+    changes: {
+      type: "array", maxItems: 1000,
+      items: {
+        type: "object", required: ["kind", "beforeToolIndex", "afterToolIndex", "fields"],
+        properties: {
+          kind: { enum: ["added", "removed", "changed"] },
+          beforeToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          afterToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } }
+        }, additionalProperties: false
+      }
+    }
+  }
+});
+
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }

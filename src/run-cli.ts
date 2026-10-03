@@ -88,6 +88,8 @@ import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
 import { inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
 import { inspectMcpToolFile } from "./core/mcp-tool-file.js";
+import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
+import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report.js";
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
@@ -298,6 +300,7 @@ export interface CliTerminalContext {
 }
 
 export interface RunCliOptions {
+  compareMcpToolFilesImpl?: typeof compareMcpToolFiles;
   inspectMcpToolFileImpl?: typeof inspectMcpToolFile;
   inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
@@ -341,6 +344,8 @@ function writeExactStdout(io: CliIo, message: string): void {
 }
 
 class CliUsageError extends Error {}
+
+const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json]";
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
@@ -456,6 +461,7 @@ function printUsage(io: CliIo): void {
   io.writeStderr(discoveryUsage);
   io.writeStderr(toolsUsage);
   io.writeStderr(toolsFileUsage);
+  io.writeStderr(toolsDiffUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -1829,6 +1835,38 @@ export async function runCli(
   }
 
   if (command === "doctor") {
+    if (maybePath === "tools-diff") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${toolsDiffUsage}\nCompares two saved MCP tools/list responses offline. Structural changes only; compatibility is not tested.`);
+        return 0;
+      }
+      let beforePath: string | undefined;
+      let afterPath: string | undefined;
+      let json = false;
+      let invalid = false;
+      for (let index = 0; index < remainingArgs.length; index += 1) {
+        const flag = remainingArgs[index];
+        if (flag === "--json" && !json) {
+          json = true;
+        } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
+          const value = remainingArgs[index + 1];
+          if (!value || value.startsWith("-")) { invalid = true; break; }
+          if (flag === "--before") beforePath = value;
+          else afterPath = value;
+          index += 1;
+        } else {
+          invalid = true;
+          break;
+        }
+      }
+      if (invalid || !beforePath || !afterPath) {
+        io.writeStderr(`Invalid comparison arguments. ${toolsDiffUsage}`);
+        return 2;
+      }
+      const report = await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath);
+      io.writeStdout(json ? JSON.stringify(report, null, 2) : renderMcpToolDiffReport(report));
+      return report.status === "pass" ? 0 : report.status === "warn" ? 1 : 2;
+    }
     if (maybePath === "tools-file") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
         io.writeStdout(`${toolsFileUsage}\nInspects one saved UTF-8 MCP tools/list response. No server connection or tool execution.`);
