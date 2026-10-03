@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.64.0] - 2026-10-03
+
+### Added
+
+- added offline `doctor tools-diff --before <path> --after <path> [--json]` comparison of saved MCP tool definitions with text/JSON reports and a standalone output contract
+- detect additions, removals, and structural changes while retaining per-input validation findings and numeric locators; incomplete or ambiguous inputs produce no comparison
+
+### Security
+
+- reuse bounded single-read file inspection and sanitized output; comparison performs no network access, tool execution, or schema reference fetching
+
 ## [1.63.0] - 2026-10-02
 
 ### Added

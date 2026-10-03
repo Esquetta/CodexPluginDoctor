@@ -24,6 +24,7 @@ This directory contains public documentation for users, contributors, and securi
 - [MCP Discovery](guides/mcp-discovery.md)
 - [HTTP MCP Tool Catalog](guides/mcp-tool-catalog.md)
 - [Offline MCP Tool Definitions](guides/offline-tool-definitions.md)
+- [Offline MCP Tool Diff](guides/offline-tool-diff.md)
 
 - [GitHub Action](guides/github-action.md)
 - [Release Gating](guides/release-gating.md)

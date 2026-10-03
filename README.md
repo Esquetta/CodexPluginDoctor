@@ -109,6 +109,20 @@ tool, and finding limits. It does not establish server inventory completeness or
 execute tools. See [Offline MCP Tool Definitions](docs/guides/offline-tool-definitions.md)
 for the accepted input format, coverage, and exit codes.
 
+### Offline MCP Tool Diff
+
+Compare two saved tool-list responses before updating a server or client:
+
+```bash
+codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --json
+```
+
+This reports added, removed, and structurally changed definitions using numeric
+locations. Incomplete inputs, invalid definitions, or duplicate names prevent a
+comparison. It does not determine whether a schema change breaks compatibility.
+See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md) for matching rules,
+privacy, limits, and exit codes.
+
 ### HTTP MCP Tool Catalog
 
 Inspect a modern HTTP MCP server's tool definitions without invoking them:
@@ -541,9 +555,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.63.0
+      - uses: Esquetta/CodexPluginDoctor@v1.64.0
         with:
-          version: "1.63.0"
+          version: "1.64.0"
           path: .
           runtime: "true"
           policy: codex-publish
