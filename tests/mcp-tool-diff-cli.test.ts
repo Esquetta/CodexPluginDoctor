@@ -26,8 +26,8 @@ function report(status = "pass") {
   return {
     schemaVersion: 1, scope: "tool-definitions-diff", status,
     before: source, after: source,
-    comparison: { complete, reason: complete ? null : "input-incomplete", added: complete ? 0 : null, removed: complete ? 0 : null, changed: complete ? 0 : null, unchanged: complete ? 1 : null },
-    coverage: { comparison: "structural-only", schema: "root-shape-only", compatibility: "not-tested", serverCatalog: "not-tested", toolExecution: "not-tested" },
+    comparison: { complete, reason: complete ? null : "input-incomplete", added: complete ? 0 : null, removed: complete ? 0 : null, changed: complete ? 0 : null, unchanged: complete ? 1 : null, breaking: complete ? 0 : null, unclassified: complete ? 0 : null },
+    coverage: { comparison: "structural-only", schema: "root-shape-only", compatibility: "not-tested", serverCatalog: "not-tested", toolExecution: "not-tested", impactClassification: "heuristic" },
     changes: []
   };
 }
@@ -41,7 +41,9 @@ describe("doctor tools-diff", () => {
     ["--before", "", "--after", "new.json"], ["old.json", "new.json"],
     [...pair, "--before", "another.json"], [...pair, "--after", "another.json"],
     [...pair, "--json", "--json"], [...pair, "extra"], [...pair, "--allow-network"],
-    [...pair, "--runtime"], [...pair, "--output", "result.json"], [...pair, "--help"]
+    [...pair, "--runtime"], [...pair, "--output", "result.json"], [...pair, "--help"],
+    [...pair, "--fail-on"], [...pair, "--fail-on", "warn"], [...pair, "--fail-on", "--json"],
+    [...pair, "--fail-on", "any", "--fail-on", "breaking"]
   ])("rejects unsupported arguments %j before comparison", async (...args: string[]) => {
     const c = capture();
     const compareMcpToolFilesImpl = vi.fn();
@@ -63,6 +65,24 @@ describe("doctor tools-diff", () => {
       if (status === "incomplete" || status === "blocked") expect(output).toContain("not compared");
     }
   );
+
+  it.each([
+    ["pass", 0, 0, undefined, 0],
+    ["warn", 0, 0, undefined, 1],
+    ["warn", 0, 0, "any", 1],
+    ["warn", 0, 0, "breaking", 0],
+    ["warn", 1, 0, "breaking", 1],
+    ["warn", 0, 1, "breaking", 1],
+    ["incomplete", null, null, "breaking", 2],
+    ["blocked", null, null, "breaking", 2]
+  ] as const)("maps %s with %s breaking and %s unclassified under --fail-on %s to exit %i", async (status, breaking, unclassified, failOn, code) => {
+    const c = capture();
+    const result = report(status);
+    const compareMcpToolFilesImpl = vi.fn().mockResolvedValue({ ...result, comparison: { ...result.comparison, breaking, unclassified } });
+    const args = ["doctor", "tools-diff", ...pair, ...(failOn ? ["--fail-on", failOn] : [])];
+    expect(await runCli(args, c.io, { compareMcpToolFilesImpl })).toBe(code);
+    expect(c.stdout.join("\n")).toContain("Impact classification: heuristic");
+  });
 
   it("accepts option order changes and emits JSON without rewriting the report", async () => {
     const c = capture();
@@ -86,7 +106,7 @@ describe("doctor tools-diff", () => {
     const finding = { id: "plugin.catalog.schema.dialect.unsupported", severity: "warn", message: "Unsupported schema dialect.", impact: "Limited coverage.", suggestedFix: "Review the schema.", location: { page: 1, toolIndex: 1 } };
     const compareMcpToolFilesImpl = vi.fn().mockResolvedValue({
       ...result, before: { ...result.before, findings: [finding] },
-      changes: [{ kind: "changed", beforeToolIndex: 1, afterToolIndex: 2, fields: ["inputSchema", "other"] }]
+      changes: [{ kind: "changed", beforeToolIndex: 1, afterToolIndex: 2, fields: ["inputSchema", "other"], impact: "unclassified", reasons: ["other-fields-unclassified"] }]
     });
     expect(await runCli(["doctor", "tools-diff", ...pair], c.io, { compareMcpToolFilesImpl })).toBe(1);
     const output = c.stdout.join("\n");
@@ -95,6 +115,7 @@ describe("doctor tools-diff", () => {
     expect(output).toContain("before tool 1");
     expect(output).toContain("after tool 2");
     expect(output).toContain("inputSchema, other");
+    expect(output).toContain("Impact: unclassified (other-fields-unclassified)");
   });
 
   it("registers bounded standalone diff and embedded input schemas", () => {
@@ -107,7 +128,11 @@ describe("doctor tools-diff", () => {
         schemaVersion: { const: 1 }, scope: { const: "tool-definitions-diff" },
         before: { properties: file?.schema.properties },
         after: { properties: file?.schema.properties },
-        changes: { maxItems: 1000, items: { properties: { fields: { items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } } } } }
+        changes: { maxItems: 1000, items: { required: expect.arrayContaining(["impact", "reasons"]), properties: {
+          fields: { items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } },
+          impact: { enum: ["breaking", "compatible", "unclassified"] },
+          reasons: { items: { enum: expect.arrayContaining(["tool-removed", "input-required-added", "other-fields-unclassified"]) } }
+        } } }
       }
     });
   });
@@ -129,12 +154,13 @@ describe("doctor tools-diff", () => {
       await writeFile(after, JSON.stringify(afterEnvelope));
       const c = capture();
       expect(await runCli(["doctor", "tools-diff", "--before", before, "--after", after, "--json"], c.io)).toBe(skipped ? 2 : 1);
+      if (!skipped) expect(await runCli(["doctor", "tools-diff", "--before", before, "--after", after, "--fail-on", "breaking"], capture().io)).toBe(0);
       const output = c.stdout.join("\n");
       expect(output).not.toContain("PRIVATE_");
       const result = JSON.parse(output);
       expect(result.comparison.complete).toBe(!skipped);
       expect(result.comparison.changed).toBe(skipped ? null : 1);
-      expect(result.changes).toEqual(skipped ? [] : [{ kind: "changed", beforeToolIndex: 1, afterToolIndex: 1, fields: ["description"] }]);
+      expect(result.changes).toEqual(skipped ? [] : [{ kind: "changed", beforeToolIndex: 1, afterToolIndex: 1, fields: ["description"], impact: "compatible", reasons: [] }]);
     } finally {
       const resolved = await realpath(root);
       const relative = path.relative(await realpath(os.tmpdir()), resolved);

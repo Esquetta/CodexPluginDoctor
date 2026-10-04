@@ -118,8 +118,11 @@ codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-
 ```
 
 This reports added, removed, and structurally changed definitions using numeric
-locations. Incomplete inputs, invalid definitions, or duplicate names prevent a
-comparison. It does not determine whether a schema change breaks compatibility.
+locations, and labels each change `breaking`, `compatible`, or `unclassified`
+with fixed reason codes. Add `--fail-on breaking` to fail CI only on breaking or
+unclassified changes. Incomplete inputs, invalid definitions, or duplicate names
+prevent a comparison. Impact labels are root-level schema heuristics, not proof
+of compatibility.
 See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md) for matching rules,
 privacy, limits, and exit codes.
 
@@ -555,9 +558,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.64.0
+      - uses: Esquetta/CodexPluginDoctor@v1.65.0
         with:
-          version: "1.64.0"
+          version: "1.65.0"
           path: .
           runtime: "true"
           policy: codex-publish

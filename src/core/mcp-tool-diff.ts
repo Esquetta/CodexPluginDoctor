@@ -1,4 +1,11 @@
 import {
+  classifyAddedTool,
+  classifyChangedTool,
+  classifyRemovedTool,
+  type ToolChangeImpact,
+  type ToolChangeReason
+} from "./mcp-tool-impact.js";
+import {
   loadMcpToolFileSnapshot,
   type McpToolFileReport
 } from "./mcp-tool-file.js";
@@ -19,6 +26,8 @@ export interface McpToolDiffReport {
     removed: number | null;
     changed: number | null;
     unchanged: number | null;
+    breaking: number | null;
+    unclassified: number | null;
   };
   coverage: {
     comparison: "structural-only";
@@ -26,12 +35,15 @@ export interface McpToolDiffReport {
     compatibility: "not-tested";
     serverCatalog: "not-tested";
     toolExecution: "not-tested";
+    impactClassification: "heuristic";
   };
   changes: Array<{
     kind: "added" | "removed" | "changed";
     beforeToolIndex: number | null;
     afterToolIndex: number | null;
     fields: DiffField[];
+    impact: ToolChangeImpact;
+    reasons: ToolChangeReason[];
   }>;
 }
 
@@ -116,13 +128,14 @@ function incompleteReport(
     status,
     before,
     after,
-    comparison: { complete: false, reason, added: null, removed: null, changed: null, unchanged: null },
+    comparison: { complete: false, reason, added: null, removed: null, changed: null, unchanged: null, breaking: null, unclassified: null },
     coverage: {
       comparison: "structural-only",
       schema: "root-shape-only",
       compatibility: "not-tested",
       serverCatalog: "not-tested",
-      toolExecution: "not-tested"
+      toolExecution: "not-tested",
+      impactClassification: "heuristic"
     },
     changes: []
   };
@@ -162,7 +175,7 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
     const afterDefinition = afterDefinitions.get(name);
     if (afterDefinition === undefined) {
       removed += 1;
-      changes.push({ kind: "removed", beforeToolIndex: beforeDefinition.index, afterToolIndex: null, fields: [] });
+      changes.push({ kind: "removed", beforeToolIndex: beforeDefinition.index, afterToolIndex: null, fields: [], ...classifyRemovedTool() });
       continue;
     }
     const fields = changedFields(beforeDefinition.value, afterDefinition.value);
@@ -170,13 +183,19 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
       unchanged += 1;
     } else {
       changed += 1;
-      changes.push({ kind: "changed", beforeToolIndex: beforeDefinition.index, afterToolIndex: afterDefinition.index, fields });
+      changes.push({
+        kind: "changed",
+        beforeToolIndex: beforeDefinition.index,
+        afterToolIndex: afterDefinition.index,
+        fields,
+        ...classifyChangedTool(beforeDefinition.value, afterDefinition.value, fields, structurallyEqual)
+      });
     }
   }
   for (const [name, afterDefinition] of afterDefinitions) {
     if (!beforeDefinitions.has(name)) {
       added += 1;
-      changes.push({ kind: "added", beforeToolIndex: null, afterToolIndex: afterDefinition.index, fields: [] });
+      changes.push({ kind: "added", beforeToolIndex: null, afterToolIndex: afterDefinition.index, fields: [], ...classifyAddedTool() });
     }
   }
 
@@ -186,13 +205,23 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
     status: changes.length === 0 && before.status === "pass" && after.status === "pass" ? "pass" : "warn",
     before,
     after,
-    comparison: { complete: true, reason: null, added, removed, changed, unchanged },
+    comparison: {
+      complete: true,
+      reason: null,
+      added,
+      removed,
+      changed,
+      unchanged,
+      breaking: changes.filter((change) => change.impact === "breaking").length,
+      unclassified: changes.filter((change) => change.impact === "unclassified").length
+    },
     coverage: {
       comparison: "structural-only",
       schema: "root-shape-only",
       compatibility: "not-tested",
       serverCatalog: "not-tested",
-      toolExecution: "not-tested"
+      toolExecution: "not-tested",
+      impactClassification: "heuristic"
     },
     changes
   };
