@@ -12,7 +12,7 @@ export const TOOL_CHANGE_REASONS = [
   "input-additional-properties-closed",
   "input-schema-unclassified",
   "output-schema-removed",
-  "output-type-changed",
+  "output-type-widened",
   "output-property-removed",
   "output-guarantee-removed",
   "output-property-type-widened",
@@ -60,11 +60,6 @@ function typeSet(schema: JsonObject): Set<string> | null {
   if (typeof declared === "string") return new Set([declared]);
   if (Array.isArray(declared) && declared.every((entry) => typeof entry === "string")) return new Set(declared as string[]);
   return null;
-}
-
-function sortedTypes(schema: JsonObject): string[] | null {
-  const types = typeSet(schema);
-  return types === null ? null : [...types].sort();
 }
 
 /** True when every value admitted by `inner` is also admitted by `outer`. */
@@ -177,7 +172,7 @@ function classifyOutputSchema(before: unknown, after: unknown, equal: Equal, rea
     reasons.add("output-schema-unclassified");
     return;
   }
-  if (!equal(sortedTypes(before), sortedTypes(after))) reasons.add("output-type-changed");
+  if (!typesCovered(typeSet(after), typeSet(before))) reasons.add("output-type-widened");
 
   const beforeRequired = stringSet(before.required);
   const afterRequired = stringSet(after.required);

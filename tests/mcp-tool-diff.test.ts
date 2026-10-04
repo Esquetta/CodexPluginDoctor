@@ -130,7 +130,7 @@ describe("offline MCP tool definition comparison", () => {
           kind: "changed", beforeToolIndex: 2, afterToolIndex: 1,
           fields: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"],
           impact: "breaking",
-          reasons: ["input-type-narrowed", "output-type-changed", "annotation-safety-reduced", "other-fields-unclassified"]
+          reasons: ["input-type-narrowed", "output-type-widened", "annotation-safety-reduced", "other-fields-unclassified"]
         },
         { kind: "added", beforeToolIndex: null, afterToolIndex: 2, fields: [], impact: "compatible", reasons: [] }
       ]

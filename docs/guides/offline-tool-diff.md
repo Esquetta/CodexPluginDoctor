@@ -58,7 +58,7 @@ outputs it already reads must keep their shape.
 | `input-property-enum-narrowed` | breaking | An input property's `enum` dropped values or was introduced. |
 | `input-additional-properties-closed` | breaking | `additionalProperties` became `false`. |
 | `output-schema-removed` | breaking | A previously declared `outputSchema` was removed. |
-| `output-type-changed` | breaking | The root `outputSchema` type set changed. |
+| `output-type-widened` | breaking | The root `outputSchema` may now have a type it could not have before. |
 | `output-property-removed` | breaking | A declared output property was removed. |
 | `output-guarantee-removed` | breaking | An output property is no longer required. |
 | `output-property-type-widened` | breaking | An output property may now have a type it could not have before. |

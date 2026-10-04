@@ -59,6 +59,8 @@ describe("tool change impact classification", () => {
     ["output property type narrowed", output(object({ a: { type: ["string", "null"] } })), output(object({ a: { type: "string" } }))],
     ["output enum narrowed", output(object({ a: { enum: ["x", "y"] } })), output(object({ a: { enum: ["x"] } }))],
     ["output type order changed", output({ type: ["object", "null"] }), output({ type: ["null", "object"] })],
+    ["output type narrowed", output({ type: ["object", "null"] }), output({ type: "object" })],
+    ["output type introduced", output({}), output({ type: "object" })],
     ["annotations made safer", { name: "tool", inputSchema: {}, annotations: { readOnlyHint: false } }, { name: "tool", inputSchema: {}, annotations: { readOnlyHint: true } }],
     ["annotation title changed", { name: "tool", inputSchema: {}, annotations: { title: "a" } }, { name: "tool", inputSchema: {}, annotations: { title: "b" } }]
   ])("classifies %s as compatible", (_label, before, after) => {
@@ -75,7 +77,9 @@ describe("tool change impact classification", () => {
     ["input property enum introduced", input(object({ a: { type: "string" } })), input(object({ a: { type: "string", enum: ["x"] } })), "input-property-enum-narrowed"],
     ["input additional properties closed", input(object({})), input(object({}, { additionalProperties: false })), "input-additional-properties-closed"],
     ["output schema removed", output(object({})), output(undefined), "output-schema-removed"],
-    ["output type changed", output({ type: "object" }), output({ type: "array" }), "output-type-changed"],
+    ["output type changed", output({ type: "object" }), output({ type: "array" }), "output-type-widened"],
+    ["output type widened", output({ type: "object" }), output({ type: ["object", "null"] }), "output-type-widened"],
+    ["output type restriction removed", output({ type: "object" }), output({}), "output-type-widened"],
     ["output property removed", output(object({ a: { type: "string" } })), output(object({})), "output-property-removed"],
     ["output guarantee removed", output(object({ a: { type: "string" } }, { required: ["a"] })), output(object({ a: { type: "string" } })), "output-guarantee-removed"],
     ["output property type widened", output(object({ a: { type: "string" } })), output(object({ a: { type: ["string", "null"] } })), "output-property-type-widened"],
