@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.65.0] - 2026-10-04
+
+### Added
+
+- classify each `doctor tools-diff` change as `breaking`, `compatible`, or `unclassified` with fixed reason codes covering removed tools, newly required or removed input properties, narrowed input types and enums, closed `additionalProperties`, removed output schemas, properties, and guarantees, widened output types and enums, and less safe tool annotations
+- added `--fail-on breaking` so CI can fail only on breaking or unclassified changes while compatible changes and input warnings exit `0`; added `breaking` and `unclassified` comparison counts and `coverage.impactClassification: "heuristic"` to the report and output contract
+
+### Security
+
+- reason codes are a fixed enum; reports still omit tool names, property names, and schema values
+
 ## [1.64.0] - 2026-10-03
 
 ### Added

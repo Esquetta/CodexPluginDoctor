@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { packageVersion } from "../version.js";
+import { TOOL_CHANGE_REASONS } from "./mcp-tool-impact.js";
 import {
   ruleCatalog,
   type RuleCategory,
@@ -848,33 +849,37 @@ publicSchemaDefinitions.push({
     before: embeddedToolFileReportSchema,
     after: embeddedToolFileReportSchema,
     comparison: {
-      type: "object", required: ["complete", "reason", "added", "removed", "changed", "unchanged"],
+      type: "object", required: ["complete", "reason", "added", "removed", "changed", "unchanged", "breaking", "unclassified"],
       properties: {
         complete: { type: "boolean" },
         reason: { enum: [null, "input-blocked", "input-incomplete", "invalid-definitions", "ambiguous-names"] },
         added: { type: ["integer", "null"], minimum: 0, maximum: 500 },
         removed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
         changed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
-        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 }
+        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 1000 },
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 1000 }
       }, additionalProperties: false
     },
     coverage: {
-      type: "object", required: ["comparison", "schema", "compatibility", "serverCatalog", "toolExecution"],
+      type: "object", required: ["comparison", "schema", "compatibility", "serverCatalog", "toolExecution", "impactClassification"],
       properties: {
         comparison: { const: "structural-only" }, schema: { const: "root-shape-only" },
         compatibility: { const: "not-tested" }, serverCatalog: { const: "not-tested" },
-        toolExecution: { const: "not-tested" }
+        toolExecution: { const: "not-tested" }, impactClassification: { const: "heuristic" }
       }, additionalProperties: false
     },
     changes: {
       type: "array", maxItems: 1000,
       items: {
-        type: "object", required: ["kind", "beforeToolIndex", "afterToolIndex", "fields"],
+        type: "object", required: ["kind", "beforeToolIndex", "afterToolIndex", "fields", "impact", "reasons"],
         properties: {
           kind: { enum: ["added", "removed", "changed"] },
           beforeToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
           afterToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
-          fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } }
+          fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } },
+          impact: { enum: ["breaking", "compatible", "unclassified"] },
+          reasons: { type: "array", maxItems: TOOL_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...TOOL_CHANGE_REASONS] } }
         }, additionalProperties: false
       }
     }

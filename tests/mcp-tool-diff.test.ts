@@ -122,14 +122,47 @@ describe("offline MCP tool definition comparison", () => {
 
     expect(report).toMatchObject({
       status: "warn",
-      comparison: { complete: true, reason: null, added: 1, removed: 1, changed: 1, unchanged: 0 },
+      comparison: { complete: true, reason: null, added: 1, removed: 1, changed: 1, unchanged: 0, breaking: 2, unclassified: 0 },
+      coverage: { impactClassification: "heuristic" },
       changes: [
-        { kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [] },
-        { kind: "changed", beforeToolIndex: 2, afterToolIndex: 1, fields: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] },
-        { kind: "added", beforeToolIndex: null, afterToolIndex: 2, fields: [] }
+        { kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [], impact: "breaking", reasons: ["tool-removed"] },
+        {
+          kind: "changed", beforeToolIndex: 2, afterToolIndex: 1,
+          fields: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"],
+          impact: "breaking",
+          reasons: ["input-type-narrowed", "output-type-widened", "annotation-safety-reduced", "other-fields-unclassified"]
+        },
+        { kind: "added", beforeToolIndex: null, afterToolIndex: 2, fields: [], impact: "compatible", reasons: [] }
       ]
     });
     assertRedacted(report, ["REMOVED_SECRET", "CHANGED_SECRET", "ADDED_SECRET", "VALUE_BEFORE_SECRET", "VALUE_AFTER_SECRET", "vendorField"]);
+  });
+
+  it("counts compatible, breaking, and unclassified changes without exposing property names", async () => {
+    const directory = await fixtureDirectory();
+    const before = await writeJson(directory, "before.json", envelope([
+      tool("compatible", { inputSchema: { type: "object", properties: { KEEP_SECRET: { type: "string" } } } }),
+      tool("breaking", { inputSchema: { type: "object", properties: { OPTIONAL_SECRET: { type: "string" } } } }),
+      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", maxLength: 9 } } } })
+    ]));
+    const after = await writeJson(directory, "after.json", envelope([
+      tool("compatible", { inputSchema: { type: "object", properties: { KEEP_SECRET: { type: "string" }, NEW_SECRET: { type: "number" } } } }),
+      tool("breaking", { inputSchema: { type: "object", properties: { OPTIONAL_SECRET: { type: "string" } }, required: ["OPTIONAL_SECRET"] } }),
+      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", maxLength: 3 } } } })
+    ]));
+
+    const report = await compareMcpToolFiles(before, after);
+
+    expect(report).toMatchObject({
+      status: "warn",
+      comparison: { complete: true, changed: 3, breaking: 1, unclassified: 1 },
+      changes: [
+        { beforeToolIndex: 1, impact: "compatible", reasons: [] },
+        { beforeToolIndex: 2, impact: "breaking", reasons: ["input-required-added"] },
+        { beforeToolIndex: 3, impact: "unclassified", reasons: ["input-schema-unclassified"] }
+      ]
+    });
+    assertRedacted(report, ["KEEP_SECRET", "NEW_SECRET", "OPTIONAL_SECRET", "LIMIT_SECRET"]);
   });
 
   it("treats missing fields null primitive changes arrays and deeply nested schema content structurally", async () => {
@@ -316,7 +349,7 @@ describe("offline MCP tool definition comparison", () => {
       comparison: { complete: true, reason: null, added: 500, removed: 500, changed: 0, unchanged: 0 }
     });
     expect(report.changes).toHaveLength(1000);
-    expect(report.changes[0]).toEqual({ kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [] });
-    expect(report.changes[999]).toEqual({ kind: "added", beforeToolIndex: null, afterToolIndex: 500, fields: [] });
+    expect(report.changes[0]).toEqual({ kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [], impact: "breaking", reasons: ["tool-removed"] });
+    expect(report.changes[999]).toEqual({ kind: "added", beforeToolIndex: null, afterToolIndex: 500, fields: [], impact: "compatible", reasons: [] });
   });
 });
