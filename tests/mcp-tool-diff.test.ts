@@ -320,3 +320,158 @@ describe("offline MCP tool definition comparison", () => {
     expect(report.changes[999]).toEqual({ kind: "added", beforeToolIndex: null, afterToolIndex: 500, fields: [] });
   });
 });
+
+describe("offline MCP tool compatibility signals", () => {
+  function objectSchema(properties: Record<string, unknown>, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return { type: "object", properties, ...extra };
+  }
+
+  async function compareSingle(before: Record<string, unknown>, after: Record<string, unknown>) {
+    const directory = await fixtureDirectory();
+    const beforePath = await writeJson(directory, "before.json", envelope([tool("SIGNAL_SECRET", before)]));
+    const afterPath = await writeJson(directory, "after.json", envelope([tool("SIGNAL_SECRET", after)]));
+    return compareMcpToolFiles(beforePath, afterPath, { compatibility: true });
+  }
+
+  it("leaves the default report unchanged when compatibility is not requested", async () => {
+    const directory = await fixtureDirectory();
+    const before = await writeJson(directory, "before.json", envelope([tool("removed")]));
+    const after = await writeJson(directory, "after.json", envelope([]));
+
+    const report = await compareMcpToolFiles(before, after);
+
+    expect(report.status).toBe("warn");
+    expect(report.coverage.compatibility).toBe("not-tested");
+    expect(report.comparison).not.toHaveProperty("breaking");
+    expect(report.changes).toEqual([{ kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [] }]);
+  });
+
+  it("flags removed tools but not added tools", async () => {
+    const directory = await fixtureDirectory();
+    const before = await writeJson(directory, "before.json", envelope([tool("REMOVED_SECRET"), tool("kept")]));
+    const after = await writeJson(directory, "after.json", envelope([tool("kept"), tool("ADDED_SECRET")]));
+
+    const report = await compareMcpToolFiles(before, after, { compatibility: true });
+
+    expect(report).toMatchObject({
+      status: "breaking",
+      comparison: { complete: true, added: 1, removed: 1, changed: 0, unchanged: 1, breaking: 1 },
+      coverage: { compatibility: "root-property-signals" },
+      changes: [
+        { kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [], signals: ["tool-removed"] },
+        { kind: "added", beforeToolIndex: null, afterToolIndex: 2, fields: [], signals: [] }
+      ]
+    });
+    assertRedacted(report, ["REMOVED_SECRET", "ADDED_SECRET"]);
+  });
+
+  it("reports additive input and output changes as changed without signals", async () => {
+    const report = await compareSingle(
+      { inputSchema: objectSchema({ a: { type: "integer", enum: [1, 2] } }, { required: ["a"], additionalProperties: false }), outputSchema: objectSchema({ x: { type: ["string", "null"] } }, { required: ["x"] }) },
+      {
+        inputSchema: objectSchema({ a: { type: ["number", "null"], enum: [2, 1, 3] }, b: { type: "string" } }, { required: ["a"] }),
+        outputSchema: objectSchema({ x: { type: "string" }, y: { type: "number" } }, { required: ["x", "y"] }),
+        description: "more detail"
+      }
+    );
+
+    expect(report).toMatchObject({
+      status: "warn",
+      comparison: { complete: true, changed: 1, breaking: 0 },
+      changes: [{ kind: "changed", fields: ["inputSchema", "outputSchema", "description"], signals: [] }]
+    });
+  });
+
+  it("detects narrowed root input properties", async () => {
+    const report = await compareSingle(
+      { inputSchema: objectSchema({ gone: { type: "string" }, num: { type: "number" }, mode: { enum: ["a", "b"] }, free: {} }, { required: ["num"] }) },
+      { inputSchema: objectSchema({ num: { type: "integer" }, mode: { enum: ["a"] }, free: { type: "string" }, extra: { type: "string" } }, { required: ["num", "extra"], additionalProperties: false }) }
+    );
+
+    expect(report).toMatchObject({
+      status: "breaking",
+      comparison: { breaking: 1 },
+      changes: [{
+        kind: "changed",
+        fields: ["inputSchema"],
+        signals: [
+          "input-required-added",
+          "input-property-removed",
+          "input-property-type-narrowed",
+          "input-property-enum-narrowed",
+          "input-additional-properties-closed"
+        ]
+      }]
+    });
+    assertRedacted(report, ["SIGNAL_SECRET", "gone", "mode", "extra"]);
+  });
+
+  it("detects weakened root output guarantees", async () => {
+    const report = await compareSingle(
+      { outputSchema: objectSchema({ gone: { type: "string" }, count: { type: "integer" }, state: { type: "string", enum: ["ok"] } }, { required: ["count", "state"] }) },
+      { outputSchema: objectSchema({ count: { type: "number" }, state: { type: "string", enum: ["ok", "degraded"] } }, { required: ["state"] }) }
+    );
+
+    expect(report.changes[0]?.signals).toEqual([
+      "output-required-removed",
+      "output-property-removed",
+      "output-property-type-widened",
+      "output-property-enum-widened"
+    ]);
+  });
+
+  it("flags a removed output schema but not an added one", async () => {
+    const removed = await compareSingle({ outputSchema: objectSchema({}) }, {});
+    const added = await compareSingle({}, { outputSchema: objectSchema({ x: { type: "string" } }, { required: ["x"] }) });
+
+    expect(removed.changes[0]?.signals).toEqual(["output-schema-removed"]);
+    expect(added).toMatchObject({ status: "warn", changes: [{ fields: ["outputSchema"], signals: [] }] });
+  });
+
+  it("compares enum members by value regardless of object key order and ignores unreadable constraints", async () => {
+    const report = await compareSingle(
+      { inputSchema: objectSchema({ choice: { enum: [{ a: 1, b: [1, { c: 2 }] }, "\u0000]"] }, odd: { type: 7 } }) },
+      { inputSchema: objectSchema({ choice: { enum: [{ b: [1, { c: 2 }], a: 1 }, "\u0000]"] }, odd: { type: "string", description: "changed" } }) }
+    );
+
+    expect(report).toMatchObject({ status: "warn", comparison: { breaking: 0 }, changes: [{ signals: [] }] });
+  });
+
+  it("distinguishes enum members that differ only by nesting", async () => {
+    const report = await compareSingle(
+      { inputSchema: objectSchema({ choice: { enum: [["a", "b"]] } }) },
+      { inputSchema: objectSchema({ choice: { enum: [["a"], "b", ["a,b"]] } }) }
+    );
+
+    expect(report.changes[0]?.signals).toEqual(["input-property-enum-narrowed"]);
+  });
+
+  it("handles prototype-like property names and deeply nested enum members", async () => {
+    const depth = 12_000;
+    const deep = `${"[".repeat(depth)}1${"]".repeat(depth)}`;
+    const directory = await fixtureDirectory();
+    const schema = (enumMember: string, required: string) => `{"type":"object","properties":{"__proto__":{"enum":[${enumMember}]}},"required":[${required}]}`;
+    const document = (inputSchema: string) => `{"jsonrpc":"2.0","id":0,"result":{"resultType":"complete","tools":[{"name":"deep","inputSchema":${inputSchema}}],"ttlMs":0,"cacheScope":"public"}}`;
+    const before = await writeRawJson(directory, "before.json", document(schema(deep, "")));
+    const after = await writeRawJson(directory, "after.json", document(schema(deep, "\"__proto__\"")));
+
+    const report = await compareMcpToolFiles(before, after, { compatibility: true });
+
+    expect(report).toMatchObject({ status: "breaking", changes: [{ signals: ["input-required-added"] }] });
+  });
+
+  it("keeps breaking counts null when comparison is skipped", async () => {
+    const directory = await fixtureDirectory();
+    const before = await writeJson(directory, "before.json", envelope([tool("same")], { nextCursor: "next" }));
+    const after = await writeJson(directory, "after.json", envelope([]));
+
+    const report = await compareMcpToolFiles(before, after, { compatibility: true });
+
+    expect(report).toMatchObject({
+      status: "incomplete",
+      comparison: { complete: false, reason: "input-incomplete", breaking: null },
+      coverage: { compatibility: "root-property-signals" },
+      changes: []
+    });
+  });
+});

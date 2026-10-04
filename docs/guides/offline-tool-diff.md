@@ -7,6 +7,7 @@ server, executing tools, or fetching schema references.
 ```bash
 codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json
 codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --json
+codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --compatibility
 codex-plugin-doctor doctor contract --json
 ```
 
@@ -45,6 +46,42 @@ not prove compatible behavior. Schema checks remain limited to root shapes;
 server inventory, provenance, freshness, execution, and compatibility are not
 established.
 
+## Compatibility signals
+
+`--compatibility` adds heuristic breaking-change signals to a complete
+comparison. Every change record gains a `signals` list, `comparison.breaking`
+counts the records with at least one signal, and `coverage.compatibility`
+becomes `root-property-signals`. Added tools never carry signals. Without the
+flag the report is unchanged.
+
+| Signal | Raised when |
+| --- | --- |
+| `tool-removed` | A tool in the before file has no exact-name match after. |
+| `input-required-added` | The root input `required` list gains a name. |
+| `input-property-removed` | A root input property disappears. |
+| `input-property-type-narrowed` | A root input property's `type` stops accepting a previously accepted type. |
+| `input-property-enum-narrowed` | A root input property's `enum` drops a member, or gains an `enum` where it had none. |
+| `input-additional-properties-closed` | Root input `additionalProperties` becomes `false`. |
+| `output-schema-removed` | A tool stops declaring `outputSchema`. |
+| `output-required-removed` | The root output `required` list loses a name. |
+| `output-property-removed` | A root output property disappears. |
+| `output-property-type-widened` | A root output property's `type` may now produce a type it did not before. |
+| `output-property-enum-widened` | A root output property's `enum` gains a member, or is dropped. |
+
+Inputs break when the accepted set shrinks; outputs break when the produced set
+grows. A missing `type` or `enum` means any value, and `integer` is treated as
+a subset of `number`. Enum members compare by JSON value, ignoring object key
+order. A `type` or `enum` keyword that is present but unreadable produces no
+signal. Only root-level properties are examined: nested schemas, `$ref`,
+composition keywords, formats, and numeric or string bounds are not.
+
+Signals are evidence for review, not proof. A record without signals can still
+break clients, and a signalled change may be harmless for a given client.
+
+Use the flag as a CI gate: a complete comparison with any signal has status
+`breaking` and exit code `3`. Property names, enum values, and schema content
+are never included; use the tool indices to find them in your files.
+
 ## Incomplete or ambiguous inputs
 
 Both inputs retain their validation reports. The command skips comparison if an
@@ -74,7 +111,8 @@ Input findings are labeled by side in text output and stored under `before` and
 
 The standalone contract is `doctor.tools.diff.json`, with numeric `schemaVersion: 1`
 and scope `tool-definitions-diff`. `comparison` reports `added`, `removed`,
-`changed`, and `unchanged` tool counts. Coverage is explicitly `structural-only`.
+`changed`, and `unchanged` tool counts, plus `breaking` when `--compatibility`
+is set (`null` when comparison is skipped). Coverage is explicitly `structural-only`.
 
 ## Exit codes
 
@@ -83,8 +121,9 @@ and scope `tool-definitions-diff`. `comparison` reports `added`, `removed`,
 | `0` | Complete comparison with no changes or input warnings (`pass`). |
 | `1` | Complete comparison with changes or input warnings (`warn`). |
 | `2` | Comparison incomplete, input blocked, or arguments invalid. |
+| `3` | With `--compatibility`, complete comparison with at least one signal (`breaking`). |
 
 `--before` and `--after` each require one path and may appear in either order.
-Optional `--json` may appear once. Duplicate options, extra positional arguments,
+Optional `--json` and `--compatibility` may each appear once. Duplicate options, extra positional arguments,
 network/execution options, and output-file options are rejected before reading
 inputs. Prefix a filename beginning with a dash with `./`.

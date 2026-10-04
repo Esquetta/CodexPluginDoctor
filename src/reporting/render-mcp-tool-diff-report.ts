@@ -13,12 +13,15 @@ export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
     `Removed: ${comparison.removed ?? "not compared"}`,
     `Changed: ${comparison.changed ?? "not compared"}`,
     `Unchanged: ${comparison.unchanged ?? "not compared"}`,
+    ...(comparison.breaking === undefined ? [] : [`Breaking signals: ${comparison.breaking ?? "not compared"}`]),
     `Comparison coverage: ${report.coverage.comparison}`,
     `Schema coverage: ${report.coverage.schema}`,
     `Compatibility: ${report.coverage.compatibility}`,
     `Server catalog: ${report.coverage.serverCatalog}`,
     `Tool execution: ${report.coverage.toolExecution}`,
-    "Only the supplied responses are compared. A change does not establish incompatibility; an unchanged result does not establish compatibility.",
+    report.coverage.compatibility === "root-property-signals"
+      ? "Only the supplied responses are compared. Signals cover tool removal and root-level schema properties only; a change without signals does not establish compatibility."
+      : "Only the supplied responses are compared. A change does not establish incompatibility; an unchanged result does not establish compatibility.",
     ...(["before", "after"] as const).flatMap((side) => {
       const source = report[side];
       const label = side === "before" ? "Before" : "After";
@@ -37,7 +40,8 @@ export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
         ...(change.beforeToolIndex === null ? [] : [`before tool ${change.beforeToolIndex}`]),
         ...(change.afterToolIndex === null ? [] : [`after tool ${change.afterToolIndex}`])
       ];
-      return `${change.kind.toUpperCase()} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}`;
+      const signals = change.signals?.length ? ` | signals: ${change.signals.join(", ")}` : "";
+      return `${change.kind.toUpperCase()} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}${signals}`;
     })
   ].join("\n");
 }

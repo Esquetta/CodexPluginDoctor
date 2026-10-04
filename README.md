@@ -119,9 +119,17 @@ codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-
 
 This reports added, removed, and structurally changed definitions using numeric
 locations. Incomplete inputs, invalid definitions, or duplicate names prevent a
-comparison. It does not determine whether a schema change breaks compatibility.
-See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md) for matching rules,
-privacy, limits, and exit codes.
+comparison. Add `--compatibility` to flag likely breaking changes (removed tools,
+newly required inputs, removed or narrowed root properties, weakened output
+guarantees) and exit `3` when any are found:
+
+```bash
+codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --compatibility
+```
+
+Signals cover root-level schema properties only; a change without signals is not
+proof of compatibility. See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md)
+for matching rules, signal definitions, privacy, limits, and exit codes.
 
 ### HTTP MCP Tool Catalog
 
@@ -555,9 +563,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.64.0
+      - uses: Esquetta/CodexPluginDoctor@v1.65.0
         with:
-          version: "1.64.0"
+          version: "1.65.0"
           path: .
           runtime: "true"
           policy: codex-publish

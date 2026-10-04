@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.65.0] - 2026-10-04
+
+### Added
+
+- added opt-in `doctor tools-diff --compatibility` breaking-change signals for removed tools and root-level input/output schema properties: newly required inputs, removed properties, narrowed input types or enums, closed `additionalProperties`, removed output schemas, and weakened output guarantees
+- report per-change `signals`, a `comparison.breaking` count, `coverage.compatibility: "root-property-signals"`, and a `breaking` status with exit code `3` when any signal is found; reports without the flag are unchanged
+
+### Security
+
+- signals reuse the bounded saved inputs and report only fixed signal codes and numeric locators; property names, enum values, and schema content stay out of reports
+
 ## [1.64.0] - 2026-10-03
 
 ### Added

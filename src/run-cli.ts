@@ -345,7 +345,7 @@ function writeExactStdout(io: CliIo, message: string): void {
 
 class CliUsageError extends Error {}
 
-const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json]";
+const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--compatibility] [--json]";
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
@@ -1837,17 +1837,20 @@ export async function runCli(
   if (command === "doctor") {
     if (maybePath === "tools-diff") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${toolsDiffUsage}\nCompares two saved MCP tools/list responses offline. Structural changes only; compatibility is not tested.`);
+        io.writeStdout(`${toolsDiffUsage}\nCompares two saved MCP tools/list responses offline. Structural changes only; --compatibility adds root-property breaking-change signals and exits 3 when any are found.`);
         return 0;
       }
       let beforePath: string | undefined;
       let afterPath: string | undefined;
       let json = false;
+      let compatibility = false;
       let invalid = false;
       for (let index = 0; index < remainingArgs.length; index += 1) {
         const flag = remainingArgs[index];
         if (flag === "--json" && !json) {
           json = true;
+        } else if (flag === "--compatibility" && !compatibility) {
+          compatibility = true;
         } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
           const value = remainingArgs[index + 1];
           if (!value || value.startsWith("-")) { invalid = true; break; }
@@ -1863,9 +1866,11 @@ export async function runCli(
         io.writeStderr(`Invalid comparison arguments. ${toolsDiffUsage}`);
         return 2;
       }
-      const report = await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath);
+      const report = compatibility
+        ? await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath, { compatibility })
+        : await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath);
       io.writeStdout(json ? JSON.stringify(report, null, 2) : renderMcpToolDiffReport(report));
-      return report.status === "pass" ? 0 : report.status === "warn" ? 1 : 2;
+      return report.status === "pass" ? 0 : report.status === "warn" ? 1 : report.status === "breaking" ? 3 : 2;
     }
     if (maybePath === "tools-file") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {

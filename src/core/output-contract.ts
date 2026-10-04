@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { packageVersion } from "../version.js";
+import { COMPATIBILITY_SIGNALS } from "./mcp-tool-diff.js";
 import {
   ruleCatalog,
   type RuleCategory,
@@ -839,12 +840,12 @@ const embeddedToolFileReportSchema = {
 
 publicSchemaDefinitions.push({
   id: "doctor.tools.diff.json",
-  command: "codex-plugin-doctor doctor tools-diff --before <path> --after <path> --json",
+  command: "codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--compatibility] --json",
   required: ["schemaVersion", "scope", "status", "before", "after", "comparison", "coverage", "changes"],
   properties: {
     schemaVersion: { const: 1 },
     scope: { const: "tool-definitions-diff" },
-    status: { enum: ["pass", "warn", "incomplete", "blocked"] },
+    status: { enum: ["pass", "warn", "breaking", "incomplete", "blocked"] },
     before: embeddedToolFileReportSchema,
     after: embeddedToolFileReportSchema,
     comparison: {
@@ -855,14 +856,15 @@ publicSchemaDefinitions.push({
         added: { type: ["integer", "null"], minimum: 0, maximum: 500 },
         removed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
         changed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
-        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 }
+        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 1000 }
       }, additionalProperties: false
     },
     coverage: {
       type: "object", required: ["comparison", "schema", "compatibility", "serverCatalog", "toolExecution"],
       properties: {
         comparison: { const: "structural-only" }, schema: { const: "root-shape-only" },
-        compatibility: { const: "not-tested" }, serverCatalog: { const: "not-tested" },
+        compatibility: { enum: ["not-tested", "root-property-signals"] }, serverCatalog: { const: "not-tested" },
         toolExecution: { const: "not-tested" }
       }, additionalProperties: false
     },
@@ -874,7 +876,8 @@ publicSchemaDefinitions.push({
           kind: { enum: ["added", "removed", "changed"] },
           beforeToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
           afterToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
-          fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } }
+          fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } },
+          signals: { type: "array", maxItems: COMPATIBILITY_SIGNALS.length, uniqueItems: true, items: { enum: [...COMPATIBILITY_SIGNALS] } }
         }, additionalProperties: false
       }
     }

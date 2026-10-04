@@ -40,7 +40,7 @@ describe("doctor tools-diff", () => {
     ["--before", "--after", "new.json"], ["--before", "old.json", "--after"],
     ["--before", "", "--after", "new.json"], ["old.json", "new.json"],
     [...pair, "--before", "another.json"], [...pair, "--after", "another.json"],
-    [...pair, "--json", "--json"], [...pair, "extra"], [...pair, "--allow-network"],
+    [...pair, "--json", "--json"], [...pair, "--compatibility", "--compatibility"], [...pair, "extra"], [...pair, "--allow-network"],
     [...pair, "--runtime"], [...pair, "--output", "result.json"], [...pair, "--help"]
   ])("rejects unsupported arguments %j before comparison", async (...args: string[]) => {
     const c = capture();
@@ -70,6 +70,35 @@ describe("doctor tools-diff", () => {
     expect(await runCli(["doctor", "tools-diff", "--json", "--after", "new.json", "--before", "old.json"], c.io, { compareMcpToolFilesImpl })).toBe(0);
     expect(compareMcpToolFilesImpl).toHaveBeenCalledExactlyOnceWith("old.json", "new.json");
     expect(JSON.parse(c.stdout.join("\n"))).toEqual(report());
+  });
+
+  it("passes the compatibility option and maps breaking signals to exit 3", async () => {
+    const c = capture();
+    const result = report("breaking");
+    const compareMcpToolFilesImpl = vi.fn().mockResolvedValue({
+      ...result,
+      comparison: { complete: true, reason: null, added: 0, removed: 1, changed: 1, unchanged: 0, breaking: 2 },
+      coverage: { ...result.coverage, compatibility: "root-property-signals" },
+      changes: [
+        { kind: "removed", beforeToolIndex: 1, afterToolIndex: null, fields: [], signals: ["tool-removed"] },
+        { kind: "changed", beforeToolIndex: 2, afterToolIndex: 1, fields: ["inputSchema"], signals: ["input-required-added", "input-property-removed"] }
+      ]
+    });
+    expect(await runCli(["doctor", "tools-diff", "--compatibility", ...pair], c.io, { compareMcpToolFilesImpl })).toBe(3);
+    expect(compareMcpToolFilesImpl).toHaveBeenCalledExactlyOnceWith("old.json", "new.json", { compatibility: true });
+    const output = c.stdout.join("\n");
+    expect(output).toContain("Status: breaking");
+    expect(output).toContain("Breaking signals: 2");
+    expect(output).toContain("Compatibility: root-property-signals");
+    expect(output).toContain("REMOVED [before tool 1] | signals: tool-removed");
+    expect(output).toContain("CHANGED [before tool 2 -> after tool 1]: inputSchema | signals: input-required-added, input-property-removed");
+  });
+
+  it("does not print a breaking line without the compatibility option", async () => {
+    const c = capture();
+    const compareMcpToolFilesImpl = vi.fn().mockResolvedValue(report("warn"));
+    await runCli(["doctor", "tools-diff", ...pair], c.io, { compareMcpToolFilesImpl });
+    expect(c.stdout.join("\n")).not.toContain("Breaking signals");
   });
 
   it("shows help without reading either input", async () => {
@@ -110,6 +139,42 @@ describe("doctor tools-diff", () => {
         changes: { maxItems: 1000, items: { properties: { fields: { items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } } } } }
       }
     });
+    const properties = entry?.schema.properties as Record<string, any>;
+    expect(properties.status.enum).toContain("breaking");
+    expect(properties.coverage.properties.compatibility.enum).toEqual(["not-tested", "root-property-signals"]);
+    expect(properties.comparison.required).not.toContain("breaking");
+    expect(properties.changes.items.required).not.toContain("signals");
+    expect(properties.changes.items.properties.signals.items.enum).toContain("tool-removed");
+  });
+
+  it("gates actual saved files on breaking signals only when requested", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "doctor-diff-cli-"));
+    try {
+      const before = path.join(root, "PRIVATE_BEFORE.json");
+      const after = path.join(root, "PRIVATE_AFTER.json");
+      const envelope = (required: string[]) => ({ jsonrpc: "2.0", id: 0, result: {
+        resultType: "complete", ttlMs: 0, cacheScope: "private",
+        tools: [{ name: "PRIVATE_TOOL", inputSchema: { type: "object", properties: { PRIVATE_ARG: { type: "string" } }, required } }]
+      } });
+      await writeFile(before, JSON.stringify(envelope([])));
+      await writeFile(after, JSON.stringify(envelope(["PRIVATE_ARG"])));
+      const plain = capture();
+      expect(await runCli(["doctor", "tools-diff", "--before", before, "--after", after, "--json"], plain.io)).toBe(1);
+      const gated = capture();
+      expect(await runCli(["doctor", "tools-diff", "--before", before, "--after", after, "--compatibility", "--json"], gated.io)).toBe(3);
+      const output = gated.stdout.join("\n");
+      expect(output).not.toContain("PRIVATE_");
+      expect(JSON.parse(output)).toMatchObject({
+        status: "breaking",
+        comparison: { breaking: 1 },
+        changes: [{ kind: "changed", fields: ["inputSchema"], signals: ["input-required-added"] }]
+      });
+    } finally {
+      const resolved = await realpath(root);
+      const relative = path.relative(await realpath(os.tmpdir()), resolved);
+      if (path.isAbsolute(relative) || path.dirname(relative) !== "." || !path.basename(resolved).startsWith("doctor-diff-cli-")) throw new Error("Unexpected test cleanup target.");
+      await rm(resolved, { recursive: true, force: true });
+    }
   });
 
   it.each(["changed", "continued", "invalid", "duplicate"] as const)("handles actual saved files with %s input", async (scenario) => {
