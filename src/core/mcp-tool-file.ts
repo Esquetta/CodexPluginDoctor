@@ -5,7 +5,7 @@ import type { Stats } from "node:fs";
 import type { CatalogFinding } from "./mcp-tool-definition.js";
 import { inspectMcpToolDefinition } from "./mcp-tool-definition.js";
 
-const MAX_FILE_BYTES = 1024 * 1024;
+export const MAX_TOOL_FILE_BYTES = 1024 * 1024;
 const MAX_TOOLS = 500;
 const MAX_FINDINGS = 100;
 
@@ -65,7 +65,7 @@ function sameSnapshot(left: Stats, right: Stats): boolean {
     && left.ctimeMs === right.ctimeMs;
 }
 
-function isBlockedOfflinePath(filePath: string): boolean {
+export function isBlockedOfflinePath(filePath: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]+:/u.test(filePath)
     || /^[A-Za-z]:\/\//u.test(filePath)
     || /^[\\/]{2}/u.test(filePath);
@@ -173,7 +173,7 @@ async function readBoundedRegularFile(filePath: string): Promise<
 
   if (initial.isSymbolicLink()) return { kind: "symlink", bytesRead: 0 };
   if (!initial.isFile()) return { kind: "not-regular", bytesRead: 0 };
-  if (!Number.isSafeInteger(initial.size) || initial.size < 0 || initial.size > MAX_FILE_BYTES) {
+  if (!Number.isSafeInteger(initial.size) || initial.size < 0 || initial.size > MAX_TOOL_FILE_BYTES) {
     return { kind: "too-large", bytesRead: 0 };
   }
 
@@ -190,7 +190,7 @@ async function readBoundedRegularFile(filePath: string): Promise<
     if (!opened.isFile() || current.isSymbolicLink() || !current.isFile() || !sameSnapshot(initial, opened) || !sameSnapshot(opened, current)) {
       return { kind: "changed", bytesRead };
     }
-    if (!Number.isSafeInteger(opened.size) || opened.size < 0 || opened.size > MAX_FILE_BYTES) {
+    if (!Number.isSafeInteger(opened.size) || opened.size < 0 || opened.size > MAX_TOOL_FILE_BYTES) {
       return { kind: "too-large", bytesRead };
     }
 

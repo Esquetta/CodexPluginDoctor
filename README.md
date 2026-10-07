@@ -138,6 +138,10 @@ This opt-in command performs discovery and bounded `tools/list` pagination. It
 reports tool-definition and root-schema shape findings, explicit completion state,
 and partial inspection limits. It does not claim full schema validation, tool
 execution, or client compatibility. Existing `doctor discover` behavior is unchanged.
+Add `--save-response <path>` to record a completely enumerated catalog as a
+`tools/list` response for `tools-file` and `tools-diff`; nothing is written when
+enumeration is incomplete. The GitHub Action can compare saved responses with
+`tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on`.
 See [HTTP MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness
@@ -558,9 +562,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.65.0
+      - uses: Esquetta/CodexPluginDoctor@v1.66.0
         with:
-          version: "1.65.0"
+          version: "1.66.0"
           path: .
           runtime: "true"
           policy: codex-publish

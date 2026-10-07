@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { inspectMcpToolCatalog } from "../src/core/mcp-tool-catalog.js";
+import { captureMcpToolCatalog, inspectMcpToolCatalog } from "../src/core/mcp-tool-catalog.js";
 import { BoundedHttpError, type BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import { RemoteNetworkPolicyError } from "../src/core/remote-network-policy.js";
 
@@ -467,5 +467,58 @@ describe("inspectMcpToolCatalog", () => {
     expect(result).toMatchObject({ status: "incomplete", catalog: { pagesRead: 0, reason: "request-timeout" } });
     expect(request).toHaveBeenCalledTimes(2);
     assertRedacted(result);
+  });
+});
+
+describe("captureMcpToolCatalog", () => {
+  function cachedToolsResponse(id: string, tools: unknown[], ttlMs: number, cacheScope: string, nextCursor?: string): BoundedHttpResponse {
+    return response({
+      jsonrpc: "2.0", id, result: { resultType: "complete", tools, ttlMs, cacheScope, ...(nextCursor === undefined ? {} : { nextCursor }) }
+    });
+  }
+
+  it("returns every enumerated tool in order with the most conservative cache metadata", async () => {
+    const malformed = { name: 7 };
+    const request = vi.fn()
+      .mockResolvedValueOnce(discoveryResponse())
+      .mockResolvedValueOnce(cachedToolsResponse("tools-list-1", [validTool("first"), malformed], 60_000, "public", "next"))
+      .mockResolvedValueOnce(cachedToolsResponse("tools-list-2", [validTool("second")], 5_000, "private"));
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request });
+
+    expect(snapshot.report).toMatchObject({ status: "fail", catalog: { complete: true, pagesRead: 2, toolsChecked: 3 } });
+    expect(snapshot.tools).toEqual([validTool("first"), malformed, validTool("second")]);
+    expect(snapshot.cache).toEqual({ ttlMs: 5_000, cacheScope: "private" });
+  });
+
+  it("keeps a public scope only when every page is public", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(discoveryResponse())
+      .mockResolvedValueOnce(cachedToolsResponse("tools-list-1", [], 10, "public", "next"))
+      .mockResolvedValueOnce(cachedToolsResponse("tools-list-2", [], 20, "public"));
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request });
+
+    expect(snapshot).toMatchObject({ tools: [], cache: { ttlMs: 10, cacheScope: "public" } });
+  });
+
+  it("returns no tools when enumeration does not complete", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(discoveryResponse())
+      .mockResolvedValueOnce(toolsResponse("tools-list-1", [validTool("first")], "next"))
+      .mockResolvedValueOnce({ statusCode: 401, headers: {}, body: Buffer.from("") });
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request });
+
+    expect(snapshot.report).toMatchObject({ status: "incomplete", catalog: { reason: "authorization-required" } });
+    expect(snapshot).toMatchObject({ tools: null, cache: null });
+  });
+
+  it("returns no tools when the server does not advertise tools", async () => {
+    const request = vi.fn().mockResolvedValueOnce(discoveryResponse({}));
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request });
+
+    expect(snapshot).toMatchObject({ report: { status: "not-applicable" }, tools: null, cache: null });
   });
 });
