@@ -11,8 +11,9 @@ codex-plugin-doctor doctor contract --json
 
 ## Input
 
-Export the original response from your MCP client as UTF-8 JSON. The sanitized
-report produced by `doctor tools` is not a tool-definition input file.
+Export the original response from your MCP client as UTF-8 JSON, or record it
+from an HTTP server with `doctor tools <url> --allow-network --save-response <path>`.
+The sanitized report produced by `doctor tools` is not a tool-definition input file.
 
 ```json
 {

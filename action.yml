@@ -50,6 +50,18 @@ inputs:
     description: Fail unless the offline submission preflight is automatically ready; this does not replace manual review.
     required: false
     default: "false"
+  tools-diff-before:
+    description: Optional saved MCP tools/list response used as the baseline for an offline tool definition diff. Requires tools-diff-after.
+    required: false
+    default: ""
+  tools-diff-after:
+    description: Optional saved MCP tools/list response compared against tools-diff-before. Requires tools-diff-before.
+    required: false
+    default: ""
+  tools-diff-fail-on:
+    description: Tool diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes.
+    required: false
+    default: "any"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -193,6 +205,12 @@ outputs:
   submission-archive-summary-path:
     description: Path to the offline archive submission preflight Markdown report when submission-archive is configured.
     value: ${{ steps.run-doctor.outputs.submission-archive-summary-path }}
+  tools-diff-json-path:
+    description: Path to the offline MCP tool diff JSON report when tools-diff-before and tools-diff-after are configured.
+    value: ${{ steps.run-doctor.outputs.tools-diff-json-path }}
+  tools-diff-summary-path:
+    description: Path to the offline MCP tool diff Markdown summary when tools-diff-before and tools-diff-after are configured.
+    value: ${{ steps.run-doctor.outputs.tools-diff-summary-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -223,6 +241,9 @@ runs:
         CORPUS_METRICS_MANIFEST_INPUT: ${{ inputs['corpus-metrics-manifest'] }}
         CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
+        TOOLS_DIFF_BEFORE_INPUT: ${{ inputs['tools-diff-before'] }}
+        TOOLS_DIFF_AFTER_INPUT: ${{ inputs['tools-diff-after'] }}
+        TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
       run: |
         set -euo pipefail
 
@@ -240,11 +261,14 @@ runs:
         submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"
         submission_archive_json_path="$report_dir/codex-plugin-doctor-submission-archive.json"
         submission_archive_summary_path="$report_dir/codex-plugin-doctor-submission-archive.md"
+        tools_diff_json_path="$report_dir/mcp-tools-diff.json"
+        tools_diff_summary_path="$report_dir/mcp-tools-diff.md"
         review_bundle_path="$report_dir/${{ inputs['review-bundle-dir'] }}"
         review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         submission_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-ran"
         submission_archive_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-archive-ran"
+        tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
         status=0
         submission_ran=false
         submission_archive_ran=false
@@ -252,6 +276,9 @@ runs:
         submission_summary_output=""
         submission_archive_json_output=""
         submission_archive_summary_output=""
+        tools_diff_ran=false
+        tools_diff_json_output=""
+        tools_diff_summary_output=""
         doctor_version="$(codex-plugin-doctor --version)"
 
         mkdir -p "$report_dir"
@@ -387,6 +414,43 @@ runs:
           run_doctor "MCP Registry readiness" "${registry_args[@]}"
         fi
 
+        if [[ -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
+          :
+        elif [[ -z "$TOOLS_DIFF_BEFORE_INPUT" || -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
+          echo "tools-diff-before and tools-diff-after must be set together." >&2
+          record_status 2
+        elif [[ "$TOOLS_DIFF_FAIL_ON_INPUT" != "any" && "$TOOLS_DIFF_FAIL_ON_INPUT" != "breaking" ]]; then
+          echo "tools-diff-fail-on must be any or breaking." >&2
+          record_status 2
+        else
+          tools_diff_ran=true
+          tools_diff_args=(doctor tools-diff --before "$TOOLS_DIFF_BEFORE_INPUT" --after "$TOOLS_DIFF_AFTER_INPUT" --fail-on "$TOOLS_DIFF_FAIL_ON_INPUT")
+          echo "::group::MCP tool diff"
+          set +e
+          codex-plugin-doctor "${tools_diff_args[@]}" --json > "$tools_diff_json_path"
+          tools_diff_code="$?"
+          tools_diff_text="$(codex-plugin-doctor "${tools_diff_args[@]}")"
+          set -e
+          printf '%s\n' "$tools_diff_text"
+          {
+            echo "## MCP Tool Definition Diff"
+            echo ""
+            echo "- Exit status: ${tools_diff_code}"
+            echo "- Fail on: ${TOOLS_DIFF_FAIL_ON_INPUT}"
+            echo ""
+            echo '```text'
+            printf '%s\n' "$tools_diff_text"
+            echo '```'
+          } > "$tools_diff_summary_path"
+          if [[ "$tools_diff_code" -ne 0 ]]; then
+            echo "Codex Plugin Doctor MCP tool diff exited with status ${tools_diff_code}."
+          fi
+          echo "::endgroup::"
+          record_status "$tools_diff_code"
+          tools_diff_json_output="$tools_diff_json_path"
+          tools_diff_summary_output="$tools_diff_summary_path"
+        fi
+
         if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then
           echo "submission and submission-archive cannot be selected together." >&2
           record_status 2
@@ -467,6 +531,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_REGISTRY="$([[ -n "$REGISTRY_METADATA_INPUT" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION="$submission_ran"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE="$submission_archive_ran"
+        export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF="$tools_diff_ran"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${{ inputs['review-bundle'] }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${{ inputs['review-bundle-verify'] }}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
@@ -481,6 +546,8 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH="$submission_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_JSON_PATH="$submission_archive_json_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_SUMMARY_PATH="$submission_archive_summary_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_JSON_PATH="$tools_diff_json_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_SUMMARY_PATH="$tools_diff_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
@@ -522,6 +589,8 @@ runs:
             submissionSummary: report("submissionSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH"),
             submissionArchiveJson: report("submissionArchiveJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_JSON_PATH"),
             submissionArchiveSummary: report("submissionArchiveSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_SUMMARY_PATH"),
+            toolsDiffJson: report("toolsDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_JSON_PATH"),
+            toolsDiffSummary: report("toolsDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_SUMMARY_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
           }
@@ -537,6 +606,7 @@ runs:
         printf "%s" "$status" > "$status_file"
         printf "%s" "$submission_ran" > "$submission_state_file"
         printf "%s" "$submission_archive_ran" > "$submission_archive_state_file"
+        printf "%s" "$tools_diff_ran" > "$tools_diff_state_file"
 
         {
           echo "status=$status"
@@ -554,6 +624,8 @@ runs:
           echo "submission-summary-path=$submission_summary_output"
           echo "submission-archive-json-path=$submission_archive_json_output"
           echo "submission-archive-summary-path=$submission_archive_summary_output"
+          echo "tools-diff-json-path=$tools_diff_json_output"
+          echo "tools-diff-summary-path=$tools_diff_summary_output"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"
@@ -568,12 +640,15 @@ runs:
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
         submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"
         submission_archive_summary_path="$report_dir/codex-plugin-doctor-submission-archive.md"
+        tools_diff_summary_path="$report_dir/mcp-tools-diff.md"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         submission_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-ran"
         submission_archive_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-archive-ran"
+        tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
         status="unknown"
         submission_ran=false
         submission_archive_ran=false
+        tools_diff_ran=false
 
         if [[ -f "$status_file" ]]; then
           status="$(cat "$status_file")"
@@ -585,6 +660,10 @@ runs:
 
         if [[ -f "$submission_archive_state_file" ]]; then
           submission_archive_ran="$(cat "$submission_archive_state_file")"
+        fi
+
+        if [[ -f "$tools_diff_state_file" ]]; then
+          tools_diff_ran="$(cat "$tools_diff_state_file")"
         fi
 
         if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$summary_path" ]]; then
@@ -599,7 +678,11 @@ runs:
           cat "$submission_archive_summary_path" >> "$GITHUB_STEP_SUMMARY"
         fi
 
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ! -f "$summary_path" && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) ]]; then
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && "$tools_diff_ran" == "true" && -f "$tools_diff_summary_path" ]]; then
+          cat "$tools_diff_summary_path" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ! -f "$summary_path" && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) && ( "$tools_diff_ran" != "true" || ! -f "$tools_diff_summary_path" ) ]]; then
           {
             echo "## Codex Plugin Doctor"
             echo ""

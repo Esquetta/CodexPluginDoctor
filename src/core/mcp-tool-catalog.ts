@@ -54,6 +54,17 @@ export interface McpToolCatalogReport {
   findings: CatalogFinding[];
 }
 
+export interface McpToolCatalogCache {
+  ttlMs: number;
+  cacheScope: "public" | "private";
+}
+
+export interface McpToolCatalogSnapshot {
+  report: McpToolCatalogReport;
+  tools: unknown[] | null;
+  cache: McpToolCatalogCache | null;
+}
+
 function isPlainObject(value: unknown): value is McpJsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -83,7 +94,7 @@ function hasMatchingEnvelope(message: McpJsonObject, requestId: string): boolean
     && Object.hasOwn(message, "result") !== Object.hasOwn(message, "error");
 }
 
-function parseToolsResult(message: McpJsonObject, requestId: string): { tools: unknown[]; cursor: string | undefined } | null {
+function parseToolsResult(message: McpJsonObject, requestId: string): { tools: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null {
   if (!hasMatchingEnvelope(message, requestId)) {
     return null;
   }
@@ -93,7 +104,11 @@ function parseToolsResult(message: McpJsonObject, requestId: string): { tools: u
   if (Object.hasOwn(message.result, "nextCursor") && typeof message.result.nextCursor !== "string") {
     return null;
   }
-  return { tools: message.result.tools, cursor: message.result.nextCursor as string | undefined };
+  return {
+    tools: message.result.tools,
+    cursor: message.result.nextCursor as string | undefined,
+    cache: { ttlMs: message.result.ttlMs as number, cacheScope: message.result.cacheScope as McpToolCatalogCache["cacheScope"] }
+  };
 }
 
 function catalogReport(
@@ -150,6 +165,11 @@ function requestBody(id: string, cursor: string | undefined): string {
 }
 
 export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpToolCatalogReport> {
+  return (await captureMcpToolCatalog(rawUrl, options)).report;
+}
+
+// Tools and cache metadata are returned only for a complete enumeration.
+export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpToolCatalogSnapshot> {
   const request = options.request ?? requestBoundedHttp;
   const now = options.now ?? (() => performance.now());
   const deadline = now() + TOTAL_TIMEOUT_MS;
@@ -194,26 +214,27 @@ export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCata
     }
   });
 
+  const partial = (report: McpToolCatalogReport): McpToolCatalogSnapshot => ({ report, tools: null, cache: null });
   const emptyCatalog = { complete: false, pagesRead: 0, toolsChecked: 0, reason: null };
   if (discovery.status === "blocked") {
-    return catalogReport(discovery, "blocked", { ...emptyCatalog, reason: "network-blocked" }, "not-tested", []);
+    return partial(catalogReport(discovery, "blocked", { ...emptyCatalog, reason: "network-blocked" }, "not-tested", []));
   }
   if (isAuthorizationFinding(discovery)) {
-    return catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "authorization-required" }, "not-tested", []);
+    return partial(catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "authorization-required" }, "not-tested", []));
   }
   if (discovery.status === "unsupported") {
-    return catalogReport(discovery, "unsupported", { ...emptyCatalog, reason: "discovery-unsupported" }, "not-tested", []);
+    return partial(catalogReport(discovery, "unsupported", { ...emptyCatalog, reason: "discovery-unsupported" }, "not-tested", []));
   }
   if (discovery.status !== "discovered") {
-    return catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: budgetReason ?? "discovery-failed" }, "not-tested", []);
+    return partial(catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: budgetReason ?? "discovery-failed" }, "not-tested", []));
   }
 
   const capabilities = discoveryResponse === null ? null : discoverMcpCapabilities(discoveryResponse);
   if (capabilities === null) {
-    return catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "discovery-response-unavailable" }, "not-tested", []);
+    return partial(catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "discovery-response-unavailable" }, "not-tested", []));
   }
   if (!Object.hasOwn(capabilities, "tools")) {
-    return catalogReport(discovery, "not-applicable", emptyCatalog, "not-tested", []);
+    return partial(catalogReport(discovery, "not-applicable", emptyCatalog, "not-tested", []));
   }
 
   const findings: CatalogFinding[] = [];
@@ -224,6 +245,8 @@ export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCata
   let cursor: string | undefined;
   let incompleteReason: string | null = null;
   let blocked = false;
+  const tools: unknown[] = [];
+  let cache: McpToolCatalogCache | null = null;
 
   const addFindings = (items: CatalogFinding[]): boolean => {
     if (findings.length + items.length > MAX_FINDINGS) {
@@ -304,12 +327,17 @@ export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCata
     }
 
     pagesRead += 1;
+    cache = cache === null ? page.cache : {
+      ttlMs: Math.min(cache.ttlMs, page.cache.ttlMs),
+      cacheScope: cache.cacheScope === "private" ? "private" : page.cache.cacheScope
+    };
     for (const tool of page.tools) {
       if (toolsChecked >= MAX_TOOLS) {
         incompleteReason = "tool-limit";
         break;
       }
       toolsChecked += 1;
+      tools.push(tool);
       const location = { page: pagesRead, toolIndex: toolsChecked };
       if (!addFindings(inspectMcpToolDefinition(tool, location))) {
         break;
@@ -346,13 +374,17 @@ export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCata
   }
 
   if (blocked) {
-    return catalogReport(discovery, "blocked", { complete: false, pagesRead, toolsChecked, reason: "network-blocked" }, "incomplete", findings);
+    return partial(catalogReport(discovery, "blocked", { complete: false, pagesRead, toolsChecked, reason: "network-blocked" }, "incomplete", findings));
   }
   if (incompleteReason !== null) {
-    return catalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: incompleteReason }, "incomplete", findings);
+    return partial(catalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: incompleteReason }, "incomplete", findings));
   }
   if (deadline - now() <= 0) {
-    return catalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: "total-time-limit" }, "incomplete", findings);
+    return partial(catalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: "total-time-limit" }, "incomplete", findings));
   }
-  return catalogReport(discovery, finalStatus(findings), { complete: true, pagesRead, toolsChecked, reason: null }, "complete", findings);
+  return {
+    report: catalogReport(discovery, finalStatus(findings), { complete: true, pagesRead, toolsChecked, reason: null }, "complete", findings),
+    tools,
+    cache
+  };
 }

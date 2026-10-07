@@ -32,10 +32,10 @@ describe("extractReleaseSection", () => {
       readFile("docs/guides/github-action.md", "utf8")
     ]);
 
-    expect(readme).toContain("Esquetta/CodexPluginDoctor@v1.65.0");
-    expect(readme).toContain('version: "1.65.0"');
-    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.65.0");
-    expect(actionGuide).toContain('version: "1.65.0"');
+    expect(readme).toContain("Esquetta/CodexPluginDoctor@v1.66.0");
+    expect(readme).toContain('version: "1.66.0"');
+    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.66.0");
+    expect(actionGuide).toContain('version: "1.66.0"');
     expect(actionGuide).not.toContain("Esquetta/CodexPluginDoctor@v1.59.0");
     expect(actionGuide).not.toContain('version: "1.59.0"');
   });

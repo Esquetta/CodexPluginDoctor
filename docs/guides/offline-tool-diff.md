@@ -13,7 +13,24 @@ codex-plugin-doctor doctor contract --json
 
 Both inputs use the [offline tool-definition input format](offline-tool-definitions.md):
 one original UTF-8 JSON-RPC response per file, with modern complete-result cache
-metadata. Reports previously produced by Doctor are not input files.
+metadata. Reports previously produced by Doctor are not input files; responses
+saved with `doctor tools --save-response` are.
+
+## Baseline workflow
+
+Record the tool list once, commit it, and compare a fresh capture on every change:
+
+```bash
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./mcp/tools-baseline.json
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./tools-current.json
+codex-plugin-doctor doctor tools-diff --before ./mcp/tools-baseline.json --after ./tools-current.json --fail-on breaking
+```
+
+With `--save-response`, exit `2` means nothing was written; treat it as a failed
+check rather than diffing a file left over from an earlier run. Exit `1` means the
+file was saved but the catalog has warnings or failures. Update the baseline deliberately when a change is
+accepted. The GitHub Action can run the comparison step; see
+[GitHub Action Usage](github-action.md#mcp-tool-definition-diff).
 
 ## Matching and changes
 

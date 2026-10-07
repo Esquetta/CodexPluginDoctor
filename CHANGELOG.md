@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.66.0] - 2026-10-07
+
+### Added
+
+- added `doctor tools --save-response <path>` to write a completely enumerated HTTP tool catalog as one `tools/list` response that `doctor tools-file` and `doctor tools-diff` accept, so baselines no longer need to be exported by hand
+- added GitHub Action inputs `tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on` that run the offline tool diff, publish JSON and Markdown reports, append the step summary, and feed the Action status
+
+### Security
+
+- nothing is saved for incomplete enumerations; URL, UNC, and device paths, directories, final symbolic links, and responses over the one MiB `tools-file` limit are refused; writes are atomic and the saved path is never printed
+
 ## [1.65.0] - 2026-10-04
 
 ### Added

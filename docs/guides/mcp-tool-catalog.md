@@ -8,6 +8,7 @@ requests. It never invokes a tool.
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --json
 codex-plugin-doctor doctor tools http://localhost:3000/mcp --allow-network --allow-local-network
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./tools.json
 codex-plugin-doctor doctor tools --help
 ```
 
@@ -88,7 +89,7 @@ continuation. A timeout is not proof of a protocol violation.
 
 `doctor contract --json` includes `doctor.tools.json`, describing the standalone
 report with numeric `schemaVersion: 1` and `scope: "tool-catalog-structure"`.
-Capture JSON from stdout; there is no `--output` option.
+Capture JSON from stdout; there is no `--output` option for the report.
 
 The report includes sanitized discovery evidence, status, catalog completion,
 pages read, tools checked, a reason, findings and explicit coverage. Tool counts
@@ -104,6 +105,37 @@ one-based tool index, optionally the fixed input/output schema slot or another
 tool index for duplicates. Reports exclude remote names, descriptions, schema
 payloads, cursors, endpoint URLs, server identity, and raw errors. Match the
 numeric locators against your own server's response when investigating a finding.
+
+## Saving the tool list
+
+`--save-response <path>` writes the enumerated tool definitions to a local file
+as one complete `tools/list` response that `doctor tools-file` and
+`doctor tools-diff` accept. Use it to record a baseline and to capture the current
+catalog for comparison:
+
+```bash
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./tools-current.json
+codex-plugin-doctor doctor tools-diff --before ./tools-baseline.json --after ./tools-current.json --fail-on breaking
+```
+
+The saved file is not a report. It contains the server's tool definitions as
+returned, including names, descriptions, and schemas, so review it before
+committing or sharing it. Pages are merged in enumeration order under one
+synthetic JSON-RPC id; `ttlMs` is the smallest value seen and `cacheScope` is
+`private` if any page was private.
+
+A file is written only when enumeration completes (`catalog.complete` is true),
+including when the completed catalog has findings. Otherwise nothing is written,
+an existing file at the path is left unchanged, and the command exits `2`. The
+command also exits `2` without writing when the path is a URL, UNC, or device
+path, when the existing target is not a regular file (directories and final
+symbolic links are refused), when the parent directory is missing, or when the
+response would exceed the one MiB `tools-file` input limit (the file is written
+with two-space indentation for reviewable diffs). The file is written
+beside the target and renamed into place, so a failed write does not leave a
+partial file; a replaced file keeps its POSIX permission bits. A completed save keeps the report's exit code and prints the tool
+count and byte size to stderr, never the path; the report on stdout is
+unchanged.
 
 ## References
 

@@ -11,7 +11,7 @@ const bashExecutable = process.platform === "win32" ? "C:\\Program Files\\Git\\b
 
 type ActionMetadata = {
   inputs: Record<string, { default?: string | boolean }>;
-  runs: { steps: Array<{ id?: string; name?: string; run?: string }> };
+  runs: { steps: Array<{ id?: string; name?: string; run?: string; env?: Record<string, string> }> };
 };
 
 type ActionRun = {
@@ -21,7 +21,8 @@ type ActionRun = {
   output: Record<string, string>;
   manifest: { reports: Record<string, { enabled: boolean; path: string }> };
   invocations: string[][];
-  readState: () => Promise<{ submission: string; archive: string; status: string }>;
+  reportDirectory: string;
+  readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; status: string }>;
   runSummary: () => Promise<string>;
   cleanup: () => Promise<void>;
 };
@@ -45,7 +46,7 @@ async function loadAction(): Promise<ActionMetadata> {
   return parse(await readFile("action.yml", "utf8")) as ActionMetadata;
 }
 
-async function runArchiveAction(overrides: Record<string, string> = {}): Promise<ActionRun> {
+async function runArchiveAction(overrides: Record<string, string> = {}, mockToolsDiffExit = "0"): Promise<ActionRun> {
   const action = await loadAction();
   const root = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-action-archive-"));
   const binDirectory = path.join(root, "bin");
@@ -64,7 +65,8 @@ async function runArchiveAction(overrides: Record<string, string> = {}): Promise
     "step-summary": "true",
     ...overrides
   };
-  const runDoctorScript = action.runs.steps.find((step) => step.id === "run-doctor")?.run;
+  const runDoctorStep = action.runs.steps.find((step) => step.id === "run-doctor");
+  const runDoctorScript = runDoctorStep?.run;
   const summaryScript = action.runs.steps.find((step) => step.name === "Publish Codex Plugin Doctor summary")?.run;
 
   if (!runDoctorScript || !summaryScript) throw new Error("Expected composite Action run-doctor and summary scripts.");
@@ -86,6 +88,14 @@ for (( index = 1; index <= $#; index += 1 )); do
     break
   fi
 done
+if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
+  if [[ " $* " == *" --json "* ]]; then
+    printf '{"status":"warn"}\\n'
+  else
+    printf 'Offline MCP Tool Diff\\nBreaking: 1\\n'
+  fi
+  exit "\${MOCK_TOOLS_DIFF_EXIT:-0}"
+fi
 if [[ -n "$output" ]]; then
   mkdir -p "$(dirname "$output")"
   if [[ " $* " == *" doctor submission archive "* ]]; then
@@ -105,20 +115,10 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
 
   const environment = {
     ...process.env,
+    ...Object.fromEntries(Object.entries(runDoctorStep?.env ?? {}).map(([key, value]) => [key, renderInputs(value, inputs)])),
     PATH: `${toBashPath(binDirectory)}:${process.env.PATH ?? ""}`,
     DOCTOR_LOG: toBashPath(logPath),
-    ALLOW_NETWORK_INPUT: inputs["allow-network"],
-    ALLOW_LOCAL_NETWORK_INPUT: inputs["allow-local-network"],
-    ALLOW_SESSION_LIFECYCLE_INPUT: inputs["allow-session-lifecycle"],
-    REQUIRE_REMOTE_RELIABILITY_INPUT: inputs["require-remote-reliability"],
-    REGISTRY_METADATA_INPUT: inputs["registry-metadata"],
-    REQUIRE_REGISTRY_READINESS_INPUT: inputs["require-registry-readiness"],
-    SUBMISSION_INPUT: inputs.submission,
-    SUBMISSION_ARCHIVE_INPUT: inputs["submission-archive"],
-    REQUIRE_SUBMISSION_READY_INPUT: inputs["require-submission-ready"],
-    CORPUS_METRICS_MANIFEST_INPUT: inputs["corpus-metrics-manifest"],
-    CORPUS_METRICS_BASELINE_INPUT: inputs["corpus-metrics-baseline"],
-    CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: inputs["corpus-metrics-fail-on-regression"],
+    MOCK_TOOLS_DIFF_EXIT: mockToolsDiffExit,
     GITHUB_OUTPUT: toBashPath(actionOutputPath),
     GITHUB_STATE: toBashPath(actionStatePath),
     GITHUB_STEP_SUMMARY: toBashPath(stepSummaryPath),
@@ -141,9 +141,11 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
       output,
       manifest,
       invocations,
+      reportDirectory,
       readState: async () => ({
         submission: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-submission-ran"), "utf8"),
         archive: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-submission-archive-ran"), "utf8"),
+        toolsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "utf8"),
         status: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "utf8")
       }),
       runSummary: async () => {
@@ -242,6 +244,77 @@ describe("GitHub Action archive submission behavior", () => {
       expect(submissionInvocations(run)).toEqual([]);
       expect(run.output["submission-archive-json-path"]).toBe("");
       expect(run.output["submission-archive-summary-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+function toolsDiffInvocations(run: ActionRun): string[][] {
+  return run.invocations.filter((invocation) => invocation[0] === "doctor" && invocation[1] === "tools-diff");
+}
+
+describe("GitHub Action tools-diff behavior", () => {
+  it("skips the tool diff and leaves its outputs empty when no inputs are set", async () => {
+    const run = await runArchiveAction();
+
+    try {
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect((await run.readState()).toolsDiff).toBe("false");
+      expect(run.output["tools-diff-json-path"]).toBe("");
+      expect(run.output["tools-diff-summary-path"]).toBe("");
+      expect(run.manifest.reports.toolsDiffJson).toEqual({ enabled: false, path: "" });
+      expect(await run.runSummary()).not.toContain("MCP Tool Definition Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each(["any", "breaking"])("compares saved responses with fail-on %s and publishes reports", async (failOn) => {
+    const run = await runArchiveAction({ "tools-diff-before": "baseline/tools.json", "tools-diff-after": "current/tools.json", "tools-diff-fail-on": failOn });
+
+    try {
+      const expected = ["doctor", "tools-diff", "--before", "baseline/tools.json", "--after", "current/tools.json", "--fail-on", failOn];
+      expect(toolsDiffInvocations(run)).toEqual([[...expected, "--json"], expected]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
+      const jsonPath = toBashPath(path.join(run.reportDirectory, "mcp-tools-diff.json"));
+      const summaryPath = toBashPath(path.join(run.reportDirectory, "mcp-tools-diff.md"));
+      expect(run.output["tools-diff-json-path"]).toBe(jsonPath);
+      expect(run.output["tools-diff-summary-path"]).toBe(summaryPath);
+      expect(run.manifest.reports.toolsDiffJson).toEqual({ enabled: true, path: jsonPath });
+      expect(run.manifest.reports.toolsDiffSummary).toEqual({ enabled: true, path: summaryPath });
+      expect(JSON.parse(await readFile(path.join(run.reportDirectory, "mcp-tools-diff.json"), "utf8"))).toEqual({ status: "warn" });
+      const summary = await run.runSummary();
+      expect(summary).toContain("## MCP Tool Definition Diff");
+      expect(summary).toContain(`- Fail on: ${failOn}`);
+      expect(summary).toContain("Breaking: 1");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("propagates a failing tool diff exit status", async () => {
+    const run = await runArchiveAction({ "tools-diff-before": "before.json", "tools-diff-after": "after.json", "tools-diff-fail-on": "breaking" }, "1");
+
+    try {
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "1" });
+      expect(await run.runSummary()).toContain("- Exit status: 1");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ "tools-diff-before": "before.json" }],
+    [{ "tools-diff-after": "after.json" }],
+    [{ "tools-diff-before": "before.json", "tools-diff-after": "after.json", "tools-diff-fail-on": "warn" }]
+  ])("rejects incomplete or invalid tool diff inputs %j", async (overrides) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-diff-json-path"]).toBe("");
     } finally {
       await run.cleanup();
     }

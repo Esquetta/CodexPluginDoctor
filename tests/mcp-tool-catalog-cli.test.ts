@@ -1,5 +1,8 @@
+import { mkdtemp, realpath, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/run-cli.js";
 import { buildDoctorOutputContract } from "../src/core/output-contract.js";
@@ -150,4 +153,143 @@ describe("doctor tools", () => {
       }
     }
   );
+});
+
+describe("doctor tools --save-response", () => {
+  const url = "https://mcp.example/mcp";
+  const tools = [{ name: "echo", inputSchema: { type: "object" } }];
+
+  async function withDirectory(run: (directory: string) => Promise<void>): Promise<void> {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "doctor-tools-save-"));
+    try {
+      await run(directory);
+    } finally {
+      const resolved = await realpath(directory);
+      if (path.dirname(resolved) !== await realpath(os.tmpdir()) || !path.basename(resolved).startsWith("doctor-tools-save-")) {
+        throw new Error("Unexpected test cleanup target.");
+      }
+      await rm(resolved, { recursive: true, force: true });
+    }
+  }
+
+  it.each([
+    [url, "--allow-network", "--save-response"],
+    [url, "--allow-network", "--save-response", "--json"],
+    [url, "--allow-network", "--save-response", "a.json", "--save-response", "b.json"],
+    [url, "--save-response", "a.json"]
+  ])("rejects %j before capture", async (...args: string[]) => {
+    const c = capture();
+    const captureMcpToolCatalogImpl = vi.fn();
+    expect(await runCli(["doctor", "tools", ...args], c.io, { captureMcpToolCatalogImpl })).toBe(2);
+    expect(c.stderr.length).toBeGreaterThan(0);
+    expect(captureMcpToolCatalogImpl).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://example.test/tools.json", "\\\\server\\share\\tools.json"])("rejects the non-local save path %s before any request", async (savePath) => {
+    const c = capture();
+    const captureMcpToolCatalogImpl = vi.fn();
+    expect(await runCli(["doctor", "tools", url, "--allow-network", "--save-response", savePath], c.io, { captureMcpToolCatalogImpl })).toBe(2);
+    expect(c.stderr.join("\n")).toContain("local file path");
+    expect(captureMcpToolCatalogImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([["pass", 0], ["fail", 1]] as const)("saves a complete %s catalog and keeps the report exit code %i", async (status, exitCode) => {
+    await withDirectory(async (directory) => {
+      const c = capture();
+      const savePath = path.join(directory, "tools.json");
+      const captureMcpToolCatalogImpl = vi.fn().mockResolvedValue({ report: report(status), tools, cache: { ttlMs: 0, cacheScope: "public" } });
+
+      expect(await runCli(["doctor", "tools", url, "--save-response", savePath, "--allow-network", "--json"], c.io, { captureMcpToolCatalogImpl })).toBe(exitCode);
+
+      expect(captureMcpToolCatalogImpl).toHaveBeenCalledExactlyOnceWith(url, { allowNetwork: true, allowLocalNetwork: false });
+      expect(JSON.parse(c.stdout.join("\n"))).toEqual(report(status));
+      expect(c.stderr.join("\n")).toContain("Saved a complete tools/list response with 1 tools");
+      expect(c.stderr.join("\n")).not.toContain(directory);
+      expect(JSON.parse(await readFile(savePath, "utf8")).result.tools).toEqual(tools);
+    });
+  });
+
+  it.each(["incomplete", "blocked", "unsupported", "not-applicable"])("writes nothing and exits 2 for a %s catalog", async (status) => {
+    await withDirectory(async (directory) => {
+      const c = capture();
+      const captureMcpToolCatalogImpl = vi.fn().mockResolvedValue({ report: report(status), tools: null, cache: null });
+
+      const savePath = path.join(directory, "tools.json");
+      await writeFile(savePath, "previous baseline", "utf8");
+
+      expect(await runCli(["doctor", "tools", url, "--allow-network", "--save-response", savePath], c.io, { captureMcpToolCatalogImpl })).toBe(2);
+
+      expect(c.stderr.join("\n")).toContain("not saved because enumeration did not complete");
+      expect(await readdir(directory)).toEqual(["tools.json"]);
+      expect(await readFile(savePath, "utf8")).toBe("previous baseline");
+    });
+  });
+
+  it("keeps stdout and the existing baseline when serialization fails", async () => {
+    await withDirectory(async (directory) => {
+      const c = capture();
+      const savePath = path.join(directory, "PRIVATE_BASELINE.json");
+      await writeFile(savePath, "previous baseline", "utf8");
+      const inputSchema = JSON.parse('{"items":'.repeat(20_000) + '{}' + '}'.repeat(20_000));
+      const captureMcpToolCatalogImpl = vi.fn().mockResolvedValue({
+        report: report(), tools: [{ name: "PRIVATE_TOOL", inputSchema }], cache: { ttlMs: 0, cacheScope: "private" }
+      });
+
+      await expect(runCli(["doctor", "tools", url, "--allow-network", "--save-response", savePath, "--json"], c.io, { captureMcpToolCatalogImpl })).resolves.toBe(2);
+
+      expect(JSON.parse(c.stdout.join("\n"))).toEqual(report());
+      expect(c.stderr).toEqual(["Tool catalog response could not be written."]);
+      expect(await readFile(savePath, "utf8")).toBe("previous baseline");
+      expect(await readdir(directory)).toEqual(["PRIVATE_BASELINE.json"]);
+    });
+  });
+
+  it("exits 2 when the save target is not a regular file", async () => {
+    await withDirectory(async (directory) => {
+      const c = capture();
+      const captureMcpToolCatalogImpl = vi.fn().mockResolvedValue({ report: report(), tools, cache: { ttlMs: 0, cacheScope: "public" } });
+
+      expect(await runCli(["doctor", "tools", url, "--allow-network", "--save-response", directory], c.io, { captureMcpToolCatalogImpl })).toBe(2);
+
+      expect(c.stderr.join("\n")).toContain("not a regular file");
+    });
+  });
+
+  it("saves a real paginated catalog that tools-file accepts", async () => {
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const rpc = JSON.parse(body);
+        const result = rpc.method === "server/discover"
+          ? { supportedVersions: ["2026-07-28"], capabilities: { tools: {} } }
+          : rpc.params.cursor === undefined
+            ? { tools: [tools[0]], nextCursor: "page-2" }
+            : { tools: [{ name: "second", inputSchema: { type: "object" } }] };
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result: { resultType: "complete", ttlMs: 0, cacheScope: "public", ...result } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    try {
+      await withDirectory(async (directory) => {
+        const savePath = path.join(directory, "tools.json");
+        const port = (server.address() as AddressInfo).port;
+        expect(await runCli(["doctor", "tools", `http://localhost:${port}/mcp`, "--allow-network", "--allow-local-network", "--save-response", savePath], capture().io)).toBe(0);
+
+        const c = capture();
+        expect(await runCli(["doctor", "tools-file", savePath, "--json"], c.io)).toBe(0);
+        expect(JSON.parse(c.stdout.join("\n"))).toMatchObject({ status: "pass", inspection: { complete: true, toolsChecked: 2 } });
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("documents the option in command help", async () => {
+    const c = capture();
+    expect(await runCli(["doctor", "tools", "--help"], c.io)).toBe(0);
+    expect(c.stdout.join("\n")).toContain("--save-response <path>");
+  });
 });

@@ -86,8 +86,9 @@ import {
 import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./core/submission-archive-preflight.js";
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
-import { inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
-import { inspectMcpToolFile } from "./core/mcp-tool-file.js";
+import { captureMcpToolCatalog, inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
+import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
+import { saveMcpToolsListResponse } from "./core/mcp-tool-response-file.js";
 import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
 import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report.js";
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
@@ -303,6 +304,7 @@ export interface RunCliOptions {
   compareMcpToolFilesImpl?: typeof compareMcpToolFiles;
   inspectMcpToolFileImpl?: typeof inspectMcpToolFile;
   inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
+  captureMcpToolCatalogImpl?: typeof captureMcpToolCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -349,7 +351,7 @@ const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <p
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
-const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json]";
+const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>]";
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json]";
 
@@ -1896,7 +1898,7 @@ export async function runCli(
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.`);
+        io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.\n--save-response writes a complete enumeration as one tools/list response for doctor tools-file and tools-diff; nothing is written when enumeration is incomplete.`);
         return 0;
       }
       const [url, ...flags] = remainingArgs;
@@ -1905,23 +1907,62 @@ export async function runCli(
         return 2;
       }
       const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
-      if (flags.some((flag) => !allowedFlags.has(flag)) || new Set(flags).size !== flags.length) {
+      const switches: string[] = [];
+      let savePath: string | undefined;
+      let invalid = false;
+      for (let index = 0; index < flags.length; index += 1) {
+        const flag = flags[index];
+        if (flag === "--save-response" && savePath === undefined) {
+          const value = flags[index + 1];
+          if (!value || value.startsWith("-")) { invalid = true; break; }
+          savePath = value;
+          index += 1;
+        } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
+          switches.push(flag);
+        } else {
+          invalid = true;
+          break;
+        }
+      }
+      if (invalid) {
         io.writeStderr(`Invalid or duplicate tool catalog arguments. ${toolsUsage}`);
         return 2;
       }
-      if (!flags.includes("--allow-network")) {
+      if (!switches.includes("--allow-network")) {
         io.writeStderr("doctor tools requires explicit --allow-network consent.");
         return 2;
       }
-      const report = await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(url, {
-        allowNetwork: true,
-        allowLocalNetwork: flags.includes("--allow-local-network")
-      });
-      io.writeStdout(flags.includes("--json")
+      if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
+        io.writeStderr("doctor tools --save-response requires a local file path.");
+        return 2;
+      }
+      const catalogOptions = { allowNetwork: true, allowLocalNetwork: switches.includes("--allow-local-network") };
+      const snapshot = savePath === undefined
+        ? { report: await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(url, catalogOptions), tools: null, cache: null }
+        : await (options.captureMcpToolCatalogImpl ?? captureMcpToolCatalog)(url, catalogOptions);
+      const report = snapshot.report;
+      io.writeStdout(switches.includes("--json")
         ? JSON.stringify(report, null, 2)
         : renderMcpToolCatalogReport(report));
-      return report.status === "pass" ? 0
+      const exitCode = report.status === "pass" ? 0
         : report.status === "incomplete" || report.status === "blocked" ? 2 : 1;
+      if (savePath === undefined) return exitCode;
+      if (snapshot.tools === null || snapshot.cache === null) {
+        io.writeStderr("Tool catalog response was not saved because enumeration did not complete.");
+        return 2;
+      }
+      const saved = await saveMcpToolsListResponse(savePath, snapshot.tools, snapshot.cache);
+      if (saved.kind !== "saved") {
+        io.writeStderr({
+          "path-blocked": "Tool catalog response was not saved because the path is not a local file path.",
+          "not-regular": "Tool catalog response was not saved because the existing target is not a regular file.",
+          "too-large": "Tool catalog response was not saved because it exceeds the one MiB tools-file limit.",
+          "write-failed": "Tool catalog response could not be written."
+        }[saved.kind]);
+        return 2;
+      }
+      io.writeStderr(`Saved a complete tools/list response with ${saved.tools} tools (${saved.bytes} bytes).`);
+      return exitCode;
     }
     if (maybePath === "discover") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
