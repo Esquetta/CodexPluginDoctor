@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -164,7 +164,11 @@ describe("doctor tools --save-response", () => {
     try {
       await run(directory);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      const resolved = await realpath(directory);
+      if (path.dirname(resolved) !== await realpath(os.tmpdir()) || !path.basename(resolved).startsWith("doctor-tools-save-")) {
+        throw new Error("Unexpected test cleanup target.");
+      }
+      await rm(resolved, { recursive: true, force: true });
     }
   }
 
@@ -218,6 +222,25 @@ describe("doctor tools --save-response", () => {
       expect(c.stderr.join("\n")).toContain("not saved because enumeration did not complete");
       expect(await readdir(directory)).toEqual(["tools.json"]);
       expect(await readFile(savePath, "utf8")).toBe("previous baseline");
+    });
+  });
+
+  it("keeps stdout and the existing baseline when serialization fails", async () => {
+    await withDirectory(async (directory) => {
+      const c = capture();
+      const savePath = path.join(directory, "PRIVATE_BASELINE.json");
+      await writeFile(savePath, "previous baseline", "utf8");
+      const inputSchema = JSON.parse('{"items":'.repeat(20_000) + '{}' + '}'.repeat(20_000));
+      const captureMcpToolCatalogImpl = vi.fn().mockResolvedValue({
+        report: report(), tools: [{ name: "PRIVATE_TOOL", inputSchema }], cache: { ttlMs: 0, cacheScope: "private" }
+      });
+
+      await expect(runCli(["doctor", "tools", url, "--allow-network", "--save-response", savePath, "--json"], c.io, { captureMcpToolCatalogImpl })).resolves.toBe(2);
+
+      expect(JSON.parse(c.stdout.join("\n"))).toEqual(report());
+      expect(c.stderr).toEqual(["Tool catalog response could not be written."]);
+      expect(await readFile(savePath, "utf8")).toBe("previous baseline");
+      expect(await readdir(directory)).toEqual(["PRIVATE_BASELINE.json"]);
     });
   });
 

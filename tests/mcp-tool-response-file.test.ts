@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,7 +21,14 @@ function tool(name: string, inputSchema: Record<string, unknown> = { type: "obje
 }
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  await Promise.all(temporaryDirectories.splice(0).map(async (directory) => {
+    const resolved = await realpath(directory);
+    const temporaryRoot = await realpath(os.tmpdir());
+    if (path.dirname(resolved) !== temporaryRoot || !path.basename(resolved).startsWith("mcp-tool-response-file-")) {
+      throw new Error("Unexpected test cleanup target.");
+    }
+    await rm(resolved, { recursive: true, force: true });
+  }));
 });
 
 describe("saveMcpToolsListResponse", () => {
@@ -110,6 +117,20 @@ describe("saveMcpToolsListResponse", () => {
     expect(await saveMcpToolsListResponse(filePath, [tool("large", { type: "object", description: "x".repeat(1024 * 1024) })], cache))
       .toEqual({ kind: "too-large" });
     expect(await readdir(directory)).toEqual([]);
+  });
+
+  it.each([false, true])("contains serialization failures without changing an existing target: %s", async (existing) => {
+    const directory = await fixtureDirectory();
+    const filePath = path.join(directory, "tools.json");
+    if (existing) await writeFile(filePath, "previous baseline", "utf8");
+    const rawSchema = '{"items":'.repeat(20_000) + '{}' + '}'.repeat(20_000);
+    expect(Buffer.byteLength(rawSchema)).toBeLessThan(1024 * 1024);
+    const schema = JSON.parse(rawSchema) as Record<string, unknown>;
+
+    await expect(saveMcpToolsListResponse(filePath, [tool("deep", schema)], cache)).resolves.toEqual({ kind: "write-failed" });
+
+    expect(await readdir(directory)).toEqual(existing ? ["tools.json"] : []);
+    if (existing) expect(await readFile(filePath, "utf8")).toBe("previous baseline");
   });
 
   it("reports a missing parent directory as a write failure", async () => {

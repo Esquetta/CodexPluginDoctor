@@ -25,8 +25,14 @@ export async function saveMcpToolsListResponse(
 ): Promise<McpToolResponseSaveResult> {
   if (isBlockedOfflinePath(filePath)) return { kind: "path-blocked" };
 
-  const content = serializeMcpToolsListResponse(tools, cache);
-  const bytes = Buffer.byteLength(content);
+  let content: string;
+  let bytes: number;
+  try {
+    content = serializeMcpToolsListResponse(tools, cache);
+    bytes = Buffer.byteLength(content);
+  } catch {
+    return { kind: "write-failed" };
+  }
   if (bytes > MAX_TOOL_FILE_BYTES) return { kind: "too-large" };
 
   let existingMode: number | null = null;
