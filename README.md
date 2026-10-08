@@ -121,8 +121,9 @@ This reports added, removed, and structurally changed definitions using numeric
 locations, and labels each change `breaking`, `compatible`, or `unclassified`
 with fixed reason codes. Add `--fail-on breaking` to fail CI only on breaking or
 unclassified changes. Incomplete inputs, invalid definitions, or duplicate names
-prevent a comparison. Impact labels are root-level schema heuristics, not proof
-of compatibility.
+prevent a comparison. Impact labels follow nested object properties, array
+items, and common length and range bounds, but remain heuristics, not proof of
+compatibility.
 See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md) for matching rules,
 privacy, limits, and exit codes.
 
@@ -562,9 +563,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.66.0
+      - uses: Esquetta/CodexPluginDoctor@v1.67.0
         with:
-          version: "1.66.0"
+          version: "1.67.0"
           path: .
           runtime: "true"
           policy: codex-publish

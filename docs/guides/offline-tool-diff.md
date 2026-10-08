@@ -71,15 +71,17 @@ outputs it already reads must keep their shape.
 | `input-type-narrowed` | breaking | The root `inputSchema` type no longer admits every previously admitted type. |
 | `input-required-added` | breaking | A property became required. |
 | `input-property-removed` | breaking | A declared input property was removed. |
-| `input-property-type-narrowed` | breaking | An input property's `type` no longer admits every previous type (`integer` is covered by `number`). |
-| `input-property-enum-narrowed` | breaking | An input property's `enum` dropped values or was introduced. |
+| `input-property-type-narrowed` | breaking | An input property's or array item's `type` no longer admits every previous type (`integer` is covered by `number`). |
+| `input-property-enum-narrowed` | breaking | An input property's or array item's `enum` dropped values or was introduced. |
+| `input-constraint-tightened` | breaking | A `minimum`, `minLength`, or `minItems` rose, a `maximum`, `maxLength`, or `maxItems` fell, or such a bound or an array `items` schema was introduced. |
 | `input-additional-properties-closed` | breaking | `additionalProperties` became `false`. |
 | `output-schema-removed` | breaking | A previously declared `outputSchema` was removed. |
 | `output-type-widened` | breaking | The root `outputSchema` may now have a type it could not have before. |
 | `output-property-removed` | breaking | A declared output property was removed. |
 | `output-guarantee-removed` | breaking | An output property is no longer required. |
 | `output-property-type-widened` | breaking | An output property may now have a type it could not have before. |
-| `output-property-enum-widened` | breaking | An output property's `enum` gained values or was removed. |
+| `output-property-enum-widened` | breaking | An output property's or array item's `enum` gained values or was removed. |
+| `output-constraint-loosened` | breaking | An output bound or array `items` schema was relaxed or removed. |
 | `annotation-safety-reduced` | breaking | A `readOnlyHint`, `destructiveHint`, `idempotentHint`, or `openWorldHint` moved to the less safe value, using MCP defaults for absent hints. |
 | `input-schema-unclassified` | unclassified | An `inputSchema` change outside the checks above. |
 | `output-schema-unclassified` | unclassified | An `outputSchema` change outside the checks above. |
@@ -92,17 +94,36 @@ and documentation-only schema keywords (`title`, `description`, `examples`,
 when it has any breaking reason, `unclassified` when it only has unclassified
 reasons, and `compatible` when it has none.
 
-Classification is a heuristic that inspects root keywords and the `type` and
-`enum` of direct `properties`. Composition keywords (`anyOf`, `oneOf`, `allOf`,
-`not`), references, nested constraints such as `maxLength` or `pattern`, and
-non-boolean `additionalProperties` are reported as unclassified rather than
-guessed. `comparison.breaking` and `comparison.unclassified` count records by
-impact, and `coverage.impactClassification` is `heuristic`.
+Classification is a heuristic. The property, requirement, type, and
+`additionalProperties` reasons apply at every level: to the root schema, to
+nested object `properties`, and to array `items`, up to eight levels below the
+root. Below that limit, any change is unclassified. A bound that is not a finite
+number is unclassified. Composition keywords (`anyOf`, `oneOf`, `allOf`, `not`),
+references, `pattern`, `format`, `const`, exclusive bounds, tuple-form `items`,
+an `enum` at the root, `items` or `additionalProperties` changes beside
+`unevaluatedItems` or `unevaluatedProperties`, and changes that introduce or
+modify a schema-valued `additionalProperties` (in outputs, any
+`additionalProperties` change) are reported as unclassified rather than guessed. At the root, bounds and `items` are also
+unclassified.
+
+A new property is `compatible` at the root and in nested objects that already
+declared properties. In a nested object whose extra keys were governed by an
+`additionalProperties` schema or another keyword such as `patternProperties`, a
+new property is unclassified in both directions. A new property in a nested input
+object that declared no properties and did not close `additionalProperties` is
+also unclassified, because callers may already send that key with other values.
+In any input object, including the root, declaring a key that was already required
+is unclassified. A
+new output property is otherwise `compatible`, even when `additionalProperties`
+is `false`; consumers that validate results strictly against the old schema can
+still reject it.
+`comparison.breaking` and `comparison.unclassified` count records by impact, and
+`coverage.impactClassification` is `heuristic`.
 
 A `compatible` label is not proof of compatibility, and an unchanged report does
-not prove compatible behavior. Schema checks remain limited to root shapes;
-server inventory, provenance, freshness, execution, and compatibility are not
-established.
+not prove compatible behavior. Input validation findings still check root schema
+shapes only; server inventory, provenance, freshness, execution, and
+compatibility are not established.
 
 ## Incomplete or ambiguous inputs
 

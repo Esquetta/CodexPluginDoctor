@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.67.0] - 2026-10-08
+
+### Changed
+
+- `doctor tools-diff` impact classification now follows nested object `properties`, `required`, and `additionalProperties` and array `items` up to eight levels below the root, so compatible nested changes such as a new optional field no longer count as `unclassified` and fail `--fail-on breaking`; a new property stays `unclassified` in a nested object whose extra keys were governed by an `additionalProperties` schema or keywords such as `patternProperties`, in a nested input object that declared no properties and did not close `additionalProperties`, or when any input object declares a key it already required; `items` and `additionalProperties` changes beside `unevaluatedItems` or `unevaluatedProperties` are also `unclassified`
+- classify `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, and `maxItems` changes with the new `input-constraint-tightened` and `output-constraint-loosened` reason codes; other keywords remain unclassified
+
+### Security
+
+- reason codes remain a fixed enum; reports still omit tool names, property names, paths, and schema values
+
 ## [1.66.0] - 2026-10-07
 
 ### Added

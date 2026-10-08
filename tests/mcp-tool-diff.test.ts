@@ -143,12 +143,12 @@ describe("offline MCP tool definition comparison", () => {
     const before = await writeJson(directory, "before.json", envelope([
       tool("compatible", { inputSchema: { type: "object", properties: { KEEP_SECRET: { type: "string" } } } }),
       tool("breaking", { inputSchema: { type: "object", properties: { OPTIONAL_SECRET: { type: "string" } } } }),
-      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", maxLength: 9 } } } })
+      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", pattern: "^SECRET-9$" } } } })
     ]));
     const after = await writeJson(directory, "after.json", envelope([
       tool("compatible", { inputSchema: { type: "object", properties: { KEEP_SECRET: { type: "string" }, NEW_SECRET: { type: "number" } } } }),
       tool("breaking", { inputSchema: { type: "object", properties: { OPTIONAL_SECRET: { type: "string" } }, required: ["OPTIONAL_SECRET"] } }),
-      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", maxLength: 3 } } } })
+      tool("unclassified", { inputSchema: { type: "object", properties: { LIMIT_SECRET: { type: "string", pattern: "^SECRET-3$" } } } })
     ]));
 
     const report = await compareMcpToolFiles(before, after);

@@ -290,7 +290,7 @@ The following portal warnings depend on submission history or undocumented norma
 Archive validation is disabled by default:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.66.0
+- uses: Esquetta/CodexPluginDoctor@v1.67.0
   with:
     submission-archive: ./plugin.zip
     require-submission-ready: "true"
