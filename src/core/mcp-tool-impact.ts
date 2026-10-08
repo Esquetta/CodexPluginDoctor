@@ -9,6 +9,7 @@ export const TOOL_CHANGE_REASONS = [
   "input-property-removed",
   "input-property-type-narrowed",
   "input-property-enum-narrowed",
+  "input-constraint-tightened",
   "input-additional-properties-closed",
   "input-schema-unclassified",
   "output-schema-removed",
@@ -17,6 +18,7 @@ export const TOOL_CHANGE_REASONS = [
   "output-guarantee-removed",
   "output-property-type-widened",
   "output-property-enum-widened",
+  "output-constraint-loosened",
   "output-schema-unclassified",
   "annotation-safety-reduced",
   "other-fields-unclassified"
@@ -40,7 +42,46 @@ const UNCLASSIFIED_REASONS = new Set<ToolChangeReason>([
 // Keywords that document a schema without constraining accepted or produced values.
 const DOCUMENTATION_KEYWORDS = new Set(["title", "description", "examples", "default", "deprecated", "$comment"]);
 const ROOT_STRUCTURAL_KEYWORDS = new Set(["type", "properties", "required", "additionalProperties", "$schema"]);
-const PROPERTY_STRUCTURAL_KEYWORDS = new Set(["type", "enum"]);
+const LOWER_BOUND_KEYWORDS = ["minimum", "minLength", "minItems"];
+const UPPER_BOUND_KEYWORDS = ["maximum", "maxLength", "maxItems"];
+const NESTED_STRUCTURAL_KEYWORDS = new Set([
+  "type", "enum", "properties", "required", "additionalProperties", "items", ...LOWER_BOUND_KEYWORDS, ...UPPER_BOUND_KEYWORDS
+]);
+// Subschemas nested deeper than this below the root are not compared and stay unclassified.
+const MAX_NESTED_DEPTH = 8;
+
+type Direction = "input" | "output";
+
+interface DirectionCodes {
+  unclassified: ToolChangeReason;
+  rootType: ToolChangeReason;
+  propertyType: ToolChangeReason;
+  enumChanged: ToolChangeReason;
+  constraint: ToolChangeReason;
+  required: ToolChangeReason;
+  propertyRemoved: ToolChangeReason;
+}
+
+const CODES: Record<Direction, DirectionCodes> = {
+  input: {
+    unclassified: "input-schema-unclassified",
+    rootType: "input-type-narrowed",
+    propertyType: "input-property-type-narrowed",
+    enumChanged: "input-property-enum-narrowed",
+    constraint: "input-constraint-tightened",
+    required: "input-required-added",
+    propertyRemoved: "input-property-removed"
+  },
+  output: {
+    unclassified: "output-schema-unclassified",
+    rootType: "output-type-widened",
+    propertyType: "output-property-type-widened",
+    enumChanged: "output-property-enum-widened",
+    constraint: "output-constraint-loosened",
+    required: "output-guarantee-removed",
+    propertyRemoved: "output-property-removed"
+  }
+};
 
 // MCP tool annotation defaults, oriented so `true` is the safer reading.
 const SAFETY_HINTS: Array<{ key: string; absent: boolean; safe: boolean }> = [
@@ -101,62 +142,100 @@ function keywordsOutside(schema: JsonObject, allowed: Set<string>): JsonObject {
   return rest;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** Flags bounds of `outer` that `inner` does not satisfy, so `inner` values may fall outside `outer`. */
+function compareBounds(inner: JsonObject, outer: JsonObject, codes: DirectionCodes, reasons: Set<ToolChangeReason>): void {
+  for (const [keywords, covered] of [
+    [LOWER_BOUND_KEYWORDS, (innerBound: number, outerBound: number) => innerBound >= outerBound],
+    [UPPER_BOUND_KEYWORDS, (innerBound: number, outerBound: number) => innerBound <= outerBound]
+  ] as const) {
+    for (const keyword of keywords) {
+      const outerBound = outer[keyword];
+      const innerBound = inner[keyword];
+      if ((outerBound !== undefined && !isFiniteNumber(outerBound)) || (innerBound !== undefined && !isFiniteNumber(innerBound))) {
+        reasons.add(codes.unclassified);
+      } else if (outerBound !== undefined && (innerBound === undefined || !covered(innerBound, outerBound))) {
+        reasons.add(codes.constraint);
+      }
+    }
+  }
+}
+
 /**
- * Compares one property subschema. `direction` is "input" when callers must keep being
- * accepted (after must cover before) and "output" when consumers must keep understanding
- * results (before must cover after).
+ * Compares one schema and its object and array subschemas. `direction` is "input" when callers
+ * must keep being accepted (after must cover before) and "output" when consumers must keep
+ * understanding results (before must cover after). Depth 0 is the tool's root schema.
  */
-function compareProperty(
+function compareSchema(
   before: unknown,
   after: unknown,
-  direction: "input" | "output",
+  direction: Direction,
+  depth: number,
   equal: Equal,
   reasons: Set<ToolChangeReason>
 ): void {
   if (equal(before, after)) return;
-  const unclassified: ToolChangeReason = direction === "input" ? "input-schema-unclassified" : "output-schema-unclassified";
-  if (!isJsonObject(before) || !isJsonObject(after)
-    || !equal(keywordsOutside(before, PROPERTY_STRUCTURAL_KEYWORDS), keywordsOutside(after, PROPERTY_STRUCTURAL_KEYWORDS))) {
-    reasons.add(unclassified);
-    return;
-  }
-  const [inner, outer] = direction === "input" ? [before, after] : [after, before];
-  if (!typesCovered(typeSet(inner), typeSet(outer))) {
-    reasons.add(direction === "input" ? "input-property-type-narrowed" : "output-property-type-widened");
-  }
-  const enumResult = enumCovered(inner.enum, outer.enum, equal);
-  if (enumResult === null) reasons.add(unclassified);
-  else if (!enumResult) reasons.add(direction === "input" ? "input-property-enum-narrowed" : "output-property-enum-widened");
-}
-
-function classifyInputSchema(before: unknown, after: unknown, equal: Equal, reasons: Set<ToolChangeReason>): void {
-  if (!isJsonObject(before) || !isJsonObject(after)
-    || !equal(keywordsOutside(before, ROOT_STRUCTURAL_KEYWORDS), keywordsOutside(after, ROOT_STRUCTURAL_KEYWORDS))
+  const codes = CODES[direction];
+  const root = depth === 0;
+  const structural = root ? ROOT_STRUCTURAL_KEYWORDS : NESTED_STRUCTURAL_KEYWORDS;
+  if (depth > MAX_NESTED_DEPTH || !isJsonObject(before) || !isJsonObject(after)
+    || !equal(keywordsOutside(before, structural), keywordsOutside(after, structural))
     || !equal(before.$schema, after.$schema)) {
-    reasons.add("input-schema-unclassified");
+    reasons.add(codes.unclassified);
     return;
   }
-  if (!typesCovered(typeSet(before), typeSet(after))) reasons.add("input-type-narrowed");
 
-  const beforeRequired = stringSet(before.required);
-  const afterRequired = stringSet(after.required);
+  const [inner, outer] = direction === "input" ? [before, after] : [after, before];
+  // unevaluatedItems/unevaluatedProperties apply to whatever items/additionalProperties leave
+  // uncovered, so a change in either cannot be judged on its own.
+  const unevaluated = ["unevaluatedItems", "unevaluatedProperties"].some((key) => before[key] !== undefined || after[key] !== undefined);
+  if (!typesCovered(typeSet(inner), typeSet(outer))) reasons.add(root ? codes.rootType : codes.propertyType);
+  if (!root) {
+    const enumResult = enumCovered(inner.enum, outer.enum, equal);
+    if (enumResult === null) reasons.add(codes.unclassified);
+    else if (!enumResult) reasons.add(codes.enumChanged);
+    compareBounds(inner, outer, codes, reasons);
+    if (!equal(before.items, after.items)) {
+      if (unevaluated) reasons.add(codes.unclassified);
+      else if (outer.items !== undefined && inner.items === undefined) reasons.add(codes.constraint);
+      else if (outer.items !== undefined) compareSchema(before.items, after.items, direction, depth + 1, equal, reasons);
+    }
+  }
+
+  const innerRequired = stringSet(inner.required);
+  const outerRequired = stringSet(outer.required);
   const beforeProperties = objectMap(before.properties);
   const afterProperties = objectMap(after.properties);
-  if (beforeRequired === null || afterRequired === null || beforeProperties === null || afterProperties === null) {
-    reasons.add("input-schema-unclassified");
+  if (innerRequired === null || outerRequired === null || beforeProperties === null || afterProperties === null) {
+    reasons.add(codes.unclassified);
     return;
   }
-  for (const key of afterRequired) {
-    if (!beforeRequired.has(key)) reasons.add("input-required-added");
+  for (const key of outerRequired) {
+    if (!innerRequired.has(key)) reasons.add(codes.required);
   }
   for (const key of Object.keys(beforeProperties)) {
-    if (!Object.hasOwn(afterProperties, key)) reasons.add("input-property-removed");
-    else compareProperty(beforeProperties[key], afterProperties[key], "input", equal, reasons);
+    if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
+    else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons);
   }
+  // In a nested object whose undeclared keys were open or governed by other keywords, a newly
+  // declared property can reject values callers send (input) or produce values consumers did
+  // not expect (output).
+  const addedKeys = Object.keys(afterProperties).filter((key) => !Object.hasOwn(beforeProperties, key));
+  if (!root && addedKeys.length > 0) {
+    const governed = isJsonObject(before.additionalProperties) || Object.keys(keywordsOutside(before, structural)).length > 0;
+    const open = Object.keys(beforeProperties).length === 0 && before.additionalProperties !== false;
+    if (governed || (direction === "input" && open)) reasons.add(codes.unclassified);
+  }
+  // Callers already send a key that was required before it was declared, with any value.
+  if (direction === "input" && addedKeys.some((key) => innerRequired.has(key))) reasons.add(codes.unclassified);
 
   if (!equal(before.additionalProperties, after.additionalProperties)) {
-    if (after.additionalProperties === false) reasons.add("input-additional-properties-closed");
-    else if (!(after.additionalProperties === undefined || after.additionalProperties === true)) reasons.add("input-schema-unclassified");
+    if (unevaluated) reasons.add(codes.unclassified);
+    else if (direction === "input" && after.additionalProperties === false) reasons.add("input-additional-properties-closed");
+    else if (direction === "output" || !(after.additionalProperties === undefined || after.additionalProperties === true)) reasons.add(codes.unclassified);
   }
 }
 
@@ -166,30 +245,7 @@ function classifyOutputSchema(before: unknown, after: unknown, equal: Equal, rea
     reasons.add("output-schema-removed");
     return;
   }
-  if (!isJsonObject(before) || !isJsonObject(after)
-    || !equal(keywordsOutside(before, ROOT_STRUCTURAL_KEYWORDS), keywordsOutside(after, ROOT_STRUCTURAL_KEYWORDS))
-    || !equal(before.$schema, after.$schema)) {
-    reasons.add("output-schema-unclassified");
-    return;
-  }
-  if (!typesCovered(typeSet(after), typeSet(before))) reasons.add("output-type-widened");
-
-  const beforeRequired = stringSet(before.required);
-  const afterRequired = stringSet(after.required);
-  const beforeProperties = objectMap(before.properties);
-  const afterProperties = objectMap(after.properties);
-  if (beforeRequired === null || afterRequired === null || beforeProperties === null || afterProperties === null) {
-    reasons.add("output-schema-unclassified");
-    return;
-  }
-  for (const key of beforeRequired) {
-    if (!afterRequired.has(key)) reasons.add("output-guarantee-removed");
-  }
-  for (const key of Object.keys(beforeProperties)) {
-    if (!Object.hasOwn(afterProperties, key)) reasons.add("output-property-removed");
-    else compareProperty(beforeProperties[key], afterProperties[key], "output", equal, reasons);
-  }
-  if (!equal(before.additionalProperties, after.additionalProperties)) reasons.add("output-schema-unclassified");
+  compareSchema(before, after, "output", 0, equal, reasons);
 }
 
 function hint(annotations: unknown, key: string, absent: boolean): boolean | null {
@@ -231,7 +287,7 @@ export function classifyChangedTool(
   equal: Equal
 ): ToolChangeClassification {
   const reasons = new Set<ToolChangeReason>();
-  if (fields.includes("inputSchema")) classifyInputSchema(before.inputSchema, after.inputSchema, equal, reasons);
+  if (fields.includes("inputSchema")) compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons);
   if (fields.includes("outputSchema")) classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons);
   if (fields.includes("annotations")) classifyAnnotations(before.annotations, after.annotations, reasons);
   if (fields.includes("other")) reasons.add("other-fields-unclassified");

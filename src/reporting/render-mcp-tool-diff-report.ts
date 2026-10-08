@@ -21,7 +21,7 @@ export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
     `Server catalog: ${report.coverage.serverCatalog}`,
     `Tool execution: ${report.coverage.toolExecution}`,
     `Impact classification: ${report.coverage.impactClassification}`,
-    "Only the supplied responses are compared. Impact labels are root-level schema heuristics: a compatible label or an unchanged result does not establish compatibility.",
+    "Only the supplied responses are compared. Impact labels are schema heuristics: a compatible label or an unchanged result does not establish compatibility.",
     ...(["before", "after"] as const).flatMap((side) => {
       const source = report[side];
       const label = side === "before" ? "Before" : "After";
