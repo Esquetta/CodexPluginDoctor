@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.68.0] - 2026-10-09
+
+### Added
+
+- added the GitHub Action `check` input; `check: "false"` skips the plugin package check and its reports so repositories that only ship an MCP server can use other Action modes, and records usage status `2` when no other mode is configured
+- added the GitHub Action `tools-capture-url` input and `tools-capture-path` output to save the live tool list with `doctor tools --save-response`; with `tools-diff-before` and no `tools-diff-after`, the capture becomes the comparison's after input
+
+### Security
+
+- capture requires the existing `allow-network` consent (and `allow-local-network` for loopback), sends no authentication headers, and skips the comparison when no complete response was saved
+
 ## [1.67.0] - 2026-10-08
 
 ### Changed

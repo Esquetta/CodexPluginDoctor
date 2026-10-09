@@ -29,8 +29,8 @@ codex-plugin-doctor doctor tools-diff --before ./mcp/tools-baseline.json --after
 With `--save-response`, exit `2` means nothing was written; treat it as a failed
 check rather than diffing a file left over from an earlier run. Exit `1` means the
 file was saved but the catalog has warnings or failures. Update the baseline deliberately when a change is
-accepted. The GitHub Action can run the comparison step; see
-[GitHub Action Usage](github-action.md#mcp-tool-definition-diff).
+accepted. The GitHub Action can run the capture and comparison steps; see
+[GitHub Action Usage](github-action.md#mcp-server-repositories).
 
 ## Matching and changes
 
