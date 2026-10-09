@@ -19,7 +19,7 @@ type ActionRun = {
   archiveJsonPath: string;
   archiveSummaryPath: string;
   output: Record<string, string>;
-  manifest: { reports: Record<string, { enabled: boolean; path: string }> };
+  manifest: { target: { check: boolean }; reports: Record<string, { enabled: boolean; path: string }> };
   invocations: string[][];
   reportDirectory: string;
   readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; status: string }>;
@@ -46,7 +46,7 @@ async function loadAction(): Promise<ActionMetadata> {
   return parse(await readFile("action.yml", "utf8")) as ActionMetadata;
 }
 
-async function runArchiveAction(overrides: Record<string, string> = {}, mockToolsDiffExit = "0"): Promise<ActionRun> {
+async function runArchiveAction(overrides: Record<string, string> = {}, mockToolsDiffExit = "0", mockToolsCaptureExit = "0", seedEarlierReports = false): Promise<ActionRun> {
   const action = await loadAction();
   const root = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-action-archive-"));
   const binDirectory = path.join(root, "bin");
@@ -88,6 +88,19 @@ for (( index = 1; index <= $#; index += 1 )); do
     break
   fi
 done
+if [[ "\${1:-} \${2:-}" == "doctor tools" ]]; then
+  for (( index = 1; index <= $#; index += 1 )); do
+    if [[ "\${!index}" == "--save-response" ]]; then
+      next=$((index + 1))
+      save="\${!next}"
+    fi
+  done
+  code="\${MOCK_TOOLS_CAPTURE_EXIT:-0}"
+  if [[ "$code" -le 1 ]]; then
+    printf '{"jsonrpc":"2.0"}\\n' > "$save"
+  fi
+  exit "$code"
+fi
 if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
   if [[ " $* " == *" --json "* ]]; then
     printf '{"status":"warn"}\\n'
@@ -112,6 +125,11 @@ fi
 exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
 `, "utf8");
   await chmod(path.join(binDirectory, "codex-plugin-doctor"), 0o755);
+  if (seedEarlierReports) {
+    await mkdir(reportDirectory, { recursive: true });
+    await writeFile(path.join(reportDirectory, "mcp-tools-current.json"), "{}", "utf8");
+    await writeFile(path.join(reportDirectory, "codex-plugin-doctor-summary.md"), "stale package summary", "utf8");
+  }
 
   const environment = {
     ...process.env,
@@ -119,6 +137,7 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
     PATH: `${toBashPath(binDirectory)}:${process.env.PATH ?? ""}`,
     DOCTOR_LOG: toBashPath(logPath),
     MOCK_TOOLS_DIFF_EXIT: mockToolsDiffExit,
+    MOCK_TOOLS_CAPTURE_EXIT: mockToolsCaptureExit,
     GITHUB_OUTPUT: toBashPath(actionOutputPath),
     GITHUB_STATE: toBashPath(actionStatePath),
     GITHUB_STEP_SUMMARY: toBashPath(stepSummaryPath),
@@ -315,6 +334,166 @@ describe("GitHub Action tools-diff behavior", () => {
       expect(toolsDiffInvocations(run)).toEqual([]);
       expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
       expect(run.output["tools-diff-json-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+function invocationsOf(run: ActionRun, command: string): string[][] {
+  return run.invocations.filter((invocation) => invocation[0] === command || (invocation[0] === "doctor" && invocation[1] === command));
+}
+
+describe("GitHub Action MCP-only behavior", () => {
+  const url = "https://mcp.example.test/mcp";
+
+  it("runs only the tool diff when the package check is disabled", async () => {
+    const run = await runArchiveAction({ check: "false", "tools-diff-before": "before.json", "tools-diff-after": "after.json" });
+
+    try {
+      expect(invocationsOf(run, "check")).toEqual([]);
+      expect(toolsDiffInvocations(run)).toHaveLength(2);
+      expect(await run.readState()).toMatchObject({ status: "0" });
+      expect(run.output["summary-path"]).toBe("");
+      expect(run.output["json-path"]).toBe("");
+      expect(run.output["sarif-path"]).toBe("");
+      expect(run.manifest.target.check).toBe(false);
+      expect(run.manifest.reports.json.enabled).toBe(false);
+      expect(run.manifest.reports.summary.enabled).toBe(false);
+      expect(await run.runSummary()).toContain("MCP Tool Definition Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("keeps the package check enabled by default", async () => {
+    const run = await runArchiveAction();
+
+    try {
+      expect(invocationsOf(run, "check").length).toBeGreaterThan(0);
+      expect(run.manifest.target.check).toBe(true);
+      expect(run.output["json-path"]).not.toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([[{ check: "false" }], [{ check: "maybe" }]])("records usage status 2 for %j", async (overrides) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      expect(invocationsOf(run, "check")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("requires network consent before capturing a tool list", async () => {
+    const run = await runArchiveAction({ check: "false", "tools-capture-url": url, "tools-diff-before": "baseline.json" });
+
+    try {
+      expect(invocationsOf(run, "tools")).toEqual([]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("captures the live tool list and compares it with the baseline", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "allow-local-network": "true", "tools-capture-url": url, "tools-diff-before": "baseline.json", "tools-diff-fail-on": "breaking" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json"));
+      expect(invocationsOf(run, "tools")).toEqual([["doctor", "tools", url, "--allow-network", "--save-response", capturePath, "--allow-local-network"]]);
+      expect(toolsDiffInvocations(run)[0]).toEqual(["doctor", "tools-diff", "--before", "baseline.json", "--after", capturePath, "--fail-on", "breaking", "--json"]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
+      expect(run.output["tools-capture-path"]).toBe(capturePath);
+      expect(run.manifest.reports.toolsCapture).toEqual({ enabled: true, path: capturePath });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("leaves capture findings to the comparison when the capture feeds it", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "tools-capture-url": url, "tools-diff-before": "baseline.json", "tools-diff-fail-on": "breaking" }, "0", "1");
+
+    try {
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("records capture findings when the capture runs alone", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "tools-capture-url": url }, "0", "1");
+
+    try {
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "1" });
+      expect(run.output["tools-capture-path"]).not.toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("never compares a capture left over from an earlier run", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "tools-capture-url": url, "tools-diff-before": "baseline.json" }, "0", "2", true);
+
+    try {
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+      await expect(readFile(path.join(run.reportDirectory, "mcp-tools-current.json"), "utf8")).rejects.toThrow();
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("does not publish an earlier package summary when the check is disabled", async () => {
+    const run = await runArchiveAction({ check: "false", "tools-diff-before": "before.json", "tools-diff-after": "after.json" }, "0", "0", true);
+
+    try {
+      const summary = await run.runSummary();
+      expect(summary).not.toContain("stale package summary");
+      expect(summary).toContain("MCP Tool Definition Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("does not record runtime probing in the manifest when the check is disabled", async () => {
+    const run = await runArchiveAction({ check: "false", runtime: "true", "tools-diff-before": "before.json", "tools-diff-after": "after.json" });
+
+    try {
+      expect((run.manifest.target as { runtime: boolean }).runtime).toBe(false);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("skips the comparison when the capture does not save a response", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "tools-capture-url": url, "tools-diff-before": "baseline.json" }, "0", "2");
+
+    try {
+      expect(invocationsOf(run, "tools")).toHaveLength(1);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+      expect(run.manifest.reports.toolsCapture).toEqual({ enabled: false, path: "" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("uses an explicit after input instead of the capture", async () => {
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "tools-capture-url": url, "tools-diff-before": "baseline.json", "tools-diff-after": "explicit.json" });
+
+    try {
+      expect(toolsDiffInvocations(run)[0]).toContain("explicit.json");
+      expect(run.output["tools-capture-path"]).not.toBe("");
     } finally {
       await run.cleanup();
     }

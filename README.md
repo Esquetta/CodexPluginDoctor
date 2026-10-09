@@ -142,7 +142,9 @@ execution, or client compatibility. Existing `doctor discover` behavior is uncha
 Add `--save-response <path>` to record a completely enumerated catalog as a
 `tools/list` response for `tools-file` and `tools-diff`; nothing is written when
 enumeration is incomplete. The GitHub Action can compare saved responses with
-`tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on`.
+`tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on`, capture the
+live list with `tools-capture-url`, and skip the plugin package check with
+`check: "false"` in repositories that only ship an MCP server.
 See [HTTP MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness
@@ -563,9 +565,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.67.0
+      - uses: Esquetta/CodexPluginDoctor@v1.68.0
         with:
-          version: "1.67.0"
+          version: "1.68.0"
           path: .
           runtime: "true"
           policy: codex-publish
