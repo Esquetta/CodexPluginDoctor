@@ -35,6 +35,7 @@ export interface McpToolCatalogOptions {
   lookup?: RemoteLookup;
   request?: RemoteMcpRequest;
   now?: () => number;
+  bearerToken?: string;
 }
 
 export interface McpToolCatalogReport {
@@ -145,7 +146,7 @@ function finalStatus(findings: CatalogFinding[]): "pass" | "warn" | "fail" {
 }
 
 function isAuthorizationFinding(discovery: McpDiscoveryReport): boolean {
-  return discovery.findings.some((item) => item.id === "plugin.discovery.authorization.required");
+  return discovery.findings.some((item) => item.id === "plugin.discovery.authorization.required" || item.id === "plugin.discovery.authorization.rejected");
 }
 
 function requestBody(id: string, cursor: string | undefined): string {
@@ -207,6 +208,7 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
     allowNetwork: options.allowNetwork,
     allowLocalNetwork: options.allowLocalNetwork,
     lookup: options.lookup,
+    bearerToken: options.bearerToken,
     request: async (url, requestOptions) => {
       const response = await requestWithinBudget(url, requestOptions);
       discoveryResponse = response;
@@ -217,7 +219,10 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
   const partial = (report: McpToolCatalogReport): McpToolCatalogSnapshot => ({ report, tools: null, cache: null });
   const emptyCatalog = { complete: false, pagesRead: 0, toolsChecked: 0, reason: null };
   if (discovery.status === "blocked") {
-    return partial(catalogReport(discovery, "blocked", { ...emptyCatalog, reason: "network-blocked" }, "not-tested", []));
+    const reason = discovery.findings.some((item) => item.id === "plugin.discovery.credentials.insecure_transport")
+      ? "credentials-insecure-transport"
+      : "network-blocked";
+    return partial(catalogReport(discovery, "blocked", { ...emptyCatalog, reason }, "not-tested", []));
   }
   if (isAuthorizationFinding(discovery)) {
     return partial(catalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "authorization-required" }, "not-tested", []));
@@ -274,6 +279,7 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
       response = await requestWithinBudget(rawUrl, {
         allowLocalNetwork: options.allowLocalNetwork,
         lookup: options.lookup,
+        bearerToken: options.bearerToken,
         method: "POST",
         body: requestBody(requestId, cursor),
         headers: {
@@ -288,7 +294,9 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
       if (error instanceof RemoteNetworkPolicyError) {
         blocked = true;
       } else {
-        incompleteReason = budgetReason ?? (error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_TIMEOUT"
+        incompleteReason = budgetReason ?? (error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_INSECURE_CREDENTIALS"
+          ? "credentials-insecure-transport"
+          : error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_TIMEOUT"
           ? "request-timeout"
           : error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_RESPONSE_TOO_LARGE"
             ? "response-byte-limit"

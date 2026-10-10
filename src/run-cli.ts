@@ -85,11 +85,13 @@ import {
 } from "./core/output-contract.js";
 import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./core/submission-archive-preflight.js";
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
+import { isValidBearerToken } from "./core/bounded-http-client.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
 import { captureMcpToolCatalog, inspectMcpToolCatalog } from "./core/mcp-tool-catalog.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpToolsListResponse } from "./core/mcp-tool-response-file.js";
 import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
+import { renderMcpToolDiffMarkdown } from "./reporting/render-mcp-tool-diff-markdown.js";
 import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report.js";
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
@@ -347,13 +349,24 @@ function writeExactStdout(io: CliIo, message: string): void {
 
 class CliUsageError extends Error {}
 
-const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json] [--fail-on any|breaking]";
+const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking]";
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
-const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>]";
+const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]";
 
-const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json]";
+const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json] [--bearer-token-env <NAME>]";
+const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
+const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+function resolveBearerToken(name: string | undefined, env: NodeJS.ProcessEnv): { token?: string } | { error: string } {
+  if (name === undefined) return {};
+  if (!ENVIRONMENT_VARIABLE_NAME.test(name)) return { error: "--bearer-token-env requires an environment variable name." };
+  const token = env[name];
+  if (token === undefined || token === "") return { error: `Bearer token environment variable is not set: ${name}` };
+  if (!isValidBearerToken(token)) return { error: `Bearer token environment variable does not hold a valid bearer token: ${name}` };
+  return { token };
+}
 
 function parseRuntimeSandbox(
   flags: string[],
@@ -1844,13 +1857,13 @@ export async function runCli(
       }
       let beforePath: string | undefined;
       let afterPath: string | undefined;
-      let json = false;
+      let format: "json" | "markdown" | undefined;
       let failOn: "any" | "breaking" | undefined;
       let invalid = false;
       for (let index = 0; index < remainingArgs.length; index += 1) {
         const flag = remainingArgs[index];
-        if (flag === "--json" && !json) {
-          json = true;
+        if ((flag === "--json" || flag === "--markdown") && format === undefined) {
+          format = flag === "--json" ? "json" : "markdown";
         } else if (flag === "--fail-on" && failOn === undefined) {
           const value = remainingArgs[index + 1];
           if (value !== "any" && value !== "breaking") { invalid = true; break; }
@@ -1872,7 +1885,9 @@ export async function runCli(
         return 2;
       }
       const report = await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath);
-      io.writeStdout(json ? JSON.stringify(report, null, 2) : renderMcpToolDiffReport(report));
+      io.writeStdout(format === "json" ? JSON.stringify(report, null, 2)
+        : format === "markdown" ? renderMcpToolDiffMarkdown(report)
+          : renderMcpToolDiffReport(report));
       if (report.status !== "pass" && report.status !== "warn") return 2;
       if (failOn === "breaking") {
         return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
@@ -1898,7 +1913,7 @@ export async function runCli(
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.\n--save-response writes a complete enumeration as one tools/list response for doctor tools-file and tools-diff; nothing is written when enumeration is incomplete.`);
+        io.writeStdout(`${toolsUsage}\nHTTP tool catalog structure only; tools are not executed.\n--save-response writes a complete enumeration as one tools/list response for doctor tools-file and tools-diff; nothing is written when enumeration is incomplete.\n${bearerTokenHelp}`);
         return 0;
       }
       const [url, ...flags] = remainingArgs;
@@ -1909,13 +1924,15 @@ export async function runCli(
       const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
       const switches: string[] = [];
       let savePath: string | undefined;
+      let tokenEnv: string | undefined;
       let invalid = false;
       for (let index = 0; index < flags.length; index += 1) {
         const flag = flags[index];
-        if (flag === "--save-response" && savePath === undefined) {
+        if ((flag === "--save-response" && savePath === undefined) || (flag === "--bearer-token-env" && tokenEnv === undefined)) {
           const value = flags[index + 1];
           if (!value || value.startsWith("-")) { invalid = true; break; }
-          savePath = value;
+          if (flag === "--save-response") savePath = value;
+          else tokenEnv = value;
           index += 1;
         } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
           switches.push(flag);
@@ -1936,7 +1953,16 @@ export async function runCli(
         io.writeStderr("doctor tools --save-response requires a local file path.");
         return 2;
       }
-      const catalogOptions = { allowNetwork: true, allowLocalNetwork: switches.includes("--allow-local-network") };
+      const bearer = resolveBearerToken(tokenEnv, terminalContext.env);
+      if ("error" in bearer) {
+        io.writeStderr(bearer.error);
+        return 2;
+      }
+      const catalogOptions = {
+        allowNetwork: true,
+        allowLocalNetwork: switches.includes("--allow-local-network"),
+        ...(bearer.token === undefined ? {} : { bearerToken: bearer.token })
+      };
       const snapshot = savePath === undefined
         ? { report: await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(url, catalogOptions), tools: null, cache: null }
         : await (options.captureMcpToolCatalogImpl ?? captureMcpToolCatalog)(url, catalogOptions);
@@ -1966,7 +1992,7 @@ export async function runCli(
     }
     if (maybePath === "discover") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${discoveryUsage}\nHTTP discovery only; runtime behavior is not tested.`);
+        io.writeStdout(`${discoveryUsage}\nHTTP discovery only; runtime behavior is not tested.\n${bearerTokenHelp}`);
         return 0;
       }
       const [url, ...flags] = remainingArgs;
@@ -1975,19 +2001,42 @@ export async function runCli(
         return 2;
       }
       const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
-      if (flags.some((flag) => !allowedFlags.has(flag)) || new Set(flags).size !== flags.length) {
+      const switches: string[] = [];
+      let tokenEnv: string | undefined;
+      let invalid = false;
+      for (let index = 0; index < flags.length; index += 1) {
+        const flag = flags[index];
+        if (flag === "--bearer-token-env" && tokenEnv === undefined) {
+          const value = flags[index + 1];
+          if (!value || value.startsWith("-")) { invalid = true; break; }
+          tokenEnv = value;
+          index += 1;
+        } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
+          switches.push(flag);
+        } else {
+          invalid = true;
+          break;
+        }
+      }
+      if (invalid) {
         io.writeStderr(`Invalid or duplicate discovery arguments. ${discoveryUsage}`);
         return 2;
       }
-      if (!flags.includes("--allow-network")) {
+      if (!switches.includes("--allow-network")) {
         io.writeStderr("doctor discover requires explicit --allow-network consent.");
+        return 2;
+      }
+      const bearer = resolveBearerToken(tokenEnv, terminalContext.env);
+      if ("error" in bearer) {
+        io.writeStderr(bearer.error);
         return 2;
       }
       const report = await (options.discoverMcpServerImpl ?? discoverMcpServer)(url, {
         allowNetwork: true,
-        allowLocalNetwork: flags.includes("--allow-local-network")
+        allowLocalNetwork: switches.includes("--allow-local-network"),
+        ...(bearer.token === undefined ? {} : { bearerToken: bearer.token })
       });
-      io.writeStdout(flags.includes("--json")
+      io.writeStdout(switches.includes("--json")
         ? JSON.stringify(report, null, 2)
         : renderMcpDiscoveryReport(report));
       return report.status === "discovered" ? 0 : report.status === "unsupported" ? 1 : 2;

@@ -4,6 +4,26 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.69.0] - 2026-10-10
+
+### Added
+
+- added `--bearer-token-env <NAME>` to `doctor discover` and `doctor tools` so protected HTTP MCP servers can be discovered, cataloged, and captured with `--save-response`; a rejected token is reported as `plugin.discovery.authorization.rejected`, and a token withheld because the endpoint is neither HTTPS nor an approved loopback target as `plugin.discovery.credentials.insecure_transport` with catalog reason `credentials-insecure-transport`
+- added the GitHub Action `tools-capture-token-env` input, which passes only the variable name to the capture
+- added `doctor tools-diff --markdown` with count, change, and finding tables; the Action step summary now uses it and falls back to the text report for older pinned CLI versions
+
+### Changed
+
+- a new property in an object whose extra keys may be governed by an `additionalProperties` schema or any other unclassified keyword (such as `patternProperties`, `dependentRequired`, `const`, composition keywords, or references) is now `unclassified` at the root as well as in nested objects; definition containers and identifiers (`$defs`, `definitions`, `$id`, `$anchor`, `$dynamicAnchor`) no longer make a nested new property `unclassified`
+
+### Security
+
+- bearer tokens are read only from an environment variable, validated as RFC 6750 tokens of at most 4096 characters, sent only over HTTPS or to an approved loopback target through a dedicated client option (caller headers still cannot set `Authorization`), and never printed, reported, or saved
+
+### Internal
+
+- the GitHub Action test harness runs the mock CLI as a single process, cutting the slowest Windows test from about 3.6 s to about 1.5 s without changing timeouts
+
 ## [1.68.0] - 2026-10-09
 
 ### Added

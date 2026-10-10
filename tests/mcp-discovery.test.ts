@@ -257,3 +257,59 @@ describe("discoverMcpServer", () => {
     expect(result.status).toBe("discovered");
   });
 });
+
+describe("discoverMcpServer bearer tokens", () => {
+  it("forwards the bearer token to the request without reporting it", async () => {
+    const request = vi.fn().mockResolvedValue(response(completeResult()));
+
+    const result = await discoverMcpServer("https://mcp.example/mcp", { allowNetwork: true, request, bearerToken: "secret-sentinel" });
+
+    expect(result.status).toBe("discovered");
+    expect(request.mock.calls[0][1]).toMatchObject({ bearerToken: "secret-sentinel" });
+    assertRedacted(result);
+  });
+
+  it.each([[undefined, "plugin.discovery.authorization.required"], ["secret-sentinel", "plugin.discovery.authorization.rejected"]])(
+    "distinguishes a missing token from a rejected token (%s)", async (bearerToken, id) => {
+      const request = vi.fn().mockResolvedValue(response('{"message":"secret-sentinel"}', 401));
+
+      const result = await discoverMcpServer("https://mcp.example/mcp", { allowNetwork: true, request, ...(bearerToken ? { bearerToken } : {}) });
+
+      expect(result).toMatchObject({ status: "unsupported", findings: [{ id }] });
+      assertRedacted(result);
+    }
+  );
+
+  it("blocks discovery when the token would travel over plain HTTP", async () => {
+    let requests = 0;
+    const port = await startServer((_request, res) => { requests += 1; res.end(); });
+
+    const result = await discoverMcpServer(`http://localhost:${port}/mcp`, {
+      allowNetwork: true,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      bearerToken: "secret-sentinel"
+    });
+
+    expect(result).toMatchObject({ status: "blocked", findings: [{ id: "plugin.discovery.credentials.insecure_transport" }] });
+    expect(requests).toBe(0);
+    assertRedacted(result);
+  });
+
+  it("sends the token to an approved loopback server", async () => {
+    let authorization: string | undefined;
+    const port = await startServer((request, res) => {
+      authorization = request.headers.authorization;
+      if (authorization !== "Bearer secret-sentinel") {
+        res.writeHead(401).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(completeResult());
+    });
+
+    const result = await discoverMcpServer(`http://localhost:${port}/mcp`, { allowNetwork: true, allowLocalNetwork: true, lookup: localLookup(), bearerToken: "secret-sentinel" });
+
+    expect(result.status).toBe("discovered");
+    expect(authorization).toBe("Bearer secret-sentinel");
+    assertRedacted(result);
+  });
+});

@@ -46,7 +46,13 @@ async function loadAction(): Promise<ActionMetadata> {
   return parse(await readFile("action.yml", "utf8")) as ActionMetadata;
 }
 
-async function runArchiveAction(overrides: Record<string, string> = {}, mockToolsDiffExit = "0", mockToolsCaptureExit = "0", seedEarlierReports = false): Promise<ActionRun> {
+async function runArchiveAction(
+  overrides: Record<string, string> = {},
+  mockToolsDiffExit = "0",
+  mockToolsCaptureExit = "0",
+  seedEarlierReports = false,
+  callerEnvironment: Record<string, string> = {}
+): Promise<ActionRun> {
   const action = await loadAction();
   const root = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-action-archive-"));
   const binDirectory = path.join(root, "bin");
@@ -72,7 +78,10 @@ async function runArchiveAction(overrides: Record<string, string> = {}, mockTool
   if (!runDoctorScript || !summaryScript) throw new Error("Expected composite Action run-doctor and summary scripts.");
 
   await writeFile(path.join(root, "submission.zip"), "fixture", "utf8");
-  await writeFile(path.join(root, "mock-doctor.sh"), `#!/usr/bin/env bash
+  await mkdir(binDirectory, { recursive: true });
+  await mkdir(runnerDirectory, { recursive: true });
+  // The mock is the executable itself: every extra bash process costs hundreds of milliseconds on Windows.
+  await writeFile(path.join(binDirectory, "codex-plugin-doctor"), `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" ]]; then
   printf '1.60.0\\n'
@@ -104,25 +113,25 @@ fi
 if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
   if [[ " $* " == *" --json "* ]]; then
     printf '{"status":"warn"}\\n'
+  elif [[ " $* " == *" --markdown "* ]]; then
+    if [[ -n "\${MOCK_NO_MARKDOWN:-}" ]]; then
+      printf 'Invalid comparison arguments.\\n' >&2
+      exit 2
+    fi
+    printf '## MCP Tool Definition Diff\\n\\n| Breaking |\\n| 1 |\\n'
   else
     printf 'Offline MCP Tool Diff\\nBreaking: 1\\n'
   fi
   exit "\${MOCK_TOOLS_DIFF_EXIT:-0}"
 fi
 if [[ -n "$output" ]]; then
-  mkdir -p "$(dirname "$output")"
+  mkdir -p "\${output%/*}"
   if [[ " $* " == *" doctor submission archive "* ]]; then
     printf '# Archive submission report\\n' > "$output"
   else
     printf '{}\\n' > "$output"
   fi
 fi
-`, "utf8");
-  await chmod(path.join(root, "mock-doctor.sh"), 0o755);
-  await mkdir(binDirectory, { recursive: true });
-  await mkdir(runnerDirectory, { recursive: true });
-  await writeFile(path.join(binDirectory, "codex-plugin-doctor"), `#!/usr/bin/env bash
-exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
 `, "utf8");
   await chmod(path.join(binDirectory, "codex-plugin-doctor"), 0o755);
   if (seedEarlierReports) {
@@ -133,6 +142,7 @@ exec "${toBashPath(path.join(root, "mock-doctor.sh"))}" "$@"
 
   const environment = {
     ...process.env,
+    ...callerEnvironment,
     ...Object.fromEntries(Object.entries(runDoctorStep?.env ?? {}).map(([key, value]) => [key, renderInputs(value, inputs)])),
     PATH: `${toBashPath(binDirectory)}:${process.env.PATH ?? ""}`,
     DOCTOR_LOG: toBashPath(logPath),
@@ -294,7 +304,7 @@ describe("GitHub Action tools-diff behavior", () => {
 
     try {
       const expected = ["doctor", "tools-diff", "--before", "baseline/tools.json", "--after", "current/tools.json", "--fail-on", failOn];
-      expect(toolsDiffInvocations(run)).toEqual([[...expected, "--json"], expected]);
+      expect(toolsDiffInvocations(run)).toEqual([[...expected, "--json"], [...expected, "--markdown"]]);
       expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
       const jsonPath = toBashPath(path.join(run.reportDirectory, "mcp-tools-diff.json"));
       const summaryPath = toBashPath(path.join(run.reportDirectory, "mcp-tools-diff.md"));
@@ -306,7 +316,21 @@ describe("GitHub Action tools-diff behavior", () => {
       const summary = await run.runSummary();
       expect(summary).toContain("## MCP Tool Definition Diff");
       expect(summary).toContain(`- Fail on: ${failOn}`);
-      expect(summary).toContain("Breaking: 1");
+      expect(summary).toContain("| Breaking |");
+      expect(summary).not.toContain("```text");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("falls back to the text report when the installed CLI has no Markdown output", async () => {
+    const run = await runArchiveAction({ "tools-diff-before": "before.json", "tools-diff-after": "after.json" }, "0", "0", false, { MOCK_NO_MARKDOWN: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
+      const summary = await run.runSummary();
+      expect(summary).toContain("## MCP Tool Definition Diff");
+      expect(summary).toContain("```text\nOffline MCP Tool Diff\nBreaking: 1\n```");
     } finally {
       await run.cleanup();
     }
@@ -494,6 +518,38 @@ describe("GitHub Action MCP-only behavior", () => {
     try {
       expect(toolsDiffInvocations(run)[0]).toContain("explicit.json");
       expect(run.output["tools-capture-path"]).not.toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+describe("GitHub Action authenticated capture", () => {
+  const url = "https://mcp.example.test/mcp";
+  const capture = { check: "false", "allow-network": "true", "tools-capture-url": url };
+
+  it("forwards only the token variable name to the capture", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-capture-token-env": "MCP_TOKEN" }, "0", "0", false, { MCP_TOKEN: "secret-sentinel" });
+
+    try {
+      expect(invocationsOf(run, "tools")[0]).toEqual(expect.arrayContaining(["--bearer-token-env", "MCP_TOKEN"]));
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+      expect(await run.readState()).toMatchObject({ status: "0" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ ...capture, "tools-capture-token-env": "MCP_TOKEN" }, {}],
+    [{ ...capture, "tools-capture-token-env": "bad-name" }, { "bad-name": "x" }],
+    [{ check: "false", "tools-capture-token-env": "MCP_TOKEN", "tools-diff-before": "a.json", "tools-diff-after": "b.json" }, { MCP_TOKEN: "secret-sentinel" }]
+  ])("records usage status 2 without a request for %j", async (overrides, environment) => {
+    const run = await runArchiveAction(overrides, "0", "0", false, environment);
+
+    try {
+      expect(invocationsOf(run, "tools")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "2" });
     } finally {
       await run.cleanup();
     }

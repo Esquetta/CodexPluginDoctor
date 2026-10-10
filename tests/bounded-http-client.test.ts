@@ -399,3 +399,50 @@ describe("requestBoundedHttp", () => {
     expect(requests).toBe(1);
   });
 });
+
+describe("requestBoundedHttp bearer tokens", () => {
+  it("sends a bearer token to an approved loopback target", async () => {
+    let authorization: string | undefined;
+    const port = await startServer((request, response) => {
+      authorization = request.headers.authorization;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+    const { url, ...rest } = options(port);
+
+    await expect(requestBoundedHttp(url, { ...rest, bearerToken: "fake.token-for_tests~a+b/c==" })).resolves.toMatchObject({ statusCode: 200 });
+    expect(authorization).toBe("Bearer fake.token-for_tests~a+b/c==");
+  });
+
+  it("refuses to send a bearer token over plain HTTP to a non-loopback target", async () => {
+    requestMock.mockClear();
+
+    await expect(requestBoundedHttp("http://mcp.test/mcp", {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      bearerToken: "secret-sentinel"
+    })).rejects.toMatchObject({ code: "REMOTE_HTTP_INSECURE_CREDENTIALS" });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "with space", "line\r\nX-Injected: yes", "bad\"quote", "=leading", "x".repeat(4097)])(
+    "rejects the invalid bearer token %j before resolving the target",
+    async (token) => {
+      const lookup = vi.fn(localLookup());
+
+      const error = await requestBoundedHttp("http://mcp.test:1/mcp", { allowLocalNetwork: true, lookup, bearerToken: token }).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: "REMOTE_HTTP_OPTIONS_INVALID", message: "Remote HTTP bearer token is invalid." });
+      expect(String((error as Error).message)).not.toContain(token || "never-empty");
+      expect(lookup).not.toHaveBeenCalled();
+    }
+  );
+
+  it("still rejects an Authorization header supplied as a caller header", async () => {
+    await expect(requestBoundedHttp("http://mcp.test:1/mcp", {
+      allowLocalNetwork: true,
+      lookup: localLookup(),
+      headers: { Authorization: "Bearer secret-sentinel" },
+      bearerToken: "token"
+    })).rejects.toMatchObject({ code: "REMOTE_HTTP_HEADER_FORBIDDEN" });
+  });
+});

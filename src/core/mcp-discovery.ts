@@ -19,6 +19,7 @@ export interface McpDiscoveryOptions {
   requestTimeoutMs?: number;
   lookup?: RemoteLookup;
   request?: RemoteMcpRequest;
+  bearerToken?: string;
 }
 
 export interface McpDiscoveryReport {
@@ -162,7 +163,7 @@ export async function discoverMcpServer(rawUrl: string, options: McpDiscoveryOpt
   try {
     response = await request(rawUrl, {
       allowLocalNetwork: options.allowLocalNetwork, lookup: options.lookup, timeoutMs: options.requestTimeoutMs,
-      method: "POST", body,
+      method: "POST", body, bearerToken: options.bearerToken,
       headers: { Accept: "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": REQUESTED_VERSION, "Mcp-Method": "server/discover" },
       stopAfter: (received) => findMcpSseResponse(received) !== null
     });
@@ -170,11 +171,16 @@ export async function discoverMcpServer(rawUrl: string, options: McpDiscoveryOpt
     if (error instanceof RemoteNetworkPolicyError) {
       return report("blocked", "skipped", [finding("plugin.discovery.network.blocked", "warn", "The MCP discovery target is blocked by the remote network policy.", "Discovery could not safely reach the configured target.", "Use an endpoint permitted by the remote network policy.")]);
     }
+    if (error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_INSECURE_CREDENTIALS") {
+      return report("blocked", "skipped", [finding("plugin.discovery.credentials.insecure_transport", "warn", "The bearer token was not sent because the endpoint is neither HTTPS nor an approved loopback target.", "Sending a token over plain HTTP would expose it to the network.", "Use an HTTPS endpoint, or a loopback endpoint with local network access approved.")]);
+    }
     return failureReport(error instanceof BoundedHttpError && error.code === "REMOTE_HTTP_TIMEOUT" ? "plugin.discovery.transport.timeout" : "plugin.discovery.transport.failed", "The MCP discovery request did not complete within the configured transport bounds.");
   }
 
   if (response.statusCode === 401 || response.statusCode === 403) {
-    return unsupportedReport("plugin.discovery.authorization.required", "The MCP endpoint requires authorization before discovery can be assessed.");
+    return options.bearerToken === undefined
+      ? unsupportedReport("plugin.discovery.authorization.required", "The MCP endpoint requires authorization before discovery can be assessed.")
+      : unsupportedReport("plugin.discovery.authorization.rejected", "The MCP endpoint rejected the supplied bearer token.");
   }
   const message = parseMcpResponse(response);
   if (!message || !hasMatchingResponseEnvelope(message)) return failureReport("plugin.discovery.response.invalid", "The MCP endpoint returned an invalid discovery response.");

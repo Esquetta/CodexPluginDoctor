@@ -169,3 +169,42 @@ describe("doctor tools-diff", () => {
     }
   });
 });
+
+describe("doctor tools-diff --markdown", () => {
+  it("renders a sanitized Markdown table with the same exit code", async () => {
+    const c = capture();
+    const changed = {
+      ...report("warn"),
+      comparison: { complete: true, reason: null, added: 0, removed: 1, changed: 1, unchanged: 0, breaking: 2, unclassified: 0 },
+      changes: [
+        { kind: "removed", beforeToolIndex: 2, afterToolIndex: null, fields: [], impact: "breaking", reasons: ["tool-removed"] },
+        { kind: "changed", beforeToolIndex: 1, afterToolIndex: 1, fields: ["inputSchema"], impact: "breaking", reasons: ["input-constraint-tightened"] }
+      ]
+    };
+    const compareMcpToolFilesImpl = vi.fn().mockResolvedValue(changed);
+
+    expect(await runCli(["doctor", "tools-diff", "--before", "PRIVATE_BEFORE", "--after", "PRIVATE_AFTER", "--markdown", "--fail-on", "breaking"], c.io, { compareMcpToolFilesImpl })).toBe(1);
+
+    const output = c.stdout.join("\n");
+    expect(output).toContain("## MCP Tool Definition Diff");
+    expect(output).toContain("| 0 | 1 | 1 | 0 | 2 | 0 |");
+    expect(output).toContain("| removed | 2 | - | - | **breaking** | `tool-removed` |");
+    expect(output).toContain("| changed | 1 | 1 | `inputSchema` | **breaking** | `input-constraint-tightened` |");
+    expect(output).not.toContain("PRIVATE_");
+  });
+
+  it("marks counts as not compared for an incomplete comparison", async () => {
+    const c = capture();
+    const compareMcpToolFilesImpl = vi.fn().mockResolvedValue(report("incomplete"));
+    expect(await runCli(["doctor", "tools-diff", ...pair, "--markdown"], c.io, { compareMcpToolFilesImpl })).toBe(2);
+    expect(c.stdout.join("\n")).toContain("**Reason:** `input-incomplete`");
+    expect(c.stdout.join("\n")).toContain("| not compared |");
+  });
+
+  it.each([[["--markdown", "--json"]], [["--json", "--markdown"]], [["--markdown", "--markdown"]]])("rejects %j", async (flags) => {
+    const c = capture();
+    const compareMcpToolFilesImpl = vi.fn();
+    expect(await runCli(["doctor", "tools-diff", ...pair, ...flags], c.io, { compareMcpToolFilesImpl })).toBe(2);
+    expect(compareMcpToolFilesImpl).not.toHaveBeenCalled();
+  });
+});

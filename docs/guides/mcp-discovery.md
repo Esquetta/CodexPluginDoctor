@@ -20,9 +20,27 @@ URLs are rejected. Existing DNS resolution and peer-address checks apply.
 
 There is one POST request, bounded to three seconds and 1 MiB of response data.
 JSON and SSE response envelopes are supported. No redirect, retry, version
-fallback, `initialize`, tool invocation, OAuth discovery, authentication, or session
-deletion is performed. Local stdio processes are not started. Do not use the
-existing runtime, sandbox, or session-lifecycle flags with this command.
+fallback, `initialize`, tool invocation, OAuth discovery, or session deletion is
+performed. Local stdio processes are not started. Do not use the existing runtime,
+sandbox, or session-lifecycle flags with this command.
+
+## Bearer token authentication
+
+```bash
+MCP_TOKEN=... codex-plugin-doctor doctor discover https://mcp.example.com/mcp --allow-network --bearer-token-env MCP_TOKEN
+```
+
+`--bearer-token-env <NAME>` reads an existing bearer token from the named
+environment variable and sends it as `Authorization: Bearer`. The token itself is
+never accepted as an argument, printed, or included in reports. It is sent only
+over HTTPS, or to a loopback endpoint approved with `--allow-local-network`;
+otherwise the request is not made and the result is `blocked` with
+`plugin.discovery.credentials.insecure_transport`. An invalid variable name, an
+unset or empty variable, or a value that is not a valid bearer token (RFC 6750
+syntax, at most 4096 characters) exits `2` before any request. A `401` or `403`
+response is reported as `plugin.discovery.authorization.required` without a token
+and `plugin.discovery.authorization.rejected` with one. OAuth flows, token refresh,
+and other authentication schemes are not supported.
 
 ## What the result means
 

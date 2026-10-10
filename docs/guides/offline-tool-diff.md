@@ -8,8 +8,14 @@ server, executing tools, or fetching schema references.
 codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json
 codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --json
 codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --fail-on breaking
+codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --markdown
 codex-plugin-doctor doctor contract --json
 ```
+
+`--markdown` renders the same report as Markdown tables for pull request comments
+and job summaries: counts, one row per change with tool positions, changed fields,
+impact, and reason codes, and any input findings. It omits names and values like
+the other formats.
 
 Both inputs use the [offline tool-definition input format](offline-tool-definitions.md):
 one original UTF-8 JSON-RPC response per file, with modern complete-result cache
@@ -107,16 +113,18 @@ modify a schema-valued `additionalProperties` (in outputs, any
 unclassified.
 
 A new property is `compatible` at the root and in nested objects that already
-declared properties. In a nested object whose extra keys were governed by an
-`additionalProperties` schema or another keyword such as `patternProperties`, a
-new property is unclassified in both directions. A new property in a nested input
-object that declared no properties and did not close `additionalProperties` is
-also unclassified, because callers may already send that key with other values.
-In any input object, including the root, declaring a key that was already required
-is unclassified. A
-new output property is otherwise `compatible`, even when `additionalProperties`
-is `false`; consumers that validate results strictly against the old schema can
-still reject it.
+declared properties. In any object, including the root, whose extra keys may be
+governed by an `additionalProperties` schema or by any other keyword the checks
+above do not classify (for example `patternProperties`, `dependentRequired`,
+`const`, composition keywords, or references), a new property is unclassified in
+both directions. Definition containers and identifiers (`$defs`, `definitions`,
+`$id`, `$anchor`, `$dynamicAnchor`) do not count. A new property in a nested
+input object that declared no properties and did not close `additionalProperties`
+is also unclassified, because callers may already send that key with other
+values. In any input object, including the root, declaring a key that was already
+required is unclassified. A new output property is otherwise `compatible`, even
+when `additionalProperties` is `false`; consumers that validate results strictly
+against the old schema can still reject it.
 `comparison.breaking` and `comparison.unclassified` count records by impact, and
 `coverage.impactClassification` is `heuristic`.
 
@@ -173,6 +181,6 @@ default behavior above. The report content and `status` are the same in both
 modes, and incomplete or blocked comparisons still exit `2`.
 
 `--before` and `--after` each require one path and may appear in either order.
-Optional `--json` and `--fail-on any|breaking` may each appear once. Duplicate options, extra positional arguments,
+Optional `--json` or `--markdown` (not both) and `--fail-on any|breaking` may each appear once. Duplicate options, extra positional arguments,
 network/execution options, and output-file options are rejected before reading
 inputs. Prefix a filename beginning with a dash with `./`.

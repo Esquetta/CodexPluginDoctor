@@ -58,6 +58,10 @@ inputs:
     description: Optional HTTP MCP endpoint whose complete tool list is saved to output-dir with doctor tools --save-response. Requires allow-network; loopback endpoints also require allow-local-network. When tools-diff-before is set and tools-diff-after is empty, the capture becomes the comparison's after input.
     required: false
     default: ""
+  tools-capture-token-env:
+    description: Optional name of an environment variable that holds a bearer token for tools-capture-url. The token is sent only over HTTPS or to an approved loopback endpoint and is never printed or saved. Set the variable from a secret in the calling step's env.
+    required: false
+    default: ""
   tools-diff-before:
     description: Optional saved MCP tools/list response used as the baseline for an offline tool definition diff. Requires tools-diff-after.
     required: false
@@ -254,6 +258,7 @@ runs:
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
         CHECK_INPUT: ${{ inputs.check }}
         TOOLS_CAPTURE_URL_INPUT: ${{ inputs['tools-capture-url'] }}
+        TOOLS_CAPTURE_TOKEN_ENV_INPUT: ${{ inputs['tools-capture-token-env'] }}
         TOOLS_DIFF_BEFORE_INPUT: ${{ inputs['tools-diff-before'] }}
         TOOLS_DIFF_AFTER_INPUT: ${{ inputs['tools-diff-after'] }}
         TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
@@ -446,14 +451,28 @@ runs:
           capture_feeds_diff=true
         fi
 
+        if [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
+          echo "tools-capture-token-env requires tools-capture-url." >&2
+          record_status 2
+        fi
+
         if [[ -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
           if [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then
             echo "tools-capture-url requires allow-network: true." >&2
+            record_status 2
+          elif [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" && ! "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            echo "tools-capture-token-env must be an environment variable name." >&2
+            record_status 2
+          elif [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" && -z "${!TOOLS_CAPTURE_TOKEN_ENV_INPUT:-}" ]]; then
+            echo "Bearer token environment variable is not set: ${TOOLS_CAPTURE_TOKEN_ENV_INPUT}" >&2
             record_status 2
           else
             tools_capture_args=(doctor tools "$TOOLS_CAPTURE_URL_INPUT" --allow-network --save-response "$tools_capture_path")
             if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
               tools_capture_args+=(--allow-local-network)
+            fi
+            if [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
+              tools_capture_args+=(--bearer-token-env "$TOOLS_CAPTURE_TOKEN_ENV_INPUT")
             fi
             # Remove an earlier capture so a failed run can never be compared as the live list.
             rm -f "$tools_capture_path"
@@ -498,18 +517,18 @@ runs:
           set +e
           codex-plugin-doctor "${tools_diff_args[@]}" --json > "$tools_diff_json_path"
           tools_diff_code="$?"
-          tools_diff_text="$(codex-plugin-doctor "${tools_diff_args[@]}")"
+          tools_diff_markdown="$(codex-plugin-doctor "${tools_diff_args[@]}" --markdown 2>/dev/null)"
+          # Older CLI versions pinned through the version input have no --markdown; fall back to text.
+          if [[ "$tools_diff_markdown" != "## MCP Tool Definition Diff"* ]]; then
+            tools_diff_markdown="$(printf '## MCP Tool Definition Diff\n\n```text\n%s\n```' "$(codex-plugin-doctor "${tools_diff_args[@]}")")"
+          fi
           set -e
-          printf '%s\n' "$tools_diff_text"
+          printf '%s\n' "$tools_diff_markdown"
           {
-            echo "## MCP Tool Definition Diff"
+            printf '%s\n' "$tools_diff_markdown"
             echo ""
             echo "- Exit status: ${tools_diff_code}"
             echo "- Fail on: ${TOOLS_DIFF_FAIL_ON_INPUT}"
-            echo ""
-            echo '```text'
-            printf '%s\n' "$tools_diff_text"
-            echo '```'
           } > "$tools_diff_summary_path"
           if [[ "$tools_diff_code" -ne 0 ]]; then
             echo "Codex Plugin Doctor MCP tool diff exited with status ${tools_diff_code}."

@@ -49,6 +49,9 @@ const NESTED_STRUCTURAL_KEYWORDS = new Set([
 ]);
 // Subschemas nested deeper than this below the root are not compared and stay unclassified.
 const MAX_NESTED_DEPTH = 8;
+// Keywords that only hold or name subschemas and never validate the object's own keys, so a
+// new property beside them stays compatible. Any other unclassified keyword may govern keys.
+const DEFINITION_KEYWORDS = new Set(["$defs", "definitions", "$id", "$anchor", "$dynamicAnchor"]);
 
 type Direction = "input" | "output";
 
@@ -220,13 +223,14 @@ function compareSchema(
     if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
     else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons);
   }
-  // In a nested object whose undeclared keys were open or governed by other keywords, a newly
-  // declared property can reject values callers send (input) or produce values consumers did
-  // not expect (output).
+  // In an object whose undeclared keys were governed by other keywords, or a nested input object
+  // that left them open, a newly declared property can reject values callers send (input) or
+  // produce values consumers did not expect (output).
   const addedKeys = Object.keys(afterProperties).filter((key) => !Object.hasOwn(beforeProperties, key));
-  if (!root && addedKeys.length > 0) {
-    const governed = isJsonObject(before.additionalProperties) || Object.keys(keywordsOutside(before, structural)).length > 0;
-    const open = Object.keys(beforeProperties).length === 0 && before.additionalProperties !== false;
+  if (addedKeys.length > 0) {
+    const governed = isJsonObject(before.additionalProperties)
+      || Object.keys(keywordsOutside(before, structural)).some((key) => !DEFINITION_KEYWORDS.has(key));
+    const open = !root && Object.keys(beforeProperties).length === 0 && before.additionalProperties !== false;
     if (governed || (direction === "input" && open)) reasons.add(codes.unclassified);
   }
   // Callers already send a key that was required before it was declared, with any value.
