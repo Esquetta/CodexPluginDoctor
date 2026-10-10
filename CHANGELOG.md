@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.69.1] - 2026-10-10
+
+### Security
+
+- reject GitHub Action configurations combining `tools-capture-token-env` with `runtime: "true"` before any Doctor command runs, preventing runtime-probed package code from inheriting the capture token; use separate Action steps with the token scoped to capture
+
 ## [1.69.0] - 2026-10-10
 
 ### Added

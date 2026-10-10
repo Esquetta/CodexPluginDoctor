@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -46,6 +46,14 @@ async function loadAction(): Promise<ActionMetadata> {
   return parse(await readFile("action.yml", "utf8")) as ActionMetadata;
 }
 
+async function cleanupActionFixture(root: string): Promise<void> {
+  const resolved = await realpath(root);
+  if (path.dirname(resolved) !== await realpath(os.tmpdir()) || !path.basename(resolved).startsWith("codex-plugin-doctor-action-archive-")) {
+    throw new Error("Unexpected Action test cleanup target.");
+  }
+  await rm(resolved, { recursive: true, force: true });
+}
+
 async function runArchiveAction(
   overrides: Record<string, string> = {},
   mockToolsDiffExit = "0",
@@ -83,6 +91,10 @@ async function runArchiveAction(
   // The mock is the executable itself: every extra bash process costs hundreds of milliseconds on Windows.
   await writeFile(path.join(binDirectory, "codex-plugin-doctor"), `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "\${MOCK_FORBID_CLI:-}" == "true" ]]; then
+  printf 'Unexpected CLI execution\\n' >&2
+  exit 99
+fi
 if [[ "\${1:-}" == "--version" ]]; then
   printf '1.60.0\\n'
   exit 0
@@ -184,10 +196,10 @@ fi
         await execFileAsync(bashExecutable, [summaryScriptPath], { cwd: root, env: environment });
         return readFile(stepSummaryPath, "utf8");
       },
-      cleanup: () => rm(root, { recursive: true, force: true })
+      cleanup: () => cleanupActionFixture(root)
     };
   } catch (error) {
-    await rm(root, { recursive: true, force: true });
+    await cleanupActionFixture(root);
     throw error;
   }
 }
@@ -527,6 +539,16 @@ describe("GitHub Action MCP-only behavior", () => {
 describe("GitHub Action authenticated capture", () => {
   const url = "https://mcp.example.test/mcp";
   const capture = { check: "false", "allow-network": "true", "tools-capture-url": url };
+
+  it.each(["true", "false"])("rejects capture credentials with runtime before any CLI invocation (check=%s)", async (check) => {
+    await expect(runArchiveAction({
+      ...capture, check, runtime: "true", "tools-capture-token-env": "MCP_TOKEN"
+    }, "0", "0", false, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps.\n"
+    });
+  });
 
   it("forwards only the token variable name to the capture", async () => {
     const run = await runArchiveAction({ ...capture, "tools-capture-token-env": "MCP_TOKEN" }, "0", "0", false, { MCP_TOKEN: "secret-sentinel" });
