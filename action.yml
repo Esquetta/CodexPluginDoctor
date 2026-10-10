@@ -257,6 +257,7 @@ runs:
         CORPUS_METRICS_BASELINE_INPUT: ${{ inputs['corpus-metrics-baseline'] }}
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
         CHECK_INPUT: ${{ inputs.check }}
+        RUNTIME_INPUT: ${{ inputs.runtime }}
         TOOLS_CAPTURE_URL_INPUT: ${{ inputs['tools-capture-url'] }}
         TOOLS_CAPTURE_TOKEN_ENV_INPUT: ${{ inputs['tools-capture-token-env'] }}
         TOOLS_DIFF_BEFORE_INPUT: ${{ inputs['tools-diff-before'] }}
@@ -264,6 +265,11 @@ runs:
         TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
       run: |
         set -euo pipefail
+
+        if [[ "$RUNTIME_INPUT" == "true" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
+          echo "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps." >&2
+          exit 2
+        fi
 
         report_dir="${{ inputs['output-dir'] }}"
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
