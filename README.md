@@ -120,7 +120,7 @@ codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-
 This reports added, removed, and structurally changed definitions using numeric
 locations, and labels each change `breaking`, `compatible`, or `unclassified`
 with fixed reason codes. Add `--fail-on breaking` to fail CI only on breaking or
-unclassified changes. Incomplete inputs, invalid definitions, or duplicate names
+unclassified changes, and `--markdown` for pull request tables. Incomplete inputs, invalid definitions, or duplicate names
 prevent a comparison. Impact labels follow nested object properties, array
 items, and common length and range bounds, but remain heuristics, not proof of
 compatibility.
@@ -141,10 +141,13 @@ and partial inspection limits. It does not claim full schema validation, tool
 execution, or client compatibility. Existing `doctor discover` behavior is unchanged.
 Add `--save-response <path>` to record a completely enumerated catalog as a
 `tools/list` response for `tools-file` and `tools-diff`; nothing is written when
-enumeration is incomplete. The GitHub Action can compare saved responses with
+enumeration is incomplete. For protected servers, `--bearer-token-env <NAME>`
+sends a bearer token from an environment variable only over HTTPS or to an
+approved loopback endpoint; it is never printed or saved. The GitHub Action can compare saved responses with
 `tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on`, capture the
-live list with `tools-capture-url`, and skip the plugin package check with
-`check: "false"` in repositories that only ship an MCP server.
+live list with `tools-capture-url` (and `tools-capture-token-env`), and skip the
+plugin package check with `check: "false"` in repositories that only ship an MCP
+server.
 See [HTTP MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness
@@ -565,9 +568,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.68.0
+      - uses: Esquetta/CodexPluginDoctor@v1.69.0
         with:
-          version: "1.68.0"
+          version: "1.69.0"
           path: .
           runtime: "true"
           policy: codex-publish

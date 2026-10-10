@@ -293,3 +293,86 @@ describe("doctor tools --save-response", () => {
     expect(c.stdout.join("\n")).toContain("--save-response <path>");
   });
 });
+
+describe("doctor tools --bearer-token-env", () => {
+  const url = "https://mcp.example/mcp";
+  const token = "secret-sentinel-token";
+
+  function context(env: Record<string, string | undefined>) {
+    return { terminalContext: { stdoutIsTTY: false, stderrIsTTY: false, env } };
+  }
+
+  it.each([
+    [{}, "MCP_TOKEN", "is not set: MCP_TOKEN"],
+    [{ MCP_TOKEN: "" }, "MCP_TOKEN", "is not set: MCP_TOKEN"],
+    [{ MCP_TOKEN: "has space" }, "MCP_TOKEN", "does not hold a valid bearer token: MCP_TOKEN"],
+    [{ MCP_TOKEN: token }, "1BAD-NAME", "requires an environment variable name"]
+  ])("rejects %j with %s before any request", async (env, name, message) => {
+    const c = capture();
+    const inspectMcpToolCatalogImpl = vi.fn();
+    expect(await runCli(["doctor", "tools", url, "--allow-network", "--bearer-token-env", name], c.io, { inspectMcpToolCatalogImpl, ...context(env) })).toBe(2);
+    expect(c.stderr.join("\n")).toContain(message);
+    expect(c.stderr.join("\n")).not.toContain("has space");
+    expect(inspectMcpToolCatalogImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [url, "--allow-network", "--bearer-token-env"],
+    [url, "--allow-network", "--bearer-token-env", "A", "--bearer-token-env", "B"]
+  ])("rejects malformed token arguments %j", async (...args: string[]) => {
+    const c = capture();
+    const inspectMcpToolCatalogImpl = vi.fn();
+    expect(await runCli(["doctor", "tools", ...args], c.io, { inspectMcpToolCatalogImpl, ...context({ A: token, B: token }) })).toBe(2);
+    expect(inspectMcpToolCatalogImpl).not.toHaveBeenCalled();
+  });
+
+  it("captures a protected server and keeps the token out of every output", async () => {
+    const seen: Array<string | undefined> = [];
+    const server = createServer((request, response) => {
+      seen.push(request.headers.authorization);
+      if (request.headers.authorization !== `Bearer ${token}`) {
+        response.writeHead(401).end();
+        return;
+      }
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const rpc = JSON.parse(body);
+        const result = rpc.method === "server/discover"
+          ? { supportedVersions: ["2026-07-28"], capabilities: { tools: {} } }
+          : { tools: [{ name: "echo", inputSchema: { type: "object" } }] };
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result: { resultType: "complete", ttlMs: 0, cacheScope: "private", ...result } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const directory = await mkdtemp(path.join(os.tmpdir(), "doctor-tools-token-"));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const target = `http://localhost:${port}/mcp`;
+      const savePath = path.join(directory, "tools.json");
+
+      const anonymous = capture();
+      expect(await runCli(["doctor", "tools", target, "--allow-network", "--allow-local-network", "--json"], anonymous.io, context({}))).toBe(2);
+      expect(JSON.parse(anonymous.stdout.join("\n")).catalog.reason).toBe("authorization-required");
+
+      const c = capture();
+      expect(await runCli(["doctor", "tools", target, "--allow-network", "--allow-local-network", "--json", "--bearer-token-env", "MCP_TOKEN", "--save-response", savePath], c.io, context({ MCP_TOKEN: token }))).toBe(0);
+      expect(JSON.parse(c.stdout.join("\n"))).toMatchObject({ status: "pass", catalog: { complete: true } });
+      for (const text of [c.stdout.join("\n"), c.stderr.join("\n"), await readFile(savePath, "utf8")]) {
+        expect(text).not.toContain(token);
+      }
+      expect(seen.filter((value) => value === `Bearer ${token}`)).toHaveLength(2);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("documents the option in command help", async () => {
+    const c = capture();
+    expect(await runCli(["doctor", "tools", "--help"], c.io)).toBe(0);
+    expect(c.stdout.join("\n")).toContain("--bearer-token-env <NAME>");
+  });
+});

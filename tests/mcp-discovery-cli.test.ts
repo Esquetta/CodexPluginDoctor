@@ -105,3 +105,33 @@ describe("doctor discover", () => {
     }
   });
 });
+
+describe("doctor discover --bearer-token-env", () => {
+  const context = (env: Record<string, string | undefined>) => ({ terminalContext: { stdoutIsTTY: false, stderrIsTTY: false, env } });
+
+  it("forwards the token from the named variable without printing it", async () => {
+    const c = capture();
+    const discoverMcpServerImpl = vi.fn().mockResolvedValue(report());
+    expect(await runCli(["doctor", "discover", "https://mcp.example/mcp", "--bearer-token-env", "MCP_TOKEN", "--allow-network"], c.io, { discoverMcpServerImpl, ...context({ MCP_TOKEN: "secret-sentinel" }) })).toBe(0);
+    expect(discoverMcpServerImpl).toHaveBeenCalledExactlyOnceWith("https://mcp.example/mcp", { allowNetwork: true, allowLocalNetwork: false, bearerToken: "secret-sentinel" });
+    expect([...c.stdout, ...c.stderr].join("\n")).not.toContain("secret-sentinel");
+  });
+
+  it.each([[{}], [{ MCP_TOKEN: "bad token" }]])("rejects %j before discovery", async (env) => {
+    const c = capture();
+    const discoverMcpServerImpl = vi.fn();
+    expect(await runCli(["doctor", "discover", "https://mcp.example/mcp", "--allow-network", "--bearer-token-env", "MCP_TOKEN"], c.io, { discoverMcpServerImpl, ...context(env) })).toBe(2);
+    expect(c.stderr.join("\n")).toContain("MCP_TOKEN");
+    expect(c.stderr.join("\n")).not.toContain("bad token");
+    expect(discoverMcpServerImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps duplicate and missing token arguments invalid", async () => {
+    for (const args of [["--bearer-token-env"], ["--bearer-token-env", "A", "--bearer-token-env", "B"]]) {
+      const c = capture();
+      const discoverMcpServerImpl = vi.fn();
+      expect(await runCli(["doctor", "discover", "https://mcp.example/mcp", "--allow-network", ...args], c.io, { discoverMcpServerImpl, ...context({ A: "a", B: "b" }) })).toBe(2);
+      expect(discoverMcpServerImpl).not.toHaveBeenCalled();
+    }
+  });
+});

@@ -522,3 +522,49 @@ describe("captureMcpToolCatalog", () => {
     expect(snapshot).toMatchObject({ report: { status: "not-applicable" }, tools: null, cache: null });
   });
 });
+
+describe("captureMcpToolCatalog bearer tokens", () => {
+  it("sends the bearer token with discovery and every tools/list page without reporting it", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(discoveryResponse())
+      .mockResolvedValueOnce(toolsResponse("tools-list-1", [validTool("first")], "next"))
+      .mockResolvedValueOnce(toolsResponse("tools-list-2", [validTool("second")]));
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request, bearerToken: "secret-sentinel" });
+
+    expect(snapshot.report).toMatchObject({ status: "pass", catalog: { complete: true, pagesRead: 2 } });
+    expect(request.mock.calls.map((call) => call[1].bearerToken)).toEqual(["secret-sentinel", "secret-sentinel", "secret-sentinel"]);
+    assertRedacted(snapshot.report);
+  });
+
+  it("treats a rejected token as incomplete authorization", async () => {
+    const request = vi.fn().mockResolvedValueOnce({ statusCode: 401, headers: {}, body: Buffer.from("") });
+
+    const snapshot = await captureMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request, bearerToken: "secret-sentinel" });
+
+    expect(snapshot).toMatchObject({ report: { status: "incomplete", catalog: { reason: "authorization-required" } }, tools: null });
+    expect(snapshot.report.discovery.findings[0].id).toBe("plugin.discovery.authorization.rejected");
+  });
+});
+
+describe("bearer token transport labels", () => {
+  const insecure = () => new BoundedHttpError("REMOTE_HTTP_INSECURE_CREDENTIALS", "Remote HTTP bearer tokens require HTTPS or an approved loopback target.");
+
+  it("reports a token refused at discovery as blocked for insecure transport", async () => {
+    const request = vi.fn().mockRejectedValueOnce(insecure());
+
+    const result = await inspectMcpToolCatalog("http://localhost:3000/mcp", { allowNetwork: true, allowLocalNetwork: true, bearerToken: "token", request });
+
+    expect(result).toMatchObject({ status: "blocked", catalog: { reason: "credentials-insecure-transport" } });
+  });
+
+  it("reports a token refused on a later page as incomplete for insecure transport", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(discoveryResponse())
+      .mockRejectedValueOnce(insecure());
+
+    const result = await inspectMcpToolCatalog("http://localhost:3000/mcp", { allowNetwork: true, allowLocalNetwork: true, bearerToken: "token", request });
+
+    expect(result).toMatchObject({ status: "incomplete", catalog: { complete: false, reason: "credentials-insecure-transport" } });
+  });
+});

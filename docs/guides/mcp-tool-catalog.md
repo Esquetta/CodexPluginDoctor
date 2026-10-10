@@ -9,6 +9,7 @@ codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --json
 codex-plugin-doctor doctor tools http://localhost:3000/mcp --allow-network --allow-local-network
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./tools.json
+codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --bearer-token-env MCP_TOKEN
 codex-plugin-doctor doctor tools --help
 ```
 
@@ -25,9 +26,20 @@ Credentials, query parameters, fragments, and IP-literal URLs are rejected.
 Existing DNS and peer-address validation runs for every request.
 
 The command sends only `server/discover` and `tools/list` to the same input URL.
-Cursors are opaque request values, never destinations. It does not authenticate,
-fetch OAuth metadata, resolve schema references, follow redirects, retry, fall
-back to an older protocol, initialize a session, subscribe, or start stdio servers.
+Cursors are opaque request values, never destinations. It does not fetch OAuth
+metadata, resolve schema references, follow redirects, retry, fall back to an
+older protocol, initialize a session, subscribe, or start stdio servers.
+
+For protected servers, `--bearer-token-env <NAME>` sends the bearer token held in
+the named environment variable with the discovery request and every `tools/list`
+page, under the rules in [MCP Discovery](mcp-discovery.md#bearer-token-authentication):
+HTTPS or an approved loopback endpoint only, and the token is never printed,
+reported, or written by `--save-response`. A rejected token yields an incomplete
+result with reason `authorization-required`; the discovery finding
+`plugin.discovery.authorization.rejected` tells it apart from a missing token. If
+the endpoint is neither HTTPS nor an approved loopback target, the token is not
+sent and the reason is `credentials-insecure-transport` (blocked at discovery,
+incomplete if a later page resolves elsewhere).
 
 Fixed inspection budgets are product limits, not MCP requirements:
 

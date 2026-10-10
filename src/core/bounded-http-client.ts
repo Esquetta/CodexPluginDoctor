@@ -31,7 +31,16 @@ export interface BoundedHttpRequestOptions {
   method?: string;
   body?: string | Buffer;
   headers?: Record<string, string | undefined>;
+  // Sent as `Authorization: Bearer` only over HTTPS or to an approved loopback target.
+  bearerToken?: string;
   stopAfter?: (body: Buffer) => boolean;
+}
+
+const MAX_BEARER_TOKEN_LENGTH = 4_096;
+
+/** RFC 6750 b64token syntax, which also rules out header injection. */
+export function isValidBearerToken(token: string): boolean {
+  return token.length > 0 && token.length <= MAX_BEARER_TOKEN_LENGTH && /^[A-Za-z0-9\-._~+/]+=*$/u.test(token);
 }
 
 export interface BoundedHttpResponse {
@@ -45,6 +54,7 @@ export class BoundedHttpError extends Error {
     readonly code:
       | "REMOTE_HTTP_ENCODING_UNSUPPORTED"
       | "REMOTE_HTTP_HEADER_FORBIDDEN"
+      | "REMOTE_HTTP_INSECURE_CREDENTIALS"
       | "REMOTE_HTTP_OPTIONS_INVALID"
       | "REMOTE_HTTP_PEER_MISMATCH"
       | "REMOTE_HTTP_REDIRECT"
@@ -188,8 +198,17 @@ export async function requestBoundedHttp(
 
   const { timeoutMs, maxResponseBytes } = validateOptions(options);
   const headers = validateHeaders(options.headers);
+  if (options.bearerToken !== undefined && !isValidBearerToken(options.bearerToken)) {
+    throw new BoundedHttpError("REMOTE_HTTP_OPTIONS_INVALID", "Remote HTTP bearer token is invalid.");
+  }
   const deadline = Date.now() + timeoutMs;
   const target = await resolveWithinDeadline(url, options, timeoutMs);
+  if (options.bearerToken !== undefined) {
+    if (url.protocol !== "https:" && !target.local) {
+      throw new BoundedHttpError("REMOTE_HTTP_INSECURE_CREDENTIALS", "Remote HTTP bearer tokens require HTTPS or an approved loopback target.");
+    }
+    headers.authorization = `Bearer ${options.bearerToken}`;
+  }
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) {
     throw new BoundedHttpError("REMOTE_HTTP_TIMEOUT", "Remote HTTP request timed out.");
