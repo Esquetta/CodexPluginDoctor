@@ -15,6 +15,7 @@ async function releaseWorkflow() {
   const workflow = parse(source) as {
     on: { push: { branches: string[]; paths: string[] }; workflow_dispatch: unknown };
     permissions: Record<string, string>;
+    concurrency: Record<string, unknown>;
     env: Record<string, string>;
     jobs: { release: { if: string; steps: WorkflowStep[] } };
   };
@@ -34,6 +35,11 @@ describe("release workflow", () => {
     expect(workflow.on).toHaveProperty("workflow_dispatch");
     expect(workflow.jobs.release.if).toBe("github.repository == 'Esquetta/CodexPluginDoctor' && github.ref == 'refs/heads/main'");
     expect(workflow.permissions).toEqual({ contents: "write", "id-token": "write" });
+  });
+
+  it("runs releases one at a time without dropping a pending one", async () => {
+    const { workflow } = await releaseWorkflow();
+    expect(workflow.concurrency).toEqual({ group: "release", "cancel-in-progress": false, queue: "max" });
   });
 
   it("publishes to npm through trusted publishing without a stored token", async () => {

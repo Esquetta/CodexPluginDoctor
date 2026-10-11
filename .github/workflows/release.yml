@@ -15,9 +15,11 @@ permissions:
   contents: write
   id-token: write
 
+# Runs go one at a time, in order. queue: max keeps every pending run; the default keeps only the newest.
 concurrency:
   group: release
   cancel-in-progress: false
+  queue: max
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
