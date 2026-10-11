@@ -6,6 +6,13 @@ export function renderMcpToolCatalogReport(report: McpToolCatalogReport): string
     "================",
     `Status: ${report.status}`,
     `Scope: ${report.scope}`,
+    ...(report.transport === "stdio"
+      ? [
+          "Transport: stdio",
+          `Protocol: ${report.protocol?.era ?? "not established"}${report.protocol?.version ? ` (${report.protocol.version})` : ""}`,
+          `Execution: ${report.execution?.backend ?? "not started"}`
+        ]
+      : []),
     `Discovery: ${report.discovery.status}`,
     `Catalog complete: ${report.catalog.complete}`,
     `Pages read: ${report.catalog.pagesRead}`,

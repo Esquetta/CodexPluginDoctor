@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.70.0] - 2026-10-11
+
+### Added
+
+- added `doctor tools <path> --server <name> --runtime` to read the tool list of a local stdio MCP server from the package's manifest `mcpServers` file or `.mcp.json`, then stop it; it never invokes a tool, and `--json`, `--save-response`, `--sandbox docker`, and `--require-runtime-approval` with `--runtime-approval-digest` work as they do elsewhere
+- stdio capture probes `server/discover` for `2026-07-28` first and falls back to the `initialize` handshake (versions `2024-11-05` through `2025-11-25`) when the server does not answer discovery, restarting it once if it exited; saved legacy captures use `ttlMs: 0` and `cacheScope: "private"`, so `tools-file` and `tools-diff` accept them and can compare a legacy baseline with a modern capture
+- stdio reports add `transport`, `protocol` (era and negotiated version), and `execution` (native or Docker backend) to `doctor.tools.json`; HTTP reports are unchanged
+- added incomplete reasons `startup-failed`, `server-exited`, and `stdout-invalid`, plus `plugin.discovery.stdio.*` and `plugin.catalog.stdio.*`, `plugin.catalog.initialize.*`, and `plugin.catalog.tools_list.method_unsupported` findings
+
+### Security
+
+- starting a stdio server requires explicit `--runtime` consent; the command runs without a shell, discards server stderr, and never reports the server name, command, arguments, paths, or raw output
+- runtime approval covers only servers in the plugin manifest `mcpServers` file, so requiring approval for a `.mcp.json` server exits `2` without starting it
+
 ## [1.69.1] - 2026-10-10
 
 ### Security

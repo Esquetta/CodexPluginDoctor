@@ -3736,7 +3736,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stderr.join("")).toContain(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, and release-evidence"
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, and doctor tools --server"
     );
   });
 

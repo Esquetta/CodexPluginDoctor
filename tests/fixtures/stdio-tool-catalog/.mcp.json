@@ -1,0 +1,173 @@
+{
+  "mcpServers": {
+    "modern": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern"
+      ]
+    },
+    "modern-paged": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-paged"
+      ]
+    },
+    "modern-no-tools": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-no-tools"
+      ]
+    },
+    "modern-unsupported-version": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-unsupported-version"
+      ]
+    },
+    "modern-invalid-discover": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-invalid-discover"
+      ]
+    },
+    "modern-tools-list-missing": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-tools-list-missing"
+      ]
+    },
+    "modern-invalid-page": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-invalid-page"
+      ]
+    },
+    "modern-cursor-loop": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-cursor-loop"
+      ]
+    },
+    "modern-hang-page": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-hang-page"
+      ]
+    },
+    "modern-stdout-noise": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-stdout-noise"
+      ]
+    },
+    "modern-trailing-noise": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-trailing-noise"
+      ]
+    },
+    "modern-large-line": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-large-line"
+      ]
+    },
+    "legacy": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy"
+      ]
+    },
+    "legacy-silent": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-silent"
+      ]
+    },
+    "legacy-exit": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-exit"
+      ]
+    },
+    "legacy-paged": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-paged"
+      ]
+    },
+    "legacy-no-tools": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-no-tools"
+      ]
+    },
+    "legacy-old-version": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-old-version"
+      ]
+    },
+    "legacy-future-version": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy-future-version"
+      ]
+    },
+    "exit-at-start": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "exit-at-start"
+      ]
+    },
+    "startup-noise": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "startup-noise"
+      ]
+    },
+    "ignore-stdin-close": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "ignore-stdin-close"
+      ]
+    },
+    "missing-command": {
+      "command": "codex-doctor-missing-command-for-tests",
+      "args": []
+    },
+    "remote": {
+      "url": "https://mcp.example.com/mcp"
+    },
+    "outside-cwd": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern"
+      ],
+      "cwd": ".."
+    }
+  }
+}

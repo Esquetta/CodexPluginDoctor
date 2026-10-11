@@ -22,7 +22,7 @@ This directory contains public documentation for users, contributors, and securi
 ## Guides
 
 - [MCP Discovery](guides/mcp-discovery.md)
-- [HTTP MCP Tool Catalog](guides/mcp-tool-catalog.md)
+- [MCP Tool Catalog](guides/mcp-tool-catalog.md)
 - [Offline MCP Tool Definitions](guides/offline-tool-definitions.md)
 - [Offline MCP Tool Diff](guides/offline-tool-diff.md)
 

@@ -137,6 +137,37 @@ export function discoverMcpCapabilities(response: BoundedHttpResponse, requestId
   return result.supportedVersions.includes(REQUESTED_VERSION) ? capabilities : null;
 }
 
+export function serializeMcpDiscoverRequest(requestId = REQUEST_ID): string {
+  return JSON.stringify({ jsonrpc: "2.0", id: requestId, method: "server/discover", params: { _meta: {
+    "io.modelcontextprotocol/protocolVersion": REQUESTED_VERSION,
+    "io.modelcontextprotocol/clientInfo": { name: "Codex Plugin Doctor", version: packageVersion },
+    "io.modelcontextprotocol/clientCapabilities": {}
+  } } });
+}
+
+export type McpDiscoverOutcome =
+  | { kind: "discovered"; supportedVersions: string[]; capabilities: McpJsonObject }
+  | { kind: "version-not-listed"; supportedVersions: string[] }
+  | { kind: "version-unsupported"; supportedVersions: string[] }
+  | { kind: "result-invalid" }
+  | { kind: "envelope-invalid" }
+  | { kind: "other-error" };
+
+// Classifies a transport-neutral server/discover reply. Only a valid result or a valid
+// UnsupportedProtocolVersionError identifies a modern server; other errors do not.
+export function classifyMcpDiscoverMessage(message: McpJsonObject, requestId = REQUEST_ID): McpDiscoverOutcome {
+  if (!hasMatchingResponseEnvelope(message, requestId)) return { kind: "envelope-invalid" };
+  if (Object.hasOwn(message, "error")) {
+    const versions = unsupportedVersions(message.error);
+    return versions === null ? { kind: "other-error" } : { kind: "version-unsupported", supportedVersions: versions };
+  }
+  const result = message.result;
+  if (!validDiscoverResult(result)) return { kind: "result-invalid" };
+  return result.supportedVersions.includes(REQUESTED_VERSION)
+    ? { kind: "discovered", supportedVersions: result.supportedVersions, capabilities: result.capabilities as McpJsonObject }
+    : { kind: "version-not-listed", supportedVersions: result.supportedVersions };
+}
+
 function failureReport(id: string, message: string): McpDiscoveryReport {
   return report("failed", "fail", [finding(id, "fail", message, "The discovery response cannot safely establish modern MCP discovery support.", "Verify the endpoint returns a valid server/discover response for the requested protocol version.")]);
 }
@@ -154,11 +185,7 @@ export async function discoverMcpServer(rawUrl: string, options: McpDiscoveryOpt
   }
 
   const request = options.request ?? requestBoundedHttp;
-  const body = JSON.stringify({ jsonrpc: "2.0", id: REQUEST_ID, method: "server/discover", params: { _meta: {
-    "io.modelcontextprotocol/protocolVersion": REQUESTED_VERSION,
-    "io.modelcontextprotocol/clientInfo": { name: "Codex Plugin Doctor", version: packageVersion },
-    "io.modelcontextprotocol/clientCapabilities": {}
-  } } });
+  const body = serializeMcpDiscoverRequest();
   let response: BoundedHttpResponse;
   try {
     response = await request(rawUrl, {
