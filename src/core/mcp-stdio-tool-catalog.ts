@@ -109,16 +109,20 @@ async function isFile(filePath: string): Promise<boolean> {
   }
 }
 
-async function readManifestMcpServers(rootPath: string): Promise<{ declared: false } | { declared: true; value: unknown }> {
+async function readManifestMcpServers(
+  rootPath: string
+): Promise<{ declared: false } | { declared: true; value: unknown } | { unreadable: true }> {
   const manifestPath = path.join(rootPath, ".codex-plugin", "plugin.json");
   if (!(await isFile(manifestPath))) return { declared: false };
   let manifest: unknown;
   try {
     manifest = await readJsonFile<unknown>(manifestPath);
   } catch {
-    return { declared: false };
+    // An existing manifest that cannot be read must not silently fall back to .mcp.json.
+    return { unreadable: true };
   }
-  return isPlainObject(manifest) && Object.hasOwn(manifest, "mcpServers")
+  if (!isPlainObject(manifest)) return { unreadable: true };
+  return Object.hasOwn(manifest, "mcpServers")
     ? { declared: true, value: manifest.mcpServers }
     : { declared: false };
 }
@@ -135,6 +139,7 @@ export async function resolveMcpStdioServer(targetPath: string, serverName: stri
   }
 
   const manifestServers = await readManifestMcpServers(packageRoot);
+  if ("unreadable" in manifestServers) return failure("The plugin manifest could not be read as a JSON object.");
   let configPath: string | null;
   let source: McpStdioServer["source"];
   if (manifestServers.declared) {
@@ -180,13 +185,28 @@ export async function resolveMcpStdioServer(targetPath: string, serverName: stri
   return { ok: true, server: { packageRoot, command: config.command, args, cwd, source } };
 }
 
+// A session whose process never started, for launches that spawn rejects synchronously.
+const unstartedStdioSession: StdioSession = {
+  spawned: false,
+  request: () => Promise.resolve({ kind: "stopped", reason: "startup-failed" }),
+  notify: () => undefined,
+  close: () => Promise.resolve()
+};
+
 function startStdioSession(launch: StdioLaunch, spawnImpl: typeof spawn): StdioSession {
-  const child = spawnImpl(launch.command, launch.args, {
-    cwd: launch.cwd,
-    // Server stderr is never read or reported; reports exclude raw server output.
-    stdio: ["pipe", "pipe", "ignore"],
-    windowsHide: true
-  });
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawnImpl(launch.command, launch.args, {
+      cwd: launch.cwd,
+      // Server stderr is never read or reported; reports exclude raw server output.
+      stdio: ["pipe", "pipe", "ignore"],
+      windowsHide: true
+    });
+  } catch {
+    // spawn throws synchronously for some launches (NUL bytes, Windows .cmd/.bat shims);
+    // its message can echo the command, so it is reduced to a startup failure.
+    return unstartedStdioSession;
+  }
   const pending = new Map<string, { resolve: (outcome: RequestOutcome) => void; timer: NodeJS.Timeout }>();
   const exitWaiters = new Set<() => void>();
   const decoder = new TextDecoder("utf-8", { fatal: true });

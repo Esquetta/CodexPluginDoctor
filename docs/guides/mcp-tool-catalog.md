@@ -77,7 +77,8 @@ codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --requ
 
 The server is read the same way `check --runtime` reads it: the file named by the
 plugin manifest `mcpServers` path, or `.mcp.json` when the package has no
-manifest entry. The named server must have a `command`; a server with a `url` is
+manifest entry. A manifest that exists but is not a readable JSON object is an
+error, not a reason to fall back to `.mcp.json`. The named server must have a `command`; a server with a `url` is
 rejected with a pointer to the HTTP mode. `cwd`, when set, must be an existing
 directory inside the package. The command is started directly without a shell,
 so on Windows use `node ./server.js` rather than an `npx` or `.cmd` shim. The

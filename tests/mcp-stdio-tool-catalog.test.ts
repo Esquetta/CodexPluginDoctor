@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -50,6 +52,24 @@ describe("resolveMcpStdioServer", () => {
   it("falls back to .mcp.json for packages without a plugin manifest", async () => {
     const resolved = await resolveMcpStdioServer(path.resolve("tests", "fixtures", "stdio-tool-catalog-mcp-json"), "legacy");
     expect(resolved).toMatchObject({ ok: true, server: { source: "mcp-json" } });
+  });
+
+  it.each(["{ not json", "[]"])("does not fall back to .mcp.json when the plugin manifest is %s", async (manifest) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "doctor-stdio-manifest-"));
+    try {
+      await mkdir(path.join(directory, ".codex-plugin"));
+      await writeFile(path.join(directory, ".codex-plugin", "plugin.json"), manifest);
+      await writeFile(path.join(directory, ".mcp.json"), JSON.stringify({ mcpServers: { local: { command: "node", args: ["server.js"] } } }));
+      expect(await resolveMcpStdioServer(directory, "local")).toEqual({
+        ok: false, message: "The plugin manifest could not be read as a JSON object."
+      });
+    } finally {
+      const resolved = await realpath(directory);
+      if (path.dirname(resolved) !== await realpath(os.tmpdir()) || !path.basename(resolved).startsWith("doctor-stdio-manifest-")) {
+        throw new Error("Unexpected test cleanup target.");
+      }
+      await rm(resolved, { recursive: true, force: true });
+    }
   });
 
   it.each([
@@ -187,6 +207,21 @@ describe("captureStdioMcpToolCatalog", () => {
 
   it("reports a missing command without execution evidence", async () => {
     expect((await capture("missing-command")).report.execution).toBeNull();
+  });
+
+  it("reports a launch that spawn rejects synchronously without echoing it", async () => {
+    const sentinel = "secret-arg";
+    const snapshot = await captureStdioMcpToolCatalog(
+      { ...(await server("modern")), args: [`${sentinel}\u0000`] },
+      { timeouts: fast }
+    );
+    expect(snapshot.report).toMatchObject({
+      status: "incomplete",
+      execution: null,
+      catalog: { complete: false, reason: "startup-failed" },
+      discovery: { findings: [expect.objectContaining({ id: "plugin.discovery.stdio.startup_failed" })] }
+    });
+    expect(JSON.stringify(snapshot.report)).not.toContain(sentinel);
   });
 
   it("keeps earlier findings when a later page times out", async () => {
