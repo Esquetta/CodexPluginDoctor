@@ -201,7 +201,7 @@ function withRuntimeEvidence(finding: Finding, serverName: string): Finding {
   };
 }
 
-function cleanupDockerContainer(containerName: string): Promise<Finding | null> {
+export function cleanupDockerContainer(containerName: string): Promise<Finding | null> {
   return new Promise((resolve) => {
     execFile(
       "docker",
@@ -884,7 +884,7 @@ function hasValidToolInputSchemas(tools: ToolDefinition[]): boolean {
   );
 }
 
-async function resolveRuntimeCwd(
+export async function resolveRuntimeCwd(
   rootPath: string,
   configuredCwd: unknown
 ): Promise<string | null> {

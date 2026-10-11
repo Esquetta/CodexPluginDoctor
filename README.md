@@ -127,7 +127,7 @@ compatibility.
 See [Offline MCP Tool Diff](docs/guides/offline-tool-diff.md) for matching rules,
 privacy, limits, and exit codes.
 
-### HTTP MCP Tool Catalog
+### MCP Tool Catalog
 
 Inspect a modern HTTP MCP server's tool definitions without invoking them:
 
@@ -148,7 +148,20 @@ approved loopback endpoint; it is never printed or saved. The GitHub Action can 
 live list with `tools-capture-url` (and `tools-capture-token-env`), and skip the
 plugin package check with `check: "false"` in repositories that only ship an MCP
 server.
-See [HTTP MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
+
+Local stdio servers from a package's MCP configuration can be cataloged too.
+`--runtime` is required because this starts package code; the server is stopped
+after its tool list is read:
+
+```bash
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --save-response ./tools-current.json
+```
+
+Doctor tries `server/discover` (`2026-07-28`) first and falls back to the
+`initialize` handshake for older stdio servers, so the saved list works with
+`tools-file` and `tools-diff` either way. `--sandbox docker` and
+`--require-runtime-approval` work as they do for `check --runtime`.
+See [MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness
 
@@ -568,9 +581,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.69.1
+      - uses: Esquetta/CodexPluginDoctor@v1.70.0
         with:
-          version: "1.69.1"
+          version: "1.70.0"
           path: .
           runtime: "true"
           policy: codex-publish

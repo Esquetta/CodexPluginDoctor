@@ -1,8 +1,10 @@
-# HTTP MCP Tool Catalog
+# MCP Tool Catalog
 
 `doctor tools` inspects tool definitions advertised by an HTTP MCP server using
-protocol `2026-07-28`. It makes a discovery request followed by bounded `tools/list`
-requests. It never invokes a tool.
+protocol `2026-07-28`, or by a local stdio server from a package's MCP
+configuration (see [Local stdio servers](#local-stdio-servers)). It makes a
+discovery request followed by bounded `tools/list` requests. It never invokes a
+tool.
 
 ```bash
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network
@@ -10,6 +12,7 @@ codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --j
 codex-plugin-doctor doctor tools http://localhost:3000/mcp --allow-network --allow-local-network
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --save-response ./tools.json
 codex-plugin-doctor doctor tools https://mcp.example.com/mcp --allow-network --bearer-token-env MCP_TOKEN
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --json
 codex-plugin-doctor doctor tools --help
 ```
 
@@ -28,7 +31,8 @@ Existing DNS and peer-address validation runs for every request.
 The command sends only `server/discover` and `tools/list` to the same input URL.
 Cursors are opaque request values, never destinations. It does not fetch OAuth
 metadata, resolve schema references, follow redirects, retry, fall back to an
-older protocol, initialize a session, subscribe, or start stdio servers.
+older protocol, initialize a session, subscribe, or start stdio servers; stdio
+servers use the separate `--server` mode below.
 
 For protected servers, `--bearer-token-env <NAME>` sends the bearer token held in
 the named environment variable with the discovery request and every `tools/list`
@@ -56,6 +60,83 @@ These limits cannot be increased with CLI flags in this version. Repeated cursor
 resource limits, a failed later page, or authorization requirements yield an
 incomplete result. Earlier findings are retained. A page with no tools but a next
 cursor is followed within the limits; an empty final catalog is valid.
+
+## Local stdio servers
+
+`doctor tools <path> --server <name> --runtime` starts one stdio server from the
+package at `<path>`, reads its tool list, and stops it. Starting a server runs
+package code, so `--runtime` is required as explicit consent; without it the
+command exits `2` before anything starts.
+
+```bash
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --sandbox docker
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --save-response ./tools-current.json
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --require-runtime-approval --runtime-approval-digest sha256:...
+```
+
+The server is read the same way `check --runtime` reads it: the file named by the
+plugin manifest `mcpServers` path, or `.mcp.json` when the package has no
+manifest entry. The named server must have a `command`; a server with a `url` is
+rejected with a pointer to the HTTP mode. `cwd`, when set, must be an existing
+directory inside the package. The command is started directly without a shell,
+so on Windows use `node ./server.js` rather than an `npx` or `.cmd` shim. The
+server inherits Doctor's environment, and its stderr is discarded. Errors name
+the problem without echoing paths, commands, or configured values.
+
+Doctor speaks both protocol eras over newline-delimited JSON-RPC on stdin and
+stdout:
+
+- It first sends `server/discover` for `2026-07-28`. A discovery result, or an
+  unsupported-version error listing the supported versions, settles the
+  `modern` era; there is no fallback after that.
+- Any other error, or no response within the startup timeout, falls back to the
+  `legacy` era: `initialize` with `2025-11-25`, `notifications/initialized`,
+  then `tools/list`. The server is restarted once if it exited during the
+  probe. The fallback is recorded as a warning in the discovery evidence.
+- Legacy servers may answer with `2024-11-05`, `2025-03-26`, `2025-06-18`, or
+  `2025-11-25`; any other version is `unsupported`. A server that advertises no
+  `tools` capability is `not-applicable` in either era.
+
+The report adds `transport: "stdio"`, `protocol` (`era` is `modern`, `legacy`,
+or `null` when no era was established, plus the negotiated `version`), and
+`execution` (`native` or `docker` backend, or `null` when nothing started).
+HTTP reports do not carry these fields. Legacy `tools/list` results have no
+cache metadata, so a saved legacy capture uses `ttlMs: 0` and
+`cacheScope: "private"`. Saved files from either era are accepted by
+`tools-file` and `tools-diff`, so a legacy baseline can be compared with a
+modern capture.
+
+Stdout must contain only JSON-RPC messages. Non-JSON output, invalid UTF-8, or a
+message that is not JSON-RPC 2.0 stops the capture as incomplete with reason
+`stdout-invalid`. Notifications and server-to-client requests are ignored.
+Shutdown closes stdin and waits two seconds, then sends `SIGTERM` and waits
+again, then sends `SIGKILL`.
+
+Stdio uses the same page, tool, finding, and byte limits as HTTP (each line
+counts as one response), with its own timeouts:
+
+| Budget | Native | Docker |
+| --- | --- | --- |
+| First response (startup) | 10 seconds | 60 seconds |
+| Each later request | 5 seconds | 5 seconds |
+| Whole operation | 30 seconds | 90 seconds |
+
+Stdio adds three incomplete reasons: `startup-failed` (the command could not be
+started), `server-exited` (the server exited before the catalog finished,
+including a server that exits again after the one restart), and `stdout-invalid`.
+
+`--sandbox docker` runs the server through the same Docker launch as
+`check --runtime --sandbox docker`: Node commands only, no network, and a
+read-only package mount. Other commands are `blocked` with reason
+`sandbox-unsupported` and nothing starts.
+
+`--require-runtime-approval` gates the start on the reviewed runtime plan, as in
+`check --runtime`. Without `--runtime-approval-digest` the command prints the
+current digest from `doctor runtime-plan` and exits `1`; a different digest
+also exits `1`. The digest depends on `--sandbox`, so approve the plan for the
+mode you run. Runtime plans cover the plugin manifest `mcpServers` file only,
+so approval for a server read from `.mcp.json` exits `2`.
 
 ## What is checked
 
@@ -117,6 +198,8 @@ one-based tool index, optionally the fixed input/output schema slot or another
 tool index for duplicates. Reports exclude remote names, descriptions, schema
 payloads, cursors, endpoint URLs, server identity, and raw errors. Match the
 numeric locators against your own server's response when investigating a finding.
+Stdio reports also exclude the server name, command, arguments, package paths,
+and anything the server writes to stderr.
 
 ## Saving the tool list
 

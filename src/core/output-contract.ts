@@ -710,7 +710,27 @@ const publicSchemaDefinitions: Array<{
     properties: {
       schemaVersion: { const: 1 },
       scope: { const: "tool-catalog-structure" },
+      // transport, protocol, and execution appear only on reports from `doctor tools <path> --server <name> --runtime`.
+      transport: { const: "stdio" },
       status: { enum: ["pass", "warn", "fail", "unsupported", "not-applicable", "incomplete", "blocked"] },
+      protocol: {
+        type: "object", required: ["era", "version"],
+        properties: {
+          era: { enum: ["modern", "legacy", null] },
+          version: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        },
+        additionalProperties: false
+      },
+      execution: {
+        type: ["object", "null"], required: ["backend", "image", "network", "packageMount"],
+        properties: {
+          backend: { enum: ["native", "docker"] },
+          image: { type: ["string", "null"] },
+          network: { enum: ["host", "none"] },
+          packageMount: { enum: ["host", "read_only"] }
+        },
+        additionalProperties: false
+      },
       discovery: {
         type: "object",
         required: ["schemaVersion", "requestedVersion", "scope", "status", "supportedVersions", "findings", "coverage"],

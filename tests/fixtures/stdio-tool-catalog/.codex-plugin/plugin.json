@@ -1,0 +1,6 @@
+{
+  "name": "stdio-tool-catalog",
+  "version": "1.0.0",
+  "description": "Fixture with scripted stdio MCP servers for tool list capture.",
+  "mcpServers": "./.mcp.json"
+}
