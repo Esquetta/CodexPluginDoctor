@@ -192,6 +192,7 @@ describe("captureStdioMcpToolCatalog", () => {
     ["modern-invalid-page", "response-invalid", ["plugin.catalog.response.invalid"], []],
     ["modern-cursor-loop", "cursor-loop", ["plugin.catalog.cursor.loop"], []],
     ["modern-stdout-noise", "stdout-invalid", ["plugin.catalog.stdio.output.invalid"], []],
+    ["modern-trailing-noise", "stdout-invalid", ["plugin.catalog.stdio.output.invalid"], []],
     ["startup-noise", "stdout-invalid", [], ["plugin.discovery.stdio.output.invalid"]],
     ["modern-large-line", "response-byte-limit", [], []],
     ["missing-command", "startup-failed", [], ["plugin.discovery.stdio.startup_failed"]]

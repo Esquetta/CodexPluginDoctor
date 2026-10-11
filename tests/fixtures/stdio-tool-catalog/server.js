@@ -96,6 +96,11 @@ function toolsList(message) {
     return;
   }
   if (mode === "modern-stdout-noise") process.stdout.write("server ready\n");
+  if (mode === "modern-trailing-noise") {
+    // The final page and invalid output arrive in one stdout chunk.
+    process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { ...meta, tools: [lookup, search] } })}\nserver done\n`);
+    return;
+  }
   if (mode === "modern-large-line") {
     result(message.id, { ...meta, tools: [{ ...lookup, description: "x".repeat(1024 * 1024) }] });
     return;

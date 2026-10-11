@@ -70,6 +70,13 @@
         "modern-stdout-noise"
       ]
     },
+    "modern-trailing-noise": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-trailing-noise"
+      ]
+    },
     "modern-large-line": {
       "command": "node",
       "args": [

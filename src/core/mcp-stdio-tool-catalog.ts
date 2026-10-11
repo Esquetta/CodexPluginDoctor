@@ -80,6 +80,7 @@ type RequestOutcome =
 
 interface StdioSession {
   readonly spawned: boolean;
+  readonly stopped: SessionStop | null;
   request(id: string, body: string, timeoutMs: number): Promise<RequestOutcome>;
   notify(body: string): void;
   close(graceMs: number): Promise<void>;
@@ -188,6 +189,7 @@ export async function resolveMcpStdioServer(targetPath: string, serverName: stri
 // A session whose process never started, for launches that spawn rejects synchronously.
 const unstartedStdioSession: StdioSession = {
   spawned: false,
+  stopped: "startup-failed",
   request: () => Promise.resolve({ kind: "stopped", reason: "startup-failed" }),
   notify: () => undefined,
   close: () => Promise.resolve()
@@ -316,6 +318,9 @@ function startStdioSession(launch: StdioLaunch, spawnImpl: typeof spawn): StdioS
   return {
     get spawned() {
       return spawned;
+    },
+    get stopped() {
+      return stop;
     },
     request(id, body, timeoutMs) {
       if (stop !== null) return Promise.resolve({ kind: "stopped", reason: stop });
@@ -540,6 +545,14 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
       reason = "finding-limit";
       return false;
     };
+    const sessionStopped = (stop: SessionStop) => {
+      if (stop !== "stdout-invalid") {
+        reason = stop;
+      } else if (addFindings([catalogFinding("plugin.catalog.stdio.output.invalid", "fail",
+        "The MCP server wrote output to stdout that is not a JSON-RPC message.", stdoutInvalidImpact, stdoutInvalidFix)])) {
+        reason = stop;
+      }
+    };
 
     while (reason === null) {
       if (pagesRead >= MAX_CATALOG_PAGES) {
@@ -549,12 +562,8 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
       const id = `tools-list-${pagesRead + 1}`;
       const outcome = await send(id, era.request(id, cursor), requestMs);
       if (outcome.kind !== "message") {
-        if (outcome.reason === "stdout-invalid") {
-          if (addFindings([catalogFinding("plugin.catalog.stdio.output.invalid", "fail",
-            "The MCP server wrote output to stdout that is not a JSON-RPC message.", stdoutInvalidImpact, stdoutInvalidFix)])) reason = outcome.reason;
-        } else {
-          reason = outcome.reason;
-        }
+        if (outcome.kind === "stopped") sessionStopped(outcome.reason);
+        else reason = outcome.reason;
         break;
       }
       const message = outcome.message;
@@ -593,6 +602,10 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
       cursor = page.cursor;
     }
 
+    // Output that arrived in the same chunk as the final page is validated before the catalog is accepted;
+    // a server exiting after its last reply is not a failure.
+    const trailingStop = session.stopped;
+    if (reason === null && trailingStop !== null && trailingStop !== "server-exited") sessionStopped(trailingStop);
     if (reason === null && deadline - now() <= 0) reason = "total-time-limit";
     const catalog = { complete: reason === null, pagesRead, toolsChecked: inspector.toolsChecked, reason };
     return reason === null
