@@ -28,11 +28,11 @@ async function releaseWorkflow() {
 }
 
 describe("release workflow", () => {
-  it("runs only for version bumps on main in the upstream repository, or on demand", async () => {
+  it("runs only on main in the upstream repository, for version bumps or on demand", async () => {
     const { workflow } = await releaseWorkflow();
     expect(workflow.on.push).toEqual({ branches: ["main"], paths: ["package.json"] });
     expect(workflow.on).toHaveProperty("workflow_dispatch");
-    expect(workflow.jobs.release.if).toBe("github.repository == 'Esquetta/CodexPluginDoctor'");
+    expect(workflow.jobs.release.if).toBe("github.repository == 'Esquetta/CodexPluginDoctor' && github.ref == 'refs/heads/main'");
     expect(workflow.permissions).toEqual({ contents: "write", "id-token": "write" });
   });
 
@@ -53,6 +53,15 @@ describe("release workflow", () => {
     expect(names.indexOf("Publish to npm")).toBeLessThan(names.indexOf("Create GitHub release"));
     expect(step("Create GitHub release").if).toBe("steps.state.outputs.release == 'pending'");
     expect(step("Determine release state").run).toContain('if [[ "$version" == *-* ]]');
+  });
+
+  it("stops instead of skipping a draft release or a tag on another commit", async () => {
+    const { step } = await releaseWorkflow();
+    const state = step("Determine release state").run;
+    expect(state).toContain("--json isDraft --jq .isDraft");
+    expect(state).toContain("has a draft GitHub release");
+    expect(state).toContain('git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}"');
+    expect(state).toContain('"$tag_commit" != "$GITHUB_SHA"');
   });
 
   it("creates the release from the CHANGELOG section and verifies sync", async () => {

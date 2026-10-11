@@ -24,7 +24,8 @@ env:
 
 jobs:
   release:
-    if: github.repository == 'Esquetta/CodexPluginDoctor'
+    # Manual runs can pick any branch; releases only ever come from main.
+    if: github.repository == 'Esquetta/CodexPluginDoctor' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -55,15 +56,31 @@ jobs:
           fi
           published="$(npm view "codex-plugin-doctor@${version}" version 2>/dev/null || true)"
           if [[ "$published" == "$version" ]]; then
-            echo "npm=done" >> "$GITHUB_OUTPUT"
+            npm=done
           else
-            echo "npm=pending" >> "$GITHUB_OUTPUT"
+            npm=pending
           fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "release=done" >> "$GITHUB_OUTPUT"
+          # gh release view also finds drafts. A draft is a release someone is still preparing, so stop instead of skipping it.
+          if is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$is_draft" == "true" ]]; then
+              echo "::error::${tag} has a draft GitHub release. Publish or delete the draft, then re-run this workflow."
+              exit 1
+            fi
+            release=done
           else
-            echo "release=pending" >> "$GITHUB_OUTPUT"
+            release=pending
           fi
+          # npm and the release must come from the same commit, so an existing tag has to point at this one.
+          if [[ "$npm" == "pending" || "$release" == "pending" ]]; then
+            # For an annotated tag, the peeled "^{}" line comes last and names the commit.
+            tag_commit="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" | tail -n 1 | cut -f1)"
+            if [[ -n "$tag_commit" && "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::${tag} already points at ${tag_commit}, not ${GITHUB_SHA}. Move or delete the tag, then re-run this workflow."
+              exit 1
+            fi
+          fi
+          echo "npm=${npm}" >> "$GITHUB_OUTPUT"
+          echo "release=${release}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'

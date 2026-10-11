@@ -46,7 +46,10 @@ For stable versions, merging the version bump starts the `Release` workflow
 with trusted publishing, creates the `vX.Y.Z` tag and GitHub Release with the
 `CHANGELOG.md` section as notes, and runs `npm run verify-release-sync`. Each
 part is skipped when it already exists, so running the workflow again from the
-Actions tab only completes what is missing. Prerelease versions such as
+Actions tab only completes what is missing. Manual runs release only from
+`main`. The workflow stops before publishing when a draft GitHub Release exists
+for the version or the `vX.Y.Z` tag already points at another commit; publish or
+delete the draft, or fix the tag, then run it again. Prerelease versions such as
 `1.71.0-rc.1` are skipped and stay manual.
 
 One-time setup: on npmjs.com, open the `codex-plugin-doctor` package settings and
