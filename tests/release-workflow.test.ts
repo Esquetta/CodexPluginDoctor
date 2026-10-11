@@ -75,6 +75,14 @@ describe("release workflow", () => {
     expect(step("Determine release state").run).toContain("is on npm but ${tag} does not exist");
   });
 
+  it("refuses to release a version older than npm latest", async () => {
+    const { step } = await releaseWorkflow();
+    const state = step("Determine release state").run;
+    expect(state).toContain("npm view codex-plugin-doctor dist-tags.latest");
+    expect(state).toContain("sort -V | tail -n 1");
+    expect(state.indexOf("dist-tags.latest")).toBeLessThan(state.indexOf("npm=pending"));
+  });
+
   it("creates the release from the CHANGELOG section and verifies sync", async () => {
     const { step } = await releaseWorkflow();
     expect(step("Extract release notes").run).toContain("node scripts/extract-release-notes.mjs");
