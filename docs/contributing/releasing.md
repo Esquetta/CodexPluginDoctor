@@ -36,14 +36,29 @@ Use a major release when:
 
 ## Release Flow
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md` with a `## [X.Y.Z] - YYYY-MM-DD` section.
 2. Bump `package.json` and `package-lock.json`.
 3. Run `npm run release-check`.
-4. Push `main` and verify GitHub Actions.
-5. Create git tag `vX.Y.Z`.
-6. Create a GitHub Release using `.github/release-template.md`.
-7. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
-8. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
+4. Merge to `main`.
+
+For stable versions, merging the version bump starts the `Release` workflow
+(`.github/workflows/release.yml`). It runs the tests and build, publishes to npm
+with trusted publishing, creates the `vX.Y.Z` tag and GitHub Release with the
+`CHANGELOG.md` section as notes, and runs `npm run verify-release-sync`. Each
+part is skipped when it already exists, so running the workflow again from the
+Actions tab only completes what is missing. Prerelease versions such as
+`1.71.0-rc.1` are skipped and stay manual.
+
+One-time setup: on npmjs.com, open the `codex-plugin-doctor` package settings and
+add a trusted publisher for GitHub Actions with owner `Esquetta`, repository
+`CodexPluginDoctor`, and workflow `release.yml`. No npm token or OTP is stored.
+
+Manual fallback, and the path for release candidates:
+
+1. Create git tag `vX.Y.Z`.
+2. Create a GitHub Release using `.github/release-template.md`.
+3. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
+4. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
 
 ## Distribution Contract
 

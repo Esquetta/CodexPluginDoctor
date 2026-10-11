@@ -1,0 +1,120 @@
+name: Release
+
+# Publishes a stable release after a version bump reaches main: npm (trusted publishing),
+# then the vX.Y.Z tag and GitHub release with notes from CHANGELOG.md. Each step is skipped
+# when its part already exists, so re-running the workflow only completes what is missing.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  release:
+    if: github.repository == 'Esquetta/CodexPluginDoctor'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Determine release state
+        id: state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "Prerelease ${version} is published manually with the next dist-tag."
+            echo "npm=skip" >> "$GITHUB_OUTPUT"
+            echo "release=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          published="$(npm view "codex-plugin-doctor@${version}" version 2>/dev/null || true)"
+          if [[ "$published" == "$version" ]]; then
+            echo "npm=done" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm=pending" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "release=done" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=pending" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        run: npm test
+
+      - name: Build CLI
+        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        run: npm run build
+
+      - name: Extract release notes
+        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        env:
+          VERSION: ${{ steps.state.outputs.version }}
+        run: node scripts/extract-release-notes.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+
+      # Trusted publishing authenticates with this workflow's OIDC token; no npm token or OTP is stored.
+      # Tests and the build already ran above, so prepublishOnly is skipped.
+      - name: Publish to npm
+        if: steps.state.outputs.npm == 'pending'
+        run: |
+          npm install --global npm@11.11.1
+          npm publish --access public --provenance --ignore-scripts
+
+      - name: Create GitHub release
+        if: steps.state.outputs.release == 'pending'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.state.outputs.tag }}
+        run: >
+          gh release create "$TAG"
+          --repo "$GITHUB_REPOSITORY"
+          --target "$GITHUB_SHA"
+          --title "$TAG"
+          --notes-file "$RUNNER_TEMP/release-notes.md"
+          --latest
+
+      # npm can take a short while to report the new latest version.
+      - name: Verify release sync
+        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm run verify-release-sync; then
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
