@@ -60,10 +60,10 @@ jobs:
           else
             npm=pending
           fi
-          # gh release view also finds drafts. A draft is a release someone is still preparing, so stop instead of skipping it.
-          if is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
-            if [[ "$is_draft" == "true" ]]; then
-              echo "::error::${tag} has a draft GitHub release. Publish or delete the draft, then re-run this workflow."
+          # gh release view also finds drafts and prereleases. Neither is a finished stable release, so stop instead of skipping it.
+          if release_kind="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" elif .isPrerelease then "prerelease" else "published" end' 2>/dev/null)"; then
+            if [[ "$release_kind" != "published" ]]; then
+              echo "::error::The GitHub release for ${tag} is a ${release_kind}. Publish it as a stable release or delete it, then re-run this workflow."
               exit 1
             fi
             release=done
@@ -82,8 +82,9 @@ jobs:
           echo "npm=${npm}" >> "$GITHUB_OUTPUT"
           echo "release=${release}" >> "$GITHUB_OUTPUT"
 
+      # Stable versions always install dependencies, because the sync check at the end builds the CLI.
       - name: Install dependencies
-        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        if: steps.state.outputs.npm != 'skip'
         run: npm ci
 
       - name: Run tests
@@ -121,9 +122,10 @@ jobs:
           --notes-file "$RUNNER_TEMP/release-notes.md"
           --latest
 
+      # Runs for every stable version, so a re-run still checks a release whose parts already existed.
       # npm can take a short while to report the new latest version.
       - name: Verify release sync
-        if: steps.state.outputs.npm == 'pending' || steps.state.outputs.release == 'pending'
+        if: steps.state.outputs.npm != 'skip'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

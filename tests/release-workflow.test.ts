@@ -55,11 +55,11 @@ describe("release workflow", () => {
     expect(step("Determine release state").run).toContain('if [[ "$version" == *-* ]]');
   });
 
-  it("stops instead of skipping a draft release or a tag on another commit", async () => {
+  it("stops instead of skipping a draft or prerelease GitHub release, or a tag on another commit", async () => {
     const { step } = await releaseWorkflow();
     const state = step("Determine release state").run;
-    expect(state).toContain("--json isDraft --jq .isDraft");
-    expect(state).toContain("has a draft GitHub release");
+    expect(state).toContain("--json isDraft,isPrerelease");
+    expect(state).toContain('if [[ "$release_kind" != "published" ]]');
     expect(state).toContain('git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}"');
     expect(state).toContain('"$tag_commit" != "$GITHUB_SHA"');
   });
@@ -69,6 +69,12 @@ describe("release workflow", () => {
     expect(step("Extract release notes").run).toContain("node scripts/extract-release-notes.mjs");
     expect(step("Create GitHub release").run).toContain('--notes-file "$RUNNER_TEMP/release-notes.md"');
     expect(step("Verify release sync").run).toContain("npm run verify-release-sync");
+  });
+
+  it("verifies sync for every stable version, even when both parts already existed", async () => {
+    const { step } = await releaseWorkflow();
+    expect(step("Install dependencies").if).toBe("steps.state.outputs.npm != 'skip'");
+    expect(step("Verify release sync").if).toBe("steps.state.outputs.npm != 'skip'");
   });
 
   it("stays on the repository's current action versions", async () => {
