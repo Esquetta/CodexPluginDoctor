@@ -70,17 +70,25 @@ jobs:
           else
             release=pending
           fi
-          # npm and the release must come from the same commit, so an existing tag has to point at this one.
+          # The tag records the commit npm was built from, so npm and the release must both come from it.
+          create_tag=false
           if [[ "$npm" == "pending" || "$release" == "pending" ]]; then
             # For an annotated tag, the peeled "^{}" line comes last and names the commit.
             tag_commit="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" | tail -n 1 | cut -f1)"
-            if [[ -n "$tag_commit" && "$tag_commit" != "$GITHUB_SHA" ]]; then
-              echo "::error::${tag} already points at ${tag_commit}, not ${GITHUB_SHA}. Move or delete the tag, then re-run this workflow."
+            if [[ -z "$tag_commit" ]]; then
+              if [[ "$npm" == "done" ]]; then
+                echo "::error::codex-plugin-doctor@${version} is on npm but ${tag} does not exist, so the commit it was built from is unknown. Push ${tag} at that commit, then re-run this workflow."
+                exit 1
+              fi
+              create_tag=true
+            elif [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::${tag} points at ${tag_commit}, not ${GITHUB_SHA}. Re-run the workflow run for ${tag_commit}, or move or delete the tag, then try again."
               exit 1
             fi
           fi
           echo "npm=${npm}" >> "$GITHUB_OUTPUT"
           echo "release=${release}" >> "$GITHUB_OUTPUT"
+          echo "create_tag=${create_tag}" >> "$GITHUB_OUTPUT"
 
       # Stable versions always install dependencies, because the sync check at the end builds the CLI.
       - name: Install dependencies
@@ -101,6 +109,14 @@ jobs:
           VERSION: ${{ steps.state.outputs.version }}
         run: node scripts/extract-release-notes.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
 
+      # The tag goes up before npm, so a later recovery run can only release the commit npm was built from.
+      - name: Create tag
+        if: steps.state.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.state.outputs.tag }}
+        run: gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="$GITHUB_SHA"
+
       # Trusted publishing authenticates with this workflow's OIDC token; no npm token or OTP is stored.
       # Tests and the build already ran above, so prepublishOnly is skipped.
       - name: Publish to npm
@@ -117,7 +133,7 @@ jobs:
         run: >
           gh release create "$TAG"
           --repo "$GITHUB_REPOSITORY"
-          --target "$GITHUB_SHA"
+          --verify-tag
           --title "$TAG"
           --notes-file "$RUNNER_TEMP/release-notes.md"
           --latest

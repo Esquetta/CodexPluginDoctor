@@ -42,15 +42,18 @@ Use a major release when:
 4. Merge to `main`.
 
 For stable versions, merging the version bump starts the `Release` workflow
-(`.github/workflows/release.yml`). It runs the tests and build, publishes to npm
-with trusted publishing, creates the `vX.Y.Z` tag and GitHub Release with the
-`CHANGELOG.md` section as notes, and runs `npm run verify-release-sync`. Each
-part is skipped when it already exists, so running the workflow again from the
-Actions tab only completes what is missing, and the sync check runs every time.
-Manual runs release only from `main`. The workflow stops before publishing when
-the version's GitHub Release is a draft or a prerelease, or the `vX.Y.Z` tag
-already points at another commit; fix the release or the tag on GitHub, then run
-it again. Prerelease versions such as `1.71.0-rc.1` are skipped and stay manual.
+(`.github/workflows/release.yml`). It runs the tests and build, creates the
+`vX.Y.Z` tag on the merged commit, publishes to npm with trusted publishing,
+creates the GitHub Release with the `CHANGELOG.md` section as notes, and runs
+`npm run verify-release-sync`. Each part is skipped when it already exists, so
+re-running a failed run from the Actions tab only completes what is missing, and
+the sync check runs every time. Manual runs release only from `main`.
+
+The workflow stops before publishing when the version's GitHub Release is a draft
+or a prerelease, when the `vX.Y.Z` tag points at a commit other than the one being
+run (re-run the workflow run for the tagged commit instead), or when the version is
+already on npm without a tag. Fix the release or the tag on GitHub, then run it
+again. Prerelease versions such as `1.71.0-rc.1` are skipped and stay manual.
 
 One-time setup: on npmjs.com, open the `codex-plugin-doctor` package settings and
 add a trusted publisher for GitHub Actions with owner `Esquetta`, repository

@@ -50,6 +50,8 @@ describe("release workflow", () => {
     const names = steps.map((entry) => entry.name);
     expect(names.indexOf("Run tests")).toBeLessThan(names.indexOf("Publish to npm"));
     expect(names.indexOf("Build CLI")).toBeLessThan(names.indexOf("Extract release notes"));
+    expect(names.indexOf("Extract release notes")).toBeLessThan(names.indexOf("Create tag"));
+    expect(names.indexOf("Create tag")).toBeLessThan(names.indexOf("Publish to npm"));
     expect(names.indexOf("Publish to npm")).toBeLessThan(names.indexOf("Create GitHub release"));
     expect(step("Create GitHub release").if).toBe("steps.state.outputs.release == 'pending'");
     expect(step("Determine release state").run).toContain('if [[ "$version" == *-* ]]');
@@ -62,6 +64,15 @@ describe("release workflow", () => {
     expect(state).toContain('if [[ "$release_kind" != "published" ]]');
     expect(state).toContain('git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}"');
     expect(state).toContain('"$tag_commit" != "$GITHUB_SHA"');
+  });
+
+  it("tags the release commit before publishing, and never releases npm from an untagged commit", async () => {
+    const { step } = await releaseWorkflow();
+    expect(step("Create tag").if).toBe("steps.state.outputs.create_tag == 'true'");
+    expect(step("Create tag").run).toContain('-f sha="$GITHUB_SHA"');
+    expect(step("Create GitHub release").run).toContain("--verify-tag");
+    expect(step("Create GitHub release").run).not.toContain("--target");
+    expect(step("Determine release state").run).toContain("is on npm but ${tag} does not exist");
   });
 
   it("creates the release from the CHANGELOG section and verifies sync", async () => {
