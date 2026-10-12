@@ -273,20 +273,30 @@ runs:
       run: |
         set -euo pipefail
 
-        if [[ "$RUNTIME_INPUT" == "true" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
-          echo "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps." >&2
+        # Exits before any Doctor command, recording status 2 for the later steps and the status output
+        # and clearing state that an earlier invocation in the same job left behind.
+        reject_usage() {
+          local state_dir="${RUNNER_TEMP:-.}"
+          printf "2" > "$state_dir/codex-plugin-doctor-status"
+          for state in submission-ran submission-archive-ran tools-diff-ran check-ran; do
+            printf "false" > "$state_dir/codex-plugin-doctor-$state"
+          done
+          echo "status=2" >> "$GITHUB_OUTPUT"
+          echo "$1" >&2
           exit 2
+        }
+
+        if [[ "$RUNTIME_INPUT" == "true" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
+          reject_usage "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
         fi
 
         # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
         if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
-          echo "tools-capture-url and tools-capture-server cannot be combined." >&2
-          exit 2
+          reject_usage "tools-capture-url and tools-capture-server cannot be combined."
         fi
 
         if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && "$INSTALLED_INPUT" == "true" ]]; then
-          echo "tools-capture-server reads the package at path and cannot be combined with installed: true." >&2
-          exit 2
+          reject_usage "tools-capture-server reads the package at path and cannot be combined with installed: true."
         fi
 
         report_dir="${{ inputs['output-dir'] }}"

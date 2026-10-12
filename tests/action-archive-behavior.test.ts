@@ -150,6 +150,8 @@ fi
     await mkdir(reportDirectory, { recursive: true });
     await writeFile(path.join(reportDirectory, "mcp-tools-current.json"), "{}", "utf8");
     await writeFile(path.join(reportDirectory, "codex-plugin-doctor-summary.md"), "stale package summary", "utf8");
+    await writeFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "0", "utf8");
+    await writeFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "true", "utf8");
   }
 
   const environment = {
@@ -199,6 +201,16 @@ fi
       cleanup: () => cleanupActionFixture(root)
     };
   } catch (error) {
+    // Early rejections still hand their state to the later steps, so failed runs expose it too.
+    if (error && typeof error === "object") {
+      Object.assign(error, {
+        actionState: {
+          status: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "utf8").catch(() => undefined),
+          toolsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "utf8").catch(() => undefined)
+        },
+        actionOutput: outputEntries(await readFile(actionOutputPath, "utf8").catch(() => ""))
+      });
+    }
     await cleanupActionFixture(root);
     throw error;
   }
@@ -543,10 +555,12 @@ describe("GitHub Action authenticated capture", () => {
   it.each(["true", "false"])("rejects capture credentials with runtime before any CLI invocation (check=%s)", async (check) => {
     await expect(runArchiveAction({
       ...capture, check, runtime: "true", "tools-capture-token-env": "MCP_TOKEN"
-    }, "0", "0", false, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+    }, "0", "0", true, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
       code: 2,
       stdout: "",
-      stderr: "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps.\n"
+      stderr: "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps.\n",
+      actionState: { status: "2", toolsDiff: "false" },
+      actionOutput: { status: "2" }
     });
   });
 
@@ -643,7 +657,13 @@ describe("GitHub Action stdio capture", () => {
   ])("rejects conflicting capture inputs before any CLI invocation (check=%s, %j)", async (check, overrides, stderr) => {
     await expect(runArchiveAction({
       ...capture, check, ...overrides
-    }, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr });
+    }, "0", "0", true, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr,
+      actionState: { status: "2", toolsDiff: "false" },
+      actionOutput: { status: "2" }
+    });
   });
 
   it("rejects capture credentials with a stdio capture before any CLI invocation", async () => {
