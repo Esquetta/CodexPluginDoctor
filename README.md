@@ -145,7 +145,8 @@ enumeration is incomplete. For protected servers, `--bearer-token-env <NAME>`
 sends a bearer token from an environment variable only over HTTPS or to an
 approved loopback endpoint; it is never printed or saved. The GitHub Action can compare saved responses with
 `tools-diff-before`, `tools-diff-after`, and `tools-diff-fail-on`, capture the
-live list with `tools-capture-url` (and `tools-capture-token-env`), and skip the
+live list with `tools-capture-url` (and `tools-capture-token-env`) or, for a local
+stdio server with `runtime: "true"`, `tools-capture-server`, and skip the
 plugin package check with `check: "false"` in repositories that only ship an MCP
 server.
 
@@ -581,9 +582,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.70.0
+      - uses: Esquetta/CodexPluginDoctor@v1.71.0
         with:
-          version: "1.70.0"
+          version: "1.71.0"
           path: .
           runtime: "true"
           policy: codex-publish
