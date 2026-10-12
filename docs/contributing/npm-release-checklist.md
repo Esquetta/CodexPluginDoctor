@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Prepare Codex Plugin Doctor for clean npm releases without publishing from CI by default.
+Prepare Codex Plugin Doctor for clean npm releases. Stable versions are published
+by the `Release` workflow after the version bump merges to `main`; see
+[Versioning and Releases](releasing.md#release-flow). The steps below are the manual
+path for release candidates and for recovering a stable release by hand.
 
 ## Current Package Readiness
 

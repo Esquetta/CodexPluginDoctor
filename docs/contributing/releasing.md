@@ -36,14 +36,35 @@ Use a major release when:
 
 ## Release Flow
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md` with a `## [X.Y.Z] - YYYY-MM-DD` section.
 2. Bump `package.json` and `package-lock.json`.
 3. Run `npm run release-check`.
-4. Push `main` and verify GitHub Actions.
-5. Create git tag `vX.Y.Z`.
-6. Create a GitHub Release using `.github/release-template.md`.
-7. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
-8. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
+4. Merge to `main`.
+
+For stable versions, merging the version bump starts the `Release` workflow
+(`.github/workflows/release.yml`). It runs the tests and build, creates the
+`vX.Y.Z` tag on the merged commit, publishes to npm with trusted publishing,
+creates the GitHub Release with the `CHANGELOG.md` section as notes, and runs
+`npm run verify-release-sync`. Each part is skipped when it already exists, so
+re-running a failed run from the Actions tab only completes what is missing, and
+the sync check runs every time. Manual runs release only from `main`.
+
+The workflow stops before publishing when the version's GitHub Release is a draft
+or a prerelease, when the `vX.Y.Z` tag points at a commit other than the one being
+run (re-run the workflow run for the tagged commit instead), when the version is
+already on npm without a tag, or when npm `latest` is already a newer version. Fix
+the release or the tag on GitHub, then run it again. Prerelease versions such as `1.71.0-rc.1` are skipped and stay manual.
+
+One-time setup: on npmjs.com, open the `codex-plugin-doctor` package settings and
+add a trusted publisher for GitHub Actions with owner `Esquetta`, repository
+`CodexPluginDoctor`, and workflow `release.yml`. No npm token or OTP is stored.
+
+Manual fallback, and the path for release candidates:
+
+1. Create git tag `vX.Y.Z`.
+2. Create a GitHub Release using `.github/release-template.md`.
+3. Run `npm publish --access public` for stable releases or `npm publish --access public --tag next` for release candidates.
+4. Run `npm run verify-release-sync` after stable publication, or `npm run verify-release-sync -- --dist-tag next --prerelease` after release-candidate publication.
 
 ## Distribution Contract
 
