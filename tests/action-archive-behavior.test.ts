@@ -621,12 +621,8 @@ describe("GitHub Action stdio capture", () => {
     }
   });
 
-  it.each([
-    [{ check: "false", "tools-capture-server": "local-server", "tools-diff-before": "baseline.json" }],
-    [{ ...capture, "tools-capture-url": "https://mcp.example.test/mcp", "allow-network": "true" }],
-    [{ ...capture, installed: "true" }]
-  ])("records usage status 2 without starting a server for %j", async (overrides) => {
-    const run = await runArchiveAction(overrides);
+  it("records usage status 2 without starting a server when runtime consent is missing", async () => {
+    const run = await runArchiveAction({ check: "false", "tools-capture-server": "local-server", "tools-diff-before": "baseline.json" });
 
     try {
       expect(invocationsOf(run, "tools")).toEqual([]);
@@ -636,6 +632,18 @@ describe("GitHub Action stdio capture", () => {
     } finally {
       await run.cleanup();
     }
+  });
+
+  // With check enabled, runtime probing would start servers before a later rejection.
+  it.each([
+    ["true", { "tools-capture-url": "https://mcp.example.test/mcp", "allow-network": "true" }, "tools-capture-url and tools-capture-server cannot be combined.\n"],
+    ["false", { "tools-capture-url": "https://mcp.example.test/mcp", "allow-network": "true" }, "tools-capture-url and tools-capture-server cannot be combined.\n"],
+    ["true", { installed: "true" }, "tools-capture-server reads the package at path and cannot be combined with installed: true.\n"],
+    ["false", { installed: "true" }, "tools-capture-server reads the package at path and cannot be combined with installed: true.\n"]
+  ])("rejects conflicting capture inputs before any CLI invocation (check=%s, %j)", async (check, overrides, stderr) => {
+    await expect(runArchiveAction({
+      ...capture, check, ...overrides
+    }, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr });
   });
 
   it("rejects capture credentials with a stdio capture before any CLI invocation", async () => {

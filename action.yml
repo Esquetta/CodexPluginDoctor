@@ -278,6 +278,17 @@ runs:
           exit 2
         fi
 
+        # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
+        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
+          echo "tools-capture-url and tools-capture-server cannot be combined." >&2
+          exit 2
+        fi
+
+        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && "$INSTALLED_INPUT" == "true" ]]; then
+          echo "tools-capture-server reads the package at path and cannot be combined with installed: true." >&2
+          exit 2
+        fi
+
         report_dir="${{ inputs['output-dir'] }}"
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
         json_path="$report_dir/codex-plugin-doctor-report.json"
@@ -491,16 +502,10 @@ runs:
           fi
         }
 
-        if [[ -n "$TOOLS_CAPTURE_URL_INPUT" && -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
-          echo "tools-capture-url and tools-capture-server cannot be combined." >&2
-          record_status 2
-        elif [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
+        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
           # Starting a stdio server runs package code, so it needs the same consent as runtime probing.
           if [[ "$RUNTIME_INPUT" != "true" ]]; then
             echo "tools-capture-server requires runtime: true." >&2
-            record_status 2
-          elif [[ "$INSTALLED_INPUT" == "true" ]]; then
-            echo "tools-capture-server reads the package at path and cannot be combined with installed: true." >&2
             record_status 2
           else
             run_tools_capture doctor tools "$PACKAGE_PATH_INPUT" --server "$TOOLS_CAPTURE_SERVER_INPUT" --runtime --save-response "$tools_capture_path"
