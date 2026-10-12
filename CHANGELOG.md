@@ -12,7 +12,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Security
 
-- starting the server requires `runtime: "true"` as consent; without it, or when combined with `tools-capture-url` or `installed: "true"`, no server is started and the Action records usage status `2`; combining it with `tools-capture-token-env` is rejected before any Doctor command runs, so the capture token never reaches package code
+- starting the server requires `runtime: "true"` as consent; without it, or when combined with `tools-capture-url` or `installed: "true"`, no server is started and the Action records usage status `2`; with that consent, `tools-capture-token-env` is rejected before any Doctor command runs, so the capture token never reaches package code
 
 ## [1.70.0] - 2026-10-11
 

@@ -98,8 +98,8 @@ code feeds the Action status. `tools-diff-fail-on` defaults to `any`; `breaking`
 fails only on breaking or unclassified changes. Setting only one of
 `tools-diff-before` and `tools-diff-after`, or another `tools-diff-fail-on` value,
 records usage status `2` without running a comparison. The comparison itself is
-offline; use `tools-capture-url` below to capture the live tool list in the same
-step.
+offline; use `tools-capture-url` or `tools-capture-server` below to capture the
+live tool list in the same step.
 
 See [Offline MCP Tool Diff](offline-tool-diff.md) for impact labels and exit codes.
 
@@ -180,10 +180,11 @@ on runtime probing for the package check. The saved file, the
 `tools-capture-url`. Setting both `tools-capture-server` and
 `tools-capture-url`, or combining `tools-capture-server` with
 `installed: "true"`, records status `2` without starting a server.
-`tools-capture-token-env` is for HTTP capture only, and because it cannot be
-combined with `runtime: "true"`, using it alongside `tools-capture-server` is
-rejected with exit `2` before any Doctor command runs. To run the server inside
-Docker or behind a runtime approval digest, capture it in an earlier step with
+`tools-capture-token-env` is for HTTP capture only; with the `runtime: "true"`
+that `tools-capture-server` needs, it is rejected with exit `2` before any
+Doctor command runs, so the token never reaches package code. The capture needs
+CLI `1.70.0` or later in `version`. To run the server inside Docker or behind a
+runtime approval digest, capture it in an earlier step with
 `npx --yes codex-plugin-doctor@1.71.0 doctor tools . --server <name> --runtime --sandbox docker --save-response tools-current.json`
 and pass that file as `tools-diff-after`.
 

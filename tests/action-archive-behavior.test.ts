@@ -615,6 +615,7 @@ describe("GitHub Action stdio capture", () => {
       expect(toolsDiffInvocations(run)).toEqual([]);
       expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
       expect(run.output["tools-capture-path"]).toBe("");
+      await expect(readFile(path.join(run.reportDirectory, "mcp-tools-current.json"), "utf8")).rejects.toThrow();
     } finally {
       await run.cleanup();
     }
