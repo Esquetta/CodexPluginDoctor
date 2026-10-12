@@ -1,7 +1,7 @@
 name: Release
 
-# Publishes a stable release after a version bump reaches main: npm (trusted publishing),
-# then the vX.Y.Z tag and GitHub release with notes from CHANGELOG.md. Each step is skipped
+# Publishes a stable release after a version bump reaches main: the vX.Y.Z tag, npm (trusted
+# publishing), then the GitHub release with notes from CHANGELOG.md. Each step is skipped
 # when its part already exists, so re-running the workflow only completes what is missing.
 on:
   push:
