@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.71.0] - 2026-10-12
+
+### Added
+
+- added the GitHub Action `tools-capture-server` input, which saves the tool list of a local stdio server from the package at `path` with `doctor tools --server --runtime --save-response`; it fills the `tools-capture-path` output and becomes the comparison's after input exactly like `tools-capture-url`
+
+### Security
+
+- starting the server requires `runtime: "true"` as consent; without it, or when combined with `tools-capture-url` or `installed: "true"`, no server is started and the Action records usage status `2`; with that consent, `tools-capture-token-env` is rejected before any Doctor command runs, so the capture token never reaches package code
+
 ## [1.70.0] - 2026-10-11
 
 ### Added

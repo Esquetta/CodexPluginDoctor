@@ -577,3 +577,70 @@ describe("GitHub Action authenticated capture", () => {
     }
   });
 });
+
+describe("GitHub Action stdio capture", () => {
+  const capture = { check: "false", runtime: "true", "tools-capture-server": "local-server" };
+
+  it("starts the named stdio server only with runtime consent and compares its tool list", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-diff-before": "baseline.json", "tools-diff-fail-on": "breaking" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json"));
+      const packagePath = toBashPath(path.join(run.root, "package"));
+      expect(invocationsOf(run, "tools")).toEqual([["doctor", "tools", packagePath, "--server", "local-server", "--runtime", "--save-response", capturePath]]);
+      expect(toolsDiffInvocations(run)[0]).toEqual(["doctor", "tools-diff", "--before", "baseline.json", "--after", capturePath, "--fail-on", "breaking", "--json"]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "0" });
+      expect(run.output["tools-capture-path"]).toBe(capturePath);
+      expect(run.manifest.reports.toolsCapture).toEqual({ enabled: true, path: capturePath });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("records capture findings when the stdio capture runs alone", async () => {
+    const run = await runArchiveAction(capture, "0", "1");
+
+    try {
+      expect(invocationsOf(run, "tools")).toHaveLength(1);
+      expect(await run.readState()).toMatchObject({ status: "1" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("skips the comparison when the stdio capture does not save a response", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-diff-before": "baseline.json" }, "0", "2", true);
+
+    try {
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+      await expect(readFile(path.join(run.reportDirectory, "mcp-tools-current.json"), "utf8")).rejects.toThrow();
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ check: "false", "tools-capture-server": "local-server", "tools-diff-before": "baseline.json" }],
+    [{ ...capture, "tools-capture-url": "https://mcp.example.test/mcp", "allow-network": "true" }],
+    [{ ...capture, installed: "true" }]
+  ])("records usage status 2 without starting a server for %j", async (overrides) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      expect(invocationsOf(run, "tools")).toEqual([]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("rejects capture credentials with a stdio capture before any CLI invocation", async () => {
+    await expect(runArchiveAction({
+      ...capture, "tools-capture-token-env": "MCP_TOKEN"
+    }, "0", "0", false, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "" });
+  });
+});

@@ -58,6 +58,10 @@ inputs:
     description: Optional HTTP MCP endpoint whose complete tool list is saved to output-dir with doctor tools --save-response. Requires allow-network; loopback endpoints also require allow-local-network. When tools-diff-before is set and tools-diff-after is empty, the capture becomes the comparison's after input.
     required: false
     default: ""
+  tools-capture-server:
+    description: Optional name of a local stdio MCP server from the package at path whose complete tool list is saved to output-dir with doctor tools --server --runtime --save-response. Starting the server runs package code, so it requires runtime; it cannot be combined with tools-capture-url or installed. When tools-diff-before is set and tools-diff-after is empty, the capture becomes the comparison's after input.
+    required: false
+    default: ""
   tools-capture-token-env:
     description: Optional name of an environment variable that holds a bearer token for tools-capture-url. The token is sent only over HTTPS or to an approved loopback endpoint and is never printed or saved. Set the variable from a secret in the calling step's env.
     required: false
@@ -218,7 +222,7 @@ outputs:
     description: Path to the offline archive submission preflight Markdown report when submission-archive is configured.
     value: ${{ steps.run-doctor.outputs.submission-archive-summary-path }}
   tools-capture-path:
-    description: Path to the saved MCP tools/list response when tools-capture-url is configured and the capture completed.
+    description: Path to the saved MCP tools/list response when tools-capture-url or tools-capture-server is configured and the capture completed.
     value: ${{ steps.run-doctor.outputs.tools-capture-path }}
   tools-diff-json-path:
     description: Path to the offline MCP tool diff JSON report when tools-diff-before and tools-diff-after are configured.
@@ -259,6 +263,9 @@ runs:
         CHECK_INPUT: ${{ inputs.check }}
         RUNTIME_INPUT: ${{ inputs.runtime }}
         TOOLS_CAPTURE_URL_INPUT: ${{ inputs['tools-capture-url'] }}
+        TOOLS_CAPTURE_SERVER_INPUT: ${{ inputs['tools-capture-server'] }}
+        PACKAGE_PATH_INPUT: ${{ inputs.path }}
+        INSTALLED_INPUT: ${{ inputs.installed }}
         TOOLS_CAPTURE_TOKEN_ENV_INPUT: ${{ inputs['tools-capture-token-env'] }}
         TOOLS_DIFF_BEFORE_INPUT: ${{ inputs['tools-diff-before'] }}
         TOOLS_DIFF_AFTER_INPUT: ${{ inputs['tools-diff-after'] }}
@@ -403,7 +410,7 @@ runs:
         elif [[ "$CHECK_INPUT" != "false" ]]; then
           echo "check must be true or false." >&2
           record_status 2
-        elif [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${{ inputs.corpus }}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${{ inputs.contract }}" != "true" && "${{ inputs['review-bundle'] }}" != "true" ]]; then
+        elif [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${{ inputs.corpus }}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${{ inputs.contract }}" != "true" && "${{ inputs['review-bundle'] }}" != "true" ]]; then
           echo "check: false requires another Action mode." >&2
           record_status 2
         fi
@@ -453,7 +460,7 @@ runs:
 
         tools_diff_after="$TOOLS_DIFF_AFTER_INPUT"
         capture_feeds_diff=false
-        if [[ -n "$TOOLS_CAPTURE_URL_INPUT" && -n "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
+        if [[ ( -n "$TOOLS_CAPTURE_URL_INPUT" || -n "$TOOLS_CAPTURE_SERVER_INPUT" ) && -n "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
           capture_feeds_diff=true
         fi
 
@@ -462,7 +469,43 @@ runs:
           record_status 2
         fi
 
-        if [[ -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
+        run_tools_capture() {
+          # Remove an earlier capture so a failed run can never be compared as the live list.
+          rm -f "$tools_capture_path"
+          echo "::group::MCP tool capture"
+          set +e
+          codex-plugin-doctor "$@"
+          local code="$?"
+          set -e
+          echo "::endgroup::"
+          # Exit 0 or 1 means the response was saved; catalog findings reach the status here only
+          # when no comparison re-inspects the saved file.
+          if [[ ( "$code" -eq 0 || "$code" -eq 1 ) && -f "$tools_capture_path" ]]; then
+            tools_capture_output="$tools_capture_path"
+            if [[ "$capture_feeds_diff" != "true" ]]; then
+              record_status "$code"
+            fi
+          else
+            echo "Codex Plugin Doctor MCP tool capture did not save a response (status ${code})."
+            record_status 2
+          fi
+        }
+
+        if [[ -n "$TOOLS_CAPTURE_URL_INPUT" && -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
+          echo "tools-capture-url and tools-capture-server cannot be combined." >&2
+          record_status 2
+        elif [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
+          # Starting a stdio server runs package code, so it needs the same consent as runtime probing.
+          if [[ "$RUNTIME_INPUT" != "true" ]]; then
+            echo "tools-capture-server requires runtime: true." >&2
+            record_status 2
+          elif [[ "$INSTALLED_INPUT" == "true" ]]; then
+            echo "tools-capture-server reads the package at path and cannot be combined with installed: true." >&2
+            record_status 2
+          else
+            run_tools_capture doctor tools "$PACKAGE_PATH_INPUT" --server "$TOOLS_CAPTURE_SERVER_INPUT" --runtime --save-response "$tools_capture_path"
+          fi
+        elif [[ -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
           if [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then
             echo "tools-capture-url requires allow-network: true." >&2
             record_status 2
@@ -480,29 +523,12 @@ runs:
             if [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
               tools_capture_args+=(--bearer-token-env "$TOOLS_CAPTURE_TOKEN_ENV_INPUT")
             fi
-            # Remove an earlier capture so a failed run can never be compared as the live list.
-            rm -f "$tools_capture_path"
-            echo "::group::MCP tool capture"
-            set +e
-            codex-plugin-doctor "${tools_capture_args[@]}"
-            tools_capture_code="$?"
-            set -e
-            echo "::endgroup::"
-            # Exit 0 or 1 means the response was saved; catalog findings reach the status here only
-            # when no comparison re-inspects the saved file.
-            if [[ ( "$tools_capture_code" -eq 0 || "$tools_capture_code" -eq 1 ) && -f "$tools_capture_path" ]]; then
-              tools_capture_output="$tools_capture_path"
-              if [[ "$capture_feeds_diff" != "true" ]]; then
-                record_status "$tools_capture_code"
-              fi
-            else
-              echo "Codex Plugin Doctor MCP tool capture did not save a response (status ${tools_capture_code})."
-              record_status 2
-            fi
+            run_tools_capture "${tools_capture_args[@]}"
           fi
-          if [[ "$capture_feeds_diff" == "true" ]]; then
-            tools_diff_after="$tools_capture_output"
-          fi
+        fi
+
+        if [[ "$capture_feeds_diff" == "true" ]]; then
+          tools_diff_after="$tools_capture_output"
         fi
 
         if [[ -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
