@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.71.1] - 2026-10-12
+
+### Security
+
+- the GitHub Action now rejects `tools-capture-server` combined with `tools-capture-url` or `installed: "true"` with exit `2` before any Doctor command runs; previously, with `check` and `runtime` enabled, the package check's runtime probing could start servers before the conflict was reported
+
+### Fixed
+
+- early Action rejections, including `tools-capture-token-env` with `runtime: "true"`, now set the `status` output to `2`, end the Action with status `2`, and clear report state left by an earlier invocation in the same job instead of leaving `status` empty
+
 ## [1.71.0] - 2026-10-12
 
 ### Added
