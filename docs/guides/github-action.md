@@ -114,9 +114,9 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: Esquetta/CodexPluginDoctor@v1.71.1
+  - uses: Esquetta/CodexPluginDoctor@v1.72.0
     with:
-      version: "1.71.1"
+      version: "1.72.0"
       path: .
       tools-diff-before: mcp/tools-baseline.json
       tools-diff-after: tools-current.json

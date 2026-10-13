@@ -9,6 +9,12 @@ This changelog groups the shipped work into product-level release blocks instead
 ### Added
 
 - added `--env <NAME>` (repeatable, up to 32) to `doctor tools <path> --server <name> --runtime --sandbox docker`, which passes a host variable such as an API key into the Docker sandbox as `docker run -e NAME`; Doctor never prints the value, writes it to a report, or passes it as a command argument, and each name must be set and non-empty before anything starts; `--env` without `--sandbox docker` exits `2`, because native servers already inherit Doctor's environment
+- added the GitHub Action `tools-diff-comment` and `github-token` inputs: after a tool diff on a `pull_request` or `pull_request_target` event, the Action posts the diff summary as one pull request comment and updates it on later runs; only bot comments that start with the `<!-- codex-plugin-doctor:tools-diff -->` marker are edited, long summaries are cut below GitHub's size limit, and a comment that cannot be posted (forks, missing `gh`, GitHub Enterprise Server) produces a warning or message without changing the Action status
+
+### Security
+
+- the comment token is set only in the comment step's environment; on `pull_request_target`, the comment is skipped by step condition, so no step receives the token, when the invocation runs package code through `runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`
+- the Action now clears the tool diff state left by an earlier invocation in the same job before installing the CLI and again before running it, so a failed or stopped run never publishes an earlier comparison
 
 ### Changed
 
