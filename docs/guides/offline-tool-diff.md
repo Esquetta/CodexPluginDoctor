@@ -78,16 +78,16 @@ outputs it already reads must keep their shape.
 | `input-required-added` | breaking | A property became required. |
 | `input-property-removed` | breaking | A declared input property was removed. |
 | `input-property-type-narrowed` | breaking | An input property's or array item's `type` no longer admits every previous type (`integer` is covered by `number`). |
-| `input-property-enum-narrowed` | breaking | An input property's or array item's `enum` dropped values or was introduced. |
-| `input-constraint-tightened` | breaking | A `minimum`, `minLength`, or `minItems` rose, a `maximum`, `maxLength`, or `maxItems` fell, or such a bound or an array `items` schema was introduced. |
+| `input-property-enum-narrowed` | breaking | An input property's or array item's `enum` or `const` dropped values or was introduced (`const` counts as a one-value `enum`). |
+| `input-constraint-tightened` | breaking | A `minimum`, `minLength`, or `minItems` rose, a `maximum`, `maxLength`, or `maxItems` fell, or such a bound, a `pattern`, a `format`, or an array `items` schema was introduced. |
 | `input-additional-properties-closed` | breaking | `additionalProperties` became `false`. |
 | `output-schema-removed` | breaking | A previously declared `outputSchema` was removed. |
 | `output-type-widened` | breaking | The root `outputSchema` may now have a type it could not have before. |
 | `output-property-removed` | breaking | A declared output property was removed. |
 | `output-guarantee-removed` | breaking | An output property is no longer required. |
 | `output-property-type-widened` | breaking | An output property may now have a type it could not have before. |
-| `output-property-enum-widened` | breaking | An output property's or array item's `enum` gained values or was removed. |
-| `output-constraint-loosened` | breaking | An output bound or array `items` schema was relaxed or removed. |
+| `output-property-enum-widened` | breaking | An output property's or array item's `enum` or `const` gained values or was removed. |
+| `output-constraint-loosened` | breaking | An output bound, `pattern`, `format`, or array `items` schema was relaxed or removed. |
 | `annotation-safety-reduced` | breaking | A `readOnlyHint`, `destructiveHint`, `idempotentHint`, or `openWorldHint` moved to the less safe value, using MCP defaults for absent hints. |
 | `input-schema-unclassified` | unclassified | An `inputSchema` change outside the checks above. |
 | `output-schema-unclassified` | unclassified | An `outputSchema` change outside the checks above. |
@@ -105,12 +105,29 @@ Classification is a heuristic. The property, requirement, type, and
 nested object `properties`, and to array `items`, up to eight levels below the
 root. Below that limit, any change is unclassified. A bound that is not a finite
 number is unclassified. Composition keywords (`anyOf`, `oneOf`, `allOf`, `not`),
-references, `pattern`, `format`, `const`, exclusive bounds, tuple-form `items`,
-an `enum` at the root, `items` or `additionalProperties` changes beside
+references that cannot be resolved (see below), a changed `pattern` or `format`
+value, exclusive bounds, tuple-form `items`, an `enum` or `const` at the root, `items` or `additionalProperties` changes beside
 `unevaluatedItems` or `unevaluatedProperties`, and changes that introduce or
 modify a schema-valued `additionalProperties` (in outputs, any
-`additionalProperties` change) are reported as unclassified rather than guessed. At the root, bounds and `items` are also
-unclassified.
+`additionalProperties` change) are reported as unclassified rather than guessed. At the root, bounds, `items`, `pattern`, and
+`format` are also unclassified. A `pattern` or `format` is compared only by
+presence, because one regular expression or format cannot be checked against
+another: introducing one on an input (or removing one from an output) is a
+constraint change, removing one from an input (or introducing one on an output)
+is `compatible`, and changing its value is unclassified.
+
+Same-document references are followed. A `$ref` whose value is a JSON Pointer
+fragment such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` is
+resolved within the same `inputSchema` or `outputSchema`, so a change inside a
+referenced definition is classified with the reasons above, and a definition that
+no reference reaches does not affect the result. Recursive definitions are
+compared once per pair of references. A schema that is unchanged but reaches a
+changed definition is compared again rather than skipped. A reference is
+unclassified when its target is missing, when it is an anchor (`#Item`), when it
+sits beside keywords other than documentation keywords, when a chain of
+references is longer than eight, or when the schema declares a nested `$id`.
+Remote references are never fetched: an unchanged remote `$ref` is treated as
+unchanged, and a changed one is unclassified.
 
 A new property is `compatible` at the root and in nested objects that already
 declared properties. In any object, including the root, whose extra keys may be
