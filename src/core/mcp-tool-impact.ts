@@ -225,14 +225,16 @@ function compareStringConstraints(inner: JsonObject, outer: JsonObject, codes: D
 function pointerTarget(document: unknown, pointer: string): unknown {
   if (pointer === "#") return document;
   if (!pointer.startsWith("#/")) return undefined;
+  // RFC 6901 section 6: the fragment is percent-decoded as a whole before it is split into tokens.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pointer.slice(2));
+  } catch {
+    return undefined;
+  }
   let current = document;
-  for (const encoded of pointer.slice(2).split("/")) {
-    let token: string;
-    try {
-      token = decodeURIComponent(encoded).replace(/~1/gu, "/").replace(/~0/gu, "~");
-    } catch {
-      return undefined;
-    }
+  for (const escaped of decoded.split("/")) {
+    const token = escaped.replace(/~1/gu, "/").replace(/~0/gu, "~");
     if (Array.isArray(current) && /^(0|[1-9]\d*)$/u.test(token)) current = current[Number(token)];
     else if (isJsonObject(current) && Object.hasOwn(current, token)) current = current[token];
     else return undefined;

@@ -817,10 +817,11 @@ describe("GitHub Action tool diff pull request comment", () => {
     const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor tool diff comment");
     // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
     const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
-    expect(comment?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && !(github.event_name == 'pull_request_target' && ${packageCode}) }}`);
-    expect(skip?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && github.event_name == 'pull_request_target' && ${packageCode} }}`);
+    // Package code may have replaced tools on PATH for later steps, whatever the event.
+    expect(comment?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && !${packageCode} }}`);
+    expect(skip?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && ${packageCode} }}`);
     expect(skip?.env).toBeUndefined();
-    expect(skip?.run).toContain("::warning::Tool diff comment skipped because this job ran package code on pull_request_target.");
+    expect(skip?.run).toContain("::warning::Tool diff comment skipped because this Action invocation ran package code or was allowed to.");
     expect(comment?.env?.GH_TOKEN).toBe("${{ inputs['github-token'] }}");
     const others = steps.filter((step) => step !== comment).map((step) => JSON.stringify(step));
     expect(others.some((step) => step.includes("github-token"))).toBe(false);

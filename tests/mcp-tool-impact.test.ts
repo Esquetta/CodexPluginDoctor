@@ -268,6 +268,20 @@ describe("tool change impact classification", () => {
     expect(classify(tool("string"), tool("integer")).impact).not.toBe("compatible");
   });
 
+  it("follows a pointer to the root when only the root declares $id", () => {
+    const tool = (type: string) => input(object({ child: { type: "object", properties: { self: { $ref: "#" } } }, n: { type } }, { $id: "https://example.test/tool.json" }));
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+    expect(classify(tool("number"), tool("integer"))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+  });
+
+  it("percent-decodes the whole fragment before splitting it into pointer tokens", () => {
+    // RFC 6901 section 6: "#/$defs/a%2Fb" is the pointer "/$defs/a/b", which reaches $defs.a.b.
+    const tool = (values: string[]) => input(object({ x: { $ref: "#/$defs/a%2Fb" } }, {
+      $defs: { "a/b": { enum: ["x", "y"] }, a: { b: { enum: values } } }
+    }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "breaking", reasons: ["input-property-enum-narrowed"] });
+  });
+
   it("treats OpenAPI example values as data", () => {
     const tool = (type: string) => input(object({ a: { $ref: "#/$defs/A" }, b: { type: "string", example: { id: "123" } } }, { $defs: { A: { type } } }));
     expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });

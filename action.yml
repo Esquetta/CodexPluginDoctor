@@ -79,7 +79,7 @@ inputs:
     required: false
     default: "false"
   github-token:
-    description: Token for the tool diff comment step, set only in that step's environment. Needs pull-requests write permission. On pull_request_target the comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy runs package code in this job.
+    description: Token for the tool diff comment step, set only in that step's environment. Needs pull-requests write permission. The comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy lets this invocation run package code.
     required: false
     default: ${{ github.token }}
   tools-diff-fail-on:
@@ -853,17 +853,16 @@ runs:
           } >> "$GITHUB_STEP_SUMMARY"
         fi
 
-    # On pull_request_target the token can write to the base repository, and package code started
-    # earlier in this job (runtime probing, a stdio capture, or a profile or policy that enables them)
-    # can change what later steps run. The runner evaluates these conditions, so the token never
-    # reaches a step in that case.
+    # Package code started by this invocation (runtime probing, a stdio capture, or a profile or policy
+    # that enables them) can change what later steps run, for example through GITHUB_PATH, on any event
+    # whose token can write. The runner evaluates these conditions, so the token never reaches a step then.
     - name: Skip Codex Plugin Doctor tool diff comment
-      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && github.event_name == 'pull_request_target' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
-      run: echo "::warning::Tool diff comment skipped because this job ran package code on pull_request_target. Post the comment from a separate job."
+      run: echo "::warning::Tool diff comment skipped because this Action invocation ran package code or was allowed to. Compare saved tool lists and post the comment from a separate job."
 
     - name: Comment Codex Plugin Doctor tool diff
-      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && !(github.event_name == 'pull_request_target' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')) }}
+      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && !(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs['github-token'] }}

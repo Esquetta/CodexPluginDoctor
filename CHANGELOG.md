@@ -13,7 +13,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Security
 
-- the comment token is set only in the comment step's environment; on `pull_request_target`, the comment is skipped by step condition, so no step receives the token, when the invocation runs package code through `runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`
+- the comment token is set only in the comment step's environment; the comment is skipped by step condition on every event, so no step receives the token, when the invocation can run package code through `runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`; compare and comment from a separate job that runs no package code
 - the Action now clears the tool diff state left by an earlier invocation in the same job before installing the CLI and again before running it, so a failed or stopped run never publishes an earlier comparison
 
 ### Changed
