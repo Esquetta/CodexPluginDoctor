@@ -176,6 +176,195 @@ describe("tool change impact classification", () => {
     expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: [reason] });
   });
 
+  describe("local references", () => {
+    const withDefs = (properties: Definition, defs: Definition, key = "$defs") => input(object(properties, { [key]: defs }));
+    const outputWithDefs = (properties: Definition, defs: Definition) => output(object(properties, { $defs: defs }));
+    const ref = (name: string, key = "$defs") => ({ $ref: `#/${key}/${name}` });
+    const tree = (node: Definition) => ({ Node: object({ value: node, children: array(ref("Node")) }) });
+
+    it.each([
+      ["unchanged reference beside a changed definition it does not use", withDefs({ a: ref("A") }, { A: { type: "string" }, B: { type: "string" } }), withDefs({ a: ref("A") }, { A: { type: "string" }, B: { type: "integer" } })],
+      ["optional property added inside a referenced definition", withDefs({ a: ref("A") }, { A: object({ x: { type: "string" } }) }), withDefs({ a: ref("A") }, { A: object({ x: { type: "string" }, y: { type: "number" } }) })],
+      ["input type widened through definitions", withDefs({ a: ref("A", "definitions") }, { A: { type: "integer" } }, "definitions"), withDefs({ a: ref("A", "definitions") }, { A: { type: "number" } }, "definitions")],
+      ["reference inlined with the same schema", withDefs({ a: ref("A") }, { A: { type: "string" } }), input(object({ a: { type: "string" } }))],
+      ["reference documentation sibling changed", withDefs({ a: { ...ref("A"), description: "old" } }, { A: { type: "string" } }), withDefs({ a: { ...ref("A"), description: "new" } }, { A: { type: "string" } })],
+      ["escaped definition name", withDefs({ a: { $ref: "#/$defs/a~1b~0c" } }, { "a/b~c": { type: "integer" } }), withDefs({ a: { $ref: "#/$defs/a~1b~0c" } }, { "a/b~c": { type: "number" } })],
+      ["recursive definition widened", withDefs({ root: ref("Node") }, tree({ type: "integer" })), withDefs({ root: ref("Node") }, tree({ type: "number" }))],
+      ["array items through a reference", withDefs({ a: array(ref("A")) }, { A: { enum: ["x"] } }), withDefs({ a: array(ref("A")) }, { A: { enum: ["x", "y"] } })],
+      ["unchanged remote reference beside a widened property", input(object({ a: { $ref: "https://example.test/a.json" }, b: { type: "integer" } })), input(object({ a: { $ref: "https://example.test/a.json" }, b: { type: "number" } }))]
+    ])("classifies %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["input property removed inside a referenced definition", withDefs({ a: ref("A") }, { A: object({ x: { type: "string" } }) }), withDefs({ a: ref("A") }, { A: object({}) }), "input-property-removed"],
+      ["input requirement added inside a referenced definition", withDefs({ a: ref("A") }, { A: object({ x: { type: "string" } }) }), withDefs({ a: ref("A") }, { A: object({ x: { type: "string" } }, { required: ["x"] }) }), "input-required-added"],
+      ["reference retargeted to a narrower definition", withDefs({ a: ref("A") }, { A: { type: "number" }, B: { type: "integer" } }), withDefs({ a: ref("B") }, { A: { type: "number" }, B: { type: "integer" } }), "input-property-type-narrowed"],
+      ["inline schema replaced by a narrower reference", input(object({ a: { type: "number" } })), withDefs({ a: ref("A") }, { A: { type: "integer" } }), "input-property-type-narrowed"],
+      ["recursive definition narrowed", withDefs({ root: ref("Node") }, tree({ type: "number" })), withDefs({ root: ref("Node") }, tree({ type: "integer" })), "input-property-type-narrowed"],
+      ["output enum widened through a reference", outputWithDefs({ a: ref("A") }, { A: { enum: ["x"] } }), outputWithDefs({ a: ref("A") }, { A: { enum: ["x", "y"] } }), "output-property-enum-widened"],
+      ["reference to another property narrowed", input(object({ a: { $ref: "#/properties/b" }, b: { type: "number" } })), input(object({ a: { $ref: "#/properties/b" }, b: { type: "integer" } })), "input-property-type-narrowed"],
+      ["unchanged array items whose definition narrowed", withDefs({ a: array(ref("A")) }, { A: { enum: ["x", "y"] } }), withDefs({ a: array(ref("A")) }, { A: { enum: ["x"] } }), "input-property-enum-narrowed"]
+    ])("classifies %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it.each([
+      ["reference to a missing definition", withDefs({ a: ref("A") }, { A: { type: "string" } }), withDefs({ a: ref("B") }, { A: { type: "string" } })],
+      ["unchanged anchor reference beside a widened property", input(object({ a: { $ref: "#Item" }, b: { type: "integer" } })), input(object({ a: { $ref: "#Item" }, b: { type: "number" } }))],
+      ["remote reference changed", input(object({ a: { $ref: "https://example.test/a.json" } })), input(object({ a: { $ref: "https://example.test/b.json" } }))],
+      ["reference inside a nested resource", withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "integer" } }), withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "number" } })],
+      ["reference with a validating sibling", withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "string" } }), withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "integer" } })],
+      ["unchanged composition whose referenced definition changed", withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "string" } }), withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "number" } })],
+      ["definition reached through $dynamicRef", withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x", "y"] } }), withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x"] } })],
+      ["definition reached through an absolute URI reference", input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x", "y"] } } })), input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x"] } } }))],
+      ["definition reached through an embedded resource identifier", withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x", "y"] } }), withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x"] } })],
+      ["alias cycle introduced", withDefs({ a: ref("A") }, { A: { type: "string" }, B: ref("A") }), withDefs({ a: ref("A") }, { A: ref("B"), B: ref("A") })]
+    ])("classifies %s as unclassified", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+  });
+
+  it("compares a widely shared definition once per depth instead of once per path", () => {
+    // Ten levels of definitions where every level refers to the next ten times: 10^9 paths.
+    const defs = (leaf: Definition) => Object.fromEntries(Array.from({ length: 10 }, (_, level) => [
+      `L${level}`,
+      level === 9 ? leaf : object(Object.fromEntries(Array.from({ length: 10 }, (_, key) => [`p${key}`, { $ref: `#/$defs/L${level + 1}` }])))
+    ]));
+    const started = performance.now();
+    const result = classify(input(object({ root: { $ref: "#/$defs/L0" } }, { $defs: defs({ enum: ["x", "y"] }) })), input(object({ root: { $ref: "#/$defs/L0" } }, { $defs: defs({ enum: ["x"] }) })));
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(result.impact).not.toBe("compatible");
+  });
+
+  it.each(["default", "examples", "enum", "const"])("follows references below a property named %s", (name) => {
+    const tool = (modes: string[]) => input(object({ config: { $ref: "#/$defs/Config" } }, {
+      $defs: { Config: object({ [name]: { $ref: "#/$defs/Mode" } }), Mode: { enum: modes } }
+    }));
+    expect(classify(tool(["a", "b"]), tool(["a"]))).toEqual({ impact: "breaking", reasons: ["input-property-enum-narrowed"] });
+  });
+
+  it.each([
+    ["a $dynamicRef", { $dynamicRef: "#/$defs/A" }, {}],
+    ["a URI reference", { $ref: "https://example.test/tool.json#/$defs/A" }, { $id: "https://example.test/tool.json" }]
+  ])("compares definitions as written when %s sits below a property named like a data keyword", (_label, property, root) => {
+    const tool = (values: string[]) => input(object({ default: property }, { ...root, $defs: { A: { enum: values } } }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("follows references in draft-07 dependencies keyed by a data keyword name", () => {
+    const tool = (modes: string[]) => input(object({ default: { type: "string" } }, {
+      dependencies: { default: { $ref: "#/definitions/X" } },
+      definitions: { X: object({ m: { enum: modes } }) }
+    }));
+    expect(classify(tool(["a", "b"]), tool(["a"])).impact).not.toBe("compatible");
+  });
+
+  it("does not trust a reference into a data value that hides a dynamic reference", () => {
+    const tool = (type: string) => input(object({
+      a: { type: "object", default: { $dynamicRef: "#n" } },
+      b: { $ref: "#/properties/a/default" }
+    }, { $defs: { N: { $dynamicAnchor: "n", type } } }));
+    expect(classify(tool("string"), tool("integer")).impact).not.toBe("compatible");
+  });
+
+  it("follows a pointer to the root when only the root declares $id", () => {
+    const tool = (type: string) => input(object({ child: { type: "object", properties: { self: { $ref: "#" } } }, n: { type } }, { $id: "https://example.test/tool.json" }));
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+    expect(classify(tool("number"), tool("integer"))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+  });
+
+  it("percent-decodes the whole fragment before splitting it into pointer tokens", () => {
+    // RFC 6901 section 6: "#/$defs/a%2Fb" is the pointer "/$defs/a/b", which reaches $defs.a.b.
+    const tool = (values: string[]) => input(object({ x: { $ref: "#/$defs/a%2Fb" } }, {
+      $defs: { "a/b": { enum: ["x", "y"] }, a: { b: { enum: values } } }
+    }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "breaking", reasons: ["input-property-enum-narrowed"] });
+  });
+
+  it("treats OpenAPI example values as data", () => {
+    const tool = (type: string) => input(object({ a: { $ref: "#/$defs/A" }, b: { type: "string", example: { id: "123" } } }, { $defs: { A: { type } } }));
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+  });
+
+  it("reports a schema that exceeds the comparison budget as unclassified", () => {
+    const properties = (type: string) => Object.fromEntries(Array.from({ length: 10_001 }, (_, index) => [`p${index}`, { type }]));
+    expect(classify(input(object(properties("integer"))), input(object(properties("number"))))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("checks a large shared definition once per pointer instead of once per property", () => {
+    const big = object(Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`f${index}`, { type: "string", description: "x".repeat(20) }])));
+    const tool = (type: string) => input(object({
+      ...Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`p${index}`, { not: { $ref: "#/$defs/Big" } }])),
+      changed: { type }
+    }, { $defs: { Big: big } }));
+    const started = performance.now();
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  it("treats a nested draft-04 id as a separate resource", () => {
+    const tool = (values: string[]) => input(object({ a: { $ref: "#/definitions/A" } }, {
+      definitions: { A: { enum: values }, B: { id: "http://example.test/b.json", type: "string" } }
+    }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("handles very large arrays without exhausting the call stack", () => {
+    const big = Array.from({ length: 200_000 }, (_, index) => ({ const: index }));
+    expect(classify(
+      input(object({ a: { anyOf: big }, b: { type: "integer" } })),
+      input(object({ a: { anyOf: big }, b: { type: "number" } }))
+    )).toEqual({ impact: "compatible", reasons: [] });
+  });
+
+  it("ignores reference-like keys inside enum, const, and example values", () => {
+    const values = { enum: [{ $ref: "#/$defs/Missing" }, { $id: "x" }], examples: [{ $ref: "#/nowhere" }] };
+    expect(classify(
+      input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "integer" } } })),
+      input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "number" } } }))
+    )).toEqual({ impact: "compatible", reasons: [] });
+  });
+
+  describe("pattern, format, and const", () => {
+    const prop = (schema: Definition) => input(object({ a: schema }));
+    const outputProp = (schema: Definition) => output(object({ a: schema }));
+
+    it.each([
+      ["input pattern removed", prop({ type: "string", pattern: "^x" }), prop({ type: "string" })],
+      ["input format removed", prop({ type: "string", format: "email" }), prop({ type: "string" })],
+      ["input const removed", prop({ type: "string", const: "x" }), prop({ type: "string" })],
+      ["input const widened to an enum", prop({ const: "x" }), prop({ enum: ["x", "y"] })],
+      ["input const unchanged beside an enum", prop({ const: "x", enum: ["x", "y"] }), prop({ const: "x", enum: ["x", "y", "z"] })],
+      ["output pattern introduced", outputProp({ type: "string" }), outputProp({ type: "string", pattern: "^x" })],
+      ["output format introduced", outputProp({ type: "string" }), outputProp({ type: "string", format: "uri" })],
+      ["output enum narrowed to a const", outputProp({ enum: ["x", "y"] }), outputProp({ const: "x" })]
+    ])("classifies %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["input pattern introduced", prop({ type: "string" }), prop({ type: "string", pattern: "^x" }), "input-constraint-tightened"],
+      ["input format introduced", prop({ type: "string" }), prop({ type: "string", format: "date-time" }), "input-constraint-tightened"],
+      ["input const introduced", prop({ type: "string" }), prop({ type: "string", const: "x" }), "input-property-enum-narrowed"],
+      ["input const changed", prop({ const: "x" }), prop({ const: "y" }), "input-property-enum-narrowed"],
+      ["input enum narrowed to a const", prop({ enum: ["x", "y"] }), prop({ const: "x" }), "input-property-enum-narrowed"],
+      ["output pattern removed", outputProp({ type: "string", pattern: "^x" }), outputProp({ type: "string" }), "output-constraint-loosened"],
+      ["output format removed", outputProp({ type: "string", format: "uri" }), outputProp({ type: "string" }), "output-constraint-loosened"],
+      ["output const removed", outputProp({ type: "string", const: "x" }), outputProp({ type: "string" }), "output-property-enum-widened"]
+    ])("classifies %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it.each([
+      ["input pattern changed", prop({ type: "string", pattern: "^x" }), prop({ type: "string", pattern: "^y" })],
+      ["input format changed", prop({ type: "string", format: "email" }), prop({ type: "string", format: "uri" })],
+      ["input non-string pattern", prop({ type: "string", pattern: "^x" }), prop({ type: "string", pattern: 1 })]
+    ])("classifies %s as unclassified", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+  });
+
   it("lets a breaking reason outrank unclassified reasons and orders reasons deterministically", () => {
     const before = { name: "tool", inputSchema: object({ a: { type: "string" }, b: { type: "string", pattern: "x" } }), annotations: { readOnlyHint: true }, _meta: { a: 1 } };
     const after = { name: "tool", inputSchema: object({ b: { type: "string", pattern: "y" } }, { required: ["b"] }), annotations: {}, _meta: { a: 2 } };

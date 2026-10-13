@@ -148,7 +148,8 @@ approved loopback endpoint; it is never printed or saved. The GitHub Action can 
 live list with `tools-capture-url` (and `tools-capture-token-env`) or, for a local
 stdio server with `runtime: "true"`, `tools-capture-server`, and skip the
 plugin package check with `check: "false"` in repositories that only ship an MCP
-server.
+server. With `tools-diff-comment: "true"` it also posts the comparison as one
+pull request comment that later runs update.
 
 Local stdio servers from a package's MCP configuration can be cataloged too.
 `--runtime` is required because this starts package code; the server is stopped
@@ -161,7 +162,9 @@ codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --save
 Doctor tries `server/discover` (`2026-07-28`) first and falls back to the
 `initialize` handshake for older stdio servers, so the saved list works with
 `tools-file` and `tools-diff` either way. `--sandbox docker` and
-`--require-runtime-approval` work as they do for `check --runtime`.
+`--require-runtime-approval` work as they do for `check --runtime`; add
+`--env <NAME>` to pass a host variable such as an API key into the Docker
+container by name.
 See [MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness
@@ -582,9 +585,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.71.1
+      - uses: Esquetta/CodexPluginDoctor@v1.72.0
         with:
-          version: "1.71.1"
+          version: "1.72.0"
           path: .
           runtime: "true"
           policy: codex-publish

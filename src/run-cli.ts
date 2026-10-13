@@ -355,11 +355,13 @@ const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <p
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
-const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
+const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json] [--bearer-token-env <NAME>]";
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const MAX_FORWARDED_ENVIRONMENT_VARIABLES = 32;
+const forwardedEnvironmentHelp = "--env forwards the named host environment variable into the Docker sandbox by name; Doctor never prints its value, writes it to a report, or passes it as a command argument. Native servers already inherit Doctor's environment.";
 
 function resolveBearerToken(name: string | undefined, env: NodeJS.ProcessEnv): { token?: string } | { error: string } {
   if (name === undefined) return {};
@@ -405,15 +407,22 @@ async function runStdioToolCatalogCommand(
   targetPath: string,
   flags: string[],
   io: CliIo,
-  options: RunCliOptions
+  options: RunCliOptions,
+  env: NodeJS.ProcessEnv
 ): Promise<number> {
   const allowedSwitches = new Set(["--runtime", "--json", "--require-runtime-approval"]);
   const switches: string[] = [];
   const values = new Map<string, string>();
+  const environment: string[] = [];
   let invalid = false;
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
-    if (["--server", "--save-response", "--sandbox", "--runtime-approval-digest"].includes(flag) && !values.has(flag)) {
+    if (flag === "--env") {
+      const value = flags[index + 1];
+      if (!value || value.startsWith("-") || environment.includes(value)) { invalid = true; break; }
+      environment.push(value);
+      index += 1;
+    } else if (["--server", "--save-response", "--sandbox", "--runtime-approval-digest"].includes(flag) && !values.has(flag)) {
       const value = flags[index + 1];
       if (!value || value.startsWith("-")) { invalid = true; break; }
       values.set(flag, value);
@@ -441,6 +450,25 @@ async function runStdioToolCatalogCommand(
   if (approvalDigest !== undefined && !requireApproval) {
     io.writeStderr("--runtime-approval-digest requires --require-runtime-approval.");
     return 2;
+  }
+  if (environment.length > 0 && sandbox !== "docker") {
+    io.writeStderr("--env requires --sandbox docker; native servers already inherit Doctor's environment.");
+    return 2;
+  }
+  if (environment.length > MAX_FORWARDED_ENVIRONMENT_VARIABLES) {
+    io.writeStderr(`At most ${MAX_FORWARDED_ENVIRONMENT_VARIABLES} --env variables can be forwarded.`);
+    return 2;
+  }
+  for (const name of environment) {
+    if (!ENVIRONMENT_VARIABLE_NAME.test(name)) {
+      io.writeStderr("--env requires an environment variable name.");
+      return 2;
+    }
+    // Docker silently skips an unset name, which would start the server without it.
+    if (env[name] === undefined || env[name] === "") {
+      io.writeStderr(`Environment variable is not set: ${name}`);
+      return 2;
+    }
   }
   if (isBlockedOfflinePath(targetPath)) {
     io.writeStderr("doctor tools --server requires a local package path.");
@@ -477,7 +505,7 @@ async function runStdioToolCatalogCommand(
   }
   const snapshot = await (options.captureStdioMcpToolCatalogImpl ?? captureStdioMcpToolCatalog)(
     resolved.server,
-    sandbox === "docker" ? { sandbox: "docker" } : {}
+    sandbox !== "docker" ? {} : environment.length > 0 ? { sandbox: "docker", environment } : { sandbox: "docker" }
   );
   return finishToolCatalogCommand(io, snapshot, switches.includes("--json"), savePath);
 }
@@ -2028,7 +2056,7 @@ export async function runCli(
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${toolsUsage}\nTool catalog structure only; tools are not executed.\n--server starts the named stdio server from the package MCP configuration after explicit --runtime consent and stops it after reading the tool list.\n--save-response writes a complete enumeration as one tools/list response for doctor tools-file and tools-diff; nothing is written when enumeration is incomplete.\n${bearerTokenHelp}`);
+        io.writeStdout(`${toolsUsage}\nTool catalog structure only; tools are not executed.\n--server starts the named stdio server from the package MCP configuration after explicit --runtime consent and stops it after reading the tool list.\n${forwardedEnvironmentHelp}\n--save-response writes a complete enumeration as one tools/list response for doctor tools-file and tools-diff; nothing is written when enumeration is incomplete.\n${bearerTokenHelp}`);
         return 0;
       }
       const [url, ...flags] = remainingArgs;
@@ -2037,7 +2065,7 @@ export async function runCli(
         return 2;
       }
       if (flags.includes("--server")) {
-        return runStdioToolCatalogCommand(url, flags, io, options);
+        return runStdioToolCatalogCommand(url, flags, io, options, terminalContext.env);
       }
       const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
       const switches: string[] = [];

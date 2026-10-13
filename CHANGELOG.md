@@ -4,6 +4,25 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.72.0] - 2026-10-13
+
+### Added
+
+- added `--env <NAME>` (repeatable, up to 32) to `doctor tools <path> --server <name> --runtime --sandbox docker`, which passes a host variable such as an API key into the Docker sandbox as `docker run -e NAME`; Doctor never prints the value, writes it to a report, or passes it as a command argument, and each name must be set and non-empty before anything starts; `--env` without `--sandbox docker` exits `2`, because native servers already inherit Doctor's environment
+- added the GitHub Action `tools-diff-comment` and `github-token` inputs: after a tool diff on a `pull_request` or `pull_request_target` event, the Action posts the diff summary as one pull request comment and updates it on later runs; only bot comments that start with the `<!-- codex-plugin-doctor:tools-diff -->` marker are edited, long summaries are cut below GitHub's size limit, and a comment that cannot be posted (forks, missing `gh`, GitHub Enterprise Server) produces a warning or message without changing the Action status
+
+### Security
+
+- the comment token is set only in the comment step's environment; the comment is skipped by step condition on every event, so no step receives the token, when the invocation can run package code through `runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`; compare and comment from a separate job that runs no package code
+- the Action now clears the tool diff state left by an earlier invocation in the same job before installing the CLI and again before running it, so a failed or stopped run never publishes an earlier comparison
+
+### Changed
+
+- `doctor tools-diff` now follows same-document `$ref` JSON Pointers such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` inside each `inputSchema` and `outputSchema`, so changes inside definitions referenced directly by a property or array item (as Pydantic, FastMCP, and zod-to-json-schema emit for nested models) get the same reasons as inline schemas instead of `unclassified`; references wrapped in composition keywords, such as `anyOf: [{ "$ref": ... }, { "type": "null" }]` for optional models, stay `unclassified`; recursive definitions are compared once per reference pair, a shared definition is compared once per depth, and an unchanged schema that reaches a changed definition is compared again
+- a definition no reference reaches no longer affects the result when every reference is a same-document `$ref` fragment; with `$dynamicRef`, `$recursiveRef`, URI references, or a nested `$id` (or draft-04 `id`), definitions are compared as written and their changes stay `unclassified`
+- missing targets, anchors, references beside validating keywords, chains longer than eight, changed remote references, and comparisons that need more than 10,000 steps stay `unclassified`; remote references are never fetched
+- `const` is classified as a one-value `enum` with the existing `input-property-enum-narrowed` and `output-property-enum-widened` reasons, and introducing a `pattern` or `format` on an input (or removing one from an output) is now `input-constraint-tightened` (or `output-constraint-loosened`); removing one from an input (or introducing one on an output) is `compatible`, and changing its value stays `unclassified`
+
 ## [1.71.1] - 2026-10-12
 
 ### Security

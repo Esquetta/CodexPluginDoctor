@@ -132,6 +132,23 @@ including a server that exits again after the one restart), and `stdout-invalid`
 read-only package mount. Other commands are `blocked` with reason
 `sandbox-unsupported` and nothing starts.
 
+The container starts with no host environment. For a server that needs a value
+such as an API key at startup, add `--env <NAME>` (repeatable, up to 32 names):
+
+```bash
+codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --sandbox docker --env API_KEY --env REGION
+```
+
+Doctor passes only the variable name to `docker run -e NAME`, so Docker reads the
+value from Doctor's own environment. Doctor never prints the value, writes it
+to a report, or passes it as a command argument; the tool list itself is saved
+exactly as the server returns it, so a server that echoes a value into a tool
+definition puts it in the saved file. `--env` needs CLI `1.72.0` or later. Each
+name must be set and non-empty, or the
+command exits `2` before anything starts, because Docker would otherwise start
+the server without it. `--env` without `--sandbox docker` also exits `2`: a
+native server already inherits Doctor's whole environment.
+
 `--require-runtime-approval` gates the start on the reviewed runtime plan, as in
 `check --runtime`. Without `--runtime-approval-digest` the command prints the
 current digest from `doctor runtime-plan` and exits `1`; a different digest

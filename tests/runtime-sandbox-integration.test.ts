@@ -187,6 +187,39 @@ describe.runIf(dockerAvailable)("Docker runtime integration", () => {
     }
   }, 30_000);
 
+  it("forwards only the named host environment variables into the container", async () => {
+    const rootPath = await createDockerReadableTempDirectory("codex-doctor-docker-env-");
+    const containerName = "codex-doctor-integration-env-" + process.pid;
+    await writeFile(
+      path.join(rootPath, "env.mjs"),
+      'process.stdout.write(JSON.stringify({ forwarded: process.env.DOCTOR_FORWARDED_SENTINEL ?? null, hidden: process.env.DOCTOR_HOST_SENTINEL ?? null }));',
+      "utf8"
+    );
+    const launch = buildRuntimeLaunch({
+      sandbox: "docker",
+      packageRoot: rootPath,
+      cwd: rootPath,
+      command: "node",
+      args: ["./env.mjs"],
+      containerName,
+      environment: ["DOCTOR_FORWARDED_SENTINEL"]
+    });
+
+    try {
+      const { stdout } = await execFileAsync(launch.command, launch.args, {
+        cwd: launch.cwd,
+        encoding: "utf8",
+        env: { ...process.env, DOCTOR_FORWARDED_SENTINEL: "forwarded-value", DOCTOR_HOST_SENTINEL: "must-not-enter-container" }
+      });
+
+      expect(JSON.parse(stdout)).toEqual({ forwarded: "forwarded-value", hidden: null });
+      expect(launch.args.join(" ")).not.toContain("forwarded-value");
+    } finally {
+      await execFileAsync("docker", ["rm", "-f", containerName], { encoding: "utf8" }).catch(() => undefined);
+      await rm(rootPath, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("passes MCP protocol probes and removes the container after success", async () => {
     const before = await dockerContainers();
     const fixture = await createRuntimeFixture("success");
