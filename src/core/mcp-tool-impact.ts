@@ -57,6 +57,8 @@ const ROOT_STRUCTURAL_WITH_DEFINITIONS = new Set([...ROOT_STRUCTURAL_KEYWORDS, .
 const NESTED_STRUCTURAL_WITH_DEFINITIONS = new Set([...NESTED_STRUCTURAL_KEYWORDS, ...DEFINITION_CONTAINERS]);
 // Keywords whose values are data rather than subschemas, so reference-like keys inside them are ignored.
 const DATA_KEYWORDS = new Set(["enum", "const", "examples", "default"]);
+// Keywords whose values map names to subschemas; their keys are names, never keywords.
+const NAME_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
 // Subschemas nested deeper than this below the root are not compared and stay unclassified.
 const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
@@ -79,6 +81,8 @@ interface ReferenceScope {
   active: Set<string>;
   // Resolved schema pairs already compared at a depth, so shared definitions are compared once per depth.
   completed: Map<unknown, Map<unknown, Set<number>>>;
+  // sameMeaning results for object pairs, which depend only on the pair and the roots.
+  same: Map<unknown, Map<unknown, boolean>>;
   remaining: number;
 }
 
@@ -233,17 +237,22 @@ function pointerTarget(document: unknown, pointer: string): unknown {
   return current;
 }
 
-// Walks with an explicit stack, because tool files may nest JSON far deeper than the call stack allows.
+/**
+ * Visits every schema position below `value`. It walks with an explicit stack, because tool files may
+ * nest JSON far deeper than the call stack allows, and skips data values but not names in name maps.
+ */
 function collect(value: unknown, visit: (schema: JsonObject) => void): void {
-  const pending = [value];
+  const pending: Array<{ value: unknown; names: boolean }> = [{ value, names: false }];
   while (pending.length > 0) {
-    const current = pending.pop();
-    if (Array.isArray(current)) {
-      pending.push(...current);
-    } else if (isJsonObject(current)) {
-      visit(current);
-      for (const [key, entry] of Object.entries(current)) {
-        if (!DATA_KEYWORDS.has(key)) pending.push(entry);
+    const current = pending.pop() as { value: unknown; names: boolean };
+    if (Array.isArray(current.value)) {
+      for (const entry of current.value) pending.push({ value: entry, names: false });
+    } else if (current.names && isJsonObject(current.value)) {
+      for (const entry of Object.values(current.value)) pending.push({ value: entry, names: false });
+    } else if (isJsonObject(current.value)) {
+      visit(current.value);
+      for (const [key, entry] of Object.entries(current.value)) {
+        if (!DATA_KEYWORDS.has(key)) pending.push({ value: entry, names: NAME_MAP_KEYWORDS.has(key) });
       }
     }
   }
@@ -258,7 +267,8 @@ function hasNestedId(document: unknown): boolean {
   if (cached !== undefined) return cached;
   let found = false;
   collect(document, (schema) => {
-    if (schema !== document && typeof schema.$id === "string") found = true;
+    // Draft-04 names a resource with `id`.
+    if (schema !== document && (typeof schema.$id === "string" || typeof schema.id === "string")) found = true;
   });
   nestedIdCache.set(document, found);
   return found;
@@ -284,6 +294,7 @@ function referenceScope(before: unknown, after: unknown): ReferenceScope {
     fragmentsOnly: reachesDefinitionsOnlyThroughFragments(before) && reachesDefinitionsOnlyThroughFragments(after),
     active: new Set(),
     completed: new Map(),
+    same: new Map(),
     remaining: MAX_COMPARISONS
   };
 }
@@ -321,6 +332,17 @@ function resolveReferences(schema: unknown, document: unknown): { schema: unknow
 
 /** True when the schemas are equal and every same-document schema they reach is equal in both roots. */
 function sameMeaning(before: unknown, after: unknown, equal: Equal, scope: ReferenceScope): boolean {
+  if (typeof before !== "object" || before === null || typeof after !== "object" || after === null) {
+    return computeSameMeaning(before, after, equal, scope);
+  }
+  let byAfter = scope.same.get(before);
+  if (byAfter === undefined) scope.same.set(before, byAfter = new Map());
+  let result = byAfter.get(after);
+  if (result === undefined) byAfter.set(after, result = computeSameMeaning(before, after, equal, scope));
+  return result;
+}
+
+function computeSameMeaning(before: unknown, after: unknown, equal: Equal, scope: ReferenceScope): boolean {
   if (!equal(before, after)) return false;
   const pending = [before];
   const seen = new Set<string>();

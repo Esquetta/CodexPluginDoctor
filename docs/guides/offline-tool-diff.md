@@ -133,8 +133,8 @@ declares a nested `$id`. Remote references are never fetched: an unchanged remot
 A `$defs` or `definitions` entry that no reference reaches does not affect the
 result only when every reference in both schemas is a same-document `$ref`
 fragment. When either schema uses `$dynamicRef`, `$recursiveRef`, a URI
-reference (including one that names the schema's own `$id`), or a nested `$id`,
-definitions are compared as written and any change in them is unclassified. A
+reference (including one that names the schema's own `$id`), or a nested `$id`
+(or draft-04 `id`), definitions are compared as written and any change in them is unclassified. A
 schema whose comparison needs more than 10,000 steps is unclassified.
 
 A new property is `compatible` at the root and in nested objects that already

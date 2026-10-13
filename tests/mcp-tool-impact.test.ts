@@ -237,6 +237,36 @@ describe("tool change impact classification", () => {
     expect(result.impact).not.toBe("compatible");
   });
 
+  it.each(["default", "examples", "enum", "const"])("follows references below a property named %s", (name) => {
+    const tool = (modes: string[]) => input(object({ config: { $ref: "#/$defs/Config" } }, {
+      $defs: { Config: object({ [name]: { $ref: "#/$defs/Mode" } }), Mode: { enum: modes } }
+    }));
+    expect(classify(tool(["a", "b"]), tool(["a"]))).toEqual({ impact: "breaking", reasons: ["input-property-enum-narrowed"] });
+  });
+
+  it.each([
+    ["a $dynamicRef", { $dynamicRef: "#/$defs/A" }, {}],
+    ["a URI reference", { $ref: "https://example.test/tool.json#/$defs/A" }, { $id: "https://example.test/tool.json" }]
+  ])("compares definitions as written when %s sits below a property named like a data keyword", (_label, property, root) => {
+    const tool = (values: string[]) => input(object({ default: property }, { ...root, $defs: { A: { enum: values } } }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("treats a nested draft-04 id as a separate resource", () => {
+    const tool = (values: string[]) => input(object({ a: { $ref: "#/definitions/A" } }, {
+      definitions: { A: { enum: values }, B: { id: "http://example.test/b.json", type: "string" } }
+    }));
+    expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("handles very large arrays without exhausting the call stack", () => {
+    const big = Array.from({ length: 200_000 }, (_, index) => ({ const: index }));
+    expect(classify(
+      input(object({ a: { anyOf: big }, b: { type: "integer" } })),
+      input(object({ a: { anyOf: big }, b: { type: "number" } }))
+    )).toEqual({ impact: "compatible", reasons: [] });
+  });
+
   it("ignores reference-like keys inside enum, const, and example values", () => {
     const values = { enum: [{ $ref: "#/$defs/Missing" }, { $id: "x" }], examples: [{ $ref: "#/nowhere" }] };
     expect(classify(
