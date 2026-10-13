@@ -361,7 +361,7 @@ const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const MAX_FORWARDED_ENVIRONMENT_VARIABLES = 32;
-const forwardedEnvironmentHelp = "--env forwards the named host environment variable into the Docker sandbox by name; its value is never printed, saved, or placed in command arguments. Native servers already inherit Doctor's environment.";
+const forwardedEnvironmentHelp = "--env forwards the named host environment variable into the Docker sandbox by name; Doctor never prints its value, writes it to a report, or passes it as a command argument. Native servers already inherit Doctor's environment.";
 
 function resolveBearerToken(name: string | undefined, env: NodeJS.ProcessEnv): { token?: string } | { error: string } {
   if (name === undefined) return {};

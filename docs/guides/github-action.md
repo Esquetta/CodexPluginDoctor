@@ -189,7 +189,8 @@ step's environment, including any variable set in the step's `env`, so give the
 step only the values the server needs to start. To run the server inside Docker
 or behind a runtime approval digest, capture it in an earlier step with
 `npx --yes codex-plugin-doctor@1.71.1 doctor tools . --server <name> --runtime --sandbox docker --save-response tools-current.json`
-(add `--env <NAME>` for each variable the container needs) and pass that file as
+(with CLI `1.72.0` or later, add `--env <NAME>` for each variable the container
+needs) and pass that file as
 `tools-diff-after`.
 
 ## Recommended Workflow

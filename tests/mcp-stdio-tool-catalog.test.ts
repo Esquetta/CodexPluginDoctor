@@ -292,9 +292,11 @@ describe("captureStdioMcpToolCatalog", () => {
       const image = args.indexOf(DOCKER_RUNTIME_IMAGE);
       return spawn(args[image + 1], args.slice(image + 2), { ...options, cwd: options.cwd });
     }) as unknown as typeof spawn;
-    const snapshot = await capture("modern", { sandbox: "docker", environment: ["API_KEY"], spawnImpl, removeContainerImpl: vi.fn().mockResolvedValue(true) });
+    // The legacy server exits on the discovery probe, so the capture restarts it once.
+    const snapshot = await capture("legacy-exit", { sandbox: "docker", environment: ["API_KEY"], spawnImpl, removeContainerImpl: vi.fn().mockResolvedValue(true) });
 
-    expect(snapshot.report.status).toBe("pass");
+    expect(snapshot.report).toMatchObject({ status: "pass", protocol: { era: "legacy" } });
+    expect(launches).toHaveLength(2);
     for (const launch of launches) {
       const image = launch.indexOf(DOCKER_RUNTIME_IMAGE);
       expect(launch.slice(image - 2, image)).toEqual(["-e", "API_KEY"]);

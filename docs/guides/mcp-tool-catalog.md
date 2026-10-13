@@ -140,8 +140,11 @@ codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --sand
 ```
 
 Doctor passes only the variable name to `docker run -e NAME`, so Docker reads the
-value from Doctor's own environment; the value never appears in command
-arguments, reports, or saved files. Each name must be set and non-empty, or the
+value from Doctor's own environment. Doctor never prints the value, writes it
+to a report, or passes it as a command argument; the tool list itself is saved
+exactly as the server returns it, so a server that echoes a value into a tool
+definition puts it in the saved file. `--env` needs CLI `1.72.0` or later. Each
+name must be set and non-empty, or the
 command exits `2` before anything starts, because Docker would otherwise start
 the server without it. `--env` without `--sandbox docker` also exits `2`: a
 native server already inherits Doctor's whole environment.
