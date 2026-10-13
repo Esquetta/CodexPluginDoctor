@@ -103,6 +103,57 @@ live tool list in the same step.
 
 See [Offline MCP Tool Diff](offline-tool-diff.md) for impact labels and exit codes.
 
+### Pull request comment
+
+Set `tools-diff-comment: "true"` to post the same Markdown summary as one
+pull request comment, updated in place on later runs:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+steps:
+  - uses: Esquetta/CodexPluginDoctor@v1.71.1
+    with:
+      version: "1.71.1"
+      path: .
+      tools-diff-before: mcp/tools-baseline.json
+      tools-diff-after: tools-current.json
+      tools-diff-comment: "true"
+```
+
+The comment runs in its own step after the comparison, only on `pull_request`
+and `pull_request_target` events and only when a comparison ran. It starts with
+the marker `<!-- codex-plugin-doctor:tools-diff -->`; a later run edits the most
+recent bot comment that starts with that marker and otherwise posts a new one,
+so comments written by people are never edited. Because the marker is shared,
+use one commenting Action step per pull request: matrix jobs or several steps
+overwrite each other's comment. A personal access token posts as a user, so its
+comments are not recognized on later runs and each run adds a new one. Summaries
+longer than about 60,000 bytes are cut, with a note that the full diff is in
+`mcp-tools-diff.md` in the report directory. The summary holds counts, impact
+labels, and reason codes; like the reports, it omits tool and property names.
+Commenting supports GitHub.com only; on GitHub Enterprise Server the step is
+skipped with a message.
+
+The step uses `github-token`, which defaults to the workflow's `github.token` and
+needs `pull-requests: write`. The token is set only in the comment step's
+environment, not in the step that runs Doctor. That is not a boundary against
+package code: with `runtime: "true"` (which `tools-capture-server` requires),
+package code runs earlier in the same job and can change what later steps run,
+for example through `GITHUB_PATH` or `GITHUB_ENV`. On `pull_request_target`,
+which grants write access to pull requests from forks, the comment is therefore
+skipped with a warning when this Action invocation runs package code: with
+`runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`.
+The runner evaluates that condition before the step starts, so the token is not
+given to any step. Package code started by an earlier step in the same job is not
+detected; when package code from a pull request runs, post comments from a
+separate job that does not run it. When the comment cannot be posted, for example because pull requests from
+forks receive a read-only token on `pull_request` or the GitHub CLI is missing on
+a self-hosted runner, the step prints a warning and the Action status still comes
+from the comparison.
+
 ## MCP Server Repositories
 
 Repositories that ship an HTTP MCP server without a Codex plugin package can turn

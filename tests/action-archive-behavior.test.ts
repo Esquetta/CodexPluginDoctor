@@ -24,7 +24,18 @@ type ActionRun = {
   reportDirectory: string;
   readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; status: string }>;
   runSummary: () => Promise<string>;
+  runComment: (event: CommentEvent) => Promise<{ stdout: string; gh: string[][]; body: string | null; ghToken: string | null }>;
   cleanup: () => Promise<void>;
+};
+
+type CommentEvent = {
+  name: string;
+  payload?: Record<string, unknown>;
+  existing?: string[];
+  patchExit?: string;
+  postExit?: string;
+  withoutGh?: boolean;
+  serverUrl?: string;
 };
 
 function toBashPath(value: string): string {
@@ -82,8 +93,9 @@ async function runArchiveAction(
   const runDoctorStep = action.runs.steps.find((step) => step.id === "run-doctor");
   const runDoctorScript = runDoctorStep?.run;
   const summaryScript = action.runs.steps.find((step) => step.name === "Publish Codex Plugin Doctor summary")?.run;
+  const commentStep = action.runs.steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
 
-  if (!runDoctorScript || !summaryScript) throw new Error("Expected composite Action run-doctor and summary scripts.");
+  if (!runDoctorScript || !summaryScript || !commentStep?.run) throw new Error("Expected composite Action run-doctor, summary, and comment scripts.");
 
   await writeFile(path.join(root, "submission.zip"), "fixture", "utf8");
   await mkdir(binDirectory, { recursive: true });
@@ -197,6 +209,72 @@ fi
         await chmod(summaryScriptPath, 0o755);
         await execFileAsync(bashExecutable, [summaryScriptPath], { cwd: root, env: environment });
         return readFile(stepSummaryPath, "utf8");
+      },
+      runComment: async (event) => {
+        const ghDirectory = path.join(root, "gh-bin");
+        const ghLog = path.join(root, "gh.log");
+        const bodyCopy = path.join(root, "gh-body.md");
+        const tokenCopy = path.join(root, "gh-token");
+        const eventPath = path.join(root, "event.json");
+        await mkdir(ghDirectory, { recursive: true });
+        if (!event.withoutGh) {
+          // Stands in for gh: records arguments, copies the posted body, and replays canned results.
+          await writeFile(path.join(ghDirectory, "gh"), `#!/usr/bin/env bash
+printf '%s\\t' "$@" >> "$GH_LOG"
+printf '\\n' >> "$GH_LOG"
+printf '%s' "\${GH_TOKEN:-}" > "$GH_TOKEN_COPY"
+for argument in "$@"; do
+  if [[ "$argument" == body=@* ]]; then cp "\${argument#body=@}" "$GH_BODY_COPY"; fi
+done
+if [[ " $* " == *" --paginate "* ]]; then
+  for id in \${MOCK_GH_EXISTING:-}; do printf '%s\\n' "$id"; done
+  exit 0
+fi
+if [[ " $* " == *" PATCH "* ]]; then exit "\${MOCK_GH_PATCH_EXIT:-0}"; fi
+exit "\${MOCK_GH_POST_EXIT:-0}"
+`, "utf8");
+          await chmod(path.join(ghDirectory, "gh"), 0o755);
+        }
+        await writeFile(eventPath, JSON.stringify(event.payload ?? {}), "utf8");
+        const toolsDirectory = path.join(root, "tools-bin");
+        const bashPath = (await execFileAsync(bashExecutable, ["-c", "command -v bash"])).stdout.trim();
+        if (event.withoutGh) {
+          await mkdir(toolsDirectory, { recursive: true });
+          for (const tool of ["cat", "wc", "head", "tail", "grep", "node"]) {
+            const { stdout: located } = await execFileAsync(bashExecutable, ["-c", `command -v ${tool}`]);
+            await writeFile(path.join(toolsDirectory, tool), `#!${bashPath}\nexec "${located.trim()}" "$@"\n`, "utf8");
+            await chmod(path.join(toolsDirectory, tool), 0o755);
+          }
+        }
+        const commentScriptPath = path.join(root, "comment.sh");
+        await writeFile(commentScriptPath, renderInputs(commentStep.run as string, inputs), "utf8");
+        await chmod(commentScriptPath, 0o755);
+        // On Windows the configured bash is already absolute; elsewhere use the resolved path, because
+        // the hermetic PATH below holds no bash.
+        const { stdout } = await execFileAsync(process.platform === "win32" ? bashExecutable : bashPath, [commentScriptPath], {
+          cwd: root,
+          env: {
+            ...environment,
+            ...Object.fromEntries(Object.entries(commentStep.env ?? {}).map(([key, value]) => [key, renderInputs(value, inputs)])),
+            PATH: event.withoutGh ? toBashPath(toolsDirectory) : `${toBashPath(ghDirectory)}:${environment.PATH}`,
+            GITHUB_SERVER_URL: event.serverUrl ?? "https://github.com",
+            GH_LOG: toBashPath(ghLog),
+            GH_BODY_COPY: toBashPath(bodyCopy),
+            GH_TOKEN_COPY: toBashPath(tokenCopy),
+            GITHUB_EVENT_NAME: event.name,
+            GITHUB_EVENT_PATH: toBashPath(eventPath),
+            GITHUB_REPOSITORY: "owner/repo",
+            MOCK_GH_EXISTING: (event.existing ?? []).join(" "),
+            MOCK_GH_PATCH_EXIT: event.patchExit ?? "0",
+            MOCK_GH_POST_EXIT: event.postExit ?? "0"
+          }
+        });
+        return {
+          stdout,
+          gh: (await readFile(ghLog, "utf8").catch(() => "")).split(/\r?\n/gu).filter(Boolean).map((line) => line.split("\t").filter(Boolean)),
+          body: await readFile(bodyCopy, "utf8").catch(() => null),
+          ghToken: await readFile(tokenCopy, "utf8").catch(() => null)
+        };
       },
       cleanup: () => cleanupActionFixture(root)
     };
@@ -670,5 +748,142 @@ describe("GitHub Action stdio capture", () => {
     await expect(runArchiveAction({
       ...capture, "tools-capture-token-env": "MCP_TOKEN"
     }, "0", "0", false, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "" });
+  });
+});
+
+describe("GitHub Action tool diff pull request comment", () => {
+  const diff = { check: "false", "tools-diff-before": "before.json", "tools-diff-after": "after.json", "tools-diff-comment": "true", "github-token": "token-sentinel" };
+  const pullRequest = { name: "pull_request", payload: { pull_request: { number: 42 } } };
+  const marker = "<!-- codex-plugin-doctor:tools-diff -->";
+
+  it("posts the tool diff summary with a marker on a pull request", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh[0]).toEqual(expect.arrayContaining(["api", "--paginate", "repos/owner/repo/issues/42/comments"]));
+      expect(comment.gh[1]).toEqual(expect.arrayContaining(["api", "-X", "POST", "repos/owner/repo/issues/42/comments"]));
+      expect(comment.body?.startsWith(`${marker}\n## MCP Tool Definition Diff`)).toBe(true);
+      expect(comment.body).toContain("- Fail on: any");
+      expect(comment.ghToken).toBe("token-sentinel");
+      expect(JSON.stringify(comment.gh)).not.toContain("token-sentinel");
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor tool diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("updates the latest existing marker comment instead of posting another", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      const comment = await run.runComment({ ...pullRequest, existing: ["101", "202"] });
+      expect(comment.gh).toHaveLength(2);
+      expect(comment.gh[1]).toEqual(expect.arrayContaining(["api", "-X", "PATCH", "repos/owner/repo/issues/comments/202"]));
+      // Only bot comments that start with the marker may be edited.
+      expect(comment.gh[0]).toContain(`.[] | select(.user.type == "Bot" and (.body | startswith("${marker}"))) | .id`);
+      expect(comment.stdout).toContain("Updated the Codex Plugin Doctor tool diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("posts a new comment when the existing one cannot be updated", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      const comment = await run.runComment({ ...pullRequest, existing: ["202"], patchExit: "1" });
+      expect(comment.gh.map((call) => call.find((arg) => ["--paginate", "PATCH", "POST"].includes(arg)))).toEqual(["--paginate", "PATCH", "POST"]);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("warns without failing when the comment cannot be posted", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      const comment = await run.runComment({ ...pullRequest, postExit: "1" });
+      expect(comment.stdout).toContain("::warning::Codex Plugin Doctor could not post the tool diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("runs the comment step only when enabled, and gives the token to that step alone", async () => {
+    const action = await loadAction();
+    const steps = action.runs.steps as Array<{ name?: string; id?: string; if?: string; env?: Record<string, string>; run?: string }>;
+    const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
+    const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor tool diff comment");
+    // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
+    const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
+    expect(comment?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && !(github.event_name == 'pull_request_target' && ${packageCode}) }}`);
+    expect(skip?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && github.event_name == 'pull_request_target' && ${packageCode} }}`);
+    expect(skip?.env).toBeUndefined();
+    expect(skip?.run).toContain("::warning::Tool diff comment skipped because this job ran package code on pull_request_target.");
+    expect(comment?.env?.GH_TOKEN).toBe("${{ inputs['github-token'] }}");
+    const others = steps.filter((step) => step !== comment).map((step) => JSON.stringify(step));
+    expect(others.some((step) => step.includes("github-token"))).toBe(false);
+    expect(action.inputs["tools-diff-comment"].default).toBe("false");
+  });
+
+  it.each([
+    ["no tool diff ran", { check: "false", "tools-diff-comment": "true", "tools-diff-before": "before.json" }, pullRequest, true],
+    ["the event is not a pull request", diff, { name: "push", payload: {} }, true],
+    ["the event has no pull request number", diff, { name: "pull_request", payload: { pull_request: { number: "x" } } }, true],
+    ["gh is not installed", diff, { ...pullRequest, withoutGh: true }, "the GitHub CLI is not installed."],
+    ["the server is not GitHub.com", diff, { ...pullRequest, serverUrl: "https://github.example.test" }, "Tool diff comment skipped because it supports GitHub.com only."]
+  ])("skips the comment when %s", async (_label, overrides, event, message) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      const comment = await run.runComment(event);
+      expect(comment.gh).toEqual([]);
+      expect(comment.body).toBeNull();
+      if (typeof message === "string") expect(comment.stdout).toContain(message);
+      else if (message) expect(comment.stdout).toMatch(/Tool diff comment skipped/u);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("truncates a summary that would exceed the comment size limit", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      await writeFile(path.join(run.reportDirectory, "mcp-tools-diff.md"), "x".repeat(70_000), "utf8");
+      const comment = await run.runComment(pullRequest);
+      expect(comment.body?.length).toBeLessThanOrEqual(65_536);
+      expect(comment.body).toContain("Truncated; the full diff is in mcp-tools-diff.md in the report directory.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("forgets a tool diff from an earlier invocation before installing the CLI", async () => {
+    const install = (await loadAction()).runs.steps.find((step) => step.name === "Install Codex Plugin Doctor")?.run ?? "";
+    expect(install.indexOf('rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"')).toBeGreaterThanOrEqual(0);
+    expect(install.indexOf("rm -f")).toBeLessThan(install.indexOf("npm install"));
+  });
+
+  it("forgets a tool diff from an earlier invocation when this one stops unexpectedly", async () => {
+    // The mock CLI fails its version check, so the run step stops before recording any state.
+    await expect(runArchiveAction(diff, "0", "0", true, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+      code: 99,
+      actionState: { toolsDiff: undefined }
+    });
+  });
+
+  it("closes a code fence that truncation leaves open", async () => {
+    const run = await runArchiveAction(diff);
+
+    try {
+      await writeFile(path.join(run.reportDirectory, "mcp-tools-diff.md"), `## MCP Tool Definition Diff\n\n\`\`\`text\n${"line\n".repeat(20_000)}\`\`\`\n`, "utf8");
+      const comment = await run.runComment(pullRequest);
+      const fences = (comment.body ?? "").split("\n").filter((line) => line.startsWith("\`\`\`"));
+      expect(fences.length % 2).toBe(0);
+    } finally {
+      await run.cleanup();
+    }
   });
 });

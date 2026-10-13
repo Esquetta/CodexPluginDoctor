@@ -74,6 +74,14 @@ inputs:
     description: Optional saved MCP tools/list response compared against tools-diff-before. Requires tools-diff-before.
     required: false
     default: ""
+  tools-diff-comment:
+    description: Post or update one pull request comment with the tool diff summary when the diff runs on a pull_request or pull_request_target event. Requires pull-requests write permission for github-token; when the comment cannot be posted, such as for pull requests from forks, the Action warns and does not fail.
+    required: false
+    default: "false"
+  github-token:
+    description: Token for the tool diff comment step, set only in that step's environment. Needs pull-requests write permission. On pull_request_target the comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy runs package code in this job.
+    required: false
+    default: ${{ github.token }}
   tools-diff-fail-on:
     description: Tool diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes.
     required: false
@@ -242,7 +250,10 @@ runs:
   steps:
     - name: Install Codex Plugin Doctor
       shell: bash
-      run: npm install -g codex-plugin-doctor@${{ inputs.version }}
+      run: |
+        # A comparison recorded by an earlier invocation in this job must not be published if this one fails.
+        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        npm install -g codex-plugin-doctor@${{ inputs.version }}
 
     - name: Run Codex Plugin Doctor
       id: run-doctor
@@ -272,6 +283,9 @@ runs:
         TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
       run: |
         set -euo pipefail
+
+        # A comparison recorded by an earlier invocation in this job must not be published if this one stops early.
+        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
 
         # Exits before any Doctor command, recording status 2 for the later steps and the status output
         # and clearing state that an earlier invocation in the same job left behind.
@@ -837,6 +851,83 @@ runs:
             echo "- Exit status: ${status}"
             echo "- Report directory: \`${report_dir}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    # On pull_request_target the token can write to the base repository, and package code started
+    # earlier in this job (runtime probing, a stdio capture, or a profile or policy that enables them)
+    # can change what later steps run. The runner evaluates these conditions, so the token never
+    # reaches a step in that case.
+    - name: Skip Codex Plugin Doctor tool diff comment
+      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && github.event_name == 'pull_request_target' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+      shell: bash
+      run: echo "::warning::Tool diff comment skipped because this job ran package code on pull_request_target. Post the comment from a separate job."
+
+    - name: Comment Codex Plugin Doctor tool diff
+      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && !(github.event_name == 'pull_request_target' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')) }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs['github-token'] }}
+        REPORT_DIR_INPUT: ${{ inputs['output-dir'] }}
+      run: |
+        set -euo pipefail
+
+        tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        summary_path="$REPORT_DIR_INPUT/mcp-tools-diff.md"
+        body_path="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-comment.md"
+        marker="<!-- codex-plugin-doctor:tools-diff -->"
+        # GitHub rejects comment bodies longer than 65,536 characters.
+        max_summary_bytes=60000
+
+        if [[ "$(cat "$tools_diff_state_file" 2>/dev/null || echo false)" != "true" || ! -f "$summary_path" ]]; then
+          echo "Tool diff comment skipped because no tool diff ran."
+          exit 0
+        fi
+
+        if [[ "${GITHUB_EVENT_NAME:-}" != "pull_request" && "${GITHUB_EVENT_NAME:-}" != "pull_request_target" ]]; then
+          echo "Tool diff comment skipped because the event is not a pull request."
+          exit 0
+        fi
+
+        if [[ "${GITHUB_SERVER_URL:-https://github.com}" != "https://github.com" ]]; then
+          echo "Tool diff comment skipped because it supports GitHub.com only."
+          exit 0
+        fi
+
+        pull_request="$(node -e 'const event = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const number = event.pull_request?.number; process.stdout.write(Number.isInteger(number) && number > 0 ? String(number) : "");' "${GITHUB_EVENT_PATH:-}" 2>/dev/null || true)"
+        if [[ -z "$pull_request" ]]; then
+          echo "Tool diff comment skipped because the event has no pull request number."
+          exit 0
+        fi
+
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "::warning::Codex Plugin Doctor could not post the tool diff comment because the GitHub CLI is not installed."
+          exit 0
+        fi
+
+        {
+          echo "$marker"
+          if [[ "$(wc -c < "$summary_path")" -gt "$max_summary_bytes" ]]; then
+            truncated="$(head -c "$max_summary_bytes" "$summary_path")"
+            printf '%s\n' "$truncated"
+            # The text fallback wraps the diff in a code fence that the cut may leave open.
+            if (( $(printf '%s\n' "$truncated" | grep -c '^```' || true) % 2 == 1 )); then
+              printf '```\n'
+            fi
+            printf '\n_Truncated; the full diff is in mcp-tools-diff.md in the report directory._\n'
+          else
+            cat "$summary_path"
+          fi
+        } > "$body_path"
+
+        comments_path="repos/${GITHUB_REPOSITORY}/issues/${pull_request}/comments"
+        # Only bot comments that start with the marker are updated, so people's comments are never edited.
+        existing="$(gh api --paginate "$comments_path" --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\"))) | .id" 2>/dev/null | tail -n 1 || true)"
+        if [[ "$existing" =~ ^[0-9]+$ ]] && gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F "body=@${body_path}" >/dev/null 2>&1; then
+          echo "Updated the Codex Plugin Doctor tool diff comment."
+        elif gh api -X POST "$comments_path" -F "body=@${body_path}" >/dev/null 2>&1; then
+          echo "Posted the Codex Plugin Doctor tool diff comment."
+        else
+          echo "::warning::Codex Plugin Doctor could not post the tool diff comment. Grant pull-requests: write to github-token; pull requests from forks receive a read-only token."
         fi
 
     - name: Upload Codex Plugin Doctor reports
