@@ -151,7 +151,10 @@ started by an earlier step in the same job is not detected. To comment on a
 runtime capture, capture in one job, upload the saved tool list as an artifact,
 and compare and comment in a second job that downloads it and runs no package
 code (`check: "false"`, `tools-diff-before`, `tools-diff-after`,
-`tools-diff-comment: "true"`). When the comment cannot be posted, for example because pull requests from
+`tools-diff-comment: "true"`). Grant `pull-requests: write` only to the second
+job, set `persist-credentials: false` on `actions/checkout` in the first, and give
+the second job a different `artifact-name` (or `upload-artifact: "false"`), because
+an artifact name can be uploaded only once per run. When the comment cannot be posted, for example because pull requests from
 forks receive a read-only token on `pull_request` or the GitHub CLI is missing on
 a self-hosted runner, the step prints a warning and the Action status still comes
 from the comparison.
