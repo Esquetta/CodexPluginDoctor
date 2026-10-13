@@ -9,6 +9,8 @@ export interface RuntimeLaunchInput {
   command: string;
   args: string[];
   containerName: string;
+  // Host variables passed into the container by name; Docker reads each value from its own environment.
+  environment?: readonly string[];
 }
 
 export interface RuntimeLaunchSpec {
@@ -48,6 +50,11 @@ export function buildRuntimeLaunch(input: RuntimeLaunchInput): RuntimeLaunchSpec
     throw new RuntimeSandboxError("Docker sandbox does not support commas in package paths.");
   }
 
+  const environment = input.environment ?? [];
+  if (environment.some((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))) {
+    throw new RuntimeSandboxError("Invalid environment variable name.");
+  }
+
   const workdir = relativeCwd
     ? `/workspace/${relativeCwd.split(path.sep).join("/")}`
     : "/workspace";
@@ -82,6 +89,7 @@ export function buildRuntimeLaunch(input: RuntimeLaunchInput): RuntimeLaunchSpec
       `type=bind,source=${input.packageRoot},target=/workspace,readonly`,
       "--workdir",
       workdir,
+      ...environment.flatMap((name) => ["-e", name]),
       DOCKER_RUNTIME_IMAGE,
       "node",
       ...input.args
