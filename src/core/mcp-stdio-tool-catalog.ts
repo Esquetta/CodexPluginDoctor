@@ -64,6 +64,8 @@ export type McpStdioServerResolution =
 
 export interface McpStdioToolCatalogOptions {
   sandbox?: RuntimeSandboxMode;
+  // Host environment variable names forwarded into the Docker sandbox; native servers inherit the environment.
+  environment?: readonly string[];
   now?: () => number;
   spawnImpl?: typeof spawn;
   // Resolves true when the named container was removed or no longer exists.
@@ -494,7 +496,8 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
         command: server.command,
         args: server.args,
         cwd: server.cwd,
-        containerName: `codex-doctor-${randomUUID()}`
+        containerName: `codex-doctor-${randomUUID()}`,
+        environment: options.environment
       })
     : {
         command: server.command,

@@ -184,10 +184,13 @@ so neither the capture nor the package check's runtime probing starts a server.
 `tools-capture-token-env` is for HTTP capture only; with the `runtime: "true"`
 that `tools-capture-server` needs, it is rejected with exit `2` before any
 Doctor command runs, so the token never reaches package code. The capture needs
-CLI `1.70.0` or later in `version`. To run the server inside Docker or behind a
-runtime approval digest, capture it in an earlier step with
+CLI `1.70.0` or later in `version`. The server starts natively and inherits the
+step's environment, including any variable set in the step's `env`, so give the
+step only the values the server needs to start. To run the server inside Docker
+or behind a runtime approval digest, capture it in an earlier step with
 `npx --yes codex-plugin-doctor@1.71.1 doctor tools . --server <name> --runtime --sandbox docker --save-response tools-current.json`
-and pass that file as `tools-diff-after`.
+(add `--env <NAME>` for each variable the container needs) and pass that file as
+`tools-diff-after`.
 
 ## Recommended Workflow
 

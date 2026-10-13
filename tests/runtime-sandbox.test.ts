@@ -206,6 +206,36 @@ describe("Docker runtime launch policy", () => {
     ).toThrow(RuntimeSandboxError);
   });
 
+  it("forwards environment variables by name only, before the image", () => {
+    const launch = buildRuntimeLaunch({
+      sandbox: "docker",
+      packageRoot: "/package",
+      cwd: "/package",
+      command: "node",
+      args: ["index.js"],
+      containerName: "codex-doctor-test",
+      environment: ["API_KEY", "REGION"]
+    });
+
+    const image = launch.args.indexOf(DOCKER_RUNTIME_IMAGE);
+    expect(launch.args.slice(image - 4, image)).toEqual(["-e", "API_KEY", "-e", "REGION"]);
+    expect(launch.args.filter((arg) => arg.startsWith("API_KEY") || arg.startsWith("REGION"))).toEqual(["API_KEY", "REGION"]);
+  });
+
+  it.each(["API-KEY", "A=B", "", "1X"])("rejects the environment variable name %j", (name) => {
+    expect(() =>
+      buildRuntimeLaunch({
+        sandbox: "docker",
+        packageRoot: "/package",
+        cwd: "/package",
+        command: "node",
+        args: [],
+        containerName: "codex-doctor-test",
+        environment: [name]
+      })
+    ).toThrow("Invalid environment variable name.");
+  });
+
   it("rejects a cwd outside the package root", () => {
     expect(() =>
       buildRuntimeLaunch({

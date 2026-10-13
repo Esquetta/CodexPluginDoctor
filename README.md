@@ -161,7 +161,9 @@ codex-plugin-doctor doctor tools ./my-plugin --server my-server --runtime --save
 Doctor tries `server/discover` (`2026-07-28`) first and falls back to the
 `initialize` handshake for older stdio servers, so the saved list works with
 `tools-file` and `tools-diff` either way. `--sandbox docker` and
-`--require-runtime-approval` work as they do for `check --runtime`.
+`--require-runtime-approval` work as they do for `check --runtime`; add
+`--env <NAME>` to pass a host variable such as an API key into the Docker
+container by name.
 See [MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
 ### Remote MCP Readiness

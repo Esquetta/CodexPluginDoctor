@@ -108,6 +108,47 @@ describe("doctor tools <path> --server", () => {
     expect(captureStdioMcpToolCatalogImpl).toHaveBeenCalledExactlyOnceWith(expect.anything(), { sandbox: "docker" });
   });
 
+  describe("Docker environment forwarding", () => {
+    const context = (env: Record<string, string | undefined>) => ({ terminalContext: { stdoutIsTTY: false, stderrIsTTY: false, env } });
+    const docker = [fixtureRoot, "--server", "modern", "--runtime", "--sandbox", "docker"];
+
+    it("forwards only the variable names to the Docker capture", async () => {
+      const c = capture();
+      const captureStdioMcpToolCatalogImpl = vi.fn().mockResolvedValue({ report: report(), tools: null, cache: null });
+      expect(await runCli(["doctor", "tools", ...docker, "--env", "API_KEY", "--env", "REGION"], c.io, {
+        captureStdioMcpToolCatalogImpl, ...context({ API_KEY: "secret-sentinel", REGION: "eu" })
+      })).toBe(0);
+      expect(captureStdioMcpToolCatalogImpl).toHaveBeenCalledExactlyOnceWith(expect.anything(), { sandbox: "docker", environment: ["API_KEY", "REGION"] });
+      expect([...c.stdout, ...c.stderr].join("\n")).not.toContain("secret-sentinel");
+    });
+
+    it.each([
+      [[fixtureRoot, "--server", "modern", "--runtime", "--env", "API_KEY"], { API_KEY: "x" }, "--env requires --sandbox docker; native servers already inherit Doctor's environment."],
+      [[...docker, "--env", "bad-name"], { "bad-name": "x" }, "--env requires an environment variable name."],
+      [[...docker, "--env", "API_KEY", "--env", "API_KEY"], { API_KEY: "x" }, "Invalid or duplicate tool catalog arguments."],
+      [[...docker, "--env"], {}, "Invalid or duplicate tool catalog arguments."],
+      [[...docker, "--env", "API_KEY"], {}, "Environment variable is not set: API_KEY"],
+      [[...docker, "--env", "API_KEY"], { API_KEY: "" }, "Environment variable is not set: API_KEY"]
+    ])("rejects %j before starting a server", async (args, env, message) => {
+      const c = capture();
+      const captureStdioMcpToolCatalogImpl = vi.fn();
+      expect(await runCli(["doctor", "tools", ...args], c.io, { captureStdioMcpToolCatalogImpl, ...context(env) })).toBe(2);
+      expect(c.stderr.join("\n")).toContain(message);
+      expect(captureStdioMcpToolCatalogImpl).not.toHaveBeenCalled();
+    });
+
+    it("rejects more than 32 forwarded variables", async () => {
+      const names = Array.from({ length: 33 }, (_, index) => `VAR_${index}`);
+      const c = capture();
+      const captureStdioMcpToolCatalogImpl = vi.fn();
+      expect(await runCli(["doctor", "tools", ...docker, ...names.flatMap((name) => ["--env", name])], c.io, {
+        captureStdioMcpToolCatalogImpl, ...context(Object.fromEntries(names.map((name) => [name, "x"])))
+      })).toBe(2);
+      expect(c.stderr.join("\n")).toContain("At most 32 --env variables can be forwarded.");
+      expect(captureStdioMcpToolCatalogImpl).not.toHaveBeenCalled();
+    });
+  });
+
   it("renders the transport, protocol, and execution backend as text", async () => {
     const c = capture();
     const captureStdioMcpToolCatalogImpl = vi.fn().mockResolvedValue({ report: report(), tools: null, cache: null });
