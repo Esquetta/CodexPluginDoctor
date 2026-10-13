@@ -237,18 +237,21 @@ exit "\${MOCK_GH_POST_EXIT:-0}"
         }
         await writeFile(eventPath, JSON.stringify(event.payload ?? {}), "utf8");
         const toolsDirectory = path.join(root, "tools-bin");
+        const bashPath = (await execFileAsync(bashExecutable, ["-c", "command -v bash"])).stdout.trim();
         if (event.withoutGh) {
           await mkdir(toolsDirectory, { recursive: true });
           for (const tool of ["cat", "wc", "head", "tail", "grep", "node"]) {
             const { stdout: located } = await execFileAsync(bashExecutable, ["-c", `command -v ${tool}`]);
-            await writeFile(path.join(toolsDirectory, tool), `#!/usr/bin/env bash\nexec "${located.trim()}" "$@"\n`, "utf8");
+            await writeFile(path.join(toolsDirectory, tool), `#!${bashPath}\nexec "${located.trim()}" "$@"\n`, "utf8");
             await chmod(path.join(toolsDirectory, tool), 0o755);
           }
         }
         const commentScriptPath = path.join(root, "comment.sh");
         await writeFile(commentScriptPath, renderInputs(commentStep.run as string, inputs), "utf8");
         await chmod(commentScriptPath, 0o755);
-        const { stdout } = await execFileAsync(bashExecutable, [commentScriptPath], {
+        // On Windows the configured bash is already absolute; elsewhere use the resolved path, because
+        // the hermetic PATH below holds no bash.
+        const { stdout } = await execFileAsync(process.platform === "win32" ? bashExecutable : bashPath, [commentScriptPath], {
           cwd: root,
           env: {
             ...environment,
@@ -809,9 +812,15 @@ describe("GitHub Action tool diff pull request comment", () => {
 
   it("runs the comment step only when enabled, and gives the token to that step alone", async () => {
     const action = await loadAction();
-    const steps = action.runs.steps as Array<{ name?: string; id?: string; if?: string; env?: Record<string, string> }>;
+    const steps = action.runs.steps as Array<{ name?: string; id?: string; if?: string; env?: Record<string, string>; run?: string }>;
     const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
-    expect(comment?.if).toBe("${{ always() && inputs['tools-diff-comment'] == 'true' }}");
+    const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor tool diff comment");
+    // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
+    const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
+    expect(comment?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && !(github.event_name == 'pull_request_target' && ${packageCode}) }}`);
+    expect(skip?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && github.event_name == 'pull_request_target' && ${packageCode} }}`);
+    expect(skip?.env).toBeUndefined();
+    expect(skip?.run).toContain("::warning::Tool diff comment skipped because this job ran package code on pull_request_target.");
     expect(comment?.env?.GH_TOKEN).toBe("${{ inputs['github-token'] }}");
     const others = steps.filter((step) => step !== comment).map((step) => JSON.stringify(step));
     expect(others.some((step) => step.includes("github-token"))).toBe(false);
@@ -823,8 +832,7 @@ describe("GitHub Action tool diff pull request comment", () => {
     ["the event is not a pull request", diff, { name: "push", payload: {} }, true],
     ["the event has no pull request number", diff, { name: "pull_request", payload: { pull_request: { number: "x" } } }, true],
     ["gh is not installed", diff, { ...pullRequest, withoutGh: true }, "the GitHub CLI is not installed."],
-    ["the server is not GitHub.com", diff, { ...pullRequest, serverUrl: "https://github.example.test" }, "Tool diff comment skipped because it supports GitHub.com only."],
-    ["package code ran on pull_request_target", { ...diff, runtime: "true" }, { name: "pull_request_target", payload: { pull_request: { number: 42 } } }, "::warning::Tool diff comment skipped because runtime: \"true\" ran package code in this job on pull_request_target"]
+    ["the server is not GitHub.com", diff, { ...pullRequest, serverUrl: "https://github.example.test" }, "Tool diff comment skipped because it supports GitHub.com only."]
   ])("skips the comment when %s", async (_label, overrides, event, message) => {
     const run = await runArchiveAction(overrides);
 
@@ -850,6 +858,12 @@ describe("GitHub Action tool diff pull request comment", () => {
     } finally {
       await run.cleanup();
     }
+  });
+
+  it("forgets a tool diff from an earlier invocation before installing the CLI", async () => {
+    const install = (await loadAction()).runs.steps.find((step) => step.name === "Install Codex Plugin Doctor")?.run ?? "";
+    expect(install.indexOf('rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"')).toBeGreaterThanOrEqual(0);
+    expect(install.indexOf("rm -f")).toBeLessThan(install.indexOf("npm install"));
   });
 
   it("forgets a tool diff from an earlier invocation when this one stops unexpectedly", async () => {

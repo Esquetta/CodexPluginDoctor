@@ -143,10 +143,13 @@ environment, not in the step that runs Doctor. That is not a boundary against
 package code: with `runtime: "true"` (which `tools-capture-server` requires),
 package code runs earlier in the same job and can change what later steps run,
 for example through `GITHUB_PATH` or `GITHUB_ENV`. On `pull_request_target`,
-which grants write access to pull requests from forks, the comment step is
-therefore skipped with a warning whenever `runtime: "true"` is set. When package
-code from a pull request runs, post comments from a separate job that does not
-run it. When the comment cannot be posted, for example because pull requests from
+which grants write access to pull requests from forks, the comment is therefore
+skipped with a warning when this Action invocation runs package code: with
+`runtime: "true"`, `profile: publish`, or `policy: codex-publish` or `mcp-strict`.
+The runner evaluates that condition before the step starts, so the token is not
+given to any step. Package code started by an earlier step in the same job is not
+detected; when package code from a pull request runs, post comments from a
+separate job that does not run it. When the comment cannot be posted, for example because pull requests from
 forks receive a read-only token on `pull_request` or the GitHub CLI is missing on
 a self-hosted runner, the step prints a warning and the Action status still comes
 from the comparison.
