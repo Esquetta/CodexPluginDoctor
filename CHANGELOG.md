@@ -6,6 +6,10 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ## [1.72.0] - 2026-10-13
 
+### Added
+
+- added `--env <NAME>` (repeatable, up to 32) to `doctor tools <path> --server <name> --runtime --sandbox docker`, which passes a host variable such as an API key into the Docker sandbox as `docker run -e NAME`; Doctor never prints the value, writes it to a report, or passes it as a command argument, and each name must be set and non-empty before anything starts; `--env` without `--sandbox docker` exits `2`, because native servers already inherit Doctor's environment
+
 ### Changed
 
 - `doctor tools-diff` now follows same-document `$ref` JSON Pointers such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` inside each `inputSchema` and `outputSchema`, so changes inside definitions referenced directly by a property or array item (as Pydantic, FastMCP, and zod-to-json-schema emit for nested models) get the same reasons as inline schemas instead of `unclassified`; references wrapped in composition keywords, such as `anyOf: [{ "$ref": ... }, { "type": "null" }]` for optional models, stay `unclassified`; recursive definitions are compared once per reference pair, a shared definition is compared once per depth, and an unchanged schema that reaches a changed definition is compared again
