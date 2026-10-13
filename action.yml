@@ -79,7 +79,7 @@ inputs:
     required: false
     default: "false"
   github-token:
-    description: Token used only by the tool diff comment step. It is not available to the step that runs Doctor or package code.
+    description: Token for the tool diff comment step, set only in that step's environment. Needs pull-requests write permission. On pull_request_target the comment is skipped when runtime is true, because package code that ran earlier in the job could reach later steps.
     required: false
     default: ${{ github.token }}
   tools-diff-fail-on:
@@ -280,6 +280,9 @@ runs:
         TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
       run: |
         set -euo pipefail
+
+        # A comparison recorded by an earlier invocation in this job must not be published if this one stops early.
+        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
 
         # Exits before any Doctor command, recording status 2 for the later steps and the status output
         # and clearing state that an earlier invocation in the same job left behind.
@@ -853,6 +856,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs['github-token'] }}
         REPORT_DIR_INPUT: ${{ inputs['output-dir'] }}
+        RUNTIME_INPUT: ${{ inputs.runtime }}
       run: |
         set -euo pipefail
 
@@ -873,6 +877,18 @@ runs:
           exit 0
         fi
 
+        # Package code started earlier in this job can change PATH, BASH_ENV, or the summary for later
+        # steps, so a write token on pull_request_target is never handed to a step after it.
+        if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request_target" && "$RUNTIME_INPUT" == "true" ]]; then
+          echo "::warning::Tool diff comment skipped because runtime: \"true\" ran package code in this job on pull_request_target. Post the comment from a separate job."
+          exit 0
+        fi
+
+        if [[ "${GITHUB_SERVER_URL:-https://github.com}" != "https://github.com" ]]; then
+          echo "Tool diff comment skipped because it supports GitHub.com only."
+          exit 0
+        fi
+
         pull_request="$(node -e 'const event = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const number = event.pull_request?.number; process.stdout.write(Number.isInteger(number) && number > 0 ? String(number) : "");' "${GITHUB_EVENT_PATH:-}" 2>/dev/null || true)"
         if [[ -z "$pull_request" ]]; then
           echo "Tool diff comment skipped because the event has no pull request number."
@@ -887,8 +903,13 @@ runs:
         {
           echo "$marker"
           if [[ "$(wc -c < "$summary_path")" -gt "$max_summary_bytes" ]]; then
-            head -c "$max_summary_bytes" "$summary_path"
-            printf '\n\n_Truncated; see the step summary or the report artifact for the full diff._\n'
+            truncated="$(head -c "$max_summary_bytes" "$summary_path")"
+            printf '%s\n' "$truncated"
+            # The text fallback wraps the diff in a code fence that the cut may leave open.
+            if (( $(printf '%s\n' "$truncated" | grep -c '^```' || true) % 2 == 1 )); then
+              printf '```\n'
+            fi
+            printf '\n_Truncated; the full diff is in mcp-tools-diff.md in the report directory._\n'
           else
             cat "$summary_path"
           fi

@@ -127,19 +127,29 @@ The comment runs in its own step after the comparison, only on `pull_request`
 and `pull_request_target` events and only when a comparison ran. It starts with
 the marker `<!-- codex-plugin-doctor:tools-diff -->`; a later run edits the most
 recent bot comment that starts with that marker and otherwise posts a new one,
-so comments written by people are never edited. Summaries longer than about
-60,000 bytes are cut and point to the step summary and the report artifact. The
-summary holds counts, impact labels, and reason codes; like the reports, it
-omits tool and property names.
+so comments written by people are never edited. Because the marker is shared,
+use one commenting Action step per pull request: matrix jobs or several steps
+overwrite each other's comment. A personal access token posts as a user, so its
+comments are not recognized on later runs and each run adds a new one. Summaries
+longer than about 60,000 bytes are cut, with a note that the full diff is in
+`mcp-tools-diff.md` in the report directory. The summary holds counts, impact
+labels, and reason codes; like the reports, it omits tool and property names.
+Commenting supports GitHub.com only; on GitHub Enterprise Server the step is
+skipped with a message.
 
 The step uses `github-token`, which defaults to the workflow's `github.token` and
-is given only to the comment step, never to the step that runs Doctor, runtime
-probing, or a stdio capture. The token needs `pull-requests: write`. When the
-comment cannot be posted, for example because pull requests from forks receive a
-read-only token or the GitHub CLI is missing on a self-hosted runner, the step
-prints a warning and the Action status still comes from the comparison. On
-`pull_request_target`, which runs with write access, do not combine the comment
-with `runtime: "true"` against code checked out from the pull request.
+needs `pull-requests: write`. The token is set only in the comment step's
+environment, not in the step that runs Doctor. That is not a boundary against
+package code: with `runtime: "true"` (which `tools-capture-server` requires),
+package code runs earlier in the same job and can change what later steps run,
+for example through `GITHUB_PATH` or `GITHUB_ENV`. On `pull_request_target`,
+which grants write access to pull requests from forks, the comment step is
+therefore skipped with a warning whenever `runtime: "true"` is set. When package
+code from a pull request runs, post comments from a separate job that does not
+run it. When the comment cannot be posted, for example because pull requests from
+forks receive a read-only token on `pull_request` or the GitHub CLI is missing on
+a self-hosted runner, the step prints a warning and the Action status still comes
+from the comparison.
 
 ## MCP Server Repositories
 
