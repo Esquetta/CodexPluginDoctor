@@ -119,15 +119,23 @@ is `compatible`, and changing its value is unclassified.
 Same-document references are followed. A `$ref` whose value is a JSON Pointer
 fragment such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` is
 resolved within the same `inputSchema` or `outputSchema`, so a change inside a
-referenced definition is classified with the reasons above, and a definition that
-no reference reaches does not affect the result. Recursive definitions are
-compared once per pair of references. A schema that is unchanged but reaches a
-changed definition is compared again rather than skipped. A reference is
-unclassified when its target is missing, when it is an anchor (`#Item`), when it
-sits beside keywords other than documentation keywords, when a chain of
-references is longer than eight, or when the schema declares a nested `$id`.
-Remote references are never fetched: an unchanged remote `$ref` is treated as
-unchanged, and a changed one is unclassified.
+referenced definition is classified with the reasons above. Recursive definitions
+are compared once per pair of references, and a definition shared by many
+properties is compared once per depth. A schema that is unchanged but reaches a
+changed definition is compared again rather than skipped, so an unchanged
+reference that cannot be resolved is unclassified whenever the tool's schema
+changes elsewhere. A reference is unclassified when its target is missing, when
+it is an anchor (`#Item`), when it sits beside keywords other than documentation
+keywords, when a chain of references is longer than eight, or when the schema
+declares a nested `$id`. Remote references are never fetched: an unchanged remote
+`$ref` is treated as unchanged, and a changed one is unclassified.
+
+A `$defs` or `definitions` entry that no reference reaches does not affect the
+result only when every reference in both schemas is a same-document `$ref`
+fragment. When either schema uses `$dynamicRef`, `$recursiveRef`, a URI
+reference (including one that names the schema's own `$id`), or a nested `$id`,
+definitions are compared as written and any change in them is unclassified. A
+schema whose comparison needs more than 10,000 steps is unclassified.
 
 A new property is `compatible` at the root and in nested objects that already
 declared properties. In any object, including the root, whose extra keys may be

@@ -41,16 +41,22 @@ const UNCLASSIFIED_REASONS = new Set<ToolChangeReason>([
 
 // Keywords that document a schema without constraining accepted or produced values.
 const DOCUMENTATION_KEYWORDS = new Set(["title", "description", "examples", "default", "deprecated", "$comment"]);
-// Definition containers are compared only where a resolved `$ref` reaches into them.
-const ROOT_STRUCTURAL_KEYWORDS = new Set(["type", "properties", "required", "additionalProperties", "$schema", "$defs", "definitions"]);
+const ROOT_STRUCTURAL_KEYWORDS = new Set(["type", "properties", "required", "additionalProperties", "$schema"]);
 const LOWER_BOUND_KEYWORDS = ["minimum", "minLength", "minItems"];
 const UPPER_BOUND_KEYWORDS = ["maximum", "maxLength", "maxItems"];
 // String keywords that can only be introduced or removed with a known effect; a changed value is unclassified.
 const STRING_CONSTRAINT_KEYWORDS = ["pattern", "format"];
 const NESTED_STRUCTURAL_KEYWORDS = new Set([
-  "type", "enum", "const", "properties", "required", "additionalProperties", "items", "$defs", "definitions",
+  "type", "enum", "const", "properties", "required", "additionalProperties", "items",
   ...LOWER_BOUND_KEYWORDS, ...UPPER_BOUND_KEYWORDS, ...STRING_CONSTRAINT_KEYWORDS
 ]);
+// When every reference is a same-document fragment, definition containers are compared only
+// where a resolved `$ref` reaches into them; otherwise they are compared as written.
+const DEFINITION_CONTAINERS = ["$defs", "definitions"];
+const ROOT_STRUCTURAL_WITH_DEFINITIONS = new Set([...ROOT_STRUCTURAL_KEYWORDS, ...DEFINITION_CONTAINERS]);
+const NESTED_STRUCTURAL_WITH_DEFINITIONS = new Set([...NESTED_STRUCTURAL_KEYWORDS, ...DEFINITION_CONTAINERS]);
+// Keywords whose values are data rather than subschemas, so reference-like keys inside them are ignored.
+const DATA_KEYWORDS = new Set(["enum", "const", "examples", "default"]);
 // Subschemas nested deeper than this below the root are not compared and stay unclassified.
 const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
@@ -58,14 +64,22 @@ const MAX_NESTED_DEPTH = 8;
 const DEFINITION_KEYWORDS = new Set(["$defs", "definitions", "$id", "$anchor", "$dynamicAnchor"]);
 // A `$ref` chain longer than this, such as an alias cycle, is not resolved.
 const MAX_REFERENCE_HOPS = 8;
+// Schema comparisons allowed per tool field; a schema that needs more is unclassified.
+const MAX_COMPARISONS = 10_000;
 
 type Direction = "input" | "output";
 
-/** The root schemas that same-document references resolve against, and the reference pairs being compared. */
+/** The root schemas that same-document references resolve against, and the comparison state for them. */
 interface ReferenceScope {
   before: unknown;
   after: unknown;
+  // True when both roots reach definitions only through same-document `$ref` fragments.
+  fragmentsOnly: boolean;
+  // Reference pairs being compared further up.
   active: Set<string>;
+  // Resolved schema pairs already compared at a depth, so shared definitions are compared once per depth.
+  completed: Map<unknown, Map<unknown, Set<number>>>;
+  remaining: number;
 }
 
 interface DirectionCodes {
@@ -224,7 +238,9 @@ function collect(value: unknown, visit: (schema: JsonObject) => void): void {
     for (const entry of value) collect(entry, visit);
   } else if (isJsonObject(value)) {
     visit(value);
-    for (const entry of Object.values(value)) collect(entry, visit);
+    for (const [key, entry] of Object.entries(value)) {
+      if (!DATA_KEYWORDS.has(key)) collect(entry, visit);
+    }
   }
 }
 
@@ -237,10 +253,45 @@ function hasNestedId(document: unknown): boolean {
   if (cached !== undefined) return cached;
   let found = false;
   collect(document, (schema) => {
-    if (schema !== document && schema.$id !== undefined) found = true;
+    if (schema !== document && typeof schema.$id === "string") found = true;
   });
   nestedIdCache.set(document, found);
   return found;
+}
+
+/**
+ * False when a definition may be reached other than through a same-document `$ref` fragment:
+ * through `$dynamicRef` or `$recursiveRef`, a URI reference, or a nested `$id` resource.
+ */
+function reachesDefinitionsOnlyThroughFragments(document: unknown): boolean {
+  let fragmentsOnly = !hasNestedId(document);
+  collect(document, (schema) => {
+    if (schema.$dynamicRef !== undefined || schema.$recursiveRef !== undefined
+      || (typeof schema.$ref === "string" && !schema.$ref.startsWith("#"))) fragmentsOnly = false;
+  });
+  return fragmentsOnly;
+}
+
+function referenceScope(before: unknown, after: unknown): ReferenceScope {
+  return {
+    before,
+    after,
+    fragmentsOnly: reachesDefinitionsOnlyThroughFragments(before) && reachesDefinitionsOnlyThroughFragments(after),
+    active: new Set(),
+    completed: new Map(),
+    remaining: MAX_COMPARISONS
+  };
+}
+
+/** Records a resolved pair as compared at this depth; returns false when it already was. */
+function markCompleted(scope: ReferenceScope, before: unknown, after: unknown, depth: number): boolean {
+  let byAfter = scope.completed.get(before);
+  if (byAfter === undefined) scope.completed.set(before, byAfter = new Map());
+  let depths = byAfter.get(after);
+  if (depths === undefined) byAfter.set(after, depths = new Set());
+  if (depths.has(depth)) return false;
+  depths.add(depth);
+  return true;
 }
 
 /**
@@ -299,8 +350,13 @@ function compareSchema(
   reasons: Set<ToolChangeReason>,
   scope: ReferenceScope
 ): void {
-  if (sameMeaning(before, after, equal, scope)) return;
   const codes = CODES[direction];
+  if (scope.remaining <= 0) {
+    reasons.add(codes.unclassified);
+    return;
+  }
+  scope.remaining -= 1;
+  if (sameMeaning(before, after, equal, scope)) return;
   const resolvedBefore = resolveReferences(before, scope.before);
   const resolvedAfter = resolveReferences(after, scope.after);
   if (resolvedBefore === null || resolvedAfter === null) {
@@ -309,18 +365,22 @@ function compareSchema(
   }
   if (resolvedBefore.ref !== undefined || resolvedAfter.ref !== undefined) {
     // A reference pair already being compared further up is assumed to hold, so recursive
-    // definitions terminate. An inline side is finite, so it needs no such guard.
+    // definitions terminate; a pair with one inline side is bounded by the depth limit. A pair
+    // already compared at this depth added its reasons then.
     const pair = resolvedBefore.ref !== undefined && resolvedAfter.ref !== undefined
       ? JSON.stringify([resolvedBefore.ref, resolvedAfter.ref])
       : undefined;
     if (pair !== undefined && scope.active.has(pair)) return;
+    if (!markCompleted(scope, resolvedBefore.schema, resolvedAfter.schema, depth)) return;
     if (pair !== undefined) scope.active.add(pair);
     compareSchema(resolvedBefore.schema, resolvedAfter.schema, direction, depth, equal, reasons, scope);
     if (pair !== undefined) scope.active.delete(pair);
     return;
   }
   const root = depth === 0;
-  const structural = root ? ROOT_STRUCTURAL_KEYWORDS : NESTED_STRUCTURAL_KEYWORDS;
+  const structural = scope.fragmentsOnly
+    ? root ? ROOT_STRUCTURAL_WITH_DEFINITIONS : NESTED_STRUCTURAL_WITH_DEFINITIONS
+    : root ? ROOT_STRUCTURAL_KEYWORDS : NESTED_STRUCTURAL_KEYWORDS;
   if (depth > MAX_NESTED_DEPTH || !isJsonObject(before) || !isJsonObject(after)
     || !sameMeaning(keywordsOutside(before, structural), keywordsOutside(after, structural), equal, scope)
     || !equal(before.$schema, after.$schema)) {
@@ -388,7 +448,7 @@ function classifyOutputSchema(before: unknown, after: unknown, equal: Equal, rea
     reasons.add("output-schema-removed");
     return;
   }
-  compareSchema(before, after, "output", 0, equal, reasons, { before, after, active: new Set() });
+  compareSchema(before, after, "output", 0, equal, reasons, referenceScope(before, after));
 }
 
 function hint(annotations: unknown, key: string, absent: boolean): boolean | null {
@@ -431,7 +491,7 @@ export function classifyChangedTool(
 ): ToolChangeClassification {
   const reasons = new Set<ToolChangeReason>();
   if (fields.includes("inputSchema")) {
-    compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, { before: before.inputSchema, after: after.inputSchema, active: new Set() });
+    compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, referenceScope(before.inputSchema, after.inputSchema));
   }
   if (fields.includes("outputSchema")) classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons);
   if (fields.includes("annotations")) classifyAnnotations(before.annotations, after.annotations, reasons);

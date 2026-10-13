@@ -8,8 +8,9 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Changed
 
-- `doctor tools-diff` now follows same-document `$ref` JSON Pointers such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` inside each `inputSchema` and `outputSchema`, so changes inside referenced definitions (the shape Pydantic, FastMCP, and zod-to-json-schema emit) get the same reasons as inline schemas instead of `unclassified`; recursive definitions are compared once per reference pair, a definition no reference reaches no longer affects the result, and an unchanged schema that reaches a changed definition is compared again
-- missing targets, anchors, references beside validating keywords, chains longer than eight, schemas with a nested `$id`, and changed remote references stay `unclassified`; remote references are never fetched
+- `doctor tools-diff` now follows same-document `$ref` JSON Pointers such as `#/$defs/Item`, `#/definitions/Item`, or `#/properties/a` inside each `inputSchema` and `outputSchema`, so changes inside referenced definitions (the shape Pydantic, FastMCP, and zod-to-json-schema emit) get the same reasons as inline schemas instead of `unclassified`; recursive definitions are compared once per reference pair, a shared definition is compared once per depth, and an unchanged schema that reaches a changed definition is compared again
+- a definition no reference reaches no longer affects the result when every reference is a same-document `$ref` fragment; with `$dynamicRef`, `$recursiveRef`, URI references, or a nested `$id`, definitions are compared as written and their changes stay `unclassified`
+- missing targets, anchors, references beside validating keywords, chains longer than eight, changed remote references, and comparisons that need more than 10,000 steps stay `unclassified`; remote references are never fetched
 - `const` is classified as a one-value `enum` with the existing `input-property-enum-narrowed` and `output-property-enum-widened` reasons, and introducing a `pattern` or `format` on an input (or removing one from an output) is now `input-constraint-tightened` (or `output-constraint-loosened`); removing one from an input is `compatible`, and changing its value stays `unclassified`
 
 ## [1.71.1] - 2026-10-12

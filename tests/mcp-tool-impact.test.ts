@@ -216,10 +216,33 @@ describe("tool change impact classification", () => {
       ["reference inside a nested resource", withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "integer" } }), withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "number" } })],
       ["reference with a validating sibling", withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "string" } }), withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "integer" } })],
       ["unchanged composition whose referenced definition changed", withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "string" } }), withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "number" } })],
+      ["definition reached through $dynamicRef", withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x", "y"] } }), withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x"] } })],
+      ["definition reached through an absolute URI reference", input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x", "y"] } } })), input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x"] } } }))],
+      ["definition reached through an embedded resource identifier", withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x", "y"] } }), withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x"] } })],
       ["alias cycle introduced", withDefs({ a: ref("A") }, { A: { type: "string" }, B: ref("A") }), withDefs({ a: ref("A") }, { A: ref("B"), B: ref("A") })]
     ])("classifies %s as unclassified", (_label, before, after) => {
       expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
     });
+  });
+
+  it("compares a widely shared definition once per depth instead of once per path", () => {
+    // Ten levels of definitions where every level refers to the next ten times: 10^9 paths.
+    const defs = (leaf: Definition) => Object.fromEntries(Array.from({ length: 10 }, (_, level) => [
+      `L${level}`,
+      level === 9 ? leaf : object(Object.fromEntries(Array.from({ length: 10 }, (_, key) => [`p${key}`, { $ref: `#/$defs/L${level + 1}` }])))
+    ]));
+    const started = performance.now();
+    const result = classify(input(object({ root: { $ref: "#/$defs/L0" } }, { $defs: defs({ enum: ["x", "y"] }) })), input(object({ root: { $ref: "#/$defs/L0" } }, { $defs: defs({ enum: ["x"] }) })));
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(result.impact).not.toBe("compatible");
+  });
+
+  it("ignores reference-like keys inside enum, const, and example values", () => {
+    const values = { enum: [{ $ref: "#/$defs/Missing" }, { $id: "x" }], examples: [{ $ref: "#/nowhere" }] };
+    expect(classify(
+      input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "integer" } } })),
+      input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "number" } } }))
+    )).toEqual({ impact: "compatible", reasons: [] });
   });
 
   describe("pattern, format, and const", () => {
