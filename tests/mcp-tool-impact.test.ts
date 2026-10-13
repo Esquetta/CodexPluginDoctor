@@ -260,6 +260,14 @@ describe("tool change impact classification", () => {
     expect(classify(tool(["a", "b"]), tool(["a"])).impact).not.toBe("compatible");
   });
 
+  it("does not trust a reference into a data value that hides a dynamic reference", () => {
+    const tool = (type: string) => input(object({
+      a: { type: "object", default: { $dynamicRef: "#n" } },
+      b: { $ref: "#/properties/a/default" }
+    }, { $defs: { N: { $dynamicAnchor: "n", type } } }));
+    expect(classify(tool("string"), tool("integer")).impact).not.toBe("compatible");
+  });
+
   it("treats OpenAPI example values as data", () => {
     const tool = (type: string) => input(object({ a: { $ref: "#/$defs/A" }, b: { type: "string", example: { id: "123" } } }, { $defs: { A: { type } } }));
     expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });

@@ -277,6 +277,27 @@ function hasNestedId(document: unknown): boolean {
   return found;
 }
 
+const opaqueCache = new WeakMap<object, boolean>();
+
+/**
+ * True when a reference target holds a reference that is not a same-document fragment, or a
+ * resource identifier. Whole-document scans skip data values, so a `$ref` that points into one
+ * could otherwise reach references those scans never saw.
+ */
+function opaqueTarget(target: unknown, document: unknown): boolean {
+  if (!isJsonObject(target) && !Array.isArray(target)) return false;
+  const cached = opaqueCache.get(target);
+  if (cached !== undefined) return cached;
+  let opaque = false;
+  collect(target, (schema) => {
+    if (schema.$dynamicRef !== undefined || schema.$recursiveRef !== undefined
+      || (typeof schema.$ref === "string" && !schema.$ref.startsWith("#"))
+      || (schema !== document && (typeof schema.$id === "string" || typeof schema.id === "string"))) opaque = true;
+  });
+  opaqueCache.set(target, opaque);
+  return opaque;
+}
+
 /**
  * False when a definition may be reached other than through a same-document `$ref` fragment:
  * through `$dynamicRef` or `$recursiveRef`, a URI reference, or a nested `$id` resource.
@@ -327,7 +348,7 @@ function resolveReferences(schema: unknown, document: unknown): { schema: unknow
     if (hop === MAX_REFERENCE_HOPS || typeof pointer !== "string" || hasNestedId(document)
       || Object.keys(current).some((key) => key !== "$ref" && !DOCUMENTATION_KEYWORDS.has(key))) return null;
     const target = pointerTarget(document, pointer);
-    if (target === undefined) return null;
+    if (target === undefined || opaqueTarget(target, document)) return null;
     ref = pointer;
     current = target;
   }
@@ -359,7 +380,9 @@ function pointerInfo(pointer: string, equal: Equal, scope: ReferenceScope): { sa
   let info = scope.pointers.get(pointer);
   if (info === undefined) {
     const target = pointerTarget(scope.before, pointer);
-    info = target === undefined || !equal(target, pointerTarget(scope.after, pointer))
+    const afterTarget = pointerTarget(scope.after, pointer);
+    info = target === undefined || !equal(target, afterTarget)
+      || opaqueTarget(target, scope.before) || opaqueTarget(afterTarget, scope.after)
       ? { same: false, inner: [] }
       : { same: true, inner: fragmentPointers(target) };
     scope.pointers.set(pointer, info);

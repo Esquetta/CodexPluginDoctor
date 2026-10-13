@@ -127,7 +127,8 @@ reference that cannot be resolved is unclassified whenever the tool's schema
 changes elsewhere. A reference is unclassified when its target is missing, when
 it is an anchor (`#Item`), when it sits beside keywords other than documentation
 keywords, when a chain of references is longer than eight, or when the schema
-declares a nested `$id` (or draft-04 `id`). Remote references are never fetched: an unchanged remote
+declares a nested `$id` (or draft-04 `id`), or when its target contains a
+`$dynamicRef`, `$recursiveRef`, URI reference, or `$id`. Remote references are never fetched: an unchanged remote
 `$ref` is treated as unchanged, and a changed one is unclassified.
 
 A `$defs` or `definitions` entry that no reference reaches does not affect the
