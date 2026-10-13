@@ -252,6 +252,35 @@ describe("tool change impact classification", () => {
     expect(classify(tool(["x", "y"]), tool(["x"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
   });
 
+  it("follows references in draft-07 dependencies keyed by a data keyword name", () => {
+    const tool = (modes: string[]) => input(object({ default: { type: "string" } }, {
+      dependencies: { default: { $ref: "#/definitions/X" } },
+      definitions: { X: object({ m: { enum: modes } }) }
+    }));
+    expect(classify(tool(["a", "b"]), tool(["a"])).impact).not.toBe("compatible");
+  });
+
+  it("treats OpenAPI example values as data", () => {
+    const tool = (type: string) => input(object({ a: { $ref: "#/$defs/A" }, b: { type: "string", example: { id: "123" } } }, { $defs: { A: { type } } }));
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+  });
+
+  it("reports a schema that exceeds the comparison budget as unclassified", () => {
+    const properties = (type: string) => Object.fromEntries(Array.from({ length: 10_001 }, (_, index) => [`p${index}`, { type }]));
+    expect(classify(input(object(properties("integer"))), input(object(properties("number"))))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+  });
+
+  it("checks a large shared definition once per pointer instead of once per property", () => {
+    const big = object(Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`f${index}`, { type: "string", description: "x".repeat(20) }])));
+    const tool = (type: string) => input(object({
+      ...Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`p${index}`, { not: { $ref: "#/$defs/Big" } }])),
+      changed: { type }
+    }, { $defs: { Big: big } }));
+    const started = performance.now();
+    expect(classify(tool("integer"), tool("number"))).toEqual({ impact: "compatible", reasons: [] });
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
   it("treats a nested draft-04 id as a separate resource", () => {
     const tool = (values: string[]) => input(object({ a: { $ref: "#/definitions/A" } }, {
       definitions: { A: { enum: values }, B: { id: "http://example.test/b.json", type: "string" } }

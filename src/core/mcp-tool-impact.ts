@@ -56,9 +56,10 @@ const DEFINITION_CONTAINERS = ["$defs", "definitions"];
 const ROOT_STRUCTURAL_WITH_DEFINITIONS = new Set([...ROOT_STRUCTURAL_KEYWORDS, ...DEFINITION_CONTAINERS]);
 const NESTED_STRUCTURAL_WITH_DEFINITIONS = new Set([...NESTED_STRUCTURAL_KEYWORDS, ...DEFINITION_CONTAINERS]);
 // Keywords whose values are data rather than subschemas, so reference-like keys inside them are ignored.
-const DATA_KEYWORDS = new Set(["enum", "const", "examples", "default"]);
+// `example` is the OpenAPI spelling that generated MCP schemas often carry.
+const DATA_KEYWORDS = new Set(["enum", "const", "examples", "example", "default"]);
 // Keywords whose values map names to subschemas; their keys are names, never keywords.
-const NAME_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
+const NAME_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"]);
 // Subschemas nested deeper than this below the root are not compared and stay unclassified.
 const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
@@ -83,6 +84,8 @@ interface ReferenceScope {
   completed: Map<unknown, Map<unknown, Set<number>>>;
   // sameMeaning results for object pairs, which depend only on the pair and the roots.
   same: Map<unknown, Map<unknown, boolean>>;
+  // Per pointer: whether its target is equal in both roots, and the pointers inside that target.
+  pointers: Map<string, { same: boolean; inner: string[] }>;
   remaining: number;
 }
 
@@ -295,6 +298,7 @@ function referenceScope(before: unknown, after: unknown): ReferenceScope {
     active: new Set(),
     completed: new Map(),
     same: new Map(),
+    pointers: new Map(),
     remaining: MAX_COMPARISONS
   };
 }
@@ -342,23 +346,39 @@ function sameMeaning(before: unknown, after: unknown, equal: Equal, scope: Refer
   return result;
 }
 
+function fragmentPointers(value: unknown): string[] {
+  const pointers: string[] = [];
+  collect(value, (schema) => {
+    if (typeof schema.$ref === "string" && schema.$ref.startsWith("#")) pointers.push(schema.$ref);
+  });
+  return pointers;
+}
+
+/** Compares a pointer's targets once per scope, so a large shared definition is walked once. */
+function pointerInfo(pointer: string, equal: Equal, scope: ReferenceScope): { same: boolean; inner: string[] } {
+  let info = scope.pointers.get(pointer);
+  if (info === undefined) {
+    const target = pointerTarget(scope.before, pointer);
+    info = target === undefined || !equal(target, pointerTarget(scope.after, pointer))
+      ? { same: false, inner: [] }
+      : { same: true, inner: fragmentPointers(target) };
+    scope.pointers.set(pointer, info);
+  }
+  return info;
+}
+
 function computeSameMeaning(before: unknown, after: unknown, equal: Equal, scope: ReferenceScope): boolean {
   if (!equal(before, after)) return false;
-  const pending = [before];
+  const pending = fragmentPointers(before);
+  if (pending.length > 0 && (hasNestedId(scope.before) || hasNestedId(scope.after))) return false;
   const seen = new Set<string>();
   while (pending.length > 0) {
-    const pointers: string[] = [];
-    collect(pending.pop(), (schema) => {
-      if (typeof schema.$ref === "string" && schema.$ref.startsWith("#")) pointers.push(schema.$ref);
-    });
-    for (const pointer of pointers) {
-      if (seen.has(pointer)) continue;
-      seen.add(pointer);
-      if (hasNestedId(scope.before) || hasNestedId(scope.after)) return false;
-      const target = pointerTarget(scope.before, pointer);
-      if (target === undefined || !equal(target, pointerTarget(scope.after, pointer))) return false;
-      pending.push(target);
-    }
+    const pointer = pending.pop() as string;
+    if (seen.has(pointer)) continue;
+    seen.add(pointer);
+    const info = pointerInfo(pointer, equal, scope);
+    if (!info.same) return false;
+    for (const inner of info.inner) pending.push(inner);
   }
   return true;
 }
