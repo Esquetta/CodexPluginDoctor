@@ -148,7 +148,8 @@ approved loopback endpoint; it is never printed or saved. The GitHub Action can 
 live list with `tools-capture-url` (and `tools-capture-token-env`) or, for a local
 stdio server with `runtime: "true"`, `tools-capture-server`, and skip the
 plugin package check with `check: "false"` in repositories that only ship an MCP
-server.
+server. With `tools-diff-comment: "true"` it also posts the comparison as one
+pull request comment that later runs update.
 
 Local stdio servers from a package's MCP configuration can be cataloged too.
 `--runtime` is required because this starts package code; the server is stopped
