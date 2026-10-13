@@ -233,13 +233,18 @@ function pointerTarget(document: unknown, pointer: string): unknown {
   return current;
 }
 
+// Walks with an explicit stack, because tool files may nest JSON far deeper than the call stack allows.
 function collect(value: unknown, visit: (schema: JsonObject) => void): void {
-  if (Array.isArray(value)) {
-    for (const entry of value) collect(entry, visit);
-  } else if (isJsonObject(value)) {
-    visit(value);
-    for (const [key, entry] of Object.entries(value)) {
-      if (!DATA_KEYWORDS.has(key)) collect(entry, visit);
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (Array.isArray(current)) {
+      pending.push(...current);
+    } else if (isJsonObject(current)) {
+      visit(current);
+      for (const [key, entry] of Object.entries(current)) {
+        if (!DATA_KEYWORDS.has(key)) pending.push(entry);
+      }
     }
   }
 }
