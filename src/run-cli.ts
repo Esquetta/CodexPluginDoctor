@@ -375,7 +375,7 @@ function parseToolsDiffWorkflowOptions(flags: string[]): { options: ToolsDiffWor
   if (!values.has("--tools-diff-server")) return { error: "--baseline and --sandbox require --tools-diff-server." };
   // Control characters would break the generated workflow lines.
   const usable = (value: string | undefined): value is string =>
-    value !== undefined && value.trim() !== "" && !/[\u0000-\u001f\u007f]/u.test(value);
+    value !== undefined && value.trim() !== "" && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
   const server = values.get("--tools-diff-server");
   if (!usable(server)) return { error: "--tools-diff-server requires a server name." };
   const baseline = values.has("--baseline") ? values.get("--baseline") : "mcp/tools-baseline.json";
@@ -3684,7 +3684,7 @@ export async function runCli(
           "Initialized Codex Plugin Doctor tool diff workflow",
           `Root: ${toolsResult.rootPath}`,
           `Workflow: ${toolsResult.workflowPath}`,
-          `Commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools . --server ${server} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${baseline}`
+          `Capture and commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, baseline))}`
         ].join("\n")
       );
       return 0;

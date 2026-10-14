@@ -67,9 +67,10 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "  capture:",
     "    runs-on: ubuntu-latest",
     "    steps:",
-    "      - uses: actions/checkout@v4",
+    "      - uses: actions/checkout@v5",
     "        with:",
     "          persist-credentials: false",
+    "      # Add install or build steps here if the server needs them; the Docker sandbox has no network.",
     `      - uses: Esquetta/CodexPluginDoctor@v${packageVersion}`,
     "        with:",
     `          version: \"${packageVersion}\"`,
@@ -78,6 +79,8 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          runtime: \"true\"",
     `          tools-capture-server: ${yamlString(options.server)}`,
     ...(options.sandbox === "docker" ? ["          tools-capture-sandbox: docker"] : []),
+    "          # Catalog warnings are judged by the comparison in the compare job.",
+    "          tools-capture-defer-findings: \"true\"",
     "          artifact-name: mcp-tools-capture",
     "",
     "  compare:",
@@ -87,19 +90,20 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "      contents: read",
     "      pull-requests: write",
     "    steps:",
-    "      - uses: actions/checkout@v4",
+    "      - uses: actions/checkout@v5",
     "        with:",
     "          persist-credentials: false",
-    "      - uses: actions/download-artifact@v4",
+    "      # Outside the checkout, so files from the pull request cannot shadow the downloaded list.",
+    "      - uses: actions/download-artifact@v5",
     "        with:",
     "          name: mcp-tools-capture",
-    "          path: mcp-tools-capture",
+    "          path: ${{ runner.temp }}/mcp-tools-capture",
     `      - uses: Esquetta/CodexPluginDoctor@v${packageVersion}`,
     "        with:",
     `          version: \"${packageVersion}\"`,
     "          check: \"false\"",
     `          tools-diff-before: ${yamlString(options.baseline)}`,
-    "          tools-diff-after: mcp-tools-capture/mcp-tools-current.json",
+    "          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json",
     "          tools-diff-fail-on: breaking",
     "          tools-diff-comment: \"true\"",
     "          artifact-name: mcp-tools-diff",
@@ -113,6 +117,8 @@ export async function initToolsDiffWorkflow(targetPath: string, options: ToolsDi
 
   await mkdir(path.dirname(workflowPath), { recursive: true });
   await writeFile(workflowPath, buildToolsDiffWorkflow(options), "utf8");
+  // doctor tools --save-response writes into an existing directory, so the baseline can be captured next.
+  await mkdir(path.dirname(path.resolve(rootPath, options.baseline)), { recursive: true });
 
   return { rootPath, workflowPath };
 }

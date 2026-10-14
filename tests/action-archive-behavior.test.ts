@@ -754,9 +754,42 @@ describe("GitHub Action stdio capture", () => {
     [{ ...capture, "tools-capture-sandbox": "podman" }, "tools-capture-sandbox must be docker or empty."],
     [{ check: "false", "tools-capture-sandbox": "docker", "tools-diff-before": "a.json", "tools-diff-after": "b.json" }, "tools-capture-sandbox requires tools-capture-server."],
     [{ ...capture, "tools-capture-env": "API_KEY" }, "tools-capture-env requires tools-capture-sandbox: docker; a native server already inherits the step's environment."],
-    [{ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": "API-KEY" }, "tools-capture-env must list environment variable names."]
+    [{ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": "API-KEY" }, "tools-capture-env must list environment variable names."],
+    [{ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": "API_KEY, API_KEY" }, "tools-capture-env lists API_KEY more than once."],
+    [{ ...capture, "tools-capture-defer-findings": "yes" }, "tools-capture-defer-findings must be true or false."]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
+  it("accepts tabs, spaces, and stray commas between capture variable names", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": " ,API_KEY\t,, REGION ," });
+
+    try {
+      expect(invocationsOf(run, "tools")[0].slice(-4)).toEqual(["--env", "API_KEY", "--env", "REGION"]);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("leaves capture findings to a later comparison when asked to defer them", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-capture-defer-findings": "true" }, "0", "1");
+
+    try {
+      expect(await run.readState()).toMatchObject({ status: "0" });
+      expect(run.output["tools-capture-path"]).not.toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("still fails a deferred capture that saved nothing", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-capture-defer-findings": "true" }, "0", "2");
+
+    try {
+      expect(await run.readState()).toMatchObject({ status: "2" });
+    } finally {
+      await run.cleanup();
+    }
   });
 
   it("records capture findings when the stdio capture runs alone", async () => {

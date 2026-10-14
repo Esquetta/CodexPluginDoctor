@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -3265,7 +3265,7 @@ describe("runCli", () => {
 
     const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
     expect(workflow.jobs.capture.permissions).toBeUndefined();
-    expect(doctor("capture")).toMatchObject({ check: "false", runtime: "true", "tools-capture-server": "my-server", "tools-capture-sandbox": "docker", "artifact-name": "mcp-tools-capture" });
+    expect(doctor("capture")).toMatchObject({ check: "false", runtime: "true", "tools-capture-server": "my-server", "tools-capture-sandbox": "docker", "tools-capture-defer-findings": "true", "artifact-name": "mcp-tools-capture" });
     expect(doctor("capture")["tools-diff-comment"]).toBeUndefined();
 
     expect(workflow.jobs.compare.needs).toBe("capture");
@@ -3273,20 +3273,36 @@ describe("runCli", () => {
     expect(doctor("compare")).toMatchObject({
       check: "false",
       "tools-diff-before": "mcp/tools-baseline.json",
-      "tools-diff-after": "mcp-tools-capture/mcp-tools-current.json",
+      "tools-diff-after": "${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json",
       "tools-diff-fail-on": "breaking",
       "tools-diff-comment": "true",
       "artifact-name": "mcp-tools-diff"
     });
     expect(doctor("compare").runtime).toBeUndefined();
-    expect(workflow.jobs.compare.steps.find((step) => step.uses?.startsWith("actions/download-artifact@"))?.with).toEqual({ name: "mcp-tools-capture", path: "mcp-tools-capture" });
+    expect(workflow.jobs.compare.steps.find((step) => step.uses?.startsWith("actions/download-artifact@"))?.with).toEqual({ name: "mcp-tools-capture", path: "${{ runner.temp }}/mcp-tools-capture" });
+    expect((await stat(path.join(targetPath, "mcp"))).isDirectory()).toBe(true);
+    expect(stdout.join("")).toContain(`--save-response ${JSON.stringify(path.join(targetPath, "mcp/tools-baseline.json"))}`);
     for (const job of Object.values(workflow.jobs)) {
       expect(job.steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with).toEqual({ "persist-credentials": false });
     }
   });
 
+  it("writes a tool diff workflow without the sandbox and keeps unusual names intact", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-plain-"));
+    const server = "server: #1 \"${{ x }}\"";
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", server], createIo().io)).toBe(0);
+    const workflow = parse(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")) as {
+      jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, string> }> }>;
+    };
+    const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
+    expect(doctor("capture")["tools-capture-server"]).toBe(server);
+    expect(doctor("capture")["tools-capture-sandbox"]).toBeUndefined();
+    expect(doctor("compare")["tools-diff-before"]).toBe("mcp/tools-baseline.json");
+  });
+
   it.each([
     [["--tools-diff-server"], "--tools-diff-server requires a server name."],
+    [["--tools-diff-server", `bad${String.fromCharCode(0x85)}name`], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
     [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
     [["--baseline", "mcp/tools.json"], "--baseline and --sandbox require --tools-diff-server."]

@@ -158,6 +158,6 @@ jobs:
             if npm run verify-release-sync; then
               exit 0
             fi
-            sleep 30
+            if [ "$attempt" -lt 20 ]; then sleep 30; fi
           done
           exit 1

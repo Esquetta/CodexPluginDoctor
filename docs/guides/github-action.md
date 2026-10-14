@@ -251,20 +251,29 @@ container needs in `tools-capture-env`, separated by commas, spaces, or new
 lines, and set them in the step's `env`; each is passed by name with `--env`, so
 its value never appears in command arguments. `tools-capture-env` requires CLI
 `1.72.0` or later in `version`. A sandbox other than `docker`, a sandbox without
-`tools-capture-server`, `tools-capture-env` without the Docker sandbox, or a name
-that is not an environment variable name is rejected with exit `2` before any
-Doctor command runs. The comment guard still treats the capture as package code,
-because `runtime: "true"` is set. To capture behind a runtime approval digest,
+`tools-capture-server`, `tools-capture-env` without the Docker sandbox, a name
+that is not an environment variable name, or a name listed twice is rejected with
+exit `2` before any Doctor command runs. The sandbox applies to the capture only:
+with `check: "true"`, the package check's runtime probing still starts servers
+natively. The comment guard still treats the capture as package code, because
+`runtime: "true"` is set. Set `tools-capture-defer-findings: "true"` when a later
+comparison in another job judges the saved list: catalog warnings then do not
+fail the capture step, while a capture that saves nothing still records status
+`2`. To capture behind a runtime approval digest,
 capture in an earlier step with `doctor tools --require-runtime-approval` and
 pass that file as `tools-diff-after`.
 
 `codex-plugin-doctor init-ci . --tools-diff-server <name> [--baseline <path>] [--sandbox docker]`
 writes `.github/workflows/codex-plugin-doctor-tools.yml` with this pattern for
 pull requests: a `capture` job that starts the server and uploads its tool list,
-and a `compare` job that downloads it, compares it with the committed baseline
-(`mcp/tools-baseline.json` by default), fails on breaking changes, and comments.
-Only the `compare` job has `pull-requests: write`, it runs no package code, and
-both jobs check out with `persist-credentials: false`. Pull requests from forks
+and a `compare` job that downloads it outside the checkout, compares it with the
+committed baseline (`mcp/tools-baseline.json` by default, whose directory
+`init-ci` creates), fails on breaking or unclassified changes, and comments. The
+capture defers catalog warnings to that comparison. Only the `compare` job has
+`pull-requests: write`, it runs no package code, and both jobs check out with
+`persist-credentials: false`. Add install or build steps to the `capture` job
+before the Doctor step when the server needs them; the Docker sandbox has no
+network. Pull requests from forks
 receive a read-only token, so the comment is skipped with a warning there while
 the comparison still runs.
 
