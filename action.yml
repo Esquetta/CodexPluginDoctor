@@ -336,11 +336,11 @@ runs:
         # Values that look like options would be read as flags such as --runtime, and the CLI would
         # then run package code without runtime: "true".
         if [[ "$PACKAGE_PATH_INPUT" == -* ]]; then
-          reject_usage "path must not start with -."
+          reject_usage "path must not start with -; use ./ before a directory name that starts with -."
         fi
 
         if [[ "$FILTER_INPUT" == -* ]]; then
-          reject_usage "filter must not start with -."
+          reject_usage "filter must not start with -; use ./ before a path that starts with -."
         fi
 
         # The name is expanded indirectly, and bash evaluates an array subscript in it as code.

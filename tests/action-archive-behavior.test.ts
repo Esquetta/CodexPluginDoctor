@@ -327,8 +327,8 @@ describe("GitHub Action input handling", () => {
 
 describe("GitHub Action input validation", () => {
   it.each([
-    ["an option-shaped path", { path: "--runtime" }, "path must not start with -."],
-    ["an option-shaped filter", { installed: "true", filter: "--runtime" }, "filter must not start with -."],
+    ["an option-shaped path", { path: "--runtime" }, "path must not start with -; use ./ before a directory name that starts with -."],
+    ["an option-shaped filter", { installed: "true", filter: "--runtime" }, "filter must not start with -; use ./ before a path that starts with -."],
     ["a signing key name that is not a variable name", { "review-bundle": "true", "signing-key-env": "x[$(echo injected >&2)]" }, "signing-key-env must be an environment variable name."],
     ["a multi-line output directory", { "output-dir": "reports\nstatus=0" }, "output-dir must be a single line."],
     ["a multi-line review bundle directory", { "review-bundle-dir": "bundle\nstatus=0" }, "review-bundle-dir must be a single line."]
@@ -337,7 +337,8 @@ describe("GitHub Action input validation", () => {
       code: 2,
       stdout: "",
       stderr: `${stderr}\n`,
-      actionState: { status: "2" }
+      actionState: { status: "2" },
+      actionOutput: { status: "2" }
     });
   });
 });
