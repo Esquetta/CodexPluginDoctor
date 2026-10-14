@@ -734,6 +734,31 @@ describe("GitHub Action stdio capture", () => {
     }
   });
 
+  it("runs the stdio capture in the Docker sandbox and forwards variables by name", async () => {
+    const run = await runArchiveAction({ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": "API_KEY, REGION\nTIMEOUT" }, "0", "0", false, { API_KEY: "secret-sentinel" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json"));
+      const packagePath = toBashPath(path.join(run.root, "package"));
+      expect(invocationsOf(run, "tools")).toEqual([[
+        "doctor", "tools", packagePath, "--server", "local-server", "--runtime", "--save-response", capturePath,
+        "--sandbox", "docker", "--env", "API_KEY", "--env", "REGION", "--env", "TIMEOUT"
+      ]]);
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ ...capture, "tools-capture-sandbox": "podman" }, "tools-capture-sandbox must be docker or empty."],
+    [{ check: "false", "tools-capture-sandbox": "docker", "tools-diff-before": "a.json", "tools-diff-after": "b.json" }, "tools-capture-sandbox requires tools-capture-server."],
+    [{ ...capture, "tools-capture-env": "API_KEY" }, "tools-capture-env requires tools-capture-sandbox: docker; a native server already inherits the step's environment."],
+    [{ ...capture, "tools-capture-sandbox": "docker", "tools-capture-env": "API-KEY" }, "tools-capture-env must list environment variable names."]
+  ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
   it("records capture findings when the stdio capture runs alone", async () => {
     const run = await runArchiveAction(capture, "0", "1");
 

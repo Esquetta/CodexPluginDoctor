@@ -149,7 +149,11 @@ live list with `tools-capture-url` (and `tools-capture-token-env`) or, for a loc
 stdio server with `runtime: "true"`, `tools-capture-server`, and skip the
 plugin package check with `check: "false"` in repositories that only ship an MCP
 server. With `tools-diff-comment: "true"` it also posts the comparison as one
-pull request comment that later runs update.
+pull request comment that later runs update. `tools-capture-sandbox: docker`
+starts a stdio server in the Docker sandbox, and
+`codex-plugin-doctor init-ci . --tools-diff-server <name> --sandbox docker`
+writes a pull request workflow that captures in one job and compares and
+comments in another.
 
 Local stdio servers from a package's MCP configuration can be cataloged too.
 `--runtime` is required because this starts package code; the server is stopped
@@ -585,9 +589,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.73.0
+      - uses: Esquetta/CodexPluginDoctor@v1.74.0
         with:
-          version: "1.73.0"
+          version: "1.74.0"
           path: .
           runtime: "true"
           policy: codex-publish

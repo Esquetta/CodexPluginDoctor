@@ -62,6 +62,14 @@ inputs:
     description: Optional name of a local stdio MCP server from the package at path whose complete tool list is saved to output-dir with doctor tools --server --runtime --save-response. Starting the server runs package code, so it requires runtime; it cannot be combined with tools-capture-url or installed. When tools-diff-before is set and tools-diff-after is empty, the capture becomes the comparison's after input.
     required: false
     default: ""
+  tools-capture-sandbox:
+    description: Optional sandbox for tools-capture-server. docker starts the server through doctor tools --sandbox docker (Node.js commands only, no network, read-only package mount, no host environment). Requires CLI 1.72.0 or later in version for tools-capture-env.
+    required: false
+    default: ""
+  tools-capture-env:
+    description: Optional names of host environment variables, separated by commas, spaces, or new lines, that tools-capture-sandbox docker passes into the container by name with --env. Set the variables in the calling step's env; their values are never printed or placed in command arguments.
+    required: false
+    default: ""
   tools-capture-token-env:
     description: Optional name of an environment variable that holds a bearer token for tools-capture-url. The token is sent only over HTTPS or to an approved loopback endpoint and is never printed or saved. Set the variable from a secret in the calling step's env.
     required: false
@@ -277,6 +285,8 @@ runs:
         RUNTIME_INPUT: ${{ inputs.runtime }}
         TOOLS_CAPTURE_URL_INPUT: ${{ inputs['tools-capture-url'] }}
         TOOLS_CAPTURE_SERVER_INPUT: ${{ inputs['tools-capture-server'] }}
+        TOOLS_CAPTURE_SANDBOX_INPUT: ${{ inputs['tools-capture-sandbox'] }}
+        TOOLS_CAPTURE_ENV_INPUT: ${{ inputs['tools-capture-env'] }}
         PACKAGE_PATH_INPUT: ${{ inputs.path }}
         INSTALLED_INPUT: ${{ inputs.installed }}
         TOOLS_CAPTURE_TOKEN_ENV_INPUT: ${{ inputs['tools-capture-token-env'] }}
@@ -332,6 +342,26 @@ runs:
         if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && "$INSTALLED_INPUT" == "true" ]]; then
           reject_usage "tools-capture-server reads the package at path and cannot be combined with installed: true."
         fi
+
+        if [[ -n "$TOOLS_CAPTURE_SANDBOX_INPUT" && "$TOOLS_CAPTURE_SANDBOX_INPUT" != "docker" ]]; then
+          reject_usage "tools-capture-sandbox must be docker or empty."
+        fi
+
+        if [[ -n "$TOOLS_CAPTURE_SANDBOX_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
+          reject_usage "tools-capture-sandbox requires tools-capture-server."
+        fi
+
+        # Names are split on commas and whitespace; each becomes one --env argument.
+        tools_capture_env_names=()
+        read -r -a tools_capture_env_names <<< "${TOOLS_CAPTURE_ENV_INPUT//[,$'\n'$'\r']/ }"
+        if (( ${#tools_capture_env_names[@]} > 0 )) && [[ "$TOOLS_CAPTURE_SANDBOX_INPUT" != "docker" ]]; then
+          reject_usage "tools-capture-env requires tools-capture-sandbox: docker; a native server already inherits the step's environment."
+        fi
+        for name in "${tools_capture_env_names[@]}"; do
+          if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            reject_usage "tools-capture-env must list environment variable names."
+          fi
+        done
 
         # Values that look like options would be read as flags such as --runtime, and the CLI would
         # then run package code without runtime: "true".
@@ -576,7 +606,14 @@ runs:
             echo "tools-capture-server requires runtime: true." >&2
             record_status 2
           else
-            run_tools_capture doctor tools "$PACKAGE_PATH_INPUT" --server "$TOOLS_CAPTURE_SERVER_INPUT" --runtime --save-response "$tools_capture_path"
+            tools_capture_args=(doctor tools "$PACKAGE_PATH_INPUT" --server "$TOOLS_CAPTURE_SERVER_INPUT" --runtime --save-response "$tools_capture_path")
+            if [[ "$TOOLS_CAPTURE_SANDBOX_INPUT" == "docker" ]]; then
+              tools_capture_args+=(--sandbox docker)
+              for name in "${tools_capture_env_names[@]}"; do
+                tools_capture_args+=(--env "$name")
+              done
+            fi
+            run_tools_capture "${tools_capture_args[@]}"
           fi
         elif [[ -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
           if [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then

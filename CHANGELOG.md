@@ -4,6 +4,22 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.74.0] - 2026-10-14
+
+### Added
+
+- added the GitHub Action `tools-capture-sandbox` and `tools-capture-env` inputs: `tools-capture-sandbox: docker` starts the `tools-capture-server` capture through `doctor tools --sandbox docker`, and `tools-capture-env` lists variables, separated by commas, spaces, or new lines, that are passed into the container by name with `--env`; an unknown sandbox, a sandbox without `tools-capture-server`, `tools-capture-env` without the Docker sandbox, or an invalid name is rejected with exit `2` before any Doctor command runs
+- added `codex-plugin-doctor init-ci [path] --tools-diff-server <name> [--baseline <path>] [--sandbox docker]`, which writes `.github/workflows/codex-plugin-doctor-tools.yml`: a pull request workflow whose `capture` job starts the server and uploads its tool list, and whose `compare` job, the only one with `pull-requests: write` and one that runs no package code, compares it with the committed baseline, fails on breaking changes, and comments
+
+### Changed
+
+- `doctor tools-diff` compares a `$ref` with an `anyOf` whose alternatives are written inline by resolving the reference when no alternative refers to the same definition, so an inline optional copy of a model is classified instead of `unclassified`
+- a draft-04 boolean `exclusiveMinimum` or `exclusiveMaximum` without the `minimum` or `maximum` it modifies is `unclassified` instead of being read as no bound
+
+### Internal
+
+- the Release workflow waits up to ten minutes for npm to report the new version before the release sync check fails
+
 ## [1.73.0] - 2026-10-14
 
 ### Changed

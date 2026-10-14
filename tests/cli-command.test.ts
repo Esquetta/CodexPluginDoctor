@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 import packageJson from "../package.json" with { type: "json" };
 
 import { runCheck } from "../src/index.js";
@@ -3244,6 +3245,60 @@ describe("runCli", () => {
     expect(workflow).toContain("artifact-name: codex-plugin-doctor-reports");
   });
 
+  it("initializes a two-job MCP tool diff workflow that keeps the comment token away from package code", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-tools-"));
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--baseline", "mcp/tools-baseline.json", "--sandbox", "docker"], io);
+    const workflowPath = path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml");
+    const workflow = parse(await readFile(workflowPath, "utf8")) as {
+      on: Record<string, unknown>;
+      permissions: Record<string, string>;
+      jobs: Record<string, { needs?: string; permissions?: Record<string, string>; steps: Array<{ uses?: string; with?: Record<string, string> }> }>;
+    };
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain(workflowPath);
+    expect(Object.keys(workflow.on)).toEqual(["pull_request"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+
+    const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
+    expect(workflow.jobs.capture.permissions).toBeUndefined();
+    expect(doctor("capture")).toMatchObject({ check: "false", runtime: "true", "tools-capture-server": "my-server", "tools-capture-sandbox": "docker", "artifact-name": "mcp-tools-capture" });
+    expect(doctor("capture")["tools-diff-comment"]).toBeUndefined();
+
+    expect(workflow.jobs.compare.needs).toBe("capture");
+    expect(workflow.jobs.compare.permissions).toEqual({ contents: "read", "pull-requests": "write" });
+    expect(doctor("compare")).toMatchObject({
+      check: "false",
+      "tools-diff-before": "mcp/tools-baseline.json",
+      "tools-diff-after": "mcp-tools-capture/mcp-tools-current.json",
+      "tools-diff-fail-on": "breaking",
+      "tools-diff-comment": "true",
+      "artifact-name": "mcp-tools-diff"
+    });
+    expect(doctor("compare").runtime).toBeUndefined();
+    expect(workflow.jobs.compare.steps.find((step) => step.uses?.startsWith("actions/download-artifact@"))?.with).toEqual({ name: "mcp-tools-capture", path: "mcp-tools-capture" });
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job.steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with).toEqual({ "persist-credentials": false });
+    }
+  });
+
+  it.each([
+    [["--tools-diff-server"], "--tools-diff-server requires a server name."],
+    [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
+    [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
+    [["--baseline", "mcp/tools.json"], "--baseline and --sandbox require --tools-diff-server."]
+  ])("rejects init-ci options %j without writing a workflow", async (options, message) => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-bad-"));
+    const { io, stderr } = createIo();
+
+    expect(await runCli(["init-ci", targetPath, ...options], io)).toBe(2);
+    expect(stderr.join("\n")).toContain(message);
+    await expect(readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")).rejects.toThrow();
+  });
+
   it("renders a dry-run fix plan without changing files", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-"));
     const manifestDirectory = path.join(targetPath, ".codex-plugin");
@@ -3736,7 +3791,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stderr.join("")).toContain(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, and doctor tools --server"
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, and init-ci --tools-diff-server"
     );
   });
 

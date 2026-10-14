@@ -227,9 +227,8 @@ type NumericBound = { value: number; exclusive: boolean };
  */
 function numericBound(schema: JsonObject, inclusive: string, exclusive: string, lower: boolean): NumericBound | undefined | null {
   if (typeof schema[exclusive] === "boolean") {
-    // Draft-04 marks the inclusive keyword itself as exclusive.
+    // Draft-04 marks the inclusive keyword itself as exclusive; a boolean alone is invalid in every draft.
     const value = schema[inclusive];
-    if (value === undefined) return undefined;
     return isFiniteNumber(value) ? { value, exclusive: schema[exclusive] as boolean } : null;
   }
   const candidates: NumericBound[] = [];
@@ -640,7 +639,15 @@ function compareSchema(
   const beforeComposed = isComposition(resolvedBefore.schema);
   const afterComposed = isComposition(resolvedAfter.schema);
   if (beforeComposed !== afterComposed) {
-    compareComposition(beforeComposed ? resolvedBefore.schema : before, afterComposed ? resolvedAfter.schema : after, direction, depth, equal, reasons, scope);
+    // The reference is kept only when an alternative can pair with it; otherwise its target compares
+    // with inline alternatives by type.
+    const composite = beforeComposed ? resolvedBefore.schema : resolvedAfter.schema;
+    const original = beforeComposed ? after : before;
+    const plainKey = alternativeKey(original);
+    const keepReference = (alternatives(composite) ?? [])
+      .some((alternative) => (plainKey !== null && alternativeKey(alternative) === plainKey) || sameMeaning(original, alternative, equal, scope));
+    const plain = keepReference ? original : (beforeComposed ? resolvedAfter.schema : resolvedBefore.schema);
+    compareComposition(beforeComposed ? composite : plain, beforeComposed ? plain : composite, direction, depth, equal, reasons, scope);
     return;
   }
   if (resolvedBefore.ref !== undefined || resolvedAfter.ref !== undefined) {
