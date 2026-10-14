@@ -36,10 +36,13 @@ jobs:
         run: npm ci
 
       - name: Prepare release candidate
+        env:
+          VALIDATION_TARGET_INPUT: ${{ github.event.inputs.validation_target }}
+          RUNTIME_TARGET_INPUT: ${{ github.event.inputs.runtime_target }}
         run: >
           npm run prepare-rc --
-          --target "${{ github.event.inputs.validation_target }}"
-          --runtime-target "${{ github.event.inputs.runtime_target }}"
+          --target "$VALIDATION_TARGET_INPUT"
+          --runtime-target "$RUNTIME_TARGET_INPUT"
 
       - name: Upload release candidate artifacts
         uses: actions/upload-artifact@v7
