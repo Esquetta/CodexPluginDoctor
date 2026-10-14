@@ -147,17 +147,17 @@ jobs:
           --latest
 
       # Runs for every stable version, so a re-run still checks a release whose parts already existed.
-      # npm can take a short while to report the new latest version.
+      # npm can take several minutes to report the new latest version, so the check waits up to ten.
       - name: Verify release sync
         if: steps.state.outputs.npm != 'skip'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for attempt in 1 2 3 4 5; do
+          for attempt in $(seq 1 20); do
             if npm run verify-release-sync; then
               exit 0
             fi
-            sleep 20
+            if [ "$attempt" -lt 20 ]; then sleep 30; fi
           done
           exit 1

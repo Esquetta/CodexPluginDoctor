@@ -424,6 +424,12 @@ describe("tool change impact classification", () => {
         expect(classify(prop(optional, unchanged), prop(bare, unchanged))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
       });
 
+      it("compares a reference with an inline optional copy of its definition", () => {
+        const inlineOptional = { anyOf: [object({ x: { type: "string" } }), { type: "null" }] };
+        expect(classify(prop(bare, unchanged), prop(inlineOptional, unchanged))).toEqual({ impact: "compatible", reasons: [] });
+        expect(classify(prop({ anyOf: [{ type: "string" }, { type: "null" }] }), prop({ $ref: "#/$defs/S" }, { S: { type: "string" } }))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      });
+
       it("classifies an output reference made optional as breaking", () => {
         expect(classify(output(object({ a: bare }, { $defs: unchanged })), output(object({ a: optional }, { $defs: unchanged })))).toEqual({ impact: "breaking", reasons: ["output-property-type-widened"] });
       });
@@ -487,6 +493,7 @@ describe("tool change impact classification", () => {
 
     it.each([
       ["non-positive multipleOf", prop({ type: "number", multipleOf: 2 }), prop({ type: "number", multipleOf: 0 })],
+      ["draft-04 boolean exclusive bound without its inclusive keyword", prop({ type: "number" }), prop({ type: "number", exclusiveMaximum: true })],
       ["fractional multipleOf changed", prop({ type: "number", multipleOf: 0.3 }), prop({ type: "number", multipleOf: 0.1 })],
       ["non-boolean uniqueItems", prop({ type: "array" }), prop({ type: "array", uniqueItems: "yes" })]
     ])("classifies %s as unclassified", (_label, before, after) => {
