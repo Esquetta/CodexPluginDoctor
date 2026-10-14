@@ -42,13 +42,15 @@ const UNCLASSIFIED_REASONS = new Set<ToolChangeReason>([
 // Keywords that document a schema without constraining accepted or produced values.
 const DOCUMENTATION_KEYWORDS = new Set(["title", "description", "examples", "default", "deprecated", "$comment"]);
 const ROOT_STRUCTURAL_KEYWORDS = new Set(["type", "properties", "required", "additionalProperties", "$schema"]);
-const LOWER_BOUND_KEYWORDS = ["minimum", "minLength", "minItems"];
-const UPPER_BOUND_KEYWORDS = ["maximum", "maxLength", "maxItems"];
+const LOWER_BOUND_KEYWORDS = ["minLength", "minItems"];
+const UPPER_BOUND_KEYWORDS = ["maxLength", "maxItems"];
+// Numeric bounds, compared as one effective bound per side because the exclusive form may replace the inclusive one.
+const NUMERIC_BOUND_KEYWORDS = ["minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum"];
 // String keywords that can only be introduced or removed with a known effect; a changed value is unclassified.
 const STRING_CONSTRAINT_KEYWORDS = ["pattern", "format"];
 const NESTED_STRUCTURAL_KEYWORDS = new Set([
-  "type", "enum", "const", "properties", "required", "additionalProperties", "items",
-  ...LOWER_BOUND_KEYWORDS, ...UPPER_BOUND_KEYWORDS, ...STRING_CONSTRAINT_KEYWORDS
+  "type", "enum", "const", "properties", "required", "additionalProperties", "items", "multipleOf", "uniqueItems",
+  ...LOWER_BOUND_KEYWORDS, ...UPPER_BOUND_KEYWORDS, ...NUMERIC_BOUND_KEYWORDS, ...STRING_CONSTRAINT_KEYWORDS
 ]);
 // When every reference is a same-document fragment, definition containers are compared only
 // where a resolved `$ref` reaches into them; otherwise they are compared as written.
@@ -60,11 +62,16 @@ const NESTED_STRUCTURAL_WITH_DEFINITIONS = new Set([...NESTED_STRUCTURAL_KEYWORD
 const DATA_KEYWORDS = new Set(["enum", "const", "examples", "example", "default"]);
 // Keywords whose values map names to subschemas; their keys are names, never keywords.
 const NAME_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"]);
-// Subschemas nested deeper than this below the root are not compared and stay unclassified.
+// Subschemas nested deeper than this below the root are not compared and stay unclassified; composition
+// wrappers keep the depth of the schema they wrap and are bounded by MAX_WRAPPER_HOPS instead.
 const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
 // new property beside them stays compatible. Any other unclassified keyword may govern keys.
 const DEFINITION_KEYWORDS = new Set(["$defs", "definitions", "$id", "$anchor", "$dynamicAnchor"]);
+// `anyOf` alternatives beyond this many on either side are not paired.
+const MAX_ALTERNATIVES = 32;
+// Composition wrappers (`allOf` and `anyOf`) followed along one path; deeper wrappers are unclassified.
+const MAX_WRAPPER_HOPS = 16;
 // A `$ref` chain longer than this, such as an alias cycle, is not resolved.
 const MAX_REFERENCE_HOPS = 8;
 // Schema comparisons allowed per tool field; a schema that needs more is unclassified.
@@ -82,6 +89,10 @@ interface ReferenceScope {
   active: Set<string>;
   // Resolved schema pairs already compared at a depth, so shared definitions are compared once per depth.
   completed: Map<unknown, Map<unknown, Set<number>>>;
+  // Resolved schema pairs still being compared at a depth; meeting one again means a cycle without progress.
+  inProgress: Map<unknown, Map<unknown, Set<number>>>;
+  // Composition wrappers entered along the current path.
+  wrappers: number;
   // sameMeaning results for object pairs, which depend only on the pair and the roots.
   same: Map<unknown, Map<unknown, boolean>>;
   // Per pointer: whether its target is equal in both roots, and the pointers inside that target.
@@ -208,6 +219,184 @@ function compareBounds(inner: JsonObject, outer: JsonObject, codes: DirectionCod
   }
 }
 
+type NumericBound = { value: number; exclusive: boolean };
+
+/**
+ * The tighter of a schema's inclusive and exclusive bound on one side, undefined when it has neither,
+ * or null when either is not a finite number (such as a draft-04 boolean `exclusiveMinimum`).
+ */
+function numericBound(schema: JsonObject, inclusive: string, exclusive: string, lower: boolean): NumericBound | undefined | null {
+  if (typeof schema[exclusive] === "boolean") {
+    // Draft-04 marks the inclusive keyword itself as exclusive.
+    const value = schema[inclusive];
+    if (value === undefined) return undefined;
+    return isFiniteNumber(value) ? { value, exclusive: schema[exclusive] as boolean } : null;
+  }
+  const candidates: NumericBound[] = [];
+  for (const [keyword, isExclusive] of [[inclusive, false], [exclusive, true]] as const) {
+    const value = schema[keyword];
+    if (value === undefined) continue;
+    if (!isFiniteNumber(value)) return null;
+    candidates.push({ value, exclusive: isExclusive });
+  }
+  return candidates.reduce<NumericBound | undefined>((tightest, candidate) => {
+    if (tightest === undefined) return candidate;
+    if (candidate.value === tightest.value) return candidate.exclusive ? candidate : tightest;
+    return (lower ? candidate.value > tightest.value : candidate.value < tightest.value) ? candidate : tightest;
+  }, undefined);
+}
+
+/** Flags numeric bounds, `multipleOf`, and `uniqueItems` of `outer` that `inner` does not satisfy. */
+function compareNumericAndArrayConstraints(inner: JsonObject, outer: JsonObject, codes: DirectionCodes, reasons: Set<ToolChangeReason>): void {
+  for (const [inclusive, exclusive, lower] of [["minimum", "exclusiveMinimum", true], ["maximum", "exclusiveMaximum", false]] as const) {
+    const innerBound = numericBound(inner, inclusive, exclusive, lower);
+    const outerBound = numericBound(outer, inclusive, exclusive, lower);
+    if (innerBound === null || outerBound === null) {
+      // A bound that cannot be read still means the same when it did not change.
+      const unchanged = Object.is(inner[inclusive], outer[inclusive]) && Object.is(inner[exclusive], outer[exclusive]);
+      if (!unchanged) reasons.add(codes.unclassified);
+    } else if (outerBound !== undefined) {
+      const covered = innerBound !== undefined && (innerBound.value === outerBound.value
+        ? innerBound.exclusive || !outerBound.exclusive
+        : lower ? innerBound.value > outerBound.value : innerBound.value < outerBound.value);
+      if (!covered) reasons.add(codes.constraint);
+    }
+  }
+
+  const outerMultiple = outer.multipleOf;
+  const innerMultiple = inner.multipleOf;
+  const validMultiple = (value: unknown) => value === undefined || (isFiniteNumber(value) && value > 0);
+  if (!validMultiple(outerMultiple) || !validMultiple(innerMultiple)) {
+    if (!Object.is(innerMultiple, outerMultiple)) reasons.add(codes.unclassified);
+  } else if (outerMultiple !== undefined) {
+    if (innerMultiple === undefined) {
+      reasons.add(codes.constraint);
+    } else if (Number.isInteger(innerMultiple) && Number.isInteger(outerMultiple)) {
+      // Every multiple of innerMultiple is a multiple of outerMultiple when outerMultiple divides it.
+      if ((innerMultiple as number) % (outerMultiple as number) !== 0) reasons.add(codes.constraint);
+    } else if (innerMultiple !== outerMultiple) {
+      // Validators test fractional multiples with floating-point division, which can reject 0.3
+      // under multipleOf 0.1, so a changed fractional multipleOf cannot be judged.
+      reasons.add(codes.unclassified);
+    }
+  }
+
+  if ((outer.uniqueItems !== undefined && typeof outer.uniqueItems !== "boolean")
+    || (inner.uniqueItems !== undefined && typeof inner.uniqueItems !== "boolean")) {
+    if (!Object.is(inner.uniqueItems, outer.uniqueItems)) reasons.add(codes.unclassified);
+  } else if (outer.uniqueItems === true && inner.uniqueItems !== true) {
+    reasons.add(codes.constraint);
+  }
+}
+
+/** The subschema of a schema that is only a one-element `allOf` with documentation, or null. */
+function singleAllOf(schema: unknown): { inner: unknown } | null {
+  if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length !== 1) return null;
+  return Object.keys(schema).every((key) => key === "allOf" || DOCUMENTATION_KEYWORDS.has(key)) ? { inner: schema.allOf[0] } : null;
+}
+
+/** The alternatives of a schema that is only `anyOf` with documentation, or null. */
+function alternatives(schema: unknown): unknown[] | null {
+  if (!isJsonObject(schema) || !Array.isArray(schema.anyOf)) return null;
+  return Object.keys(schema).every((key) => key === "anyOf" || DOCUMENTATION_KEYWORDS.has(key)) ? schema.anyOf : null;
+}
+
+function isComposition(schema: unknown): boolean {
+  return singleAllOf(schema) !== null || alternatives(schema) !== null;
+}
+
+/**
+ * Compares two schemas when at least one is a one-element `allOf` or an `anyOf` with only
+ * documentation beside it. Wrappers keep the depth, so their own count bounds how far one path unwraps.
+ */
+function compareComposition(
+  before: unknown,
+  after: unknown,
+  direction: Direction,
+  depth: number,
+  equal: Equal,
+  reasons: Set<ToolChangeReason>,
+  scope: ReferenceScope
+): void {
+  if (scope.wrappers >= MAX_WRAPPER_HOPS) {
+    reasons.add(CODES[direction].unclassified);
+    return;
+  }
+  const wrappedBefore = singleAllOf(before);
+  const wrappedAfter = singleAllOf(after);
+  scope.wrappers += 1;
+  if (wrappedBefore !== null || wrappedAfter !== null) {
+    // A one-element allOf with only documentation beside it means the same as its subschema.
+    compareSchema(wrappedBefore === null ? before : wrappedBefore.inner, wrappedAfter === null ? after : wrappedAfter.inner, direction, depth, equal, reasons, scope);
+  } else {
+    // A schema that is not an anyOf compares as an anyOf with that schema as its only alternative.
+    compareAlternatives(alternatives(before) ?? [before], alternatives(after) ?? [after], direction, depth, equal, reasons, scope);
+  }
+  scope.wrappers -= 1;
+}
+
+/** The reference target or declared type that pairs an alternative with its counterpart. */
+function alternativeKey(alternative: unknown): string | null {
+  if (!isJsonObject(alternative)) return null;
+  if (typeof alternative.$ref === "string") return `ref:${alternative.$ref}`;
+  return alternative.type === undefined ? null : `type:${JSON.stringify(alternative.type)}`;
+}
+
+/**
+ * Compares `anyOf` alternatives. A value is accepted when any alternative accepts it, so inputs stay
+ * compatible when every earlier alternative is covered by a later one, and outputs when every later
+ * alternative is covered by an earlier one. Identical alternatives match first, then alternatives with
+ * the same reference target or type, then a single remaining alternative on each side.
+ */
+function compareAlternatives(
+  before: unknown[],
+  after: unknown[],
+  direction: Direction,
+  depth: number,
+  equal: Equal,
+  reasons: Set<ToolChangeReason>,
+  scope: ReferenceScope
+): void {
+  const codes = CODES[direction];
+  if (before.length > MAX_ALTERNATIVES || after.length > MAX_ALTERNATIVES) {
+    reasons.add(codes.unclassified);
+    return;
+  }
+  const unpairedBefore = [...before];
+  const unpairedAfter = [...after];
+  for (let index = unpairedBefore.length - 1; index >= 0; index -= 1) {
+    const match = unpairedAfter.findIndex((candidate) => sameMeaning(unpairedBefore[index], candidate, equal, scope));
+    if (match !== -1) {
+      unpairedBefore.splice(index, 1);
+      unpairedAfter.splice(match, 1);
+    }
+  }
+
+  const pairs: Array<[unknown, unknown]> = [];
+  for (const key of new Set(unpairedBefore.map(alternativeKey))) {
+    if (key === null) continue;
+    const beforeMatches = unpairedBefore.filter((alternative) => alternativeKey(alternative) === key);
+    const afterMatches = unpairedAfter.filter((alternative) => alternativeKey(alternative) === key);
+    if (beforeMatches.length !== 1 || afterMatches.length !== 1) continue;
+    pairs.push([beforeMatches[0], afterMatches[0]]);
+    unpairedBefore.splice(unpairedBefore.indexOf(beforeMatches[0]), 1);
+    unpairedAfter.splice(unpairedAfter.indexOf(afterMatches[0]), 1);
+  }
+  if (unpairedBefore.length === 1 && unpairedAfter.length === 1) {
+    pairs.push([unpairedBefore.pop(), unpairedAfter.pop()]);
+  } else if (unpairedBefore.length > 0 && unpairedAfter.length > 0) {
+    reasons.add(codes.unclassified);
+  }
+
+  for (const [beforeAlternative, afterAlternative] of pairs) {
+    compareSchema(beforeAlternative, afterAlternative, direction, depth, equal, reasons, scope);
+  }
+  // A dropped input alternative may reject values callers send; an added output alternative may
+  // produce values consumers do not expect. The opposite changes only narrow or widen safely.
+  const narrowedOrWidened = direction === "input" ? unpairedAfter.length === 0 && unpairedBefore.length > 0 : unpairedBefore.length === 0 && unpairedAfter.length > 0;
+  if (narrowedOrWidened) reasons.add(depth === 0 ? codes.rootType : codes.propertyType);
+}
+
 /** Flags a `pattern` or `format` that `outer` adds and `inner` lacks; a changed value cannot be compared. */
 function compareStringConstraints(inner: JsonObject, outer: JsonObject, codes: DirectionCodes, reasons: Set<ToolChangeReason>): void {
   for (const keyword of STRING_CONSTRAINT_KEYWORDS) {
@@ -320,20 +509,31 @@ function referenceScope(before: unknown, after: unknown): ReferenceScope {
     fragmentsOnly: reachesDefinitionsOnlyThroughFragments(before) && reachesDefinitionsOnlyThroughFragments(after),
     active: new Set(),
     completed: new Map(),
+    inProgress: new Map(),
+    wrappers: 0,
     same: new Map(),
     pointers: new Map(),
     remaining: MAX_COMPARISONS
   };
 }
 
-/** Records a resolved pair as compared at this depth; returns false when it already was. */
-function markCompleted(scope: ReferenceScope, before: unknown, after: unknown, depth: number): boolean {
-  let byAfter = scope.completed.get(before);
-  if (byAfter === undefined) scope.completed.set(before, byAfter = new Map());
+function pairDepths(pairs: Map<unknown, Map<unknown, Set<number>>>, before: unknown, after: unknown): Set<number> {
+  let byAfter = pairs.get(before);
+  if (byAfter === undefined) pairs.set(before, byAfter = new Map());
   let depths = byAfter.get(after);
   if (depths === undefined) byAfter.set(after, depths = new Set());
-  if (depths.has(depth)) return false;
-  depths.add(depth);
+  return depths;
+}
+
+/**
+ * Records a resolved pair as compared at this depth and wrapper count; returns false when it already
+ * was. The wrapper count is part of the key because it limits how far that comparison may unwrap.
+ */
+function markCompleted(scope: ReferenceScope, before: unknown, after: unknown, depth: number): boolean {
+  const depths = pairDepths(scope.completed, before, after);
+  const key = depth * (MAX_WRAPPER_HOPS + 1) + scope.wrappers;
+  if (depths.has(key)) return false;
+  depths.add(key);
   return true;
 }
 
@@ -431,8 +631,16 @@ function compareSchema(
   if (sameMeaning(before, after, equal, scope)) return;
   const resolvedBefore = resolveReferences(before, scope.before);
   const resolvedAfter = resolveReferences(after, scope.after);
-  if (resolvedBefore === null || resolvedAfter === null) {
+  if (resolvedBefore === null || resolvedAfter === null || depth > MAX_NESTED_DEPTH) {
     reasons.add(codes.unclassified);
+    return;
+  }
+  // When only one side is a composition, the other keeps its reference unresolved, so it can still
+  // pair with an alternative that refers to the same definition, as when a model becomes optional.
+  const beforeComposed = isComposition(resolvedBefore.schema);
+  const afterComposed = isComposition(resolvedAfter.schema);
+  if (beforeComposed !== afterComposed) {
+    compareComposition(beforeComposed ? resolvedBefore.schema : before, afterComposed ? resolvedAfter.schema : after, direction, depth, equal, reasons, scope);
     return;
   }
   if (resolvedBefore.ref !== undefined || resolvedAfter.ref !== undefined) {
@@ -442,18 +650,31 @@ function compareSchema(
     const pair = resolvedBefore.ref !== undefined && resolvedAfter.ref !== undefined
       ? JSON.stringify([resolvedBefore.ref, resolvedAfter.ref])
       : undefined;
+    // Reaching a pair again at the same depth, for example through a definition that wraps a
+    // reference to itself, is a cycle that never reaches a value, so it cannot be judged.
+    const inProgress = pairDepths(scope.inProgress, resolvedBefore.schema, resolvedAfter.schema);
+    if (inProgress.has(depth)) {
+      reasons.add(codes.unclassified);
+      return;
+    }
     if (pair !== undefined && scope.active.has(pair)) return;
     if (!markCompleted(scope, resolvedBefore.schema, resolvedAfter.schema, depth)) return;
     if (pair !== undefined) scope.active.add(pair);
+    inProgress.add(depth);
     compareSchema(resolvedBefore.schema, resolvedAfter.schema, direction, depth, equal, reasons, scope);
+    inProgress.delete(depth);
     if (pair !== undefined) scope.active.delete(pair);
+    return;
+  }
+  if (beforeComposed) {
+    compareComposition(before, after, direction, depth, equal, reasons, scope);
     return;
   }
   const root = depth === 0;
   const structural = scope.fragmentsOnly
     ? root ? ROOT_STRUCTURAL_WITH_DEFINITIONS : NESTED_STRUCTURAL_WITH_DEFINITIONS
     : root ? ROOT_STRUCTURAL_KEYWORDS : NESTED_STRUCTURAL_KEYWORDS;
-  if (depth > MAX_NESTED_DEPTH || !isJsonObject(before) || !isJsonObject(after)
+  if (!isJsonObject(before) || !isJsonObject(after)
     || !sameMeaning(keywordsOutside(before, structural), keywordsOutside(after, structural), equal, scope)
     || !equal(before.$schema, after.$schema)) {
     reasons.add(codes.unclassified);
@@ -470,6 +691,7 @@ function compareSchema(
     if (enumResult === null) reasons.add(codes.unclassified);
     else if (!enumResult) reasons.add(codes.enumChanged);
     compareBounds(inner, outer, codes, reasons);
+    compareNumericAndArrayConstraints(inner, outer, codes, reasons);
     compareStringConstraints(inner, outer, codes, reasons);
     if (!sameMeaning(before.items, after.items, equal, scope)) {
       if (unevaluated) reasons.add(codes.unclassified);
