@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -106,5 +106,38 @@ describe("release workflow", () => {
     const { workflow, steps } = await releaseWorkflow();
     expect(steps.filter((entry) => entry.uses).map((entry) => entry.uses)).toEqual(["actions/checkout@v5", "actions/setup-node@v5"]);
     expect(workflow.env).toEqual({ FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true" });
+  });
+});
+
+describe("repository workflows", () => {
+  it("pass workflow inputs to scripts only through env, never by expression in run", async () => {
+    const files = (await readdir(".github/workflows")).filter((file) => file.endsWith(".yml"));
+    const interpolated: string[] = [];
+
+    for (const file of files) {
+      const workflow = parse(await readFile(`.github/workflows/${file}`, "utf8")) as {
+        jobs: Record<string, { steps?: WorkflowStep[] }>;
+      };
+      for (const [job, { steps = [] }] of Object.entries(workflow.jobs)) {
+        for (const step of steps) {
+          if (step.run && /\$\{\{[^}]*\binputs\b/u.test(step.run)) interpolated.push(`${file} ${job}: ${step.name}`);
+        }
+      }
+    }
+
+    expect(files).toContain("release-candidate.yml");
+    expect(interpolated).toEqual([]);
+  });
+
+  it("keeps quoted release candidate targets as single arguments", async () => {
+    const workflow = parse(await readFile(".github/workflows/release-candidate.yml", "utf8")) as {
+      jobs: { "prepare-release-candidate": { steps: WorkflowStep[] } };
+    };
+    const prepare = workflow.jobs["prepare-release-candidate"].steps.find((entry) => entry.name === "Prepare release candidate");
+    expect(prepare?.env).toEqual({
+      VALIDATION_TARGET_INPUT: "${{ github.event.inputs.validation_target }}",
+      RUNTIME_TARGET_INPUT: "${{ github.event.inputs.runtime_target }}"
+    });
+    expect(prepare?.run).toBe('npm run prepare-rc -- --target "$VALIDATION_TARGET_INPUT" --runtime-target "$RUNTIME_TARGET_INPUT"\n');
   });
 });
