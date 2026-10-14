@@ -3287,17 +3287,24 @@ describe("runCli", () => {
     }
   });
 
-  it("writes a tool diff workflow without the sandbox and keeps unusual names intact", async () => {
+  it("writes a tool diff workflow without the sandbox, quoting names and normalizing the baseline", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-plain-"));
-    const server = "server: #1 \"${{ x }}\"";
-    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", server], createIo().io)).toBe(0);
+    const server = "server: #1 \"quoted\"";
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", server, "--baseline", String.raw`mcp\tools.json`], createIo().io)).toBe(0);
     const workflow = parse(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")) as {
       jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, string> }> }>;
     };
     const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
     expect(doctor("capture")["tools-capture-server"]).toBe(server);
     expect(doctor("capture")["tools-capture-sandbox"]).toBeUndefined();
-    expect(doctor("compare")["tools-diff-before"]).toBe("mcp/tools-baseline.json");
+    expect(doctor("compare")["tools-diff-before"]).toBe("mcp/tools.json");
+    expect(doctor("compare")["output-dir"]).toBe("${{ runner.temp }}/codex-plugin-doctor-reports");
+  });
+
+  it("writes the default tool diff baseline path", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-default-"));
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "srv"], createIo().io)).toBe(0);
+    expect(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")).toContain("tools-diff-before: \"mcp/tools-baseline.json\"");
   });
 
   it.each([
@@ -3305,7 +3312,12 @@ describe("runCli", () => {
     [["--tools-diff-server", `bad${String.fromCharCode(0x85)}name`], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
     [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
-    [["--baseline", "mcp/tools.json"], "--baseline and --sandbox require --tools-diff-server."]
+    [["--baseline", "mcp/tools.json"], "--baseline and --sandbox require --tools-diff-server."],
+    [["--tools-diff-server", "srv${{ github.actor }}"], "--tools-diff-server requires a server name."],
+    [["--tools-diff-server", "-srv"], "--tools-diff-server requires a server name."],
+    [["--tools-diff-server", "srv", "--baseline", "/tmp/b.json"], "--baseline requires a relative path inside the repository."],
+    [["--tools-diff-server", "srv", "--baseline", "../b.json"], "--baseline requires a relative path inside the repository."],
+    [["--tools-diff-server", "srv", "--baseline", "-b.json"], "--baseline requires a relative path inside the repository."]
   ])("rejects init-ci options %j without writing a workflow", async (options, message) => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-bad-"));
     const { io, stderr } = createIo();

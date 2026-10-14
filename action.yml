@@ -71,7 +71,7 @@ inputs:
     required: false
     default: ""
   tools-capture-defer-findings:
-    description: When "true", catalog warnings and failures in a saved capture do not fail this step and are left to a later tools-diff, for example in another job; a capture that saves nothing still records status 2.
+    description: When "true", catalog warnings and failures found during a capture that saved its list do not fail this step, for a later tools-diff such as one in another job; that comparison re-checks only the saved list, not findings from the live run. A capture that saves nothing still records status 2.
     required: false
     default: "false"
   tools-capture-token-env:

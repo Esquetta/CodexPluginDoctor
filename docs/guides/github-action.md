@@ -257,19 +257,23 @@ exit `2` before any Doctor command runs. The sandbox applies to the capture only
 with `check: "true"`, the package check's runtime probing still starts servers
 natively. The comment guard still treats the capture as package code, because
 `runtime: "true"` is set. Set `tools-capture-defer-findings: "true"` when a later
-comparison in another job judges the saved list: catalog warnings then do not
-fail the capture step, while a capture that saves nothing still records status
-`2`. To capture behind a runtime approval digest,
+comparison in another job judges the saved list: catalog warnings and failures
+found during the capture then do not fail the capture step, while a capture that
+saves nothing still records status `2`. The comparison re-checks only the saved
+list, not findings that exist only during the live run, such as a server that
+did not answer discovery. To capture behind a runtime approval digest,
 capture in an earlier step with `doctor tools --require-runtime-approval` and
 pass that file as `tools-diff-after`.
 
 `codex-plugin-doctor init-ci . --tools-diff-server <name> [--baseline <path>] [--sandbox docker]`
 writes `.github/workflows/codex-plugin-doctor-tools.yml` with this pattern for
 pull requests: a `capture` job that starts the server and uploads its tool list,
-and a `compare` job that downloads it outside the checkout, compares it with the
-committed baseline (`mcp/tools-baseline.json` by default, whose directory
+and a `compare` job that downloads it and writes its reports outside the
+checkout, compares it with the committed baseline (`mcp/tools-baseline.json` by default, whose directory
 `init-ci` creates), fails on breaking or unclassified changes, and comments. The
-capture defers catalog warnings to that comparison. Only the `compare` job has
+capture defers catalog findings to that comparison. The baseline must be a
+relative path inside the repository, and values containing `${{` or starting
+with `-` are rejected. Only the `compare` job has
 `pull-requests: write`, it runs no package code, and both jobs check out with
 `persist-credentials: false`. Add install or build steps to the `capture` job
 before the Doctor step when the server needs them; the Docker sandbox has no

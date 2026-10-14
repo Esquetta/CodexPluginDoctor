@@ -373,13 +373,19 @@ function parseToolsDiffWorkflowOptions(flags: string[]): { options: ToolsDiffWor
   }
   if (values.size === 0) return { options: null };
   if (!values.has("--tools-diff-server")) return { error: "--baseline and --sandbox require --tools-diff-server." };
-  // Control characters would break the generated workflow lines.
+  // Control characters would break the generated workflow lines, GitHub evaluates "${{" in any
+  // workflow value, and the Action rejects values that start with "-".
   const usable = (value: string | undefined): value is string =>
-    value !== undefined && value.trim() !== "" && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
+    value !== undefined && value.trim() !== "" && !value.startsWith("-") && !value.includes("${{")
+    && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
   const server = values.get("--tools-diff-server");
   if (!usable(server)) return { error: "--tools-diff-server requires a server name." };
-  const baseline = values.has("--baseline") ? values.get("--baseline") : "mcp/tools-baseline.json";
-  if (!usable(baseline)) return { error: "--baseline requires a file path." };
+  // The workflow runs on Linux from the repository root, so the baseline is a relative POSIX path.
+  const baseline = (values.has("--baseline") ? values.get("--baseline") : "mcp/tools-baseline.json")?.replaceAll("\\", "/");
+  if (!usable(baseline) || path.posix.isAbsolute(baseline) || /^[A-Za-z]:/u.test(baseline)
+    || path.posix.normalize(baseline).split("/").includes("..")) {
+    return { error: "--baseline requires a relative path inside the repository." };
+  }
   const sandbox = values.get("--sandbox");
   if (values.has("--sandbox") && sandbox !== "docker") return { error: "--sandbox must be docker." };
   return { options: { server, baseline, sandbox: sandbox === "docker" ? "docker" : null } };

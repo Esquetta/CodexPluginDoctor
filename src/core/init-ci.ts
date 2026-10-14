@@ -79,7 +79,7 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          runtime: \"true\"",
     `          tools-capture-server: ${yamlString(options.server)}`,
     ...(options.sandbox === "docker" ? ["          tools-capture-sandbox: docker"] : []),
-    "          # Catalog warnings are judged by the comparison in the compare job.",
+    "          # Catalog findings do not fail this job; the compare job re-checks the saved list.",
     "          tools-capture-defer-findings: \"true\"",
     "          artifact-name: mcp-tools-capture",
     "",
@@ -106,6 +106,7 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json",
     "          tools-diff-fail-on: breaking",
     "          tools-diff-comment: \"true\"",
+    "          output-dir: ${{ runner.temp }}/codex-plugin-doctor-reports",
     "          artifact-name: mcp-tools-diff",
     ""
   ].join("\n");
