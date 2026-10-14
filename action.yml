@@ -333,6 +333,30 @@ runs:
           reject_usage "tools-capture-server reads the package at path and cannot be combined with installed: true."
         fi
 
+        # Values that look like options would be read as flags such as --runtime, and the CLI would
+        # then run package code without runtime: "true".
+        if [[ "$PACKAGE_PATH_INPUT" == -* ]]; then
+          reject_usage "path must not start with -."
+        fi
+
+        if [[ "$FILTER_INPUT" == -* ]]; then
+          reject_usage "filter must not start with -."
+        fi
+
+        # The name is expanded indirectly, and bash evaluates an array subscript in it as code.
+        if [[ "$REVIEW_BUNDLE_INPUT" == "true" && -n "$SIGNING_KEY_ENV_INPUT" && ! "$SIGNING_KEY_ENV_INPUT" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+          reject_usage "signing-key-env must be an environment variable name."
+        fi
+
+        # Directory paths are written to GITHUB_OUTPUT, where a line break would add another output.
+        if [[ "$OUTPUT_DIR_INPUT" == *$'\n'* || "$OUTPUT_DIR_INPUT" == *$'\r'* ]]; then
+          reject_usage "output-dir must be a single line."
+        fi
+
+        if [[ "$REVIEW_BUNDLE_DIR_INPUT" == *$'\n'* || "$REVIEW_BUNDLE_DIR_INPUT" == *$'\r'* ]]; then
+          reject_usage "review-bundle-dir must be a single line."
+        fi
+
         report_dir="${OUTPUT_DIR_INPUT}"
         summary_path="$report_dir/codex-plugin-doctor-summary.md"
         json_path="$report_dir/codex-plugin-doctor-report.json"

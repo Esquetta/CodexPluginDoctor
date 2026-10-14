@@ -305,16 +305,14 @@ function submissionInvocations(run: ActionRun): string[][] {
 describe("GitHub Action input handling", () => {
   it("passes inputs to scripts only through env, never by expression in run", async () => {
     const action = await loadAction();
-    const interpolated = action.runs.steps
-      .filter((step) => step.run !== undefined)
-      .flatMap((step) => (step.run?.match(/\$\{\{[^}]*\}\}/gu) ?? []).map((expression) => `${step.name}: ${expression}`));
+    const interpolated = action.runs.steps.filter((step) => step.run?.includes("${{")).map((step) => step.name);
     expect(interpolated).toEqual([]);
   });
 
   it.each([
     ["config", { config: 'x" --runtime "' }, "x\" --runtime \""],
-    ["path", { path: '. --runtime' }, ". --runtime"]
-  ])("keeps a quoted %s value as one argument", async (_label, overrides, value) => {
+    ["path", { path: '." --runtime "' }, '." --runtime "']
+  ])("keeps a quoted %s value as one argument", async (_label, overrides: Record<string, string>, value) => {
     const run = await runArchiveAction(overrides);
 
     try {
@@ -324,6 +322,23 @@ describe("GitHub Action input handling", () => {
     } finally {
       await run.cleanup();
     }
+  });
+});
+
+describe("GitHub Action input validation", () => {
+  it.each([
+    ["an option-shaped path", { path: "--runtime" }, "path must not start with -."],
+    ["an option-shaped filter", { installed: "true", filter: "--runtime" }, "filter must not start with -."],
+    ["a signing key name that is not a variable name", { "review-bundle": "true", "signing-key-env": "x[$(echo injected >&2)]" }, "signing-key-env must be an environment variable name."],
+    ["a multi-line output directory", { "output-dir": "reports\nstatus=0" }, "output-dir must be a single line."],
+    ["a multi-line review bundle directory", { "review-bundle-dir": "bundle\nstatus=0" }, "review-bundle-dir must be a single line."]
+  ])("rejects %s before any Doctor command", async (_label, overrides: Record<string, string>, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: `${stderr}\n`,
+      actionState: { status: "2" }
+    });
   });
 });
 
