@@ -143,7 +143,6 @@ describe("tool change impact classification", () => {
   it.each([
     ["input composition keyword", input({ type: "object", anyOf: [{ required: ["a"] }] }), input({ type: "object", anyOf: [{ required: ["b"] }] }), "input-schema-unclassified"],
     ["input property pattern", input(object({ a: { type: "string", pattern: "x" } })), input(object({ a: { type: "string", pattern: "y" } })), "input-schema-unclassified"],
-    ["input exclusive bound", input(object({ a: { type: "number", exclusiveMinimum: 0 } })), input(object({ a: { type: "number", exclusiveMinimum: 1 } })), "input-schema-unclassified"],
     ["input non-numeric bound", input(object({ a: { type: "string", maxLength: 5 } })), input(object({ a: { type: "string", maxLength: "3" } })), "input-schema-unclassified"],
     ["input tuple items", input(object({ a: array({ type: "string" }) })), input(object({ a: { type: "array", items: [{ type: "string" }] } })), "input-schema-unclassified"],
     ["nested composition keyword", nestedInput(object({ a: { type: "string" } }, { anyOf: [{ required: ["a"] }] })), nestedInput(object({ a: { type: "string" } }, { anyOf: [] })), "input-schema-unclassified"],
@@ -204,6 +203,7 @@ describe("tool change impact classification", () => {
       ["recursive definition narrowed", withDefs({ root: ref("Node") }, tree({ type: "number" })), withDefs({ root: ref("Node") }, tree({ type: "integer" })), "input-property-type-narrowed"],
       ["output enum widened through a reference", outputWithDefs({ a: ref("A") }, { A: { enum: ["x"] } }), outputWithDefs({ a: ref("A") }, { A: { enum: ["x", "y"] } }), "output-property-enum-widened"],
       ["reference to another property narrowed", input(object({ a: { $ref: "#/properties/b" }, b: { type: "number" } })), input(object({ a: { $ref: "#/properties/b" }, b: { type: "integer" } })), "input-property-type-narrowed"],
+      ["unchanged composition whose referenced definition changed", withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "number" } }), withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "integer" } }), "input-property-type-narrowed"],
       ["unchanged array items whose definition narrowed", withDefs({ a: array(ref("A")) }, { A: { enum: ["x", "y"] } }), withDefs({ a: array(ref("A")) }, { A: { enum: ["x"] } }), "input-property-enum-narrowed"]
     ])("classifies %s as breaking", (_label, before, after, reason) => {
       expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
@@ -215,7 +215,6 @@ describe("tool change impact classification", () => {
       ["remote reference changed", input(object({ a: { $ref: "https://example.test/a.json" } })), input(object({ a: { $ref: "https://example.test/b.json" } }))],
       ["reference inside a nested resource", withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "integer" } }), withDefs({ a: { $id: "item", $defs: { A: { type: "string" } }, ...ref("A") } }, { A: { type: "number" } })],
       ["reference with a validating sibling", withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "string" } }), withDefs({ a: { ...ref("A"), minLength: 1 } }, { A: { type: "integer" } })],
-      ["unchanged composition whose referenced definition changed", withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "string" } }), withDefs({ a: { anyOf: [ref("A"), { type: "null" }] } }, { A: { type: "number" } })],
       ["definition reached through $dynamicRef", withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x", "y"] } }), withDefs({ a: { $dynamicRef: "#/$defs/A" } }, { A: { enum: ["x"] } })],
       ["definition reached through an absolute URI reference", input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x", "y"] } } })), input(object({ a: { $ref: "https://example.test/tool.json#/$defs/A" } }, { $id: "https://example.test/tool.json", $defs: { A: { enum: ["x"] } } }))],
       ["definition reached through an embedded resource identifier", withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x", "y"] } }), withDefs({ a: { $ref: "urn:item" } }, { A: { $id: "urn:item", enum: ["x"] } })],
@@ -324,6 +323,88 @@ describe("tool change impact classification", () => {
       input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "integer" } } })),
       input(object({ a: { ...values }, b: { $ref: "#/$defs/B" } }, { $defs: { B: { type: "number" } } }))
     )).toEqual({ impact: "compatible", reasons: [] });
+  });
+
+  describe("composition wrappers", () => {
+    const prop = (schema: Definition, defs: Definition = {}) => input(object({ a: schema }, Object.keys(defs).length > 0 ? { $defs: defs } : {}));
+    const outputProp = (schema: Definition, defs: Definition = {}) => output(object({ a: schema }, Object.keys(defs).length > 0 ? { $defs: defs } : {}));
+    const optional = (schema: Definition) => ({ anyOf: [schema, { type: "null" }], default: null });
+    const model = (properties: Definition, extra: Definition = {}) => ({ Model: object(properties, extra) });
+
+    it.each([
+      ["optional model widened inside", prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "integer" } })), prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "number" } }))],
+      ["optional model gained an optional field", prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "string" } })), prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "string" }, y: { type: "string" } }))],
+      ["input made nullable", prop({ type: "string" }), prop(optional({ type: "string" }))],
+      ["input alternative added", prop({ anyOf: [{ type: "string" }, { type: "integer" }] }), prop({ anyOf: [{ type: "string" }, { type: "integer" }, { type: "boolean" }] })],
+      ["alternatives reordered", prop({ anyOf: [{ type: "string" }, { type: "integer" }] }), prop({ anyOf: [{ type: "integer" }, { type: "string" }] })],
+      ["output alternative removed", outputProp({ anyOf: [{ type: "string" }, { type: "null" }] }), outputProp({ type: "string" })],
+      ["optional enum widened", prop(optional({ enum: ["a"] })), prop(optional({ enum: ["a", "b"] }))],
+      ["single allOf wrapper widened", prop({ allOf: [{ $ref: "#/$defs/A" }], description: "A" }, { A: { type: "integer" } }), prop({ allOf: [{ $ref: "#/$defs/A" }], description: "A" }, { A: { type: "number" } })],
+      ["single allOf wrapper removed", prop({ allOf: [{ type: "string" }], description: "A" }), prop({ type: "string", description: "A" })]
+    ])("classifies %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["optional model lost a field", prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "string" } })), prop(optional({ $ref: "#/$defs/Model" }), model({})), "input-property-removed"],
+      ["optional model field became required", prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "string" } })), prop(optional({ $ref: "#/$defs/Model" }), model({ x: { type: "string" } }, { required: ["x"] })), "input-required-added"],
+      ["input no longer nullable", prop(optional({ type: "string" })), prop({ type: "string" }), "input-property-type-narrowed"],
+      ["input alternative removed", prop({ anyOf: [{ type: "string" }, { type: "integer" }] }), prop({ anyOf: [{ type: "string" }] }), "input-property-type-narrowed"],
+      ["optional enum narrowed", prop(optional({ enum: ["a", "b"] })), prop(optional({ enum: ["a"] })), "input-property-enum-narrowed"],
+      ["output made nullable", outputProp({ type: "string" }), outputProp(optional({ type: "string" })), "output-property-type-widened"],
+      ["single allOf wrapper narrowed", prop({ allOf: [{ type: "number" }] }), prop({ allOf: [{ type: "integer" }] }), "input-property-type-narrowed"],
+      ["retargeted optional reference narrowed", prop(optional({ $ref: "#/$defs/A" }), { A: { type: "number" }, B: { type: "integer" } }), prop(optional({ $ref: "#/$defs/B" }), { A: { type: "number" }, B: { type: "integer" } }), "input-property-type-narrowed"]
+    ])("classifies %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it.each([
+      ["alternatives that cannot be paired", prop({ anyOf: [{ type: "string" }, { type: "integer" }] }), prop({ anyOf: [{ minLength: 1 }, { maximum: 3 }] })],
+      ["oneOf changed", prop({ oneOf: [{ type: "string" }, { type: "integer" }] }), prop({ oneOf: [{ type: "string" }, { type: "integer" }, { type: "boolean" }] })],
+      ["anyOf beside a validating keyword", prop({ type: "string", anyOf: [{ minLength: 1 }] }), prop({ type: "string", anyOf: [{ minLength: 2 }] })],
+      ["allOf with two subschemas", prop({ allOf: [{ type: "string" }, { minLength: 1 }] }), prop({ allOf: [{ type: "string" }, { minLength: 2 }] })]
+    ])("classifies %s as unclassified", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+  });
+
+  describe("exclusive bounds, multipleOf, and uniqueItems", () => {
+    const prop = (schema: Definition) => input(object({ a: schema }));
+    const outputProp = (schema: Definition) => output(object({ a: schema }));
+
+    it.each([
+      ["exclusive minimum lowered", prop({ type: "number", exclusiveMinimum: 5 }), prop({ type: "number", exclusiveMinimum: 1 })],
+      ["exclusive minimum made inclusive at the same value", prop({ type: "number", exclusiveMinimum: 0 }), prop({ type: "number", minimum: 0 })],
+      ["exclusive maximum removed", prop({ type: "number", exclusiveMaximum: 10 }), prop({ type: "number" })],
+      ["multipleOf relaxed to a divisor", prop({ type: "number", multipleOf: 0.3 }), prop({ type: "number", multipleOf: 0.1 })],
+      ["multipleOf removed", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer" })],
+      ["uniqueItems removed", prop({ type: "array", uniqueItems: true }), prop({ type: "array" })],
+      ["output uniqueItems introduced", outputProp({ type: "array" }), outputProp({ type: "array", uniqueItems: true })],
+      ["output exclusive maximum tightened", outputProp({ type: "number", maximum: 10 }), outputProp({ type: "number", exclusiveMaximum: 10 })]
+    ])("classifies %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["exclusive minimum introduced", prop({ type: "number" }), prop({ type: "number", exclusiveMinimum: 0 }), "input-constraint-tightened"],
+      ["minimum made exclusive at the same value", prop({ type: "number", minimum: 0 }), prop({ type: "number", exclusiveMinimum: 0 }), "input-constraint-tightened"],
+      ["exclusive maximum lowered", prop({ type: "number", exclusiveMaximum: 10 }), prop({ type: "number", exclusiveMaximum: 5 }), "input-constraint-tightened"],
+      ["multipleOf introduced", prop({ type: "integer" }), prop({ type: "integer", multipleOf: 2 }), "input-constraint-tightened"],
+      ["multipleOf changed to a non-divisor", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer", multipleOf: 3 }), "input-constraint-tightened"],
+      ["uniqueItems introduced", prop({ type: "array" }), prop({ type: "array", uniqueItems: true }), "input-constraint-tightened"],
+      ["output exclusive minimum removed", outputProp({ type: "number", exclusiveMinimum: 0 }), outputProp({ type: "number" }), "output-constraint-loosened"],
+      ["output uniqueItems removed", outputProp({ type: "array", uniqueItems: true }), outputProp({ type: "array" }), "output-constraint-loosened"]
+    ])("classifies %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it.each([
+      ["draft-04 boolean exclusive minimum", prop({ type: "number", minimum: 0, exclusiveMinimum: false }), prop({ type: "number", minimum: 0, exclusiveMinimum: true })],
+      ["non-positive multipleOf", prop({ type: "number", multipleOf: 2 }), prop({ type: "number", multipleOf: 0 })],
+      ["non-boolean uniqueItems", prop({ type: "array" }), prop({ type: "array", uniqueItems: "yes" })]
+    ])("classifies %s as unclassified", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
   });
 
   describe("pattern, format, and const", () => {
