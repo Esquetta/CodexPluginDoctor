@@ -4,6 +4,17 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.72.1] - 2026-10-14
+
+### Security
+
+- the GitHub Action passes every input to its shell scripts through step environment variables instead of expression interpolation, so a quote in a value such as `config` or `path` can no longer add arguments (for example `--runtime`, which turned on runtime probing without `runtime: "true"` and got around the pull request comment guard) or shell commands, and `version` is quoted in the install command
+- the Action rejects with exit `2`, before any Doctor command runs, a `path` or `filter` that starts with `-` (a value such as `--runtime` would be read as an option; prefix a real name with `./`), a `signing-key-env` that is not an environment variable name when `review-bundle` is enabled (its value is expanded indirectly, where bash evaluates array subscripts as code), and an `output-dir` or `review-bundle-dir` that spans more than one line
+
+### Changed
+
+- input values are no longer expanded by the shell, so a value such as `$GITHUB_WORKSPACE/.codex-doctor.json` reaches the CLI literally; use `${{ github.workspace }}` in the workflow instead
+
 ## [1.72.0] - 2026-10-13
 
 ### Added

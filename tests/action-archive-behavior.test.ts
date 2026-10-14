@@ -92,7 +92,8 @@ async function runArchiveAction(
   };
   const runDoctorStep = action.runs.steps.find((step) => step.id === "run-doctor");
   const runDoctorScript = runDoctorStep?.run;
-  const summaryScript = action.runs.steps.find((step) => step.name === "Publish Codex Plugin Doctor summary")?.run;
+  const summaryStep = action.runs.steps.find((step) => step.name === "Publish Codex Plugin Doctor summary");
+  const summaryScript = summaryStep?.run;
   const commentStep = action.runs.steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
 
   if (!runDoctorScript || !summaryScript || !commentStep?.run) throw new Error("Expected composite Action run-doctor, summary, and comment scripts.");
@@ -207,7 +208,10 @@ fi
         const summaryScriptPath = path.join(root, "publish-summary.sh");
         await writeFile(summaryScriptPath, renderInputs(summaryScript, inputs), "utf8");
         await chmod(summaryScriptPath, 0o755);
-        await execFileAsync(bashExecutable, [summaryScriptPath], { cwd: root, env: environment });
+        await execFileAsync(bashExecutable, [summaryScriptPath], {
+          cwd: root,
+          env: { ...environment, ...Object.fromEntries(Object.entries(summaryStep?.env ?? {}).map(([key, value]) => [key, renderInputs(value, inputs)])) }
+        });
         return readFile(stepSummaryPath, "utf8");
       },
       runComment: async (event) => {
@@ -297,6 +301,47 @@ exit "\${MOCK_GH_POST_EXIT:-0}"
 function submissionInvocations(run: ActionRun): string[][] {
   return run.invocations.filter((invocation) => invocation[0] === "doctor" && invocation[1] === "submission");
 }
+
+describe("GitHub Action input handling", () => {
+  it("passes inputs to scripts only through env, never by expression in run", async () => {
+    const action = await loadAction();
+    const interpolated = action.runs.steps.filter((step) => step.run?.includes("${{")).map((step) => step.name);
+    expect(interpolated).toEqual([]);
+  });
+
+  it.each([
+    ["config", { config: 'x" --runtime "' }, "x\" --runtime \""],
+    ["path", { path: '." --runtime "' }, '." --runtime "']
+  ])("keeps a quoted %s value as one argument", async (_label, overrides: Record<string, string>, value) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      const check = run.invocations.find((invocation) => invocation[0] === "check") ?? [];
+      expect(check).toContain(value);
+      expect(check).not.toContain("--runtime");
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+describe("GitHub Action input validation", () => {
+  it.each([
+    ["an option-shaped path", { path: "--runtime" }, "path must not start with -; use ./ before a directory name that starts with -."],
+    ["an option-shaped filter", { installed: "true", filter: "--runtime" }, "filter must not start with -; use ./ before a path that starts with -."],
+    ["a signing key name that is not a variable name", { "review-bundle": "true", "signing-key-env": "x[$(echo injected >&2)]" }, "signing-key-env must be an environment variable name."],
+    ["a multi-line output directory", { "output-dir": "reports\nstatus=0" }, "output-dir must be a single line."],
+    ["a multi-line review bundle directory", { "review-bundle-dir": "bundle\nstatus=0" }, "review-bundle-dir must be a single line."]
+  ])("rejects %s before any Doctor command", async (_label, overrides: Record<string, string>, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: `${stderr}\n`,
+      actionState: { status: "2" },
+      actionOutput: { status: "2" }
+    });
+  });
+});
 
 describe("GitHub Action archive submission behavior", () => {
   it("keeps archive outputs and summary empty when archive mode is disabled", async () => {
