@@ -79,7 +79,7 @@ outputs it already reads must keep their shape.
 | `input-property-removed` | breaking | A declared input property was removed. |
 | `input-property-type-narrowed` | breaking | An input property's or array item's `type` no longer admits every previous type (`integer` is covered by `number`), or an `anyOf` alternative was dropped, such as `null` from an optional value. |
 | `input-property-enum-narrowed` | breaking | An input property's or array item's `enum` or `const` dropped values or was introduced (`const` counts as a one-value `enum`). |
-| `input-constraint-tightened` | breaking | A `minimum`, `exclusiveMinimum`, `minLength`, or `minItems` rose, a `maximum`, `exclusiveMaximum`, `maxLength`, or `maxItems` fell, an inclusive bound became exclusive, a `multipleOf` changed to a value that is not a multiple of the old one, or such a bound, a `multipleOf`, `uniqueItems: true`, a `pattern`, a `format`, or an array `items` schema was introduced. |
+| `input-constraint-tightened` | breaking | A `minimum`, `exclusiveMinimum`, `minLength`, or `minItems` rose, a `maximum`, `exclusiveMaximum`, `maxLength`, or `maxItems` fell, an inclusive bound became exclusive, an integer `multipleOf` changed to a value the old one does not divide, or such a bound, a `multipleOf`, `uniqueItems: true`, a `pattern`, a `format`, or an array `items` schema was introduced. |
 | `input-additional-properties-closed` | breaking | `additionalProperties` became `false`. |
 | `output-schema-removed` | breaking | A previously declared `outputSchema` was removed. |
 | `output-type-widened` | breaking | The root `outputSchema` may now have a type it could not have before. |
@@ -103,17 +103,24 @@ reasons, and `compatible` when it has none.
 Classification is a heuristic. The property, requirement, type, and
 `additionalProperties` reasons apply at every level: to the root schema, to
 nested object `properties`, and to array `items`, up to eight levels below the
-root. Below that limit, any change is unclassified. A bound that is not a finite
-number (including a draft-04 boolean `exclusiveMinimum` or `exclusiveMaximum`), and
-a `multipleOf` that is not a positive number, are unclassified. `oneOf`, `not`,
+root. Below that limit, any change is unclassified. Composition wrappers (see
+below) keep the level of the schema they wrap; more than 16 of them along one
+path are unclassified. `minimum` and `exclusiveMinimum` (and `maximum` and
+`exclusiveMaximum`) are combined into one effective bound per side, the tighter one
+winning and the exclusive form winning a tie, so adding a looser second bound
+changes nothing. A changed bound that is not a finite number (including a
+draft-04 boolean `exclusiveMinimum` or `exclusiveMaximum`), a `multipleOf` that is
+not a positive number, a changed fractional `multipleOf` (validators test those
+with floating-point division, which can reject `0.3` under `multipleOf: 0.1`), and
+a `uniqueItems` that is not a boolean are unclassified. `oneOf`, `not`,
 `allOf` with more than one subschema, `anyOf` or `allOf` beside other validating
 keywords (see below for the forms that are compared), references that cannot be
 resolved (see below), a changed `pattern` or `format` value, tuple-form `items`,
 an `enum` or `const` at the root, `items` or `additionalProperties` changes beside
 `unevaluatedItems` or `unevaluatedProperties`, and changes that introduce or
 modify a schema-valued `additionalProperties` (in outputs, any
-`additionalProperties` change) are reported as unclassified rather than guessed. At the root, bounds, `items`, `pattern`, and
-`format` are also unclassified. A `pattern` or `format` is compared only by
+`additionalProperties` change) are reported as unclassified rather than guessed. At the root, bounds, `multipleOf`,
+`uniqueItems`, `items`, `pattern`, and `format` are also unclassified. A `pattern` or `format` is compared only by
 presence, because one regular expression or format cannot be checked against
 another: introducing one on an input (or removing one from an output) is a
 constraint change, removing one from an input (or introducing one on an output)
@@ -127,13 +134,15 @@ alternative, which covers `anyOf: [{ "$ref": ... }, { "type": "null" }]` for
 optional models; a schema without `anyOf` counts as an `anyOf` with itself as the
 only alternative, so making a value nullable or no longer nullable is compared
 too. Identical alternatives match first, then alternatives with the same `$ref`
-or the same `type`, then the single alternative left on each side. Matched
+or the same `type` when exactly one alternative on each side has it, then the
+single alternative left on each side. Matched
 alternatives are compared with the reasons above. An input alternative that was
 dropped is `input-property-type-narrowed` (`input-type-narrowed` at the root) and
 an added one is `compatible`; for outputs, an added alternative is
-`output-property-type-widened` and a dropped one is `compatible`. When more than
-one alternative on each side is left without a match, or either side has more
-than 32 alternatives, the change is unclassified. A dropped input alternative is
+`output-property-type-widened` and a dropped one is `compatible`. When
+alternatives are left without a match on both sides and they are not one on
+each side, or either side has more than 32 alternatives, the change is
+unclassified. A dropped input alternative is
 reported even when another alternative still accepts the same values.
 
 Same-document references are followed. A `$ref` whose value is a JSON Pointer

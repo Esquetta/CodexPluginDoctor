@@ -368,6 +368,52 @@ describe("tool change impact classification", () => {
     });
   });
 
+  describe("composition edge cases", () => {
+    const prop = (schema: Definition, defs: Definition = {}) => input(object({ a: schema }, Object.keys(defs).length > 0 ? { $defs: defs } : {}));
+
+    it("reports a definition that becomes a reference to itself through a wrapper as unclassified", () => {
+      for (const wrapper of ["allOf", "anyOf"]) {
+        expect(classify(prop({ $ref: "#/$defs/A" }, { A: { type: "string" } }), prop({ $ref: "#/$defs/A" }, { A: { [wrapper]: [{ $ref: "#/$defs/A" }] } })).impact).toBe("unclassified");
+      }
+    });
+
+    it("reports an allOf wrapper around a non-schema value as unclassified", () => {
+      expect(classify(prop({ allOf: [null] }), prop({ type: "string" }))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("stops at the depth limit for deeply nested wrappers without exhausting the stack", () => {
+      const nest = (levels: number, leaf: Definition): Definition => {
+        let schema = leaf;
+        for (let level = 0; level < levels; level += 1) schema = { allOf: [schema] };
+        return schema;
+      };
+      // node:util isDeepStrictEqual recurses per level, so this case compares serialized JSON instead.
+      const before = prop(nest(2_000, { type: "number" }));
+      const after = prop(nest(2_000, { type: "integer" }));
+      expect(classifyChangedTool(before, after, ["inputSchema"], (left, right) => JSON.stringify(left) === JSON.stringify(right)))
+        .toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+      expect(classify(prop(nest(8, { type: "number" })), prop(nest(8, { type: "integer" })))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+    });
+
+    it("uses root reason codes for root alternatives", () => {
+      expect(classify(input({ anyOf: [{ type: "object" }, { type: "null" }] }), input({ type: "object" }))).toEqual({ impact: "breaking", reasons: ["input-type-narrowed"] });
+      expect(classify(output({ type: "object" }), output({ anyOf: [{ type: "object" }, { type: "null" }] }))).toEqual({ impact: "breaking", reasons: ["output-type-widened"] });
+    });
+
+    it.each([
+      ["more than 32 alternatives", prop({ anyOf: Array.from({ length: 33 }, (_, index) => ({ const: index })) }), prop({ anyOf: Array.from({ length: 33 }, (_, index) => ({ const: index + 1 })) })],
+      ["two leftovers against one", prop({ anyOf: [{ minLength: 1 }, { maxLength: 9 }] }), prop({ anyOf: [{ minLength: 2 }] })]
+    ])("reports %s as unclassified", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("pairs alternatives inside nested anyOf", () => {
+      const nested = (values: string[]) => prop({ anyOf: [{ anyOf: [{ enum: values }, { type: "integer" }] }, { type: "null" }] });
+      expect(classify(nested(["a"]), nested(["a", "b"]))).toEqual({ impact: "compatible", reasons: [] });
+      expect(classify(nested(["a", "b"]), nested(["a"]))).toEqual({ impact: "breaking", reasons: ["input-property-enum-narrowed"] });
+    });
+  });
+
   describe("exclusive bounds, multipleOf, and uniqueItems", () => {
     const prop = (schema: Definition) => input(object({ a: schema }));
     const outputProp = (schema: Definition) => output(object({ a: schema }));
@@ -376,7 +422,8 @@ describe("tool change impact classification", () => {
       ["exclusive minimum lowered", prop({ type: "number", exclusiveMinimum: 5 }), prop({ type: "number", exclusiveMinimum: 1 })],
       ["exclusive minimum made inclusive at the same value", prop({ type: "number", exclusiveMinimum: 0 }), prop({ type: "number", minimum: 0 })],
       ["exclusive maximum removed", prop({ type: "number", exclusiveMaximum: 10 }), prop({ type: "number" })],
-      ["multipleOf relaxed to a divisor", prop({ type: "number", multipleOf: 0.3 }), prop({ type: "number", multipleOf: 0.1 })],
+      ["multipleOf relaxed to a divisor", prop({ type: "integer", multipleOf: 6 }), prop({ type: "integer", multipleOf: 3 })],
+      ["unchanged draft-04 exclusive minimum beside a widened enum", prop({ type: "number", minimum: 0, exclusiveMinimum: true, enum: [1] }), prop({ type: "number", minimum: 0, exclusiveMinimum: true, enum: [1, 2] })],
       ["multipleOf removed", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer" })],
       ["uniqueItems removed", prop({ type: "array", uniqueItems: true }), prop({ type: "array" })],
       ["output uniqueItems introduced", outputProp({ type: "array" }), outputProp({ type: "array", uniqueItems: true })],
@@ -401,6 +448,7 @@ describe("tool change impact classification", () => {
     it.each([
       ["draft-04 boolean exclusive minimum", prop({ type: "number", minimum: 0, exclusiveMinimum: false }), prop({ type: "number", minimum: 0, exclusiveMinimum: true })],
       ["non-positive multipleOf", prop({ type: "number", multipleOf: 2 }), prop({ type: "number", multipleOf: 0 })],
+      ["fractional multipleOf changed", prop({ type: "number", multipleOf: 0.3 }), prop({ type: "number", multipleOf: 0.1 })],
       ["non-boolean uniqueItems", prop({ type: "array" }), prop({ type: "array", uniqueItems: "yes" })]
     ])("classifies %s as unclassified", (_label, before, after) => {
       expect(classify(before, after)).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });

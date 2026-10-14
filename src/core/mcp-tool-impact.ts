@@ -62,13 +62,16 @@ const NESTED_STRUCTURAL_WITH_DEFINITIONS = new Set([...NESTED_STRUCTURAL_KEYWORD
 const DATA_KEYWORDS = new Set(["enum", "const", "examples", "example", "default"]);
 // Keywords whose values map names to subschemas; their keys are names, never keywords.
 const NAME_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"]);
-// Subschemas nested deeper than this below the root are not compared and stay unclassified.
+// Subschemas nested deeper than this below the root are not compared and stay unclassified; composition
+// wrappers keep the depth of the schema they wrap and are bounded by MAX_WRAPPER_HOPS instead.
 const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
 // new property beside them stays compatible. Any other unclassified keyword may govern keys.
 const DEFINITION_KEYWORDS = new Set(["$defs", "definitions", "$id", "$anchor", "$dynamicAnchor"]);
 // `anyOf` alternatives beyond this many on either side are not paired.
 const MAX_ALTERNATIVES = 32;
+// Composition wrappers (`allOf` and `anyOf`) followed along one path; deeper wrappers are unclassified.
+const MAX_WRAPPER_HOPS = 16;
 // A `$ref` chain longer than this, such as an alias cycle, is not resolved.
 const MAX_REFERENCE_HOPS = 8;
 // Schema comparisons allowed per tool field; a schema that needs more is unclassified.
@@ -86,6 +89,10 @@ interface ReferenceScope {
   active: Set<string>;
   // Resolved schema pairs already compared at a depth, so shared definitions are compared once per depth.
   completed: Map<unknown, Map<unknown, Set<number>>>;
+  // Resolved schema pairs still being compared at a depth; meeting one again means a cycle without progress.
+  inProgress: Map<unknown, Map<unknown, Set<number>>>;
+  // Composition wrappers entered along the current path.
+  wrappers: number;
   // sameMeaning results for object pairs, which depend only on the pair and the roots.
   same: Map<unknown, Map<unknown, boolean>>;
   // Per pointer: whether its target is equal in both roots, and the pointers inside that target.
@@ -239,7 +246,9 @@ function compareNumericAndArrayConstraints(inner: JsonObject, outer: JsonObject,
     const innerBound = numericBound(inner, inclusive, exclusive, lower);
     const outerBound = numericBound(outer, inclusive, exclusive, lower);
     if (innerBound === null || outerBound === null) {
-      reasons.add(codes.unclassified);
+      // An unchanged draft-04 bound, such as a boolean exclusiveMinimum, still means the same.
+      const unchanged = Object.is(inner[inclusive], outer[inclusive]) && Object.is(inner[exclusive], outer[exclusive]);
+      if (!unchanged) reasons.add(codes.unclassified);
     } else if (outerBound !== undefined) {
       const covered = innerBound !== undefined && (innerBound.value === outerBound.value
         ? innerBound.exclusive || !outerBound.exclusive
@@ -254,9 +263,16 @@ function compareNumericAndArrayConstraints(inner: JsonObject, outer: JsonObject,
   if (!validMultiple(outerMultiple) || !validMultiple(innerMultiple)) {
     reasons.add(codes.unclassified);
   } else if (outerMultiple !== undefined) {
-    // Every multiple of innerMultiple is a multiple of outerMultiple when the quotient is a whole number.
-    const quotient = innerMultiple === undefined ? NaN : (innerMultiple as number) / (outerMultiple as number);
-    if (!(Math.round(quotient) >= 1 && Math.abs(quotient - Math.round(quotient)) < 1e-9)) reasons.add(codes.constraint);
+    if (innerMultiple === undefined) {
+      reasons.add(codes.constraint);
+    } else if (Number.isInteger(innerMultiple) && Number.isInteger(outerMultiple)) {
+      // Every multiple of innerMultiple is a multiple of outerMultiple when outerMultiple divides it.
+      if ((innerMultiple as number) % (outerMultiple as number) !== 0) reasons.add(codes.constraint);
+    } else if (innerMultiple !== outerMultiple) {
+      // Validators test fractional multiples with floating-point division, which can reject 0.3
+      // under multipleOf 0.1, so a changed fractional multipleOf cannot be judged.
+      reasons.add(codes.unclassified);
+    }
   }
 
   if ((outer.uniqueItems !== undefined && typeof outer.uniqueItems !== "boolean")
@@ -267,10 +283,10 @@ function compareNumericAndArrayConstraints(inner: JsonObject, outer: JsonObject,
   }
 }
 
-/** The subschema of a schema that is only a one-element `allOf` with documentation, or undefined. */
-function singleAllOf(schema: unknown): unknown {
-  if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length !== 1) return undefined;
-  return Object.keys(schema).every((key) => key === "allOf" || DOCUMENTATION_KEYWORDS.has(key)) ? schema.allOf[0] : undefined;
+/** The subschema of a schema that is only a one-element `allOf` with documentation, or null. */
+function singleAllOf(schema: unknown): { inner: unknown } | null {
+  if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length !== 1) return null;
+  return Object.keys(schema).every((key) => key === "allOf" || DOCUMENTATION_KEYWORDS.has(key)) ? { inner: schema.allOf[0] } : null;
 }
 
 /** The alternatives of a schema that is only `anyOf` with documentation, or null. */
@@ -453,18 +469,25 @@ function referenceScope(before: unknown, after: unknown): ReferenceScope {
     fragmentsOnly: reachesDefinitionsOnlyThroughFragments(before) && reachesDefinitionsOnlyThroughFragments(after),
     active: new Set(),
     completed: new Map(),
+    inProgress: new Map(),
+    wrappers: 0,
     same: new Map(),
     pointers: new Map(),
     remaining: MAX_COMPARISONS
   };
 }
 
-/** Records a resolved pair as compared at this depth; returns false when it already was. */
-function markCompleted(scope: ReferenceScope, before: unknown, after: unknown, depth: number): boolean {
-  let byAfter = scope.completed.get(before);
-  if (byAfter === undefined) scope.completed.set(before, byAfter = new Map());
+function pairDepths(pairs: Map<unknown, Map<unknown, Set<number>>>, before: unknown, after: unknown): Set<number> {
+  let byAfter = pairs.get(before);
+  if (byAfter === undefined) pairs.set(before, byAfter = new Map());
   let depths = byAfter.get(after);
   if (depths === undefined) byAfter.set(after, depths = new Set());
+  return depths;
+}
+
+/** Records a resolved pair as compared at this depth; returns false when it already was. */
+function markCompleted(scope: ReferenceScope, before: unknown, after: unknown, depth: number): boolean {
+  const depths = pairDepths(scope.completed, before, after);
   if (depths.has(depth)) return false;
   depths.add(depth);
   return true;
@@ -575,25 +598,45 @@ function compareSchema(
     const pair = resolvedBefore.ref !== undefined && resolvedAfter.ref !== undefined
       ? JSON.stringify([resolvedBefore.ref, resolvedAfter.ref])
       : undefined;
+    // Reaching a pair again at the same depth, for example through a definition that wraps a
+    // reference to itself, is a cycle that never reaches a value, so it cannot be judged.
+    const inProgress = pairDepths(scope.inProgress, resolvedBefore.schema, resolvedAfter.schema);
+    if (inProgress.has(depth)) {
+      reasons.add(codes.unclassified);
+      return;
+    }
     if (pair !== undefined && scope.active.has(pair)) return;
     if (!markCompleted(scope, resolvedBefore.schema, resolvedAfter.schema, depth)) return;
     if (pair !== undefined) scope.active.add(pair);
+    inProgress.add(depth);
     compareSchema(resolvedBefore.schema, resolvedAfter.schema, direction, depth, equal, reasons, scope);
+    inProgress.delete(depth);
     if (pair !== undefined) scope.active.delete(pair);
     return;
   }
-  // A one-element allOf with only documentation beside it means the same as its subschema.
-  const wrappedBefore = singleAllOf(before);
-  const wrappedAfter = singleAllOf(after);
-  if (wrappedBefore !== undefined || wrappedAfter !== undefined) {
-    compareSchema(wrappedBefore ?? before, wrappedAfter ?? after, direction, depth, equal, reasons, scope);
+  if (depth > MAX_NESTED_DEPTH) {
+    reasons.add(codes.unclassified);
     return;
   }
-  // A schema that is not an anyOf compares as an anyOf with that schema as its only alternative.
+  // Wrappers keep the depth, so their own count bounds how far one path can unwrap.
+  const wrappedBefore = singleAllOf(before);
+  const wrappedAfter = singleAllOf(after);
   const beforeAlternatives = alternatives(before);
   const afterAlternatives = alternatives(after);
-  if (beforeAlternatives !== null || afterAlternatives !== null) {
-    compareAlternatives(beforeAlternatives ?? [before], afterAlternatives ?? [after], direction, depth, equal, reasons, scope);
+  if (wrappedBefore !== null || wrappedAfter !== null || beforeAlternatives !== null || afterAlternatives !== null) {
+    if (scope.wrappers >= MAX_WRAPPER_HOPS) {
+      reasons.add(codes.unclassified);
+      return;
+    }
+    scope.wrappers += 1;
+    if (wrappedBefore !== null || wrappedAfter !== null) {
+      // A one-element allOf with only documentation beside it means the same as its subschema.
+      compareSchema(wrappedBefore === null ? before : wrappedBefore.inner, wrappedAfter === null ? after : wrappedAfter.inner, direction, depth, equal, reasons, scope);
+    } else {
+      // A schema that is not an anyOf compares as an anyOf with that schema as its only alternative.
+      compareAlternatives(beforeAlternatives ?? [before], afterAlternatives ?? [after], direction, depth, equal, reasons, scope);
+    }
+    scope.wrappers -= 1;
     return;
   }
   const root = depth === 0;
