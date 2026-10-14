@@ -381,7 +381,7 @@ describe("tool change impact classification", () => {
       expect(classify(prop({ allOf: [null] }), prop({ type: "string" }))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
     });
 
-    it("stops at the depth limit for deeply nested wrappers without exhausting the stack", () => {
+    it("stops at the wrapper limit for deeply nested wrappers without exhausting the stack", () => {
       const nest = (levels: number, leaf: Definition): Definition => {
         let schema = leaf;
         for (let level = 0; level < levels; level += 1) schema = { allOf: [schema] };
@@ -393,6 +393,40 @@ describe("tool change impact classification", () => {
       expect(classifyChangedTool(before, after, ["inputSchema"], (left, right) => JSON.stringify(left) === JSON.stringify(right)))
         .toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
       expect(classify(prop(nest(8, { type: "number" })), prop(nest(8, { type: "integer" })))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+    });
+
+    it("allows 16 wrappers along a path and reports a 17th as unclassified", () => {
+      const nest = (levels: number, leaf: Definition): Definition => {
+        let schema = leaf;
+        for (let level = 0; level < levels; level += 1) schema = { allOf: [schema] };
+        return schema;
+      };
+      expect(classify(prop(nest(16, { type: "number" })), prop(nest(16, { type: "integer" })))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      expect(classify(prop(nest(17, { type: "number" })), prop(nest(17, { type: "integer" })))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    describe("a model reference made optional or required", () => {
+      const model = (properties: Definition) => ({ Model: object(properties) });
+      const bare = { $ref: "#/$defs/Model" };
+      const optional = { anyOf: [{ $ref: "#/$defs/Model" }, { type: "null" }], default: null };
+      const wrapped = { allOf: [{ $ref: "#/$defs/Model" }], description: "Model" };
+      const unchanged = model({ x: { type: "string" } });
+
+      it.each([
+        ["made optional", prop(bare, unchanged), prop(optional, unchanged)],
+        ["made optional from an allOf wrapper", prop(wrapped, unchanged), prop(optional, unchanged)],
+        ["made optional while widening the model", prop(bare, model({ x: { type: "integer" } })), prop(optional, model({ x: { type: "number" } }))]
+      ])("classifies an input reference %s as compatible", (_label, before, after) => {
+        expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("classifies an input reference made required as breaking", () => {
+        expect(classify(prop(optional, unchanged), prop(bare, unchanged))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      });
+
+      it("classifies an output reference made optional as breaking", () => {
+        expect(classify(output(object({ a: bare }, { $defs: unchanged })), output(object({ a: optional }, { $defs: unchanged })))).toEqual({ impact: "breaking", reasons: ["output-property-type-widened"] });
+      });
     });
 
     it("uses root reason codes for root alternatives", () => {
@@ -423,6 +457,9 @@ describe("tool change impact classification", () => {
       ["exclusive minimum made inclusive at the same value", prop({ type: "number", exclusiveMinimum: 0 }), prop({ type: "number", minimum: 0 })],
       ["exclusive maximum removed", prop({ type: "number", exclusiveMaximum: 10 }), prop({ type: "number" })],
       ["multipleOf relaxed to a divisor", prop({ type: "integer", multipleOf: 6 }), prop({ type: "integer", multipleOf: 3 })],
+      ["draft-04 boolean exclusive minimum turned off", prop({ type: "number", minimum: 0, exclusiveMinimum: true }), prop({ type: "number", minimum: 0, exclusiveMinimum: false })],
+      ["unchanged invalid multipleOf beside a widened enum", prop({ type: "number", multipleOf: 0, enum: [1] }), prop({ type: "number", multipleOf: 0, enum: [1, 2] })],
+      ["unchanged non-boolean uniqueItems beside a widened enum", prop({ type: "array", uniqueItems: "yes", enum: [[1]] }), prop({ type: "array", uniqueItems: "yes", enum: [[1], [2]] })],
       ["unchanged draft-04 exclusive minimum beside a widened enum", prop({ type: "number", minimum: 0, exclusiveMinimum: true, enum: [1] }), prop({ type: "number", minimum: 0, exclusiveMinimum: true, enum: [1, 2] })],
       ["multipleOf removed", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer" })],
       ["uniqueItems removed", prop({ type: "array", uniqueItems: true }), prop({ type: "array" })],
@@ -438,6 +475,9 @@ describe("tool change impact classification", () => {
       ["exclusive maximum lowered", prop({ type: "number", exclusiveMaximum: 10 }), prop({ type: "number", exclusiveMaximum: 5 }), "input-constraint-tightened"],
       ["multipleOf introduced", prop({ type: "integer" }), prop({ type: "integer", multipleOf: 2 }), "input-constraint-tightened"],
       ["multipleOf changed to a non-divisor", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer", multipleOf: 3 }), "input-constraint-tightened"],
+      ["multipleOf changed to a multiple of the old value", prop({ type: "integer", multipleOf: 2 }), prop({ type: "integer", multipleOf: 4 }), "input-constraint-tightened"],
+      ["draft-04 boolean exclusive minimum turned on", prop({ type: "number", minimum: 0, exclusiveMinimum: false }), prop({ type: "number", minimum: 0, exclusiveMinimum: true }), "input-constraint-tightened"],
+      ["minimum raised beside an unchanged draft-04 exclusive minimum", prop({ type: "number", minimum: 0, exclusiveMinimum: true }), prop({ type: "number", minimum: 5, exclusiveMinimum: true }), "input-constraint-tightened"],
       ["uniqueItems introduced", prop({ type: "array" }), prop({ type: "array", uniqueItems: true }), "input-constraint-tightened"],
       ["output exclusive minimum removed", outputProp({ type: "number", exclusiveMinimum: 0 }), outputProp({ type: "number" }), "output-constraint-loosened"],
       ["output uniqueItems removed", outputProp({ type: "array", uniqueItems: true }), outputProp({ type: "array" }), "output-constraint-loosened"]
@@ -446,7 +486,6 @@ describe("tool change impact classification", () => {
     });
 
     it.each([
-      ["draft-04 boolean exclusive minimum", prop({ type: "number", minimum: 0, exclusiveMinimum: false }), prop({ type: "number", minimum: 0, exclusiveMinimum: true })],
       ["non-positive multipleOf", prop({ type: "number", multipleOf: 2 }), prop({ type: "number", multipleOf: 0 })],
       ["fractional multipleOf changed", prop({ type: "number", multipleOf: 0.3 }), prop({ type: "number", multipleOf: 0.1 })],
       ["non-boolean uniqueItems", prop({ type: "array" }), prop({ type: "array", uniqueItems: "yes" })]

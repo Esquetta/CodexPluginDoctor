@@ -79,7 +79,7 @@ outputs it already reads must keep their shape.
 | `input-property-removed` | breaking | A declared input property was removed. |
 | `input-property-type-narrowed` | breaking | An input property's or array item's `type` no longer admits every previous type (`integer` is covered by `number`), or an `anyOf` alternative was dropped, such as `null` from an optional value. |
 | `input-property-enum-narrowed` | breaking | An input property's or array item's `enum` or `const` dropped values or was introduced (`const` counts as a one-value `enum`). |
-| `input-constraint-tightened` | breaking | A `minimum`, `exclusiveMinimum`, `minLength`, or `minItems` rose, a `maximum`, `exclusiveMaximum`, `maxLength`, or `maxItems` fell, an inclusive bound became exclusive, an integer `multipleOf` changed to a value the old one does not divide, or such a bound, a `multipleOf`, `uniqueItems: true`, a `pattern`, a `format`, or an array `items` schema was introduced. |
+| `input-constraint-tightened` | breaking | A `minimum`, `exclusiveMinimum`, `minLength`, or `minItems` rose, a `maximum`, `exclusiveMaximum`, `maxLength`, or `maxItems` fell, an inclusive bound became exclusive, an integer `multipleOf` changed to a value that does not divide the old one (`6` to `3` is compatible, `2` to `4` is not), or such a bound, a `multipleOf`, `uniqueItems: true`, a `pattern`, a `format`, or an array `items` schema was introduced. |
 | `input-additional-properties-closed` | breaking | `additionalProperties` became `false`. |
 | `output-schema-removed` | breaking | A previously declared `outputSchema` was removed. |
 | `output-type-widened` | breaking | The root `outputSchema` may now have a type it could not have before. |
@@ -108,11 +108,11 @@ below) keep the level of the schema they wrap; more than 16 of them along one
 path are unclassified. `minimum` and `exclusiveMinimum` (and `maximum` and
 `exclusiveMaximum`) are combined into one effective bound per side, the tighter one
 winning and the exclusive form winning a tie, so adding a looser second bound
-changes nothing. A changed bound that is not a finite number (including a
-draft-04 boolean `exclusiveMinimum` or `exclusiveMaximum`), a `multipleOf` that is
-not a positive number, a changed fractional `multipleOf` (validators test those
+changes nothing. A draft-04 boolean `exclusiveMinimum` or `exclusiveMaximum` makes
+the `minimum` or `maximum` beside it exclusive. A changed bound that is not a
+finite number, a changed `multipleOf` that is not a positive number, a changed fractional `multipleOf` (validators test those
 with floating-point division, which can reject `0.3` under `multipleOf: 0.1`), and
-a `uniqueItems` that is not a boolean are unclassified. `oneOf`, `not`,
+a changed `uniqueItems` that is not a boolean are unclassified. `oneOf`, `not`,
 `allOf` with more than one subschema, `anyOf` or `allOf` beside other validating
 keywords (see below for the forms that are compared), references that cannot be
 resolved (see below), a changed `pattern` or `format` value, tuple-form `items`,
@@ -132,8 +132,8 @@ covers the `allOf: [{ "$ref": ... }]` wrapper older Pydantic emits. A schema tha
 is only `anyOf` with documentation keywords beside it is compared alternative by
 alternative, which covers `anyOf: [{ "$ref": ... }, { "type": "null" }]` for
 optional models; a schema without `anyOf` counts as an `anyOf` with itself as the
-only alternative, so making a value nullable or no longer nullable is compared
-too. Identical alternatives match first, then alternatives with the same `$ref`
+only alternative, so making a value, including a `$ref` to a model, nullable or
+no longer nullable is compared too. Identical alternatives match first, then alternatives with the same `$ref`
 or the same `type` when exactly one alternative on each side has it, then the
 single alternative left on each side. Matched
 alternatives are compared with the reasons above. An input alternative that was
