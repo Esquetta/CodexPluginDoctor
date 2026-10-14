@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.72.1] - 2026-10-14
+
+### Security
+
+- the GitHub Action now passes every input to its shell scripts through step environment variables instead of expression interpolation, so a value such as `config: 'x" --runtime "'` or a crafted `version` can no longer add arguments or shell commands; before, an input containing a quote could, among other things, turn on runtime probing without `runtime: "true"` and get around the pull request comment guard
+
 ## [1.72.0] - 2026-10-13
 
 ### Added

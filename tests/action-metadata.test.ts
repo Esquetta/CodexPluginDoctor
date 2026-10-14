@@ -83,7 +83,7 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("review-bundle-path:");
     expect(actionMetadata).toContain("review-bundle-verification-path:");
     expect(actionMetadata).toContain("steps.run-doctor.outputs.status");
-    expect(actionMetadata).toContain("npm install -g codex-plugin-doctor@${{ inputs.version }}");
+    expect(actionMetadata).toContain('npm install -g "codex-plugin-doctor@${VERSION_INPUT}"');
     expect(actionMetadata).toContain("id: run-doctor");
     expect(actionMetadata).toContain("args=(check)");
     expect(actionMetadata).toContain('codex-plugin-doctor "$@"');
@@ -112,9 +112,9 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain("signing-key-env:");
     expect(actionMetadata).toContain("review-bundle-allow-dirty:");
     expect(actionMetadata).toContain("review-bundle-allow-untagged:");
-    expect(actionMetadata).toContain('args+=(--history "${{ inputs.history }}")');
-    expect(actionMetadata).toContain('args+=(--policy "${{ inputs.policy }}")');
-    expect(actionMetadata).toContain('args+=(--profile "${{ inputs.profile }}")');
+    expect(actionMetadata).toContain('args+=(--history "${HISTORY_INPUT}")');
+    expect(actionMetadata).toContain('args+=(--policy "${POLICY_INPUT}")');
+    expect(actionMetadata).toContain('args+=(--profile "${PROFILE_INPUT}")');
     expect(actionMetadata).toContain("codex-plugin-doctor-report.json");
     expect(actionMetadata).toContain("codex-plugin-doctor-summary.md");
     expect(actionMetadata).toContain("codex-plugin-doctor.sarif");
@@ -128,8 +128,8 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('corpus_metrics_diff_args=(doctor corpus metrics diff --before "$CORPUS_METRICS_BASELINE_INPUT" --after "$corpus_metrics_path" --json --output "$corpus_metrics_diff_path")');
     expect(actionMetadata).toContain("corpus_metrics_diff_args+=(--fail-on-regression)");
     expect(actionMetadata).toContain('run_doctor "output contract" doctor contract --json --output "$output_contract_path"');
-    expect(actionMetadata).toContain('review_bundle_args=(doctor review-bundle "${{ inputs.path }}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")');
-    expect(actionMetadata).toContain('doctor review-bundle verify "$review_bundle_path" --target "${{ inputs.path }}" --sign-key-env "$signing_key_env" --json --output "$review_bundle_verification_path"');
+    expect(actionMetadata).toContain('review_bundle_args=(doctor review-bundle "${PACKAGE_PATH_INPUT}" --output "$review_bundle_path" --sign-key-env "$signing_key_env")');
+    expect(actionMetadata).toContain('doctor review-bundle verify "$review_bundle_path" --target "${PACKAGE_PATH_INPUT}" --sign-key-env "$signing_key_env" --json --output "$review_bundle_verification_path"');
     expect(actionMetadata).toContain("actions/upload-artifact@v7");
     expect(actionMetadata).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"");
     expect(actionMetadata).toContain('cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"');
@@ -203,10 +203,10 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).toContain('elif [[ "$REQUIRE_SUBMISSION_READY_INPUT" == "true" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" ]]; then');
     expect(actionMetadata).toContain('echo "require-submission-ready requires exactly one submission mode." >&2');
     expect(actionMetadata).toContain("record_status 2");
-    expect(actionMetadata).toContain('submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain('submission_args=(doctor submission "${PACKAGE_PATH_INPUT}" --json --output "$submission_json_path")');
     expect(actionMetadata).toContain("submission_args+=(--require-ready)");
     expect(actionMetadata).toContain('run_doctor "submission preflight" "${submission_args[@]}"');
-    expect(actionMetadata).toContain('run_doctor "submission summary" doctor submission "${{ inputs.path }}" --markdown --output "$submission_summary_path"');
+    expect(actionMetadata).toContain('run_doctor "submission summary" doctor submission "${PACKAGE_PATH_INPUT}" --markdown --output "$submission_summary_path"');
     expect(actionMetadata).toContain('submissionJson: report("submissionJson", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_JSON_PATH")');
     expect(actionMetadata).toContain('submissionSummary: report("submissionSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION", "CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_SUMMARY_PATH")');
     expect(actionMetadata).toContain('echo "submission-json-path=$submission_json_output"');
@@ -248,10 +248,10 @@ describe("GitHub Action metadata", () => {
   it("rejects installed-cache submission preflight requests without producing submission reports", async () => {
     const actionMetadata = normalizeNewlines(await readFile("action.yml", "utf8"));
 
-    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${{ inputs.installed }}" == "true" ]]; then');
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" && "${INSTALLED_INPUT}" == "true" ]]; then');
     expect(actionMetadata).toContain('echo "Submission preflight requires a single package path, not installed-cache mode." >&2');
     expect(actionMetadata).toContain('record_status 2');
-    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" ]]; then\n          submission_ran=true\n          submission_args=(doctor submission "${{ inputs.path }}" --json --output "$submission_json_path")');
+    expect(actionMetadata).toContain('elif [[ "$SUBMISSION_INPUT" == "true" ]]; then\n          submission_ran=true\n          submission_args=(doctor submission "${PACKAGE_PATH_INPUT}" --json --output "$submission_json_path")');
     expect(actionMetadata).toContain('submission_json_output=""');
     expect(actionMetadata).toContain('submission_summary_output=""');
     expect(actionMetadata).toContain('submission_json_output="$submission_json_path"');
