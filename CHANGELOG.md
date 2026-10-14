@@ -4,6 +4,15 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.73.0] - 2026-10-14
+
+### Changed
+
+- `doctor tools-diff` now compares a schema that is only `anyOf` with documentation keywords alternative by alternative, so the `anyOf: [{ "$ref": ... }, { "type": "null" }]` that Pydantic and FastMCP emit for optional models, and making a value nullable or no longer nullable, get the same reasons as other schemas instead of `unclassified`; a dropped input alternative is `input-property-type-narrowed` and an added output alternative is `output-property-type-widened`, while alternatives that cannot be paired, more than 32 alternatives, and `oneOf` changes stay `unclassified`
+- a schema that is only a one-element `allOf` with documentation keywords, the wrapper older Pydantic emits around `$ref`, is compared as its subschema; wrappers keep the level of the schema they wrap, more than 16 along one path are `unclassified`, and a definition that wraps a reference to itself is `unclassified`
+- `exclusiveMinimum` and `exclusiveMaximum` are combined with `minimum` and `maximum` into one effective bound, integer `multipleOf` changes are classified, and `uniqueItems: true` introduced on an input (or removed from an output) is a constraint change; draft-04 boolean exclusive bounds, changed fractional `multipleOf` values, and non-boolean `uniqueItems` stay `unclassified`, and an unchanged draft-04 bound no longer makes other changes in the same subschema `unclassified`
+- no reason codes were added
+
 ## [1.72.1] - 2026-10-14
 
 ### Security
