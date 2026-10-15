@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.74.1] - 2026-10-15
+
+### Changed
+
+- the workflow written by plain `init-ci` now uses `actions/checkout@v5`, like the tool diff workflow
+
+### Internal
+
+- added the `Action E2E` workflow, which runs the composite Action from the checkout on a real runner with the CLI packed from the same commit, in the two-job pattern `init-ci --tools-diff-server` writes: a Docker-sandboxed capture of the example stdio server, then a comparison with a committed baseline and a pull request comment
+
 ## [1.74.0] - 2026-10-14
 
 ### Added

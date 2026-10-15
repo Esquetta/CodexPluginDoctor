@@ -1,0 +1,136 @@
+name: Action E2E
+
+# Runs the composite Action from this checkout on a real runner with the CLI built from the same
+# commit, in the two-job pattern that init-ci --tools-diff-server generates: a capture job that
+# starts the example stdio server in the Docker sandbox, and a compare job that diffs the capture
+# against a committed baseline and comments on the pull request.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Pack the CLI
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli"
+          tarball="$(npm pack --silent --ignore-scripts --pack-destination "$RUNNER_TEMP/cli")"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-package
+          path: ${{ runner.temp }}/cli
+          if-no-files-found: error
+
+  capture:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: cli-package
+          path: ${{ runner.temp }}/cli
+
+      - name: Capture the example server in the Docker sandbox
+        id: capture
+        uses: ./
+        with:
+          version: file:${{ runner.temp }}/cli/${{ needs.package.outputs.tarball }}
+          path: examples/codex-doctor-runtime
+          check: "false"
+          runtime: "true"
+          tools-capture-server: doctorRuntime
+          tools-capture-sandbox: docker
+          tools-capture-defer-findings: "true"
+          output-dir: ${{ runner.temp }}/capture
+          artifact-name: mcp-tools-capture
+
+      - name: Check the capture
+        shell: bash
+        env:
+          STATUS: ${{ steps.capture.outputs.status }}
+          CAPTURE_PATH: ${{ steps.capture.outputs.tools-capture-path }}
+        run: |
+          test "$STATUS" = "0"
+          test -s "$CAPTURE_PATH"
+
+  compare:
+    needs: [package, capture]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: cli-package
+          path: ${{ runner.temp }}/cli
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: mcp-tools-capture
+          path: ${{ runner.temp }}/mcp-tools-capture
+
+      - name: Compare the capture with the baseline
+        id: diff
+        uses: ./
+        with:
+          version: file:${{ runner.temp }}/cli/${{ needs.package.outputs.tarball }}
+          check: "false"
+          tools-diff-before: tests/fixtures/action-e2e/tools-baseline.json
+          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json
+          tools-diff-fail-on: breaking
+          tools-diff-comment: "true"
+          output-dir: ${{ runner.temp }}/compare
+          artifact-name: mcp-tools-diff
+
+      - name: Check the comparison
+        shell: bash
+        env:
+          STATUS: ${{ steps.diff.outputs.status }}
+          DIFF_JSON: ${{ steps.diff.outputs.tools-diff-json-path }}
+        run: |
+          test "$STATUS" = "0"
+          node -e '
+            const report = JSON.parse(require("node:fs").readFileSync(process.env.DIFF_JSON, "utf8"));
+            const { complete, changed, breaking, unclassified } = report.comparison;
+            if (!complete || changed !== 0 || breaking !== 0 || unclassified !== 0) {
+              console.error(`Unexpected comparison: ${JSON.stringify(report.comparison)}`);
+              process.exit(1);
+            }
+          '

@@ -48,6 +48,13 @@ Every change should run:
 - fixture integration tests
 - selected runtime probe tests
 
+The `Action E2E` workflow (`.github/workflows/action-e2e.yml`) also runs the
+composite Action from the checkout on a real runner, with the CLI packed from the
+same commit and passed as `version: file:<tarball>`. It captures the example
+stdio server in the Docker sandbox, compares the capture in a second job with
+`tests/fixtures/action-e2e/tools-baseline.json`, and comments on the pull request.
+Regenerate that baseline only when the example server's tools change on purpose.
+
 ## Release Process
 
 1. Merge into the release branch.
