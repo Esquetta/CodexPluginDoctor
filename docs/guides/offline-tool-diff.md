@@ -138,8 +138,12 @@ schema that requires `discriminator.propertyName` and fixes it to one `const` (o
 one-value `enum`) that no other alternative uses. Such alternatives cannot both
 match one value, so the `oneOf` accepts exactly what an `anyOf` would; their
 alternatives also pair by that value. `discriminator.mapping` is not compared,
-because JSON Schema validators ignore it. A changed discriminator property name,
-or alternatives that are not shown to exclude each other, stay unclassified. The
+because JSON Schema validators ignore it. When the discriminator property name
+differs, alternatives pair by identity, `$ref`, or `type` only. A union whose
+alternatives are not shown to exclude each other stays unclassified, and so does
+one whose discriminator property holds a `$ref` beside its `const`, or one under a
+draft-04 or draft-03 `$schema`. A union that appears whole as one alternative of
+the other side, such as a union made nullable, is compared as that alternative. The
 `anyOf` form covers `anyOf: [{ "$ref": ... }, { "type": "null" }]` for
 optional models; a schema without `anyOf` counts as an `anyOf` with itself as the
 only alternative, so making a value, including a `$ref` to a model, nullable or

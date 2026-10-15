@@ -68,9 +68,9 @@ const MAX_NESTED_DEPTH = 8;
 // Keywords that only hold or name subschemas and never validate the object's own keys, so a
 // new property beside them stays compatible. Any other unclassified keyword may govern keys.
 const DEFINITION_KEYWORDS = new Set(["$defs", "definitions", "$id", "$anchor", "$dynamicAnchor"]);
-// `anyOf` alternatives beyond this many on either side are not paired.
+// `anyOf` or discriminated `oneOf` alternatives beyond this many on either side are not paired.
 const MAX_ALTERNATIVES = 32;
-// Composition wrappers (`allOf` and `anyOf`) followed along one path; deeper wrappers are unclassified.
+// Composition wrappers (`allOf`, `anyOf`, and discriminated `oneOf`) followed along one path; deeper wrappers are unclassified.
 const MAX_WRAPPER_HOPS = 16;
 // A `$ref` chain longer than this, such as an alias cycle, is not resolved.
 const MAX_REFERENCE_HOPS = 8;
@@ -311,6 +311,8 @@ function discriminatorProperty(value: unknown): string | null {
  * Such alternatives cannot both match one value, so their oneOf accepts what an anyOf would.
  */
 function discriminatorValues(list: unknown[], property: string, document: unknown): Map<unknown, string> | null {
+  // Draft-04 has no const, and many validators of earlier drafts drop keywords beside a $ref.
+  if (list.length > MAX_ALTERNATIVES || (isJsonObject(document) && typeof document.$schema === "string" && /draft-0[34]/u.test(document.$schema))) return null;
   const values = new Map<unknown, string>();
   const seen = new Set<string>();
   for (const alternative of list) {
@@ -318,7 +320,8 @@ function discriminatorValues(list: unknown[], property: string, document: unknow
     if (!isJsonObject(schema)) return null;
     const types = typeSet(schema);
     const declared = objectMap(schema.properties)?.[property];
-    if (types === null || types.size !== 1 || !types.has("object") || !stringSet(schema.required)?.has(property) || !isJsonObject(declared)) return null;
+    if (types === null || types.size !== 1 || !types.has("object") || !stringSet(schema.required)?.has(property)
+      || !isJsonObject(declared) || declared.$ref !== undefined) return null;
     const fixed = Object.hasOwn(declared, "const") ? [declared.const] : declared.enum;
     if (!Array.isArray(fixed) || fixed.length !== 1 || (Array.isArray(declared.enum) && Object.hasOwn(declared, "const")
       && !(declared.enum.length === 1 && Object.is(declared.enum[0], declared.const)))) return null;
@@ -351,8 +354,8 @@ function isComposition(schema: unknown, document: unknown): boolean {
 }
 
 /**
- * Compares two schemas when at least one is a one-element `allOf` or an `anyOf` with only
- * documentation beside it. Wrappers keep the depth, so their own count bounds how far one path unwraps.
+ * Compares two schemas when at least one is a one-element `allOf`, an `anyOf`, or a discriminated
+ * `oneOf` with only documentation beside it. Wrappers keep the depth, so their own count bounds how far one path unwraps.
  */
 function compareComposition(
   before: unknown,
@@ -695,17 +698,44 @@ function compareSchema(
   // pair with an alternative that refers to the same definition, as when a model becomes optional.
   const beforeComposed = isComposition(resolvedBefore.schema, scope.before);
   const afterComposed = isComposition(resolvedAfter.schema, scope.after);
+  // True when the original schema, before its reference is resolved, pairs with an alternative of
+  // the composite, as a model or a union does with its nullable anyOf.
+  const pairsWithAlternative = (original: unknown, composite: unknown, document: unknown) => {
+    const key = alternativeKey(original);
+    return (alternatives(composite, document)?.list ?? [])
+      .some((alternative) => (key !== null && alternativeKey(alternative) === key) || sameMeaning(original, alternative, equal, scope));
+  };
   if (beforeComposed !== afterComposed) {
     // The reference is kept only when an alternative can pair with it; otherwise its target compares
     // with inline alternatives by type.
     const composite = beforeComposed ? resolvedBefore.schema : resolvedAfter.schema;
     const original = beforeComposed ? after : before;
-    const plainKey = alternativeKey(original);
-    const keepReference = (alternatives(composite, beforeComposed ? scope.before : scope.after)?.list ?? [])
-      .some((alternative) => (plainKey !== null && alternativeKey(alternative) === plainKey) || sameMeaning(original, alternative, equal, scope));
+    const keepReference = pairsWithAlternative(original, composite, beforeComposed ? scope.before : scope.after);
     const plain = keepReference ? original : (beforeComposed ? resolvedAfter.schema : resolvedBefore.schema);
     compareComposition(beforeComposed ? composite : plain, beforeComposed ? plain : composite, direction, depth, equal, reasons, scope);
     return;
+  }
+  if (beforeComposed && afterComposed) {
+    // A composite that appears whole as one alternative of the other side, such as a union made
+    // nullable, compares as that single alternative rather than alternative by alternative.
+    const beforeIsAlternative = pairsWithAlternative(before, resolvedAfter.schema, scope.after);
+    const afterIsAlternative = pairsWithAlternative(after, resolvedBefore.schema, scope.before);
+    if (beforeIsAlternative !== afterIsAlternative) {
+      if (scope.wrappers >= MAX_WRAPPER_HOPS) {
+        reasons.add(codes.unclassified);
+        return;
+      }
+      const side = (whole: boolean, original: unknown, composite: unknown, document: unknown): Alternatives =>
+        whole ? { list: [original], discriminator: null } : alternatives(composite, document) ?? { list: [composite], discriminator: null };
+      scope.wrappers += 1;
+      compareAlternatives(
+        side(beforeIsAlternative, before, resolvedBefore.schema, scope.before),
+        side(afterIsAlternative, after, resolvedAfter.schema, scope.after),
+        direction, depth, equal, reasons, scope
+      );
+      scope.wrappers -= 1;
+      return;
+    }
   }
   if (resolvedBefore.ref !== undefined || resolvedAfter.ref !== undefined) {
     // A reference pair already being compared further up is assumed to hold, so recursive
