@@ -9,6 +9,7 @@ interface WorkflowStep {
 }
 
 interface Workflow {
+  on: Record<string, unknown>;
   permissions: Record<string, string>;
   jobs: Record<string, { needs?: string | string[]; permissions?: Record<string, string>; steps: WorkflowStep[] }>;
 }
@@ -20,6 +21,17 @@ async function loadWorkflow(): Promise<Workflow> {
 const localAction = (steps: WorkflowStep[]) => steps.filter((step) => step.uses === "./");
 
 describe("Action end-to-end workflow", () => {
+  it("runs only on pull_request and push, and never persists checkout credentials", async () => {
+    const workflow = await loadWorkflow();
+    // pull_request_target would hand a write token to code from forks that uses: ./ then runs.
+    expect(Object.keys(workflow.on).sort()).toEqual(["pull_request", "push"]);
+    for (const job of Object.values(workflow.jobs)) {
+      for (const step of job.steps.filter((candidate) => candidate.uses?.startsWith("actions/checkout@"))) {
+        expect(step.with).toEqual({ "persist-credentials": false });
+      }
+    }
+  });
+
   it("runs the local Action with the CLI packed from the same commit", async () => {
     const workflow = await loadWorkflow();
     for (const job of ["capture", "compare"]) {

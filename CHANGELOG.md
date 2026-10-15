@@ -12,7 +12,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Internal
 
-- added the `Action E2E` workflow, which runs the composite Action from the checkout on a real runner with the CLI packed from the same commit, in the two-job pattern `init-ci --tools-diff-server` writes: a Docker-sandboxed capture of the example stdio server, then a comparison with a committed baseline and a pull request comment
+- added the `Action E2E` workflow, which runs the composite Action from the checkout on a real runner with the CLI packed from the same commit, following the two-job pattern of the workflow `init-ci --tools-diff-server` writes: a Docker-sandboxed capture of the example stdio server, then a comparison with a committed baseline and a pull request comment
 
 ## [1.74.0] - 2026-10-14
 

@@ -1,9 +1,9 @@
 name: Action E2E
 
 # Runs the composite Action from this checkout on a real runner with the CLI built from the same
-# commit, in the two-job pattern that init-ci --tools-diff-server generates: a capture job that
-# starts the example stdio server in the Docker sandbox, and a compare job that diffs the capture
-# against a committed baseline and comments on the pull request.
+# commit, following the two-job pattern of the workflow init-ci --tools-diff-server writes: a capture
+# job that starts the example stdio server in the Docker sandbox, and a compare job that diffs the
+# capture against a committed baseline and comments on the pull request.
 on:
   pull_request:
   push:
@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# A newer push replaces a running check, so overlapping compare jobs never race on the comment.
+concurrency:
+  group: action-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -21,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
+      image: ${{ steps.pack.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,6 +48,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/cli"
           tarball="$(npm pack --silent --ignore-scripts --pack-destination "$RUNNER_TEMP/cli")"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "image=$(node --input-type=module -e 'const { DOCKER_RUNTIME_IMAGE } = await import("./dist/core/runtime-sandbox.js"); process.stdout.write(DOCKER_RUNTIME_IMAGE);')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -61,6 +68,18 @@ jobs:
         with:
           name: cli-package
           path: ${{ runner.temp }}/cli
+
+      # Pulling first, with retries, keeps a slow or failed registry pull from looking like a capture failure.
+      - name: Pull the sandbox image
+        shell: bash
+        env:
+          IMAGE: ${{ needs.package.outputs.image }}
+        run: |
+          for attempt in 1 2 3; do
+            if docker pull --quiet "$IMAGE"; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
 
       - name: Capture the example server in the Docker sandbox
         id: capture
@@ -128,8 +147,8 @@ jobs:
           test "$STATUS" = "0"
           node -e '
             const report = JSON.parse(require("node:fs").readFileSync(process.env.DIFF_JSON, "utf8"));
-            const { complete, changed, breaking, unclassified } = report.comparison;
-            if (!complete || changed !== 0 || breaking !== 0 || unclassified !== 0) {
+            const { complete, added, removed, changed, breaking, unclassified } = report.comparison;
+            if (report.status !== "pass" || !complete || added !== 0 || removed !== 0 || changed !== 0 || breaking !== 0 || unclassified !== 0) {
               console.error(`Unexpected comparison: ${JSON.stringify(report.comparison)}`);
               process.exit(1);
             }

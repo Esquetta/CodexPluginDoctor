@@ -53,7 +53,15 @@ composite Action from the checkout on a real runner, with the CLI packed from th
 same commit and passed as `version: file:<tarball>`. It captures the example
 stdio server in the Docker sandbox, compares the capture in a second job with
 `tests/fixtures/action-e2e/tools-baseline.json`, and comments on the pull request.
-Regenerate that baseline only when the example server's tools change on purpose.
+Regenerate that baseline only when the example server's tools change on purpose:
+
+```bash
+node dist/cli.js doctor tools examples/codex-doctor-runtime --server doctorRuntime --runtime --save-response tests/fixtures/action-e2e/tools-baseline.json
+```
+
+The check fails on any added, removed, or changed tool. A failed comment is only a
+warning in the Action, so the run stays green if posting breaks; check the pull
+request for the comment when changing the comment step.
 
 ## Release Process
 
