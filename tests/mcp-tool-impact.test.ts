@@ -431,6 +431,23 @@ describe("tool change impact classification", () => {
         expect(classify(outputWithPet(nullable(ref)), outputWithPet(ref))).toEqual({ impact: "compatible", reasons: [] });
       });
 
+      it("compares a union made nullable while its members changed", () => {
+        const before = input(object({ pet: ref }, { $defs: { ...pets, Pet: union(["Cat"]) } }));
+        expect(classify(before, withPet(nullable(ref)))).toEqual({ impact: "compatible", reasons: [] });
+        expect(classify(inline(nullable), inline((schema) => schema))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      });
+
+      it("does not treat a shared reference whose definition stopped being a union as a whole alternative", () => {
+        const before = input(object({ a: { $ref: "#/$defs/Value" } }, { $defs: { Value: { anyOf: [{ type: "string" }, { type: "integer" }] } } }));
+        const after = input(object({ a: { anyOf: [{ $ref: "#/$defs/Value" }, { type: "integer" }] } }, { $defs: { Value: { type: "string" } } }));
+        expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("still reads discriminator constants under draft-07", () => {
+        const draft07 = (names: string[]) => input(object({ pet: union(names) }, { $schema: "http://json-schema.org/draft-07/schema#", $defs: pets }));
+        expect(classify(draft07(["Cat"]), draft07(["Cat", "Dog"]))).toEqual({ impact: "compatible", reasons: [] });
+      });
+
       it("compares a nullable union whose members changed", () => {
         const before = input(object({ pet: nullable(ref) }, { $defs: { ...pets, Pet: union(["Cat"]) } }));
         expect(classify(before, withPet(nullable(ref)))).toEqual({ impact: "compatible", reasons: [] });

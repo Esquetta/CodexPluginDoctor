@@ -718,8 +718,14 @@ function compareSchema(
   if (beforeComposed && afterComposed) {
     // A composite that appears whole as one alternative of the other side, such as a union made
     // nullable, compares as that single alternative rather than alternative by alternative.
-    const beforeIsAlternative = pairsWithAlternative(before, resolvedAfter.schema, scope.after);
-    const afterIsAlternative = pairsWithAlternative(after, resolvedBefore.schema, scope.before);
+    // A reference match counts only while the matched alternative is still a composite, so a
+    // definition that stopped being a union compares alternative by alternative instead.
+    const isWholeAlternative = (original: unknown, composite: unknown, document: unknown) =>
+      (alternatives(composite, document)?.list ?? []).some((alternative) => sameMeaning(original, alternative, equal, scope)
+        || (alternativeKey(original) !== null && alternativeKey(alternative) === alternativeKey(original)
+          && isComposition(resolveReferences(alternative, document)?.schema, document)));
+    const beforeIsAlternative = isWholeAlternative(before, resolvedAfter.schema, scope.after);
+    const afterIsAlternative = isWholeAlternative(after, resolvedBefore.schema, scope.before);
     if (beforeIsAlternative !== afterIsAlternative) {
       if (scope.wrappers >= MAX_WRAPPER_HOPS) {
         reasons.add(codes.unclassified);
