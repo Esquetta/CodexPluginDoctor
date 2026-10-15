@@ -1,0 +1,29 @@
+{
+  "jsonrpc": "2.0",
+  "id": "tools-list",
+  "result": {
+    "resultType": "complete",
+    "tools": [
+      {
+        "name": "ping",
+        "description": "Return a healthcheck response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      },
+      {
+        "name": "format_status",
+        "description": "Return a formatted health status.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    ],
+    "ttlMs": 0,
+    "cacheScope": "private"
+  }
+}

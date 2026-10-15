@@ -3232,6 +3232,7 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(stdout.join("")).toContain("Initialized Codex Plugin Doctor workflow");
     expect(stdout.join("")).toContain(workflowPath);
+    expect(workflow).toContain("actions/checkout@v5");
     expect(workflow).toContain("Esquetta/CodexPluginDoctor@v");
     expect(workflow).toContain("version:");
     expect(workflow).toContain("path: .");
