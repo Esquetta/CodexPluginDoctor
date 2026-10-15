@@ -368,6 +368,127 @@ describe("tool change impact classification", () => {
     });
   });
 
+  describe("discriminated oneOf", () => {
+    // The shape Pydantic emits for a discriminated union of models.
+    const pet = (kind: string, properties: Definition = {}) => object({ pet_type: { const: kind, type: "string" }, ...properties }, { required: ["pet_type"] });
+    const union = (names: string[]) => ({
+      oneOf: names.map((name) => ({ $ref: `#/$defs/${name}` })),
+      discriminator: { propertyName: "pet_type", mapping: Object.fromEntries(names.map((name) => [name.toLowerCase(), `#/$defs/${name}`])) }
+    });
+    const tool = (names: string[], defs: Definition) => input(object({ pet: union(names) }, { $defs: defs }));
+    const outputTool = (names: string[], defs: Definition) => output(object({ pet: union(names) }, { $defs: defs }));
+    const pets = { Cat: pet("cat", { lives: { type: "integer" } }), Dog: pet("dog") };
+
+    it.each([
+      ["alternative added", tool(["Cat"], pets), tool(["Cat", "Dog"], pets)],
+      ["alternative widened inside", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Cat: pet("cat", { lives: { type: "number" } }) })],
+      ["alternatives reordered", tool(["Cat", "Dog"], pets), tool(["Dog", "Cat"], pets)],
+      ["mapping changed only", input(object({ pet: { ...union(["Cat", "Dog"]), discriminator: { propertyName: "pet_type" } } }, { $defs: pets })), tool(["Cat", "Dog"], pets)],
+      ["definitions renamed but paired by discriminator", tool(["Cat", "Dog"], pets), input(object({ pet: { oneOf: [{ $ref: "#/$defs/Feline" }, { $ref: "#/$defs/Canine" }], discriminator: { propertyName: "pet_type" } } }, { $defs: { Feline: pets.Cat, Canine: pets.Dog } }))]
+    ])("classifies an input union with an %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["alternative removed", tool(["Cat", "Dog"], pets), tool(["Cat"], pets), "input-property-type-narrowed"],
+      ["field removed inside an alternative", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Cat: pet("cat") }), "input-property-removed"],
+      ["discriminator value changed", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Dog: pet("hound") }), "input-property-enum-narrowed"]
+    ])("classifies an input union with an %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it("classifies an output union with an added alternative as breaking", () => {
+      expect(classify(outputTool(["Cat"], pets), outputTool(["Cat", "Dog"], pets))).toEqual({ impact: "breaking", reasons: ["output-property-type-widened"] });
+    });
+
+    it.each([
+      ["a repeated discriminator value", { Cat: pet("cat"), Dog: pet("cat") }],
+      ["an alternative that does not require the discriminator", { Cat: pet("cat"), Dog: object({ pet_type: { const: "dog", type: "string" } }) }],
+      ["an alternative that is not an object", { Cat: pet("cat"), Dog: { type: "string" } }],
+      ["an alternative without a constant discriminator", { Cat: pet("cat"), Dog: object({ pet_type: { type: "string" } }, { required: ["pet_type"] }) }]
+    ])("keeps a changed union unclassified when alternatives may overlap: %s", (_label, defs) => {
+      expect(classify(tool(["Cat"], defs), tool(["Cat", "Dog"], defs))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    describe("made nullable or no longer nullable", () => {
+      const nullable = (schema: Definition) => ({ anyOf: [schema, { type: "null" }], default: null });
+      const ref = { $ref: "#/$defs/Pet" };
+      const withPet = (property: Definition) => input(object({ pet: property }, { $defs: { ...pets, Pet: union(["Cat", "Dog"]) } }));
+      const outputWithPet = (property: Definition) => output(object({ pet: property }, { $defs: { ...pets, Pet: union(["Cat", "Dog"]) } }));
+      const inline = (property: (schema: Definition) => Definition) => input(object({ pet: property(union(["Cat", "Dog"])) }, { $defs: pets }));
+
+      it("classifies an input union made nullable as compatible", () => {
+        expect(classify(withPet(ref), withPet(nullable(ref)))).toEqual({ impact: "compatible", reasons: [] });
+        expect(classify(inline((schema) => schema), inline(nullable))).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("classifies an input union no longer nullable as breaking", () => {
+        expect(classify(withPet(nullable(ref)), withPet(ref))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      });
+
+      it("classifies an output union made nullable as breaking and no longer nullable as compatible", () => {
+        expect(classify(outputWithPet(ref), outputWithPet(nullable(ref)))).toEqual({ impact: "breaking", reasons: ["output-property-type-widened"] });
+        expect(classify(outputWithPet(nullable(ref)), outputWithPet(ref))).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("compares a union made nullable while its members changed", () => {
+        const before = input(object({ pet: ref }, { $defs: { ...pets, Pet: union(["Cat"]) } }));
+        expect(classify(before, withPet(nullable(ref)))).toEqual({ impact: "compatible", reasons: [] });
+        expect(classify(inline(nullable), inline((schema) => schema))).toEqual({ impact: "breaking", reasons: ["input-property-type-narrowed"] });
+      });
+
+      it("does not treat a shared reference whose definition stopped being a union as a whole alternative", () => {
+        const before = input(object({ a: { $ref: "#/$defs/Value" } }, { $defs: { Value: { anyOf: [{ type: "string" }, { type: "integer" }] } } }));
+        const after = input(object({ a: { anyOf: [{ $ref: "#/$defs/Value" }, { type: "integer" }] } }, { $defs: { Value: { type: "string" } } }));
+        expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("still reads discriminator constants under draft-07", () => {
+        const draft07 = (names: string[]) => input(object({ pet: union(names) }, { $schema: "http://json-schema.org/draft-07/schema#", $defs: pets }));
+        expect(classify(draft07(["Cat"]), draft07(["Cat", "Dog"]))).toEqual({ impact: "compatible", reasons: [] });
+      });
+
+      it("compares a nullable union whose members changed", () => {
+        const before = input(object({ pet: nullable(ref) }, { $defs: { ...pets, Pet: union(["Cat"]) } }));
+        expect(classify(before, withPet(nullable(ref)))).toEqual({ impact: "compatible", reasons: [] });
+      });
+    });
+
+    it("accepts a one-value enum as the discriminator value", () => {
+      const enumPet = (kind: string) => object({ pet_type: { enum: [kind], type: "string" } }, { required: ["pet_type"] });
+      expect(classify(tool(["Cat"], { Cat: enumPet("cat"), Dog: enumPet("dog") }), tool(["Cat", "Dog"], { Cat: enumPet("cat"), Dog: enumPet("dog") }))).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it("classifies an output union with a dropped alternative as compatible", () => {
+      expect(classify(outputTool(["Cat", "Dog"], pets), outputTool(["Cat"], pets))).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["a const that disagrees with an enum", { Cat: pet("cat"), Dog: object({ pet_type: { const: "dog", enum: ["cat"] } }, { required: ["pet_type"] }) }],
+      ["a discriminator value beside a $ref", { Cat: pet("cat"), Dog: object({ pet_type: { $ref: "#/$defs/Kind", const: "dog" } }, { required: ["pet_type"] }), Kind: { type: "string" } }]
+    ])("keeps a changed union unclassified for %s", (_label, defs) => {
+      expect(classify(tool(["Cat"], defs), tool(["Cat", "Dog"], defs))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("keeps a changed union unclassified when the discriminator has unknown keys or too many alternatives", () => {
+      const strange = (names: string[]) => input(object({ pet: { ...union(names), discriminator: { propertyName: "pet_type", extra: true } } }, { $defs: pets }));
+      expect(classify(strange(["Cat"]), strange(["Cat", "Dog"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+      const many = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`P${index}`, pet(`p${index}`)]));
+      const names = Object.keys(many);
+      expect(classify(tool(names.slice(0, 32), many), tool(names, many))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("refuses discriminator constants under a draft-04 dialect", () => {
+      const draft04 = (names: string[]) => input(object({ pet: union(names) }, { $schema: "http://json-schema.org/draft-04/schema#", $defs: pets }));
+      expect(classify(draft04(["Cat"]), draft04(["Cat", "Dog"]))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("keeps a union unclassified when the discriminator property changes", () => {
+      const renamed = input(object({ pet: { ...union(["Cat", "Dog"]), discriminator: { propertyName: "kind" } } }, { $defs: pets }));
+      expect(classify(tool(["Cat", "Dog"], pets), renamed).impact).toBe("unclassified");
+    });
+  });
+
   describe("composition edge cases", () => {
     const prop = (schema: Definition, defs: Definition = {}) => input(object({ a: schema }, Object.keys(defs).length > 0 ? { $defs: defs } : {}));
 

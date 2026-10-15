@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.75.0] - 2026-10-15
+
+### Changed
+
+- `doctor tools-diff` now compares a discriminated union, a schema that is only `oneOf` and `discriminator` with documentation keywords as Pydantic emits for a union of models, alternative by alternative like `anyOf`, when every alternative resolves to an object schema that requires `discriminator.propertyName` and fixes it to one `const` (or one-value `enum`) no other alternative uses; such alternatives cannot both match one value, so the `oneOf` accepts what an `anyOf` would
+- alternatives of two such unions with the same discriminator property pair by discriminator value before `$ref` or `type`, so renamed definitions still pair; a dropped input alternative is `input-property-type-narrowed`, an added output alternative is `output-property-type-widened`, and a changed discriminator value is `input-property-enum-narrowed` (or `output-property-enum-widened`)
+- `discriminator.mapping` is not compared, because JSON Schema validators ignore it; with a different discriminator property name, alternatives pair by identity, `$ref`, or `type` only; alternatives that are not shown to exclude each other, a discriminator property with a `$ref` beside its `const`, and draft-04 or draft-03 schemas stay `unclassified`; a union made nullable or no longer nullable is compared as one alternative of the `anyOf`, as for other schemas; no reason codes were added
+
 ## [1.74.1] - 2026-10-15
 
 ### Changed

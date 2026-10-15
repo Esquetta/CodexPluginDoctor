@@ -113,8 +113,8 @@ the `minimum` or `maximum` beside it exclusive; one without that keyword is
 unclassified. A changed bound that is not a
 finite number, a changed `multipleOf` that is not a positive number, a changed fractional `multipleOf` (validators test those
 with floating-point division, which can reject `0.3` under `multipleOf: 0.1`), and
-a changed `uniqueItems` that is not a boolean are unclassified. `oneOf`, `not`,
-`allOf` with more than one subschema, `anyOf` or `allOf` beside other validating
+a changed `uniqueItems` that is not a boolean are unclassified. A `oneOf` other
+than a discriminated union (see below), `not`, `allOf` with more than one subschema, `anyOf` or `allOf` beside other validating
 keywords (see below for the forms that are compared), references that cannot be
 resolved (see below), a changed `pattern` or `format` value, tuple-form `items`,
 an `enum` or `const` at the root, `items` or `additionalProperties` changes beside
@@ -127,17 +127,32 @@ another: introducing one on an input (or removing one from an output) is a
 constraint change, removing one from an input (or introducing one on an output)
 is `compatible`, and changing its value is unclassified.
 
-Two composition forms are compared. A schema that is only a one-element `allOf`
+Three composition forms are compared. A schema that is only a one-element `allOf`
 with documentation keywords beside it means the same as its subschema, which
 covers the `allOf: [{ "$ref": ... }]` wrapper older Pydantic emits. A schema that
 is only `anyOf` with documentation keywords beside it is compared alternative by
-alternative, which covers `anyOf: [{ "$ref": ... }, { "type": "null" }]` for
+alternative. So is a discriminated union: a schema that is only `oneOf` and
+`discriminator` with documentation keywords, as Pydantic emits for a
+discriminated union of models, when every alternative resolves to an object
+schema that requires `discriminator.propertyName` and fixes it to one `const` (or
+one-value `enum`) that no other alternative uses. Such alternatives cannot both
+match one value, so the `oneOf` accepts exactly what an `anyOf` would; their
+alternatives also pair by that value. `discriminator.mapping` is not compared,
+because JSON Schema validators ignore it. When the discriminator property name
+differs, alternatives pair by identity, `$ref`, or `type` only. A union whose
+alternatives are not shown to exclude each other stays unclassified, and so does
+one whose discriminator property holds a `$ref` beside its `const`, or one under a
+draft-04 or draft-03 `$schema`. A union that appears whole as one alternative of
+the other side, such as a union made nullable, is compared as that alternative. The
+`anyOf` form covers `anyOf: [{ "$ref": ... }, { "type": "null" }]` for
 optional models; a schema without `anyOf` counts as an `anyOf` with itself as the
 only alternative, so making a value, including a `$ref` to a model, nullable or
 no longer nullable is compared too. A `$ref` compared with an `anyOf` keeps its
 reference when an alternative refers to the same definition and is otherwise
 compared through its target, so it can pair with an inline alternative by `type`.
-Identical alternatives match first, then alternatives with the same `$ref`
+Identical alternatives match first, then, between two discriminated unions with
+the same discriminator property, alternatives with the same discriminator value,
+then alternatives with the same `$ref`
 or the same `type` when exactly one alternative on each side has it, then the
 single alternative left on each side. Matched
 alternatives are compared with the reasons above. An input alternative that was
