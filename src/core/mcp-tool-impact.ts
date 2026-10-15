@@ -294,14 +294,60 @@ function singleAllOf(schema: unknown): { inner: unknown } | null {
   return Object.keys(schema).every((key) => key === "allOf" || DOCUMENTATION_KEYWORDS.has(key)) ? { inner: schema.allOf[0] } : null;
 }
 
-/** The alternatives of a schema that is only `anyOf` with documentation, or null. */
-function alternatives(schema: unknown): unknown[] | null {
-  if (!isJsonObject(schema) || !Array.isArray(schema.anyOf)) return null;
-  return Object.keys(schema).every((key) => key === "anyOf" || DOCUMENTATION_KEYWORDS.has(key)) ? schema.anyOf : null;
+interface Alternatives {
+  list: unknown[];
+  // The discriminator property of a oneOf whose alternatives exclude each other, or null for anyOf.
+  discriminator: string | null;
 }
 
-function isComposition(schema: unknown): boolean {
-  return singleAllOf(schema) !== null || alternatives(schema) !== null;
+function discriminatorProperty(value: unknown): string | null {
+  if (!isJsonObject(value) || typeof value.propertyName !== "string") return null;
+  return Object.keys(value).every((key) => key === "propertyName" || key === "mapping") ? value.propertyName : null;
+}
+
+/**
+ * The discriminator value of each alternative, when every alternative resolves to an object schema
+ * that requires the property and fixes it to one value no other alternative uses; null otherwise.
+ * Such alternatives cannot both match one value, so their oneOf accepts what an anyOf would.
+ */
+function discriminatorValues(list: unknown[], property: string, document: unknown): Map<unknown, string> | null {
+  const values = new Map<unknown, string>();
+  const seen = new Set<string>();
+  for (const alternative of list) {
+    const schema = resolveReferences(alternative, document)?.schema;
+    if (!isJsonObject(schema)) return null;
+    const types = typeSet(schema);
+    const declared = objectMap(schema.properties)?.[property];
+    if (types === null || types.size !== 1 || !types.has("object") || !stringSet(schema.required)?.has(property) || !isJsonObject(declared)) return null;
+    const fixed = Object.hasOwn(declared, "const") ? [declared.const] : declared.enum;
+    if (!Array.isArray(fixed) || fixed.length !== 1 || (Array.isArray(declared.enum) && Object.hasOwn(declared, "const")
+      && !(declared.enum.length === 1 && Object.is(declared.enum[0], declared.const)))) return null;
+    const value = fixed[0];
+    if (value !== null && !["string", "number", "boolean"].includes(typeof value)) return null;
+    const key = JSON.stringify(value);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    values.set(alternative, key);
+  }
+  return values;
+}
+
+/**
+ * The alternatives of a schema that is only `anyOf`, or only a discriminated `oneOf` whose
+ * alternatives exclude each other, with documentation beside it; null otherwise.
+ */
+function alternatives(schema: unknown, document: unknown): Alternatives | null {
+  if (!isJsonObject(schema)) return null;
+  if (Array.isArray(schema.anyOf)) {
+    return Object.keys(schema).every((key) => key === "anyOf" || DOCUMENTATION_KEYWORDS.has(key)) ? { list: schema.anyOf, discriminator: null } : null;
+  }
+  if (!Array.isArray(schema.oneOf) || !Object.keys(schema).every((key) => key === "oneOf" || key === "discriminator" || DOCUMENTATION_KEYWORDS.has(key))) return null;
+  const property = discriminatorProperty(schema.discriminator);
+  return property !== null && discriminatorValues(schema.oneOf, property, document) !== null ? { list: schema.oneOf, discriminator: property } : null;
+}
+
+function isComposition(schema: unknown, document: unknown): boolean {
+  return singleAllOf(schema) !== null || alternatives(schema, document) !== null;
 }
 
 /**
@@ -329,7 +375,9 @@ function compareComposition(
     compareSchema(wrappedBefore === null ? before : wrappedBefore.inner, wrappedAfter === null ? after : wrappedAfter.inner, direction, depth, equal, reasons, scope);
   } else {
     // A schema that is not an anyOf compares as an anyOf with that schema as its only alternative.
-    compareAlternatives(alternatives(before) ?? [before], alternatives(after) ?? [after], direction, depth, equal, reasons, scope);
+    const beforeAlternatives = alternatives(before, scope.before) ?? { list: [before], discriminator: null };
+    const afterAlternatives = alternatives(after, scope.after) ?? { list: [after], discriminator: null };
+    compareAlternatives(beforeAlternatives, afterAlternatives, direction, depth, equal, reasons, scope);
   }
   scope.wrappers -= 1;
 }
@@ -342,14 +390,15 @@ function alternativeKey(alternative: unknown): string | null {
 }
 
 /**
- * Compares `anyOf` alternatives. A value is accepted when any alternative accepts it, so inputs stay
- * compatible when every earlier alternative is covered by a later one, and outputs when every later
- * alternative is covered by an earlier one. Identical alternatives match first, then alternatives with
- * the same reference target or type, then a single remaining alternative on each side.
+ * Compares `anyOf` alternatives, or discriminated `oneOf` alternatives that exclude each other. A
+ * value is accepted when any alternative accepts it, so inputs stay compatible when every earlier
+ * alternative is covered by a later one, and outputs when every later alternative is covered by an
+ * earlier one. Identical alternatives match first, then alternatives with the same discriminator
+ * value, then the same reference target or type, then a single remaining alternative on each side.
  */
 function compareAlternatives(
-  before: unknown[],
-  after: unknown[],
+  before: Alternatives,
+  after: Alternatives,
   direction: Direction,
   depth: number,
   equal: Equal,
@@ -357,12 +406,12 @@ function compareAlternatives(
   scope: ReferenceScope
 ): void {
   const codes = CODES[direction];
-  if (before.length > MAX_ALTERNATIVES || after.length > MAX_ALTERNATIVES) {
+  if (before.list.length > MAX_ALTERNATIVES || after.list.length > MAX_ALTERNATIVES) {
     reasons.add(codes.unclassified);
     return;
   }
-  const unpairedBefore = [...before];
-  const unpairedAfter = [...after];
+  const unpairedBefore = [...before.list];
+  const unpairedAfter = [...after.list];
   for (let index = unpairedBefore.length - 1; index >= 0; index -= 1) {
     const match = unpairedAfter.findIndex((candidate) => sameMeaning(unpairedBefore[index], candidate, equal, scope));
     if (match !== -1) {
@@ -372,15 +421,23 @@ function compareAlternatives(
   }
 
   const pairs: Array<[unknown, unknown]> = [];
-  for (const key of new Set(unpairedBefore.map(alternativeKey))) {
-    if (key === null) continue;
-    const beforeMatches = unpairedBefore.filter((alternative) => alternativeKey(alternative) === key);
-    const afterMatches = unpairedAfter.filter((alternative) => alternativeKey(alternative) === key);
-    if (beforeMatches.length !== 1 || afterMatches.length !== 1) continue;
-    pairs.push([beforeMatches[0], afterMatches[0]]);
-    unpairedBefore.splice(unpairedBefore.indexOf(beforeMatches[0]), 1);
-    unpairedAfter.splice(unpairedAfter.indexOf(afterMatches[0]), 1);
+  const pairBy = (beforeKey: (alternative: unknown) => string | null, afterKey: (alternative: unknown) => string | null) => {
+    for (const key of new Set(unpairedBefore.map(beforeKey))) {
+      if (key === null) continue;
+      const beforeMatches = unpairedBefore.filter((alternative) => beforeKey(alternative) === key);
+      const afterMatches = unpairedAfter.filter((alternative) => afterKey(alternative) === key);
+      if (beforeMatches.length !== 1 || afterMatches.length !== 1) continue;
+      pairs.push([beforeMatches[0], afterMatches[0]]);
+      unpairedBefore.splice(unpairedBefore.indexOf(beforeMatches[0]), 1);
+      unpairedAfter.splice(unpairedAfter.indexOf(afterMatches[0]), 1);
+    }
+  };
+  if (before.discriminator !== null && before.discriminator === after.discriminator) {
+    const beforeValues = discriminatorValues(before.list, before.discriminator, scope.before);
+    const afterValues = discriminatorValues(after.list, after.discriminator, scope.after);
+    pairBy((alternative) => beforeValues?.get(alternative) ?? null, (alternative) => afterValues?.get(alternative) ?? null);
   }
+  pairBy(alternativeKey, alternativeKey);
   if (unpairedBefore.length === 1 && unpairedAfter.length === 1) {
     pairs.push([unpairedBefore.pop(), unpairedAfter.pop()]);
   } else if (unpairedBefore.length > 0 && unpairedAfter.length > 0) {
@@ -636,15 +693,15 @@ function compareSchema(
   }
   // When only one side is a composition, the other keeps its reference unresolved, so it can still
   // pair with an alternative that refers to the same definition, as when a model becomes optional.
-  const beforeComposed = isComposition(resolvedBefore.schema);
-  const afterComposed = isComposition(resolvedAfter.schema);
+  const beforeComposed = isComposition(resolvedBefore.schema, scope.before);
+  const afterComposed = isComposition(resolvedAfter.schema, scope.after);
   if (beforeComposed !== afterComposed) {
     // The reference is kept only when an alternative can pair with it; otherwise its target compares
     // with inline alternatives by type.
     const composite = beforeComposed ? resolvedBefore.schema : resolvedAfter.schema;
     const original = beforeComposed ? after : before;
     const plainKey = alternativeKey(original);
-    const keepReference = (alternatives(composite) ?? [])
+    const keepReference = (alternatives(composite, beforeComposed ? scope.before : scope.after)?.list ?? [])
       .some((alternative) => (plainKey !== null && alternativeKey(alternative) === plainKey) || sameMeaning(original, alternative, equal, scope));
     const plain = keepReference ? original : (beforeComposed ? resolvedAfter.schema : resolvedBefore.schema);
     compareComposition(beforeComposed ? composite : plain, beforeComposed ? plain : composite, direction, depth, equal, reasons, scope);

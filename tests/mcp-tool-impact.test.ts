@@ -368,6 +368,54 @@ describe("tool change impact classification", () => {
     });
   });
 
+  describe("discriminated oneOf", () => {
+    // The shape Pydantic emits for a discriminated union of models.
+    const pet = (kind: string, properties: Definition = {}) => object({ pet_type: { const: kind, type: "string" }, ...properties }, { required: ["pet_type"] });
+    const union = (names: string[]) => ({
+      oneOf: names.map((name) => ({ $ref: `#/$defs/${name}` })),
+      discriminator: { propertyName: "pet_type", mapping: Object.fromEntries(names.map((name) => [name.toLowerCase(), `#/$defs/${name}`])) }
+    });
+    const tool = (names: string[], defs: Definition) => input(object({ pet: union(names) }, { $defs: defs }));
+    const outputTool = (names: string[], defs: Definition) => output(object({ pet: union(names) }, { $defs: defs }));
+    const pets = { Cat: pet("cat", { lives: { type: "integer" } }), Dog: pet("dog") };
+
+    it.each([
+      ["alternative added", tool(["Cat"], pets), tool(["Cat", "Dog"], pets)],
+      ["alternative widened inside", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Cat: pet("cat", { lives: { type: "number" } }) })],
+      ["alternatives reordered", tool(["Cat", "Dog"], pets), tool(["Dog", "Cat"], pets)],
+      ["mapping changed only", input(object({ pet: { ...union(["Cat", "Dog"]), discriminator: { propertyName: "pet_type" } } }, { $defs: pets })), tool(["Cat", "Dog"], pets)],
+      ["definitions renamed but paired by discriminator", tool(["Cat", "Dog"], pets), input(object({ pet: { oneOf: [{ $ref: "#/$defs/Feline" }, { $ref: "#/$defs/Canine" }], discriminator: { propertyName: "pet_type" } } }, { $defs: { Feline: pets.Cat, Canine: pets.Dog } }))]
+    ])("classifies an input union with an %s as compatible", (_label, before, after) => {
+      expect(classify(before, after)).toEqual({ impact: "compatible", reasons: [] });
+    });
+
+    it.each([
+      ["alternative removed", tool(["Cat", "Dog"], pets), tool(["Cat"], pets), "input-property-type-narrowed"],
+      ["field removed inside an alternative", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Cat: pet("cat") }), "input-property-removed"],
+      ["discriminator value changed", tool(["Cat", "Dog"], pets), tool(["Cat", "Dog"], { ...pets, Dog: pet("hound") }), "input-property-enum-narrowed"]
+    ])("classifies an input union with an %s as breaking", (_label, before, after, reason) => {
+      expect(classify(before, after)).toEqual({ impact: "breaking", reasons: [reason] });
+    });
+
+    it("classifies an output union with an added alternative as breaking", () => {
+      expect(classify(outputTool(["Cat"], pets), outputTool(["Cat", "Dog"], pets))).toEqual({ impact: "breaking", reasons: ["output-property-type-widened"] });
+    });
+
+    it.each([
+      ["a repeated discriminator value", { Cat: pet("cat"), Dog: pet("cat") }],
+      ["an alternative that does not require the discriminator", { Cat: pet("cat"), Dog: object({ pet_type: { const: "dog", type: "string" } }) }],
+      ["an alternative that is not an object", { Cat: pet("cat"), Dog: { type: "string" } }],
+      ["an alternative without a constant discriminator", { Cat: pet("cat"), Dog: object({ pet_type: { type: "string" } }, { required: ["pet_type"] }) }]
+    ])("keeps a changed union unclassified when alternatives may overlap: %s", (_label, defs) => {
+      expect(classify(tool(["Cat"], defs), tool(["Cat", "Dog"], defs))).toEqual({ impact: "unclassified", reasons: ["input-schema-unclassified"] });
+    });
+
+    it("keeps a union unclassified when the discriminator property changes", () => {
+      const renamed = input(object({ pet: { ...union(["Cat", "Dog"]), discriminator: { propertyName: "kind" } } }, { $defs: pets }));
+      expect(classify(tool(["Cat", "Dog"], pets), renamed).impact).toBe("unclassified");
+    });
+  });
+
   describe("composition edge cases", () => {
     const prop = (schema: Definition, defs: Definition = {}) => input(object({ a: schema }, Object.keys(defs).length > 0 ? { $defs: defs } : {}));
 
