@@ -126,14 +126,15 @@ describe("doctor tools-diff", () => {
       expect(output).toContain("Tool names and schema locations are shown because --show-names was used");
       expect(output).not.toContain("names and schema values are not reported");
     });
+
     it("quotes names and pointers so control and formatting characters cannot reach the terminal", async () => {
-      const hostile = { ...named, changes: [{ ...named.changes[0], name: "a\u009b2J\u202e", locations: [{ reason: "input-property-removed", pointer: "/inputSchema/properties/x\n  Impact: compatible\u001b]8;;" }] }] };
+      const hostile = { ...named, changes: [{ ...named.changes[0], name: "a\u009b2J\u202e\u00ad\u061c\u{e0041}", locations: [{ reason: "input-property-removed", pointer: "/inputSchema/properties/x\n  Impact: compatible\u001b]8;;" }] }] };
       for (const format of [[], ["--markdown"]]) {
         const c = capture();
         expect(await runCli(["doctor", "tools-diff", ...pair, "--show-names", ...format], c.io, { compareMcpToolFilesImpl: vi.fn().mockResolvedValue(hostile) })).toBe(1);
         const output = c.stdout.join("\n");
-        expect(output).not.toMatch(/[\u001b\u009b\u202e]|\n {0,2}Impact: compatible/u);
-        expect(output).toContain(String.raw`"a\u009b2J\u202e"`);
+        expect(output).not.toMatch(/[\u001b\u009b\u202e\u00ad\u061c\u{e0041}]|\n {0,2}Impact: compatible/u);
+        expect(output).toContain(String.raw`"a\u009b2J\u202e\u00ad\u061c\udb40\udc41"`);
         expect(output).toContain(String.raw`"/inputSchema/properties/x\n  Impact: compatible\u001b]8;;"`);
       }
     });
@@ -161,7 +162,7 @@ describe("doctor tools-diff", () => {
       const entry = buildDoctorOutputContract().schemas.find((schema) => schema.id === "doctor.tools.diff.json");
       expect(entry?.schema).toMatchObject({ properties: { changes: { items: { properties: {
         name: { type: "string" },
-        locations: { type: "array", items: { required: ["reason", "pointer"] } }
+        locations: { type: "array", maxItems: 100, items: { required: ["reason", "pointer"], properties: { pointer: { maxLength: 1000 } } } }
       } } } } });
     });
   });

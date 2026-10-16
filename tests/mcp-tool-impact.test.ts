@@ -694,6 +694,7 @@ describe("tool change impact classification", () => {
         { reason: "other-fields-unclassified", pointer: "" }
       ]);
     });
+
     it("locates a reason found after a nested comparison at the object that holds it", () => {
       const before = input(object({ options: object({ a: { type: "number" } }) }));
       const after = input(object({ options: object({ a: { type: "integer" } }, { additionalProperties: false }) }));

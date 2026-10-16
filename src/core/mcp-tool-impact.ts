@@ -42,7 +42,7 @@ export interface ToolChangeClassification {
 
 export const MAX_TOOL_CHANGE_LOCATIONS = 100;
 // Longer pointers are not recorded, so a long property name cannot make locating costly or the report large.
-const MAX_POINTER_LENGTH = 1_000;
+export const MAX_TOOL_CHANGE_POINTER_LENGTH = 1_000;
 
 /**
  * A reason set that also records, for each reason, the JSON Pointer of the schema position being
@@ -60,9 +60,9 @@ class LocatingReasons extends Set<ToolChangeReason> {
   enter(tokens: string[]): void {
     for (const token of tokens) {
       const previous = this.lengths[this.lengths.length - 1];
-      const segment = previous + 1 + token.length > MAX_POINTER_LENGTH ? "" : `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      const segment = previous + 1 + token.length > MAX_TOOL_CHANGE_POINTER_LENGTH ? "" : `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`;
       this.segments.push(segment);
-      this.lengths.push(segment === "" || previous + segment.length > MAX_POINTER_LENGTH ? Infinity : previous + segment.length);
+      this.lengths.push(segment === "" || previous + segment.length > MAX_TOOL_CHANGE_POINTER_LENGTH ? Infinity : previous + segment.length);
     }
   }
 
