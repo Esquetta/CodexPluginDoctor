@@ -4,6 +4,14 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.76.0] - 2026-10-16
+
+### Added
+
+- added `doctor tools-diff --show-names` for local use: each change carries the tool `name`, and each changed tool carries `locations`, the RFC 6901 JSON Pointer of the property, array item, or field where each reason was found (at most 100 per tool); text output adds `At <pointer>: <reason>` lines and Markdown a `Locations` table with names and pointers escaped
+- reports without the flag are unchanged and still omit tool and property names; the GitHub Action never passes it, so step summaries and pull request comments stay name-free
+- the `doctor.tools.diff.json` contract allows the optional `name` and `locations` fields
+
 ## [1.75.0] - 2026-10-15
 
 ### Changed

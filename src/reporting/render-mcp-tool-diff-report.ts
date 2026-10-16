@@ -41,7 +41,10 @@ export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
         ...(change.afterToolIndex === null ? [] : [`after tool ${change.afterToolIndex}`])
       ];
       const impact = `${change.impact}${change.reasons.length ? ` (${change.reasons.join(", ")})` : ""}`;
-      return `${change.kind.toUpperCase()} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}\n  Impact: ${impact}`;
+      // Names are quoted as JSON strings so control characters in them cannot break the report.
+      const name = change.name === undefined ? "" : ` ${JSON.stringify(change.name)}`;
+      const at = (change.locations ?? []).map((location) => `\n  At ${location.pointer === "" ? "(tool)" : location.pointer}: ${location.reason}`).join("");
+      return `${change.kind.toUpperCase()}${name} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}\n  Impact: ${impact}${at}`;
     })
   ].join("\n");
 }

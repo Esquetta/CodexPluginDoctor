@@ -235,6 +235,28 @@ cursors. Use before/after tool indices to locate entries in your original files.
 Input findings are labeled by side in text output and stored under `before` and
 `after` in JSON.
 
+For local work, `--show-names` adds what the default report leaves out, so you
+can see which tool and which part of its schema changed:
+
+```bash
+codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-new.json --show-names
+```
+
+Each change then carries the tool `name`, and each changed tool carries
+`locations`: for every reason, the RFC 6901 JSON Pointer of the property, array
+item, or field where it was found, such as
+`/inputSchema/properties/filter/properties/status` (an empty pointer is the tool
+itself). A reason inside a referenced definition is located through the property
+that holds the `$ref`, as in that example, where `filter` refers to a `Filter`
+definition; a definition shared by several properties is located through the
+first one compared, and composition alternatives keep the pointer of the schema
+that holds them. At most 100 locations are listed per tool. Text output adds
+the name after the change kind and an `At <pointer>: <reason>` line per location,
+and Markdown adds a `Locations` table with names and pointers escaped. Schema
+values are still not reported. The flag discloses tool and property names, so
+keep it out of public output; the GitHub Action never passes it, so its step
+summary and pull request comment stay name-free.
+
 The standalone contract is `doctor.tools.diff.json`, with numeric `schemaVersion: 1`
 and scope `tool-definitions-diff`. `comparison` reports `added`, `removed`,
 `changed`, and `unchanged` tool counts, plus `breaking` and `unclassified` change

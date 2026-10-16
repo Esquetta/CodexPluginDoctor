@@ -661,6 +661,41 @@ describe("tool change impact classification", () => {
     });
   });
 
+  describe("reason locations", () => {
+    const locate = (before: Definition, after: Definition) => classifyChangedTool(before, after, changedFields(before, after), isDeepStrictEqual, { locate: true });
+
+    it("omits locations unless they are requested", () => {
+      expect(classify(input(object({ a: { type: "string" } })), input(object({}))) ).not.toHaveProperty("locations");
+    });
+
+    it("points at the property, item, or field where each reason was found", () => {
+      const before = { name: "tool", inputSchema: object({ options: object({ a: { type: "string" }, list: array({ type: "number" }) }) }), annotations: { readOnlyHint: true } };
+      const after = { name: "tool", inputSchema: object({ options: object({ list: array({ type: "integer" }) }, { required: ["list"] }) }), annotations: {} };
+      expect(locate(before, after)).toEqual({
+        impact: "breaking",
+        reasons: ["input-required-added", "input-property-removed", "input-property-type-narrowed", "annotation-safety-reduced"],
+        locations: [
+          { reason: "input-required-added", pointer: "/inputSchema/properties/options/properties/list" },
+          { reason: "input-property-removed", pointer: "/inputSchema/properties/options/properties/a" },
+          { reason: "input-property-type-narrowed", pointer: "/inputSchema/properties/options/properties/list/items" },
+          { reason: "annotation-safety-reduced", pointer: "/annotations" }
+        ]
+      });
+    });
+
+    it("escapes property names in JSON Pointers and locates a referenced definition at its reference", () => {
+      const tool = (type: string) => input(object({ "a/b~c": { $ref: "#/$defs/A" } }, { $defs: { A: { type } } }));
+      expect(locate(tool("number"), tool("integer")).locations).toEqual([{ reason: "input-property-type-narrowed", pointer: "/inputSchema/properties/a~1b~0c" }]);
+    });
+
+    it("locates output schema removal and other fields", () => {
+      expect(locate({ ...output(object({})), _meta: { a: 1 } }, { name: "tool", inputSchema: { type: "object" }, _meta: { a: 2 } }).locations).toEqual([
+        { reason: "output-schema-removed", pointer: "/outputSchema" },
+        { reason: "other-fields-unclassified", pointer: "" }
+      ]);
+    });
+  });
+
   it("lets a breaking reason outrank unclassified reasons and orders reasons deterministically", () => {
     const before = { name: "tool", inputSchema: object({ a: { type: "string" }, b: { type: "string", pattern: "x" } }), annotations: { readOnlyHint: true }, _meta: { a: 1 } };
     const after = { name: "tool", inputSchema: object({ b: { type: "string", pattern: "y" } }, { required: ["b"] }), annotations: {}, _meta: { a: 2 } };

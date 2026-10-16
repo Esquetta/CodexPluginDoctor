@@ -899,7 +899,17 @@ publicSchemaDefinitions.push({
           afterToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
           fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } },
           impact: { enum: ["breaking", "compatible", "unclassified"] },
-          reasons: { type: "array", maxItems: TOOL_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...TOOL_CHANGE_REASONS] } }
+          reasons: { type: "array", maxItems: TOOL_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...TOOL_CHANGE_REASONS] } },
+          // Only with --show-names.
+          name: { type: "string" },
+          locations: {
+            type: "array", maxItems: 100,
+            items: {
+              type: "object", required: ["reason", "pointer"],
+              properties: { reason: { enum: [...TOOL_CHANGE_REASONS] }, pointer: { type: "string" } },
+              additionalProperties: false
+            }
+          }
         }, additionalProperties: false
       }
     }

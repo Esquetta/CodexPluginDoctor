@@ -26,9 +26,54 @@ export const TOOL_CHANGE_REASONS = [
 
 export type ToolChangeReason = (typeof TOOL_CHANGE_REASONS)[number];
 
+export interface ToolChangeLocation {
+  reason: ToolChangeReason;
+  // RFC 6901 JSON Pointer into the tool definition; "" is the definition itself.
+  pointer: string;
+}
+
 export interface ToolChangeClassification {
   impact: ToolChangeImpact;
   reasons: ToolChangeReason[];
+  // Present only when locations were requested, because pointers name properties.
+  locations?: ToolChangeLocation[];
+}
+
+const MAX_LOCATIONS = 100;
+
+/**
+ * A reason set that also records, for each reason, the JSON Pointer of the schema position being
+ * compared when it was added. A shared definition is compared once, so it is located at the first
+ * reference that reached it.
+ */
+class LocatingReasons extends Set<ToolChangeReason> {
+  readonly path: string[] = [];
+  readonly locations: ToolChangeLocation[] = [];
+  private readonly seen = new Set<string>();
+
+  override add(reason: ToolChangeReason): this {
+    const pointer = this.path.map((token) => `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
+    const key = JSON.stringify([reason, pointer]);
+    if (!this.seen.has(key) && this.locations.length < MAX_LOCATIONS) {
+      this.seen.add(key);
+      this.locations.push({ reason, pointer });
+    }
+    return super.add(reason);
+  }
+}
+
+/** Runs `compare` with `tokens` appended to the recorded location, when locations are recorded. */
+function within(reasons: Set<ToolChangeReason>, tokens: string[], compare: () => void): void {
+  if (!(reasons instanceof LocatingReasons)) {
+    compare();
+    return;
+  }
+  reasons.path.push(...tokens);
+  try {
+    compare();
+  } finally {
+    reasons.path.length -= tokens.length;
+  }
 }
 
 type Equal = (left: unknown, right: unknown) => boolean;
@@ -794,9 +839,11 @@ function compareSchema(
     compareNumericAndArrayConstraints(inner, outer, codes, reasons);
     compareStringConstraints(inner, outer, codes, reasons);
     if (!sameMeaning(before.items, after.items, equal, scope)) {
-      if (unevaluated) reasons.add(codes.unclassified);
-      else if (outer.items !== undefined && inner.items === undefined) reasons.add(codes.constraint);
-      else if (outer.items !== undefined) compareSchema(before.items, after.items, direction, depth + 1, equal, reasons, scope);
+      within(reasons, ["items"], () => {
+        if (unevaluated) reasons.add(codes.unclassified);
+        else if (outer.items !== undefined && inner.items === undefined) reasons.add(codes.constraint);
+        else if (outer.items !== undefined) compareSchema(before.items, after.items, direction, depth + 1, equal, reasons, scope);
+      });
     }
   }
 
@@ -809,11 +856,13 @@ function compareSchema(
     return;
   }
   for (const key of outerRequired) {
-    if (!innerRequired.has(key)) reasons.add(codes.required);
+    if (!innerRequired.has(key)) within(reasons, ["properties", key], () => reasons.add(codes.required));
   }
   for (const key of Object.keys(beforeProperties)) {
-    if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
-    else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons, scope);
+    within(reasons, ["properties", key], () => {
+      if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
+      else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons, scope);
+    });
   }
   // In an object whose undeclared keys were governed by other keywords, or a nested input object
   // that left them open, a newly declared property can reject values callers send (input) or
@@ -866,7 +915,7 @@ function result(reasons: Set<ToolChangeReason>): ToolChangeClassification {
   const impact: ToolChangeImpact = ordered.some((reason) => !UNCLASSIFIED_REASONS.has(reason))
     ? "breaking"
     : ordered.length > 0 ? "unclassified" : "compatible";
-  return { impact, reasons: ordered };
+  return reasons instanceof LocatingReasons ? { impact, reasons: ordered, locations: reasons.locations } : { impact, reasons: ordered };
 }
 
 export function classifyRemovedTool(): ToolChangeClassification {
@@ -881,14 +930,16 @@ export function classifyChangedTool(
   before: JsonObject,
   after: JsonObject,
   fields: readonly string[],
-  equal: Equal
+  equal: Equal,
+  options: { locate?: boolean } = {}
 ): ToolChangeClassification {
-  const reasons = new Set<ToolChangeReason>();
+  const reasons = options.locate ? new LocatingReasons() : new Set<ToolChangeReason>();
   if (fields.includes("inputSchema")) {
-    compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, referenceScope(before.inputSchema, after.inputSchema));
+    within(reasons, ["inputSchema"], () =>
+      compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, referenceScope(before.inputSchema, after.inputSchema)));
   }
-  if (fields.includes("outputSchema")) classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons);
-  if (fields.includes("annotations")) classifyAnnotations(before.annotations, after.annotations, reasons);
+  if (fields.includes("outputSchema")) within(reasons, ["outputSchema"], () => classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons));
+  if (fields.includes("annotations")) within(reasons, ["annotations"], () => classifyAnnotations(before.annotations, after.annotations, reasons));
   if (fields.includes("other")) reasons.add("other-fields-unclassified");
   return result(reasons);
 }
