@@ -26,9 +26,76 @@ export const TOOL_CHANGE_REASONS = [
 
 export type ToolChangeReason = (typeof TOOL_CHANGE_REASONS)[number];
 
+export interface ToolChangeLocation {
+  reason: ToolChangeReason;
+  // RFC 6901 JSON Pointer of the compared position, followed through `$ref`s from the property that
+  // holds them, so it may not resolve in the document itself; "" is the definition itself.
+  pointer: string;
+}
+
 export interface ToolChangeClassification {
   impact: ToolChangeImpact;
   reasons: ToolChangeReason[];
+  // Present only when locations were requested, because pointers name properties.
+  locations?: ToolChangeLocation[];
+}
+
+export const MAX_TOOL_CHANGE_LOCATIONS = 100;
+// Longer pointers are not recorded, so a long property name cannot make locating costly or the report large.
+export const MAX_TOOL_CHANGE_POINTER_LENGTH = 1_000;
+
+/**
+ * A reason set that also records, for each reason, the JSON Pointer of the schema position being
+ * compared when it was added. A shared definition is compared once, so it is located at the first
+ * reference that reached it.
+ */
+class LocatingReasons extends Set<ToolChangeReason> {
+  readonly locations: ToolChangeLocation[] = [];
+  // Escaped pointer segments of the position being compared, and the pointer length at each one;
+  // a segment that would pass the length limit is left empty, with an infinite length.
+  private readonly segments: string[] = [];
+  private readonly lengths: number[] = [0];
+  private readonly seen = new Set<string>();
+
+  enter(tokens: string[]): void {
+    for (const token of tokens) {
+      const previous = this.lengths[this.lengths.length - 1];
+      const segment = previous + 1 + token.length > MAX_TOOL_CHANGE_POINTER_LENGTH ? "" : `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      this.segments.push(segment);
+      this.lengths.push(segment === "" || previous + segment.length > MAX_TOOL_CHANGE_POINTER_LENGTH ? Infinity : previous + segment.length);
+    }
+  }
+
+  leave(count: number): void {
+    this.segments.length -= count;
+    this.lengths.length -= count;
+  }
+
+  override add(reason: ToolChangeReason): this {
+    if (this.locations.length < MAX_TOOL_CHANGE_LOCATIONS && this.lengths[this.lengths.length - 1] !== Infinity) {
+      const pointer = this.segments.join("");
+      const key = `${reason} ${pointer}`;
+      if (!this.seen.has(key)) {
+        this.seen.add(key);
+        this.locations.push({ reason, pointer });
+      }
+    }
+    return super.add(reason);
+  }
+}
+
+/** Runs `compare` with `tokens` appended to the recorded location, when locations are recorded. */
+function within(reasons: Set<ToolChangeReason>, tokens: string[], compare: () => void): void {
+  if (!(reasons instanceof LocatingReasons)) {
+    compare();
+    return;
+  }
+  reasons.enter(tokens);
+  try {
+    compare();
+  } finally {
+    reasons.leave(tokens.length);
+  }
 }
 
 type Equal = (left: unknown, right: unknown) => boolean;
@@ -794,9 +861,11 @@ function compareSchema(
     compareNumericAndArrayConstraints(inner, outer, codes, reasons);
     compareStringConstraints(inner, outer, codes, reasons);
     if (!sameMeaning(before.items, after.items, equal, scope)) {
-      if (unevaluated) reasons.add(codes.unclassified);
-      else if (outer.items !== undefined && inner.items === undefined) reasons.add(codes.constraint);
-      else if (outer.items !== undefined) compareSchema(before.items, after.items, direction, depth + 1, equal, reasons, scope);
+      within(reasons, ["items"], () => {
+        if (unevaluated) reasons.add(codes.unclassified);
+        else if (outer.items !== undefined && inner.items === undefined) reasons.add(codes.constraint);
+        else if (outer.items !== undefined) compareSchema(before.items, after.items, direction, depth + 1, equal, reasons, scope);
+      });
     }
   }
 
@@ -809,11 +878,13 @@ function compareSchema(
     return;
   }
   for (const key of outerRequired) {
-    if (!innerRequired.has(key)) reasons.add(codes.required);
+    if (!innerRequired.has(key)) within(reasons, ["properties", key], () => reasons.add(codes.required));
   }
   for (const key of Object.keys(beforeProperties)) {
-    if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
-    else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons, scope);
+    within(reasons, ["properties", key], () => {
+      if (!Object.hasOwn(afterProperties, key)) reasons.add(codes.propertyRemoved);
+      else compareSchema(beforeProperties[key], afterProperties[key], direction, depth + 1, equal, reasons, scope);
+    });
   }
   // In an object whose undeclared keys were governed by other keywords, or a nested input object
   // that left them open, a newly declared property can reject values callers send (input) or
@@ -866,7 +937,7 @@ function result(reasons: Set<ToolChangeReason>): ToolChangeClassification {
   const impact: ToolChangeImpact = ordered.some((reason) => !UNCLASSIFIED_REASONS.has(reason))
     ? "breaking"
     : ordered.length > 0 ? "unclassified" : "compatible";
-  return { impact, reasons: ordered };
+  return reasons instanceof LocatingReasons ? { impact, reasons: ordered, locations: reasons.locations } : { impact, reasons: ordered };
 }
 
 export function classifyRemovedTool(): ToolChangeClassification {
@@ -881,14 +952,16 @@ export function classifyChangedTool(
   before: JsonObject,
   after: JsonObject,
   fields: readonly string[],
-  equal: Equal
+  equal: Equal,
+  options: { locate?: boolean } = {}
 ): ToolChangeClassification {
-  const reasons = new Set<ToolChangeReason>();
+  const reasons = options.locate ? new LocatingReasons() : new Set<ToolChangeReason>();
   if (fields.includes("inputSchema")) {
-    compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, referenceScope(before.inputSchema, after.inputSchema));
+    within(reasons, ["inputSchema"], () =>
+      compareSchema(before.inputSchema, after.inputSchema, "input", 0, equal, reasons, referenceScope(before.inputSchema, after.inputSchema)));
   }
-  if (fields.includes("outputSchema")) classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons);
-  if (fields.includes("annotations")) classifyAnnotations(before.annotations, after.annotations, reasons);
+  if (fields.includes("outputSchema")) within(reasons, ["outputSchema"], () => classifyOutputSchema(before.outputSchema, after.outputSchema, equal, reasons));
+  if (fields.includes("annotations")) within(reasons, ["annotations"], () => classifyAnnotations(before.annotations, after.annotations, reasons));
   if (fields.includes("other")) reasons.add("other-fields-unclassified");
   return result(reasons);
 }

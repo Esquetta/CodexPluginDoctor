@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { packageVersion } from "../version.js";
-import { TOOL_CHANGE_REASONS } from "./mcp-tool-impact.js";
+import { MAX_TOOL_CHANGE_LOCATIONS, MAX_TOOL_CHANGE_POINTER_LENGTH, TOOL_CHANGE_REASONS } from "./mcp-tool-impact.js";
 import {
   ruleCatalog,
   type RuleCategory,
@@ -899,7 +899,17 @@ publicSchemaDefinitions.push({
           afterToolIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
           fields: { type: "array", maxItems: 6, uniqueItems: true, items: { enum: ["inputSchema", "outputSchema", "description", "title", "annotations", "other"] } },
           impact: { enum: ["breaking", "compatible", "unclassified"] },
-          reasons: { type: "array", maxItems: TOOL_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...TOOL_CHANGE_REASONS] } }
+          reasons: { type: "array", maxItems: TOOL_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...TOOL_CHANGE_REASONS] } },
+          // Only with --show-names.
+          name: { type: "string" },
+          locations: {
+            type: "array", maxItems: MAX_TOOL_CHANGE_LOCATIONS,
+            items: {
+              type: "object", required: ["reason", "pointer"],
+              properties: { reason: { enum: [...TOOL_CHANGE_REASONS] }, pointer: { type: "string", maxLength: MAX_TOOL_CHANGE_POINTER_LENGTH } },
+              additionalProperties: false
+            }
+          }
         }, additionalProperties: false
       }
     }

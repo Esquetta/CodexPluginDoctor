@@ -163,6 +163,10 @@ describe("GitHub Action metadata", () => {
     expect(actionMetadata).not.toContain('args+=(--allow-local-network "${{ inputs');
   });
 
+  it("never asks the tool diff for tool names, which its summary and pull request comment would publish", async () => {
+    expect(await readFile("action.yml", "utf8")).not.toContain("--show-names");
+  });
+
   it("forwards explicit lifecycle consent and strict reliability gating through every Action output", async () => {
     const actionMetadata = await readFile("action.yml", "utf8");
 

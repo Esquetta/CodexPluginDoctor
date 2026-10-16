@@ -3,6 +3,7 @@ import {
   classifyChangedTool,
   classifyRemovedTool,
   type ToolChangeImpact,
+  type ToolChangeLocation,
   type ToolChangeReason
 } from "./mcp-tool-impact.js";
 import {
@@ -44,7 +45,15 @@ export interface McpToolDiffReport {
     fields: DiffField[];
     impact: ToolChangeImpact;
     reasons: ToolChangeReason[];
+    // Present only with showNames, because names and pointers disclose the tool surface.
+    name?: string;
+    locations?: ToolChangeLocation[];
   }>;
+}
+
+export interface McpToolDiffOptions {
+  // Adds tool names and JSON Pointer locations of reasons; reports omit both by default.
+  showNames?: boolean;
 }
 
 interface ToolDefinition {
@@ -141,7 +150,7 @@ function incompleteReport(
   };
 }
 
-export async function compareMcpToolFiles(beforePath: string, afterPath: string): Promise<McpToolDiffReport> {
+export async function compareMcpToolFiles(beforePath: string, afterPath: string, options: McpToolDiffOptions = {}): Promise<McpToolDiffReport> {
   const [beforeSnapshot, afterSnapshot] = await Promise.all([
     loadMcpToolFileSnapshot(beforePath),
     loadMcpToolFileSnapshot(afterPath)
@@ -165,6 +174,7 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
     return incompleteReport(before, after, "incomplete", "ambiguous-names");
   }
 
+  const named = (name: string) => (options.showNames === true ? { name } : {});
   const changes: McpToolDiffReport["changes"] = [];
   let added = 0;
   let removed = 0;
@@ -175,7 +185,7 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
     const afterDefinition = afterDefinitions.get(name);
     if (afterDefinition === undefined) {
       removed += 1;
-      changes.push({ kind: "removed", beforeToolIndex: beforeDefinition.index, afterToolIndex: null, fields: [], ...classifyRemovedTool() });
+      changes.push({ kind: "removed", ...named(name), beforeToolIndex: beforeDefinition.index, afterToolIndex: null, fields: [], ...classifyRemovedTool() });
       continue;
     }
     const fields = changedFields(beforeDefinition.value, afterDefinition.value);
@@ -185,17 +195,18 @@ export async function compareMcpToolFiles(beforePath: string, afterPath: string)
       changed += 1;
       changes.push({
         kind: "changed",
+        ...named(name),
         beforeToolIndex: beforeDefinition.index,
         afterToolIndex: afterDefinition.index,
         fields,
-        ...classifyChangedTool(beforeDefinition.value, afterDefinition.value, fields, structurallyEqual)
+        ...classifyChangedTool(beforeDefinition.value, afterDefinition.value, fields, structurallyEqual, { locate: options.showNames === true })
       });
     }
   }
   for (const [name, afterDefinition] of afterDefinitions) {
     if (!beforeDefinitions.has(name)) {
       added += 1;
-      changes.push({ kind: "added", beforeToolIndex: null, afterToolIndex: afterDefinition.index, fields: [], ...classifyAddedTool() });
+      changes.push({ kind: "added", ...named(name), beforeToolIndex: null, afterToolIndex: afterDefinition.index, fields: [], ...classifyAddedTool() });
     }
   }
 

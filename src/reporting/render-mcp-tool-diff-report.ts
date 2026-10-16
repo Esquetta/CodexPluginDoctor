@@ -1,4 +1,5 @@
 import type { McpToolDiffReport } from "../core/mcp-tool-diff.js";
+import { quoteServerText } from "./quote-server-text.js";
 
 export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
   const comparison = report.comparison;
@@ -41,7 +42,9 @@ export function renderMcpToolDiffReport(report: McpToolDiffReport): string {
         ...(change.afterToolIndex === null ? [] : [`after tool ${change.afterToolIndex}`])
       ];
       const impact = `${change.impact}${change.reasons.length ? ` (${change.reasons.join(", ")})` : ""}`;
-      return `${change.kind.toUpperCase()} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}\n  Impact: ${impact}`;
+      const name = change.name === undefined ? "" : ` ${quoteServerText(change.name)}`;
+      const at = (change.locations ?? []).map((location) => `\n  At ${location.pointer === "" ? "(tool)" : quoteServerText(location.pointer)}: ${location.reason}`).join("");
+      return `${change.kind.toUpperCase()}${name} [${locations.join(" -> ")}]${change.fields.length ? `: ${change.fields.join(", ")}` : ""}\n  Impact: ${impact}${at}`;
     })
   ].join("\n");
 }

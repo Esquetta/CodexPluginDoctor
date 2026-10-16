@@ -351,7 +351,7 @@ function writeExactStdout(io: CliIo, message: string): void {
 
 class CliUsageError extends Error {}
 
-const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking]";
+const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
@@ -2026,17 +2026,21 @@ export async function runCli(
   if (command === "doctor") {
     if (maybePath === "tools-diff") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${toolsDiffUsage}\nCompares two saved MCP tools/list responses offline. Changes are classified heuristically as breaking, compatible, or unclassified; compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).`);
+        io.writeStdout(`${toolsDiffUsage}\nCompares two saved MCP tools/list responses offline. Changes are classified heuristically as breaking, compatible, or unclassified; compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).
+--show-names adds tool names and the JSON Pointer of each reason; reports omit both by default, so keep it out of public output such as pull request comments.`);
         return 0;
       }
       let beforePath: string | undefined;
       let afterPath: string | undefined;
       let format: "json" | "markdown" | undefined;
       let failOn: "any" | "breaking" | undefined;
+      let showNames = false;
       let invalid = false;
       for (let index = 0; index < remainingArgs.length; index += 1) {
         const flag = remainingArgs[index];
-        if ((flag === "--json" || flag === "--markdown") && format === undefined) {
+        if (flag === "--show-names" && !showNames) {
+          showNames = true;
+        } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
           format = flag === "--json" ? "json" : "markdown";
         } else if (flag === "--fail-on" && failOn === undefined) {
           const value = remainingArgs[index + 1];
@@ -2058,7 +2062,8 @@ export async function runCli(
         io.writeStderr(`Invalid comparison arguments. ${toolsDiffUsage}`);
         return 2;
       }
-      const report = await (options.compareMcpToolFilesImpl ?? compareMcpToolFiles)(beforePath, afterPath);
+      const compare = options.compareMcpToolFilesImpl ?? compareMcpToolFiles;
+      const report = await (showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath));
       io.writeStdout(format === "json" ? JSON.stringify(report, null, 2)
         : format === "markdown" ? renderMcpToolDiffMarkdown(report)
           : renderMcpToolDiffReport(report));

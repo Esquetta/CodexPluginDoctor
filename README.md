@@ -120,7 +120,8 @@ codex-plugin-doctor doctor tools-diff --before ./tools-old.json --after ./tools-
 This reports added, removed, and structurally changed definitions using numeric
 locations, and labels each change `breaking`, `compatible`, or `unclassified`
 with fixed reason codes. Add `--fail-on breaking` to fail CI only on breaking or
-unclassified changes, and `--markdown` for pull request tables. Incomplete inputs, invalid definitions, or duplicate names
+unclassified changes, `--markdown` for pull request tables, and `--show-names`
+locally to see tool names and the JSON Pointer of each reason. Incomplete inputs, invalid definitions, or duplicate names
 prevent a comparison. Impact labels follow nested object properties, array
 items, and common length and range bounds, but remain heuristics, not proof of
 compatibility.
@@ -589,9 +590,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.75.0
+      - uses: Esquetta/CodexPluginDoctor@v1.76.0
         with:
-          version: "1.75.0"
+          version: "1.76.0"
           path: .
           runtime: "true"
           policy: codex-publish

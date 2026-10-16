@@ -107,6 +107,25 @@ describe("offline MCP tool definition comparison", () => {
     });
   });
 
+  it("adds tool names and reason locations only when asked to show names", async () => {
+    const directory = await fixtureDirectory();
+    const before = await writeJson(directory, "before.json", envelope([tool("removed_tool"), tool("search", { inputSchema: { type: "object", properties: { query: { type: "string" } } } })]));
+    const after = await writeJson(directory, "after.json", envelope([tool("search", { inputSchema: { type: "object", properties: {} } }), tool("added_tool")]));
+
+    const shown = await compareMcpToolFiles(before, after, { showNames: true });
+    expect(shown.changes).toEqual([
+      { kind: "removed", name: "removed_tool", beforeToolIndex: 1, afterToolIndex: null, fields: [], impact: "breaking", reasons: ["tool-removed"] },
+      {
+        kind: "changed", name: "search", beforeToolIndex: 2, afterToolIndex: 1, fields: ["inputSchema"], impact: "breaking", reasons: ["input-property-removed"],
+        locations: [{ reason: "input-property-removed", pointer: "/inputSchema/properties/query" }]
+      },
+      { kind: "added", name: "added_tool", beforeToolIndex: null, afterToolIndex: 2, fields: [], impact: "compatible", reasons: [] }
+    ]);
+
+    const hidden = await compareMcpToolFiles(before, after);
+    expect(JSON.stringify(hidden)).not.toMatch(/removed_tool|added_tool|"search"|query|locations/u);
+  });
+
   it("reports deterministic numeric locators for removals changes and additions", async () => {
     const directory = await fixtureDirectory();
     const before = await writeJson(directory, "before.json", envelope([
