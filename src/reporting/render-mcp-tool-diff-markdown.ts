@@ -1,4 +1,5 @@
 import type { McpToolDiffReport } from "../core/mcp-tool-diff.js";
+import { quoteServerText } from "./quote-server-text.js";
 
 function count(value: number | null | undefined): string {
   return value === null || value === undefined ? "not compared" : String(value);
@@ -8,22 +9,23 @@ function toolIndex(value: number | null): string {
   return value === null ? "-" : String(value);
 }
 
-// Names and pointers come from the server, so they are escaped before they reach a table cell.
-function cell(text: string): string {
-  return text
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/[\\|`*_[\]]/gu, (character) => `\\${character}`)
-    .replace(/\s+/gu, " ");
-}
-
+// Names and pointers come from the server, so they are quoted and put in a code span, where Markdown,
+// HTML, mentions, and links stay inert; the fence outgrows any backtick run, and pipes are escaped for the table.
 function code(text: string): string {
-  return text.includes("`") || /\s/u.test(text) ? cell(text) : `\`${text.replace(/\|/gu, "\\|")}\``;
+  const quoted = quoteServerText(text);
+  let run = 0;
+  let longest = 0;
+  for (const character of quoted) {
+    run = character === "`" ? run + 1 : 0;
+    longest = Math.max(longest, run);
+  }
+  const fence = "`".repeat(longest + 1);
+  return `${fence}${quoted.replace(/\|/gu, "\\|")}${fence}`;
 }
 
 export function renderMcpToolDiffMarkdown(report: McpToolDiffReport): string {
   const comparison = report.comparison;
+  const named = report.changes.some((change) => change.name !== undefined);
   const lines = [
     "## MCP Tool Definition Diff",
     "",
@@ -39,14 +41,14 @@ export function renderMcpToolDiffMarkdown(report: McpToolDiffReport): string {
       "",
       "### Changes",
       "",
-      "| Change | Before tool | After tool | Fields | Impact | Reasons |",
-      "| --- | --- | --- | --- | --- | --- |",
-      ...report.changes.map((change) => `| ${change.kind} | ${toolIndex(change.beforeToolIndex)} | ${toolIndex(change.afterToolIndex)} | ${change.fields.map((field) => `\`${field}\``).join(", ") || "-"} | **${change.impact}** | ${change.reasons.map((reason) => `\`${reason}\``).join(", ") || "-"} |`)
+      named ? "| Change | Tool | Before tool | After tool | Fields | Impact | Reasons |" : "| Change | Before tool | After tool | Fields | Impact | Reasons |",
+      named ? "| --- | --- | --- | --- | --- | --- | --- |" : "| --- | --- | --- | --- | --- | --- |",
+      ...report.changes.map((change) => `| ${change.kind}${named ? ` | ${change.name === undefined ? "-" : code(change.name)}` : ""} | ${toolIndex(change.beforeToolIndex)} | ${toolIndex(change.afterToolIndex)} | ${change.fields.map((field) => `\`${field}\``).join(", ") || "-"} | **${change.impact}** | ${change.reasons.map((reason) => `\`${reason}\``).join(", ") || "-"} |`)
     );
   }
 
   const located = report.changes.flatMap((change) => (change.locations ?? []).map((location) =>
-    `| ${cell(change.name ?? "")} | \`${location.reason}\` | ${location.pointer === "" ? "(tool)" : code(location.pointer)} |`));
+    `| ${change.name === undefined ? "-" : code(change.name)} | \`${location.reason}\` | ${location.pointer === "" ? "(tool)" : code(location.pointer)} |`));
   if (located.length > 0) {
     lines.push("", "### Locations", "", "| Tool | Reason | Location |", "| --- | --- | --- |", ...located);
   }
@@ -64,7 +66,7 @@ export function renderMcpToolDiffMarkdown(report: McpToolDiffReport): string {
 
   lines.push(
     "",
-    report.changes.some((change) => change.name !== undefined)
+    named
       ? `Tool names and schema locations are shown because --show-names was used; schema values are not reported. Impact labels are ${report.coverage.impactClassification} schema checks, not proof of compatibility.`
       : `Tool numbers are one-based positions in the before and after files; names and schema values are not reported. Impact labels are ${report.coverage.impactClassification} schema checks, not proof of compatibility.`
   );

@@ -694,6 +694,34 @@ describe("tool change impact classification", () => {
         { reason: "other-fields-unclassified", pointer: "" }
       ]);
     });
+    it("locates a reason found after a nested comparison at the object that holds it", () => {
+      const before = input(object({ options: object({ a: { type: "number" } }) }));
+      const after = input(object({ options: object({ a: { type: "integer" } }, { additionalProperties: false }) }));
+      expect(locate(before, after).locations).toEqual([
+        { reason: "input-property-type-narrowed", pointer: "/inputSchema/properties/options/properties/a" },
+        { reason: "input-additional-properties-closed", pointer: "/inputSchema/properties/options" }
+      ]);
+    });
+
+    it("keeps the pointer of the schema that holds composition alternatives", () => {
+      const tool = (alternatives: Definition[]) => input(object({ value: { anyOf: alternatives } }));
+      expect(locate(tool([{ type: "string" }, { type: "number" }]), tool([{ type: "string" }, { type: "integer" }])).locations)
+        .toEqual([{ reason: "input-property-type-narrowed", pointer: "/inputSchema/properties/value" }]);
+    });
+
+    it("lists at most 100 locations per tool and still reports every reason", () => {
+      const properties = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`p${index}`, { type: "string" }]));
+      const classification = locate(input(object(properties)), input(object({})));
+      expect(classification.reasons).toEqual(["input-property-removed"]);
+      expect(classification.locations).toHaveLength(100);
+    });
+
+    it("leaves out a location whose pointer would be longer than 1,000 characters", () => {
+      const long = "k".repeat(1_000);
+      const classification = locate(input(object({ [long]: object({ a: { type: "string" } }), b: { type: "string" } })), input(object({ [long]: object({}) })));
+      expect(classification.reasons).toEqual(["input-property-removed"]);
+      expect(classification.locations).toEqual([{ reason: "input-property-removed", pointer: "/inputSchema/properties/b" }]);
+    });
   });
 
   it("lets a breaking reason outrank unclassified reasons and orders reasons deterministically", () => {

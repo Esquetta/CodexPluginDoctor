@@ -113,7 +113,7 @@ describe("doctor tools-diff", () => {
       expect(await runCli(["doctor", "tools-diff", ...pair, "--show-names"], c.io, { compareMcpToolFilesImpl: vi.fn().mockResolvedValue(named) })).toBe(1);
       const output = c.stdout.join("\n");
       expect(output).toContain("CHANGED \"search|<b>\" [before tool 1 -> after tool 1]: inputSchema");
-      expect(output).toContain("  At /inputSchema/properties/query: input-property-removed");
+      expect(output).toContain("  At \"/inputSchema/properties/query\": input-property-removed");
     });
 
     it("renders tool names and locations as escaped Markdown", async () => {
@@ -121,9 +121,34 @@ describe("doctor tools-diff", () => {
       expect(await runCli(["doctor", "tools-diff", ...pair, "--show-names", "--markdown"], c.io, { compareMcpToolFilesImpl: vi.fn().mockResolvedValue(named) })).toBe(1);
       const output = c.stdout.join("\n");
       expect(output).toContain("### Locations");
-      expect(output).toContain("| search\\|&lt;b&gt; | `input-property-removed` | `/inputSchema/properties/query` |");
+      expect(output).toContain("| changed | `\"search\\|<b>\"` | 1 | 1 | `inputSchema` | **breaking** | `input-property-removed` |");
+      expect(output).toContain("| `\"search\\|<b>\"` | `input-property-removed` | `\"/inputSchema/properties/query\"` |");
       expect(output).toContain("Tool names and schema locations are shown because --show-names was used");
       expect(output).not.toContain("names and schema values are not reported");
+    });
+    it("quotes names and pointers so control and formatting characters cannot reach the terminal", async () => {
+      const hostile = { ...named, changes: [{ ...named.changes[0], name: "a\u009b2J\u202e", locations: [{ reason: "input-property-removed", pointer: "/inputSchema/properties/x\n  Impact: compatible\u001b]8;;" }] }] };
+      for (const format of [[], ["--markdown"]]) {
+        const c = capture();
+        expect(await runCli(["doctor", "tools-diff", ...pair, "--show-names", ...format], c.io, { compareMcpToolFilesImpl: vi.fn().mockResolvedValue(hostile) })).toBe(1);
+        const output = c.stdout.join("\n");
+        expect(output).not.toMatch(/[\u001b\u009b\u202e]|\n {0,2}Impact: compatible/u);
+        expect(output).toContain(String.raw`"a\u009b2J\u202e"`);
+        expect(output).toContain(String.raw`"/inputSchema/properties/x\n  Impact: compatible\u001b]8;;"`);
+      }
+    });
+
+    it("names every change in Markdown, in code spans that keep mentions and links inert", async () => {
+      const removed = {
+        ...named,
+        changes: [{ kind: "removed", name: "@org/team `x` [a](javascript:b)", beforeToolIndex: 2, afterToolIndex: null, fields: [], impact: "breaking", reasons: ["tool-removed"] }]
+      };
+      const c = capture();
+      expect(await runCli(["doctor", "tools-diff", ...pair, "--show-names", "--markdown"], c.io, { compareMcpToolFilesImpl: vi.fn().mockResolvedValue(removed) })).toBe(1);
+      const output = c.stdout.join("\n");
+      expect(output).toContain("| Change | Tool | Before tool | After tool | Fields | Impact | Reasons |");
+      expect(output).toContain("| removed | ``\"@org/team `x` [a](javascript:b)\"`` | 2 | - | - | **breaking** | `tool-removed` |");
+      expect(output).not.toContain("### Locations");
     });
 
     it("rejects the flag twice", async () => {

@@ -28,7 +28,8 @@ export type ToolChangeReason = (typeof TOOL_CHANGE_REASONS)[number];
 
 export interface ToolChangeLocation {
   reason: ToolChangeReason;
-  // RFC 6901 JSON Pointer into the tool definition; "" is the definition itself.
+  // RFC 6901 JSON Pointer of the compared position, followed through `$ref`s from the property that
+  // holds them, so it may not resolve in the document itself; "" is the definition itself.
   pointer: string;
 }
 
@@ -39,7 +40,9 @@ export interface ToolChangeClassification {
   locations?: ToolChangeLocation[];
 }
 
-const MAX_LOCATIONS = 100;
+export const MAX_TOOL_CHANGE_LOCATIONS = 100;
+// Longer pointers are not recorded, so a long property name cannot make locating costly or the report large.
+const MAX_POINTER_LENGTH = 1_000;
 
 /**
  * A reason set that also records, for each reason, the JSON Pointer of the schema position being
@@ -47,16 +50,35 @@ const MAX_LOCATIONS = 100;
  * reference that reached it.
  */
 class LocatingReasons extends Set<ToolChangeReason> {
-  readonly path: string[] = [];
   readonly locations: ToolChangeLocation[] = [];
+  // Escaped pointer segments of the position being compared, and the pointer length at each one;
+  // a segment that would pass the length limit is left empty, with an infinite length.
+  private readonly segments: string[] = [];
+  private readonly lengths: number[] = [0];
   private readonly seen = new Set<string>();
 
+  enter(tokens: string[]): void {
+    for (const token of tokens) {
+      const previous = this.lengths[this.lengths.length - 1];
+      const segment = previous + 1 + token.length > MAX_POINTER_LENGTH ? "" : `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      this.segments.push(segment);
+      this.lengths.push(segment === "" || previous + segment.length > MAX_POINTER_LENGTH ? Infinity : previous + segment.length);
+    }
+  }
+
+  leave(count: number): void {
+    this.segments.length -= count;
+    this.lengths.length -= count;
+  }
+
   override add(reason: ToolChangeReason): this {
-    const pointer = this.path.map((token) => `/${token.replaceAll("~", "~0").replaceAll("/", "~1")}`).join("");
-    const key = JSON.stringify([reason, pointer]);
-    if (!this.seen.has(key) && this.locations.length < MAX_LOCATIONS) {
-      this.seen.add(key);
-      this.locations.push({ reason, pointer });
+    if (this.locations.length < MAX_TOOL_CHANGE_LOCATIONS && this.lengths[this.lengths.length - 1] !== Infinity) {
+      const pointer = this.segments.join("");
+      const key = `${reason} ${pointer}`;
+      if (!this.seen.has(key)) {
+        this.seen.add(key);
+        this.locations.push({ reason, pointer });
+      }
     }
     return super.add(reason);
   }
@@ -68,11 +90,11 @@ function within(reasons: Set<ToolChangeReason>, tokens: string[], compare: () =>
     compare();
     return;
   }
-  reasons.path.push(...tokens);
+  reasons.enter(tokens);
   try {
     compare();
   } finally {
-    reasons.path.length -= tokens.length;
+    reasons.leave(tokens.length);
   }
 }
 
