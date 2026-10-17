@@ -102,6 +102,8 @@ import {
   type McpStdioToolCatalogOptions
 } from "./core/mcp-stdio-tool-catalog.js";
 import { captureMcpPromptCatalog, captureStdioMcpPromptCatalog, type McpPromptCatalogSnapshot } from "./core/mcp-prompt-catalog.js";
+import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
+import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
 import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
@@ -110,6 +112,9 @@ import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
+import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
+import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
+import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
 import {
   buildDoctorValidationCorpusReport,
@@ -323,6 +328,8 @@ export interface RunCliOptions {
   inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
   captureMcpToolCatalogImpl?: typeof captureMcpToolCatalog;
   captureStdioMcpToolCatalogImpl?: typeof captureStdioMcpToolCatalog;
+  compareMcpPromptFilesImpl?: typeof compareMcpPromptFiles;
+  inspectMcpPromptFileImpl?: typeof inspectMcpPromptFile;
   captureMcpPromptCatalogImpl?: typeof captureMcpPromptCatalog;
   captureStdioMcpPromptCatalogImpl?: typeof captureStdioMcpPromptCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
@@ -370,6 +377,10 @@ class CliUsageError extends Error {}
 const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
+
+const promptsDiffUsage = "Usage: codex-plugin-doctor doctor prompts-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+
+const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> [--json]";
 
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
@@ -639,6 +650,74 @@ async function runStdioCatalogCommand(
   );
 }
 
+// Runs tools-diff or prompts-diff, which share their options and exit codes.
+async function runOfflineDiffCommand<R extends { status: string; comparison: { breaking: number | null; unclassified: number | null } }>(
+  args: string[],
+  io: CliIo,
+  usage: string,
+  compare: (beforePath: string, afterPath: string, showNames: boolean) => Promise<R>,
+  render: (report: R, markdown: boolean) => string
+): Promise<number> {
+  let beforePath: string | undefined;
+  let afterPath: string | undefined;
+  let format: "json" | "markdown" | undefined;
+  let failOn: "any" | "breaking" | undefined;
+  let showNames = false;
+  let invalid = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === "--show-names" && !showNames) {
+      showNames = true;
+    } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
+      format = flag === "--json" ? "json" : "markdown";
+    } else if (flag === "--fail-on" && failOn === undefined) {
+      const value = args[index + 1];
+      if (value !== "any" && value !== "breaking") { invalid = true; break; }
+      failOn = value;
+      index += 1;
+    } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) { invalid = true; break; }
+      if (flag === "--before") beforePath = value;
+      else afterPath = value;
+      index += 1;
+    } else {
+      invalid = true;
+      break;
+    }
+  }
+  if (invalid || !beforePath || !afterPath) {
+    io.writeStderr(`Invalid comparison arguments. ${usage}`);
+    return 2;
+  }
+  const report = await compare(beforePath, afterPath, showNames);
+  io.writeStdout(format === "json" ? JSON.stringify(report, null, 2) : render(report, format === "markdown"));
+  if (report.status !== "pass" && report.status !== "warn") return 2;
+  if (failOn === "breaking") {
+    return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
+  }
+  return report.status === "pass" ? 0 : 1;
+}
+
+// Runs tools-file or prompts-file, which share their options and exit codes.
+async function runOfflineFileCommand<R extends { status: string }>(
+  args: string[],
+  io: CliIo,
+  usage: string,
+  inspect: (filePath: string) => Promise<R>,
+  render: (report: R) => string
+): Promise<number> {
+  const [filePath, ...flags] = args;
+  if (!filePath || filePath.startsWith("-") || flags.some((flag) => flag !== "--json") || flags.length > 1) {
+    io.writeStderr(`Invalid file inspection arguments. ${usage}`);
+    return 2;
+  }
+  const report = await inspect(filePath);
+  io.writeStdout(flags.includes("--json") ? JSON.stringify(report, null, 2) : render(report));
+  return report.status === "pass" ? 0
+    : report.status === "warn" || report.status === "fail" ? 1 : 2;
+}
+
 function parseRuntimeSandbox(
   flags: string[],
   options: { requireRuntime?: boolean } = { requireRuntime: true }
@@ -749,6 +828,8 @@ function printUsage(io: CliIo): void {
   io.writeStderr(promptsUsage);
   io.writeStderr(toolsFileUsage);
   io.writeStderr(toolsDiffUsage);
+  io.writeStderr(promptsFileUsage);
+  io.writeStderr(promptsDiffUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -2130,65 +2211,35 @@ export async function runCli(
 --show-names adds tool names and the JSON Pointer of each reason; reports omit both by default, so keep it out of public output such as pull request comments.`);
         return 0;
       }
-      let beforePath: string | undefined;
-      let afterPath: string | undefined;
-      let format: "json" | "markdown" | undefined;
-      let failOn: "any" | "breaking" | undefined;
-      let showNames = false;
-      let invalid = false;
-      for (let index = 0; index < remainingArgs.length; index += 1) {
-        const flag = remainingArgs[index];
-        if (flag === "--show-names" && !showNames) {
-          showNames = true;
-        } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
-          format = flag === "--json" ? "json" : "markdown";
-        } else if (flag === "--fail-on" && failOn === undefined) {
-          const value = remainingArgs[index + 1];
-          if (value !== "any" && value !== "breaking") { invalid = true; break; }
-          failOn = value;
-          index += 1;
-        } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
-          const value = remainingArgs[index + 1];
-          if (!value || value.startsWith("-")) { invalid = true; break; }
-          if (flag === "--before") beforePath = value;
-          else afterPath = value;
-          index += 1;
-        } else {
-          invalid = true;
-          break;
-        }
+      return runOfflineDiffCommand(remainingArgs, io, toolsDiffUsage, (beforePath, afterPath, showNames) => {
+        const compare = options.compareMcpToolFilesImpl ?? compareMcpToolFiles;
+        return showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath);
+      }, (report, markdown) => markdown ? renderMcpToolDiffMarkdown(report) : renderMcpToolDiffReport(report));
+    }
+    if (maybePath === "prompts-diff") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${promptsDiffUsage}\nCompares two saved MCP prompts/list responses offline. Changes are classified heuristically as breaking, compatible, or unclassified; prompts are not retrieved and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).
+--show-names adds prompt names and the argument behind each reason; reports omit both by default, so keep it out of public output such as pull request comments.`);
+        return 0;
       }
-      if (invalid || !beforePath || !afterPath) {
-        io.writeStderr(`Invalid comparison arguments. ${toolsDiffUsage}`);
-        return 2;
-      }
-      const compare = options.compareMcpToolFilesImpl ?? compareMcpToolFiles;
-      const report = await (showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath));
-      io.writeStdout(format === "json" ? JSON.stringify(report, null, 2)
-        : format === "markdown" ? renderMcpToolDiffMarkdown(report)
-          : renderMcpToolDiffReport(report));
-      if (report.status !== "pass" && report.status !== "warn") return 2;
-      if (failOn === "breaking") {
-        return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
-      }
-      return report.status === "pass" ? 0 : 1;
+      return runOfflineDiffCommand(remainingArgs, io, promptsDiffUsage, (beforePath, afterPath, showNames) => {
+        const compare = options.compareMcpPromptFilesImpl ?? compareMcpPromptFiles;
+        return showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath);
+      }, (report, markdown) => markdown ? renderMcpPromptDiffMarkdown(report) : renderMcpPromptDiffReport(report));
     }
     if (maybePath === "tools-file") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
         io.writeStdout(`${toolsFileUsage}\nInspects one saved UTF-8 MCP tools/list response. No server connection or tool execution.`);
         return 0;
       }
-      const [filePath, ...flags] = remainingArgs;
-      if (!filePath || filePath.startsWith("-") || flags.some((flag) => flag !== "--json") || flags.length > 1) {
-        io.writeStderr(`Invalid file inspection arguments. ${toolsFileUsage}`);
-        return 2;
+      return runOfflineFileCommand(remainingArgs, io, toolsFileUsage, options.inspectMcpToolFileImpl ?? inspectMcpToolFile, renderMcpToolFileReport);
+    }
+    if (maybePath === "prompts-file") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${promptsFileUsage}\nInspects one saved UTF-8 MCP prompts/list response. No server connection or prompt retrieval.`);
+        return 0;
       }
-      const report = await (options.inspectMcpToolFileImpl ?? inspectMcpToolFile)(filePath);
-      io.writeStdout(flags.includes("--json")
-        ? JSON.stringify(report, null, 2)
-        : renderMcpToolFileReport(report));
-      return report.status === "pass" ? 0
-        : report.status === "warn" || report.status === "fail" ? 1 : 2;
+      return runOfflineFileCommand(remainingArgs, io, promptsFileUsage, options.inspectMcpPromptFileImpl ?? inspectMcpPromptFile, renderMcpPromptFileReport);
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {

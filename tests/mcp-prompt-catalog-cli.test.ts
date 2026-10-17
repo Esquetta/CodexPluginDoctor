@@ -81,10 +81,23 @@ describe("doctor prompts", () => {
     expect(captureStdioMcpPromptCatalogImpl).not.toHaveBeenCalled();
   });
 
-  it("captures a real stdio server's prompts", async () => {
-    const c = capture();
-    expect(await runCli(["doctor", "prompts", fixtureRoot, "--server", "modern", "--runtime", "--json"], c.io)).toBe(0);
-    expect(JSON.parse(c.stdout.join("\n"))).toMatchObject({ transport: "stdio", status: "pass", catalog: { promptsChecked: 2 } });
+  it("saves real stdio captures that prompts-file and prompts-diff accept", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "doctor-prompts-cli-"));
+    try {
+      const modern = path.join(directory, "modern.json");
+      const legacy = path.join(directory, "legacy.json");
+      const c = capture();
+      expect(await runCli(["doctor", "prompts", fixtureRoot, "--server", "modern", "--runtime", "--json", "--save-response", modern], c.io)).toBe(0);
+      expect(JSON.parse(c.stdout.join("\n"))).toMatchObject({ transport: "stdio", status: "pass", catalog: { promptsChecked: 2 } });
+      expect(await runCli(["doctor", "prompts", fixtureRoot, "--server", "legacy", "--runtime", "--save-response", legacy], capture().io)).toBe(0);
+
+      expect(await runCli(["doctor", "prompts-file", modern], capture().io)).toBe(0);
+      const diff = capture();
+      expect(await runCli(["doctor", "prompts-diff", "--before", modern, "--after", legacy, "--json"], diff.io)).toBe(0);
+      expect(JSON.parse(diff.stdout.join("\n"))).toMatchObject({ status: "pass", comparison: { complete: true, unchanged: 2 } });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("documents the command in help", async () => {

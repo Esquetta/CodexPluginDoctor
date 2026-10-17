@@ -917,6 +917,68 @@ publicSchemaDefinitions.push({
   }
 });
 
+// The prompt catalog shares discovery, protocol, and execution evidence with the tool catalog.
+const toolCatalogProperties = publicSchemaDefinitions.find((definition) => definition.id === "doctor.tools.json")!.properties!;
+publicSchemaDefinitions.push({
+  id: "doctor.prompts.json",
+  command: "codex-plugin-doctor doctor prompts <url> --allow-network --json",
+  required: ["schemaVersion", "scope", "status", "discovery", "catalog", "coverage", "findings"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "prompt-catalog-structure" },
+    // transport, protocol, and execution appear only on reports from `doctor prompts <path> --server <name> --runtime`.
+    transport: { const: "stdio" },
+    status: toolCatalogProperties.status,
+    protocol: toolCatalogProperties.protocol,
+    execution: toolCatalogProperties.execution,
+    discovery: toolCatalogProperties.discovery,
+    catalog: {
+      type: "object", required: ["complete", "pagesRead", "promptsChecked", "reason"],
+      properties: {
+        complete: { type: "boolean" },
+        pagesRead: { type: "integer", minimum: 0, maximum: 5 },
+        promptsChecked: { type: "integer", minimum: 0, maximum: 500 },
+        reason: { type: ["string", "null"] }
+      },
+      additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["discovery", "catalogEnumeration", "definitions", "promptRetrieval", "fullConformance"],
+      properties: {
+        discovery: { enum: ["pass", "fail", "skipped"] },
+        catalogEnumeration: { enum: ["complete", "incomplete", "not-tested"] },
+        definitions: { const: "shape-only" },
+        promptRetrieval: { const: "not-tested" },
+        fullConformance: { const: "not-tested" }
+      },
+      additionalProperties: false
+    },
+    findings: {
+      type: "array", maxItems: 100,
+      items: {
+        type: "object", required: ["id", "severity", "message", "impact", "suggestedFix"],
+        properties: {
+          id: { type: "string", pattern: "^plugin\\.catalog\\." },
+          severity: { enum: ["warn", "fail"] },
+          message: { type: "string" }, impact: { type: "string" }, suggestedFix: { type: "string" },
+          location: {
+            type: "object", required: ["page", "promptIndex"],
+            properties: {
+              page: { type: "integer", minimum: 1, maximum: 5 },
+              promptIndex: { type: "integer", minimum: 1, maximum: 500 },
+              argumentIndex: { type: "integer", minimum: 1 },
+              relatedPromptIndex: { type: "integer", minimum: 1, maximum: 500 },
+              relatedArgumentIndex: { type: "integer", minimum: 1 }
+            },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  }
+});
+
 const promptFileReportDefinition = {
   id: "doctor.prompts.file.json",
   command: "codex-plugin-doctor doctor prompts-file <path> --json",

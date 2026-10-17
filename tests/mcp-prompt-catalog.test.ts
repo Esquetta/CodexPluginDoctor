@@ -5,6 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import { captureMcpPromptCatalog, captureStdioMcpPromptCatalog } from "../src/core/mcp-prompt-catalog.js";
 import { resolveMcpStdioServer } from "../src/core/mcp-stdio-tool-catalog.js";
+import { buildDoctorOutputContract } from "../src/core/output-contract.js";
+import { violations } from "./helpers/json-schema-violations.js";
+
+const catalogSchema = buildDoctorOutputContract().schemas.find((schema) => schema.id === "doctor.prompts.json")!.schema as Record<string, unknown>;
 
 function response(body: unknown): BoundedHttpResponse {
   return { statusCode: 200, headers: { "content-type": "application/json" }, body: Buffer.from(JSON.stringify(body)) };
@@ -58,6 +62,7 @@ describe("captureMcpPromptCatalog", () => {
     const { report, prompts } = await captureMcpPromptCatalog("https://mcp.example.com/mcp", { ...network, request });
 
     expect(report.status).toBe("fail");
+    expect(violations(catalogSchema, report)).toEqual([]);
     expect(report.findings.map((finding) => [finding.id, finding.location])).toEqual([
       ["plugin.catalog.prompt.argument.name.duplicate", { page: 1, promptIndex: 2, argumentIndex: 2, relatedArgumentIndex: 1 }],
       ["plugin.catalog.prompt.name.duplicate", { page: 1, promptIndex: 2, relatedPromptIndex: 1 }]
@@ -138,6 +143,7 @@ describe("captureStdioMcpPromptCatalog", () => {
     expect(snapshot.prompts?.map((prompt) => (prompt as { name: string }).name)).toEqual(["code_review", "summarize"]);
     expect(snapshot.cache).toEqual({ ttlMs: 60_000, cacheScope: "public" });
     expect(methods).toEqual(["server/discover", "prompts/list"]);
+    expect(violations(catalogSchema, snapshot.report)).toEqual([]);
   });
 
   it("reads a legacy stdio server's prompt list with conservative cache metadata", async () => {
