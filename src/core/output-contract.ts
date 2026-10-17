@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { packageVersion } from "../version.js";
+import { MAX_PROMPT_CHANGE_LOCATIONS, PROMPT_CHANGE_REASONS } from "./mcp-prompt-impact.js";
 import { MAX_TOOL_CHANGE_LOCATIONS, MAX_TOOL_CHANGE_POINTER_LENGTH, TOOL_CHANGE_REASONS } from "./mcp-tool-impact.js";
 import {
   ruleCatalog,
@@ -907,6 +908,123 @@ publicSchemaDefinitions.push({
             items: {
               type: "object", required: ["reason", "pointer"],
               properties: { reason: { enum: [...TOOL_CHANGE_REASONS] }, pointer: { type: "string", maxLength: MAX_TOOL_CHANGE_POINTER_LENGTH } },
+              additionalProperties: false
+            }
+          }
+        }, additionalProperties: false
+      }
+    }
+  }
+});
+
+const promptFileReportDefinition = {
+  id: "doctor.prompts.file.json",
+  command: "codex-plugin-doctor doctor prompts-file <path> --json",
+  required: ["schemaVersion", "scope", "status", "source", "inspection", "coverage", "findings"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "prompt-definitions-file" },
+    status: { enum: ["pass", "warn", "fail", "incomplete", "blocked"] },
+    source: {
+      type: "object", required: ["kind", "format", "bytesRead"],
+      properties: {
+        kind: { const: "file" }, format: { const: "mcp-prompts-list-response" },
+        bytesRead: { type: "integer", minimum: 0, maximum: 1048577 }
+      }, additionalProperties: false
+    },
+    inspection: {
+      type: "object", required: ["complete", "promptsChecked", "hasNextCursor", "reason"],
+      properties: {
+        complete: { type: "boolean" }, promptsChecked: { type: "integer", minimum: 0, maximum: 500 },
+        hasNextCursor: { type: ["boolean", "null"] }, reason: { type: ["string", "null"] }
+      }, additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["definitions", "discovery", "serverCatalog", "promptRetrieval", "fullConformance"],
+      properties: {
+        definitions: { const: "shape-only" }, discovery: { const: "not-tested" },
+        serverCatalog: { const: "not-tested" }, promptRetrieval: { const: "not-tested" },
+        fullConformance: { const: "not-tested" }
+      }, additionalProperties: false
+    },
+    findings: {
+      type: "array", maxItems: 100,
+      items: {
+        type: "object", required: ["id", "severity", "message", "impact", "suggestedFix"],
+        properties: {
+          id: { type: "string", pattern: "^plugin\\.(catalog|prompts_file)\\." },
+          severity: { enum: ["warn", "fail"] },
+          message: { type: "string" }, impact: { type: "string" }, suggestedFix: { type: "string" },
+          location: {
+            type: "object", required: ["page", "promptIndex"],
+            properties: {
+              page: { const: 1 }, promptIndex: { type: "integer", minimum: 1, maximum: 500 },
+              argumentIndex: { type: "integer", minimum: 1 },
+              relatedPromptIndex: { type: "integer", minimum: 1, maximum: 500 },
+              relatedArgumentIndex: { type: "integer", minimum: 1 }
+            }, additionalProperties: false
+          }
+        }, additionalProperties: false
+      }
+    }
+  }
+};
+const embeddedPromptFileReportSchema = {
+  type: "object",
+  required: promptFileReportDefinition.required,
+  properties: promptFileReportDefinition.properties,
+  additionalProperties: true
+};
+
+publicSchemaDefinitions.push(promptFileReportDefinition, {
+  id: "doctor.prompts.diff.json",
+  command: "codex-plugin-doctor doctor prompts-diff --before <path> --after <path> --json",
+  required: ["schemaVersion", "scope", "status", "before", "after", "comparison", "coverage", "changes"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "prompt-definitions-diff" },
+    status: { enum: ["pass", "warn", "incomplete", "blocked"] },
+    before: embeddedPromptFileReportSchema,
+    after: embeddedPromptFileReportSchema,
+    comparison: {
+      type: "object", required: ["complete", "reason", "added", "removed", "changed", "unchanged", "breaking", "unclassified"],
+      properties: {
+        complete: { type: "boolean" },
+        reason: { enum: [null, "input-blocked", "input-incomplete", "invalid-definitions", "ambiguous-names"] },
+        added: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        removed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        changed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 1000 },
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 1000 }
+      }, additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["comparison", "definitions", "compatibility", "serverCatalog", "promptRetrieval", "impactClassification"],
+      properties: {
+        comparison: { const: "structural-only" }, definitions: { const: "shape-only" },
+        compatibility: { const: "not-tested" }, serverCatalog: { const: "not-tested" },
+        promptRetrieval: { const: "not-tested" }, impactClassification: { const: "heuristic" }
+      }, additionalProperties: false
+    },
+    changes: {
+      type: "array", maxItems: 1000,
+      items: {
+        type: "object", required: ["kind", "beforePromptIndex", "afterPromptIndex", "fields", "impact", "reasons"],
+        properties: {
+          kind: { enum: ["added", "removed", "changed"] },
+          beforePromptIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          afterPromptIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          fields: { type: "array", maxItems: 4, uniqueItems: true, items: { enum: ["arguments", "description", "title", "other"] } },
+          impact: { enum: ["breaking", "compatible", "unclassified"] },
+          reasons: { type: "array", maxItems: PROMPT_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...PROMPT_CHANGE_REASONS] } },
+          // Only with --show-names.
+          name: { type: "string" },
+          locations: {
+            type: "array", maxItems: MAX_PROMPT_CHANGE_LOCATIONS,
+            items: {
+              type: "object", required: ["reason", "argument"],
+              properties: { reason: { enum: [...PROMPT_CHANGE_REASONS] }, argument: { type: ["string", "null"] } },
               additionalProperties: false
             }
           }

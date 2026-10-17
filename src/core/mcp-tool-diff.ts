@@ -74,7 +74,7 @@ function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function structurallyEqual(left: unknown, right: unknown): boolean {
+export function structurallyEqual(left: unknown, right: unknown): boolean {
   const pending: Array<[unknown, unknown]> = [[left, right]];
 
   while (pending.length > 0) {
