@@ -12,21 +12,25 @@ import {
   type McpDiscoveryReport,
   type McpJsonObject
 } from "./mcp-discovery.js";
-import type { CatalogFinding } from "./mcp-tool-definition.js";
 import {
   buildMcpToolCatalogReport,
   catalogFinding,
-  createMcpToolCatalogInspector,
   finalCatalogStatus,
   hasMatchingEnvelope,
+  listCursorLoop,
+  listMethodUnsupported,
+  listResponseInvalid,
   MAX_CATALOG_PAGES,
   MAX_CATALOG_RESPONSE_BYTES,
   MAX_CATALOG_TOTAL_RESPONSE_BYTES,
-  parseToolsResult,
-  serializeToolsListRequest,
+  MCP_TOOLS_LIST,
+  modernInvalidFix,
+  parseListResult,
+  serializeListRequest,
   validJsonRpcError,
   type CatalogStatus,
-  type EnumerationCoverage,
+  type McpCatalogCapture,
+  type McpCatalogList,
   type McpToolCatalogCache,
   type McpToolCatalogProtocol,
   type McpToolCatalogReport,
@@ -40,7 +44,7 @@ import { buildRuntimeLaunch, DOCKER_RUNTIME_STARTUP_TIMEOUT_MS, RuntimeSandboxEr
 const MODERN_VERSION = "2026-07-28";
 const LEGACY_REQUEST_VERSION = "2025-11-25";
 const LEGACY_VERSIONS = new Set(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]);
-// Legacy tools/list results carry no cache metadata; saved responses use the most conservative values.
+// Legacy list results carry no cache metadata; saved responses use the most conservative values.
 const LEGACY_CACHE: McpToolCatalogCache = { ttlMs: 0, cacheScope: "private" };
 const NATIVE_STARTUP_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -132,7 +136,11 @@ async function readManifestMcpServers(
 
 // Reads the server the same way runtime planning does: the manifest mcpServers file first,
 // then .mcp.json for packages without one. Messages never echo paths or configured values.
-export async function resolveMcpStdioServer(targetPath: string, serverName: string): Promise<McpStdioServerResolution> {
+export async function resolveMcpStdioServer(
+  targetPath: string,
+  serverName: string,
+  command: "tools" | "prompts" = "tools"
+): Promise<McpStdioServerResolution> {
   let packageRoot: string;
   try {
     packageRoot = await realpath(path.resolve(targetPath));
@@ -175,7 +183,7 @@ export async function resolveMcpStdioServer(targetPath: string, serverName: stri
 
   const config = normalized.servers[serverName];
   if (typeof config.url === "string") {
-    return failure("The named MCP server uses HTTP. Run doctor tools <url> --allow-network for HTTP servers.");
+    return failure(`The named MCP server uses HTTP. Run doctor ${command} <url> --allow-network for HTTP servers.`);
   }
   if (typeof config.command !== "string" || config.command.length === 0) {
     return failure("The named MCP server has no command to start.");
@@ -384,12 +392,12 @@ const legacyFix = "Implement server/discover and per-request metadata for MCP 20
 const stdoutInvalidImpact = "stdio clients cannot reliably read replies when stdout carries anything other than newline-delimited JSON-RPC messages.";
 const stdoutInvalidFix = "Write only MCP messages to stdout and send logs to stderr.";
 
-function stopFinding(reason: SessionStop | "request-timeout" | "total-time-limit", docker: boolean): Finding {
+function stopFinding(reason: SessionStop | "request-timeout" | "total-time-limit", docker: boolean, noun: McpCatalogList<Finding>["noun"]): Finding {
   switch (reason) {
     case "startup-failed":
       return discoveryFinding(
         "plugin.discovery.stdio.startup_failed", "fail", "The MCP server process could not be started.",
-        "No tool definitions can be read from a server that does not start.",
+        `No ${noun} definitions can be read from a server that does not start.`,
         docker
           ? "Verify Docker is installed and the Docker daemon is available."
           : "Verify the configured command is installed and runs from the server working directory without a shell."
@@ -413,46 +421,43 @@ function stopFinding(reason: SessionStop | "request-timeout" | "total-time-limit
   }
 }
 
-interface ProtocolResult {
-  status: CatalogStatus;
+interface ProtocolResult<F extends Finding> extends McpCatalogCapture<F> {
   protocol: McpToolCatalogProtocol;
-  discovery: McpDiscoveryReport;
-  catalog: McpToolCatalogReport["catalog"];
-  enumeration: EnumerationCoverage;
-  findings: CatalogFinding[];
-  tools: unknown[] | null;
-  cache: McpToolCatalogCache | null;
 }
 
 interface CatalogEra {
   request(id: string, cursor: string | undefined): string;
-  parse(message: McpJsonObject, id: string): { tools: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null;
+  parse(message: McpJsonObject, id: string): { items: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null;
   invalidFix: string;
 }
 
-const modernEra: CatalogEra = {
-  request: serializeToolsListRequest,
-  parse: parseToolsResult,
-  invalidFix: "Return a matching JSON-RPC complete result with valid tools and cache metadata."
-};
+function modernEra(list: McpCatalogList<Finding>): CatalogEra {
+  return {
+    request: (id, cursor) => serializeListRequest(list.method, id, cursor),
+    parse: (message, id) => parseListResult(message, id, list.capability),
+    invalidFix: modernInvalidFix(list)
+  };
+}
 
-const legacyEra: CatalogEra = {
-  request: (id, cursor) => JSON.stringify({
-    jsonrpc: "2.0",
-    id,
-    method: "tools/list",
-    ...(cursor === undefined ? {} : { params: { cursor } })
-  }),
-  parse: (message, id) => {
-    if (!hasMatchingEnvelope(message, id) || !Object.hasOwn(message, "result") || !isPlainObject(message.result)
-      || !Array.isArray(message.result.tools)) {
-      return null;
-    }
-    if (Object.hasOwn(message.result, "nextCursor") && typeof message.result.nextCursor !== "string") return null;
-    return { tools: message.result.tools, cursor: message.result.nextCursor as string | undefined, cache: LEGACY_CACHE };
-  },
-  invalidFix: "Return a matching JSON-RPC result with a tools array and an optional string nextCursor."
-};
+function legacyEra(list: McpCatalogList<Finding>): CatalogEra {
+  return {
+    request: (id, cursor) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: list.method,
+      ...(cursor === undefined ? {} : { params: { cursor } })
+    }),
+    parse: (message, id) => {
+      if (!hasMatchingEnvelope(message, id) || !Object.hasOwn(message, "result") || !isPlainObject(message.result)
+        || !Array.isArray(message.result[list.capability])) {
+        return null;
+      }
+      if (Object.hasOwn(message.result, "nextCursor") && typeof message.result.nextCursor !== "string") return null;
+      return { items: message.result[list.capability] as unknown[], cursor: message.result.nextCursor as string | undefined, cache: LEGACY_CACHE };
+    },
+    invalidFix: `Return a matching JSON-RPC result with a ${list.capability} array and an optional string nextCursor.`
+  };
+}
 
 function legacyInitializeRequest(): string {
   return JSON.stringify({
@@ -479,6 +484,30 @@ function validInitializeResult(message: McpJsonObject): McpJsonObject | null {
 // Starts one configured stdio server, reads its tool list without calling tools, and stops it.
 // Tools and cache metadata are returned only for a complete enumeration.
 export async function captureStdioMcpToolCatalog(server: McpStdioServer, options: McpStdioToolCatalogOptions = {}): Promise<McpToolCatalogSnapshot> {
+  const { capture, protocol, execution } = await captureStdioMcpCatalog(server, MCP_TOOLS_LIST, options);
+  const { complete, pagesRead, checked, reason } = capture.catalog;
+  return finish(
+    buildMcpToolCatalogReport(capture.discovery, capture.status, { complete, pagesRead, toolsChecked: checked, reason }, capture.enumeration, capture.findings),
+    protocol,
+    execution,
+    capture.items,
+    capture.cache
+  );
+}
+
+export interface McpStdioCatalogCapture<F extends Finding> {
+  capture: McpCatalogCapture<F>;
+  protocol: McpToolCatalogProtocol;
+  execution: RuntimeExecutionEvidence | null;
+}
+
+// Starts one configured stdio server, reads one definition list without using the definitions, and stops it.
+// Definitions and cache metadata are returned only for a complete enumeration.
+export async function captureStdioMcpCatalog<F extends Finding>(
+  server: McpStdioServer,
+  list: McpCatalogList<F>,
+  options: McpStdioToolCatalogOptions = {}
+): Promise<McpStdioCatalogCapture<F>> {
   const docker = options.sandbox === "docker";
   const now = options.now ?? (() => performance.now());
   const startupMs = options.timeouts?.startupMs ?? (docker ? DOCKER_RUNTIME_STARTUP_TIMEOUT_MS : NATIVE_STARTUP_TIMEOUT_MS);
@@ -487,7 +516,7 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
   const deadline = now() + (options.timeouts?.totalMs ?? (docker ? DOCKER_TOTAL_TIMEOUT_MS : NATIVE_TOTAL_TIMEOUT_MS));
   const spawnImpl = options.spawnImpl ?? spawn;
   const removeContainer = options.removeContainerImpl ?? (async (containerName: string) => await cleanupDockerContainer(containerName) === null);
-  const emptyCatalog = { complete: false, pagesRead: 0, toolsChecked: 0, reason: null };
+  const emptyCatalog = { complete: false, pagesRead: 0, checked: 0, reason: null };
 
   const buildLaunch = (): StdioLaunch => docker
     ? buildRuntimeLaunch({
@@ -514,11 +543,14 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     const discovery = stdioDiscovery("blocked", "skipped", [discoveryFinding(
       "plugin.discovery.sandbox.unsupported", "warn",
       error instanceof RuntimeSandboxError ? error.message : "The MCP server cannot run in the requested sandbox.",
-      "The tool catalog was not read because the server cannot be isolated as requested.",
+      `The ${list.noun} catalog was not read because the server cannot be isolated as requested.`,
       "Use a Node.js command inside the package root with --sandbox docker, or review the command before running it without a sandbox."
     )]);
-    return finish(buildMcpToolCatalogReport(discovery, "blocked", { ...emptyCatalog, reason: "sandbox-unsupported" }, "not-tested", []),
-      { era: null, version: null }, null, null, null);
+    return {
+      capture: { discovery, status: "blocked", catalog: { ...emptyCatalog, reason: "sandbox-unsupported" }, enumeration: "not-tested", findings: [], items: null, cache: null },
+      protocol: { era: null, version: null },
+      execution: null
+    };
   }
 
   const started: Array<{ session: StdioSession; containerName: string | null }> = [];
@@ -535,15 +567,15 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     return outcome.kind === "timeout" && remaining < timeoutMs ? { kind: "timeout", reason: "total-time-limit" } : outcome;
   };
 
-  const enumerate = async (era: CatalogEra, protocol: McpToolCatalogProtocol, discovery: McpDiscoveryReport): Promise<ProtocolResult> => {
-    const inspector = createMcpToolCatalogInspector();
+  const enumerate = async (era: CatalogEra, protocol: McpToolCatalogProtocol, discovery: McpDiscoveryReport): Promise<ProtocolResult<F>> => {
+    const inspector = list.createInspector();
     const findings = inspector.findings;
     const seenCursors = new Set<string>();
     let pagesRead = 0;
     let cursor: string | undefined;
     let cache: McpToolCatalogCache | null = null;
     let reason: string | null = null;
-    const addFindings = (items: CatalogFinding[]): boolean => {
+    const addFindings = (items: Finding[]): boolean => {
       if (inspector.addFindings(items)) return true;
       reason = "finding-limit";
       return false;
@@ -562,7 +594,7 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
         reason = "page-limit";
         break;
       }
-      const id = `tools-list-${pagesRead + 1}`;
+      const id = `${list.capability}-list-${pagesRead + 1}`;
       const outcome = await send(id, era.request(id, cursor), requestMs);
       if (outcome.kind !== "message") {
         if (outcome.kind === "stopped") sessionStopped(outcome.reason);
@@ -571,18 +603,12 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
       }
       const message = outcome.message;
       if (hasMatchingEnvelope(message, id) && Object.hasOwn(message, "error") && validJsonRpcError(message.error) && message.error.code === -32601) {
-        if (addFindings([catalogFinding(
-          "plugin.catalog.tools_list.method_unsupported", "warn", "The MCP server advertised tools but does not implement tools/list.",
-          "Tool definitions cannot be enumerated from the advertised capability.", "Implement tools/list for the advertised MCP tools capability."
-        )])) reason = "tools-list-method-unsupported";
+        if (addFindings([listMethodUnsupported(list, "MCP server")])) reason = `${list.capability}-list-method-unsupported`;
         break;
       }
       const page = era.parse(message, id);
       if (page === null) {
-        if (addFindings([catalogFinding(
-          "plugin.catalog.response.invalid", "fail", "The MCP server returned an invalid tools/list response.",
-          "The tool catalog cannot be safely enumerated from this response.", era.invalidFix
-        )])) reason = "response-invalid";
+        if (addFindings([listResponseInvalid(list, "MCP server", era.invalidFix)])) reason = "response-invalid";
         break;
       }
 
@@ -591,14 +617,11 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
         ttlMs: Math.min(cache.ttlMs, page.cache.ttlMs),
         cacheScope: cache.cacheScope === "private" ? "private" : page.cache.cacheScope
       };
-      reason = inspector.inspectPage(page.tools, pagesRead, () => deadline - now() <= 0);
+      reason = inspector.inspectPage(page.items, pagesRead, () => deadline - now() <= 0);
       if (reason !== null) break;
       if (page.cursor === undefined) break;
       if (seenCursors.has(page.cursor)) {
-        if (addFindings([catalogFinding(
-          "plugin.catalog.cursor.loop", "warn", "The MCP server repeated a tools/list cursor.",
-          "The bounded catalog enumeration cannot determine a complete result set.", "Return each continuation cursor at most once for a single enumeration."
-        )])) reason = "cursor-loop";
+        if (addFindings([listCursorLoop(list, "MCP server")])) reason = "cursor-loop";
         break;
       }
       seenCursors.add(page.cursor);
@@ -610,10 +633,10 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     const trailingStop = session.stopped;
     if (reason === null && trailingStop !== null && trailingStop !== "server-exited") sessionStopped(trailingStop);
     if (reason === null && deadline - now() <= 0) reason = "total-time-limit";
-    const catalog = { complete: reason === null, pagesRead, toolsChecked: inspector.toolsChecked, reason };
+    const catalog = { complete: reason === null, pagesRead, checked: inspector.checked, reason };
     return reason === null
-      ? { status: finalCatalogStatus(findings), protocol, discovery, catalog, enumeration: "complete", findings, tools: inspector.tools, cache }
-      : { status: "incomplete", protocol, discovery, catalog, enumeration: "incomplete", findings, tools: null, cache: null };
+      ? { status: finalCatalogStatus(findings), protocol, discovery, catalog, enumeration: "complete", findings, items: inspector.items, cache }
+      : { status: "incomplete", protocol, discovery, catalog, enumeration: "incomplete", findings, items: null, cache: null };
   };
 
   const notTested = (
@@ -621,13 +644,13 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     reason: string | null,
     protocol: McpToolCatalogProtocol,
     discovery: McpDiscoveryReport,
-    findings: CatalogFinding[] = []
-  ): ProtocolResult => ({
-    status, protocol, discovery, catalog: { ...emptyCatalog, reason }, enumeration: "not-tested", findings, tools: null, cache: null
+    findings: Finding[] = []
+  ): ProtocolResult<F> => ({
+    status, protocol, discovery, catalog: { ...emptyCatalog, reason }, enumeration: "not-tested", findings: findings as F[], items: null, cache: null
   });
 
   // answeredDiscovery is false when only silence or an exit suggested a legacy server.
-  const runLegacy = async (discovery: McpDiscoveryReport, restart: boolean, answeredDiscovery: boolean): Promise<ProtocolResult> => {
+  const runLegacy = async (discovery: McpDiscoveryReport, restart: boolean, answeredDiscovery: boolean): Promise<ProtocolResult<F>> => {
     if (restart) start(buildLaunch());
     const outcome = await send(INITIALIZE_ID, legacyInitializeRequest(), restart ? startupMs : requestMs);
     const unknownVersion = { era: "legacy" as const, version: null };
@@ -642,7 +665,7 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     if (result === null) {
       return notTested("incomplete", "initialize-failed", unestablished, discovery, [catalogFinding(
         "plugin.catalog.initialize.invalid", "fail", "The MCP server did not complete the legacy initialize handshake.",
-        "The tool catalog cannot be read from a legacy server that does not initialize.",
+        `The ${list.noun} catalog cannot be read from a legacy server that does not initialize.`,
         "Return protocolVersion, capabilities, and serverInfo from initialize, or implement server/discover."
       )]);
     }
@@ -650,18 +673,18 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     if (!LEGACY_VERSIONS.has(version)) {
       return notTested("unsupported", "protocol-version-unsupported", unknownVersion, discovery, [catalogFinding(
         "plugin.catalog.initialize.version_unsupported", "warn", "The MCP server negotiated a legacy protocol version this inspection does not support.",
-        "The tool catalog was not read because the negotiated version is unknown to this inspection.",
+        `The ${list.noun} catalog was not read because the negotiated version is unknown to this inspection.`,
         "Support MCP 2025-11-25 or MCP 2026-07-28."
       )]);
     }
     const protocol = { era: "legacy" as const, version };
     session.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
     const capabilities = result.capabilities as McpJsonObject;
-    if (!isPlainObject(capabilities.tools)) return notTested("not-applicable", null, protocol, discovery);
-    return enumerate(legacyEra, protocol, discovery);
+    if (!isPlainObject(capabilities[list.capability])) return notTested("not-applicable", null, protocol, discovery);
+    return enumerate(legacyEra(list), protocol, discovery);
   };
 
-  const run = async (): Promise<ProtocolResult> => {
+  const run = async (): Promise<ProtocolResult<F>> => {
     start(firstLaunch);
     const probe = await send(DISCOVER_ID, serializeMcpDiscoverRequest(DISCOVER_ID), startupMs);
     const undetermined = { era: null, version: null };
@@ -674,7 +697,7 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     }
     if (probe.kind !== "message") {
       const reason = probe.reason;
-      return notTested("incomplete", reason, undetermined, stdioDiscovery("failed", "fail", [stopFinding(reason, docker)]));
+      return notTested("incomplete", reason, undetermined, stdioDiscovery("failed", "fail", [stopFinding(reason, docker, list.noun)]));
     }
 
     const outcome = classifyMcpDiscoverMessage(probe.message, DISCOVER_ID);
@@ -707,13 +730,13 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
       case "discovered": {
         const discovery = stdioDiscovery("discovered", "pass", [], outcome.supportedVersions);
         const protocol = { era: "modern" as const, version: MODERN_VERSION };
-        if (!Object.hasOwn(outcome.capabilities, "tools")) return notTested("not-applicable", null, protocol, discovery);
-        return enumerate(modernEra, protocol, discovery);
+        if (!Object.hasOwn(outcome.capabilities, list.capability)) return notTested("not-applicable", null, protocol, discovery);
+        return enumerate(modernEra(list), protocol, discovery);
       }
     }
   };
 
-  let result: ProtocolResult;
+  let result: ProtocolResult<F>;
   let cleanupFailed = false;
   try {
     result = await run();
@@ -727,24 +750,22 @@ export async function captureStdioMcpToolCatalog(server: McpStdioServer, options
     }
   }
 
-  const findings = result.findings;
+  // Findings without a location fit every catalog finding type.
+  const findings = result.findings as Finding[];
   if (cleanupFailed && findings.length < 100) {
     findings.push(catalogFinding(
-      "plugin.catalog.stdio.sandbox_cleanup_failed", "fail", "The Docker runtime container could not be removed after reading the tool list.",
+      "plugin.catalog.stdio.sandbox_cleanup_failed", "fail", `The Docker runtime container could not be removed after reading the ${list.noun} list.`,
       "A leftover runtime container weakens cleanup guarantees and may continue consuming local resources.",
       "Verify the Docker daemon is available, then remove the codex-doctor container."
     ));
   }
-  const complete = result.tools !== null;
-  const status = complete ? finalCatalogStatus(findings) : result.status;
-  const execution = started.some((entry) => entry.session.spawned) ? firstLaunch.evidence : null;
-  return finish(
-    buildMcpToolCatalogReport(result.discovery, status, result.catalog, result.enumeration, findings),
-    result.protocol,
-    execution,
-    result.tools,
-    result.cache
-  );
+  const complete = result.items !== null;
+  const { protocol, ...capture } = result;
+  return {
+    capture: { ...capture, status: complete ? finalCatalogStatus(findings) : result.status },
+    protocol,
+    execution: started.some((entry) => entry.session.spawned) ? firstLaunch.evidence : null
+  };
 }
 
 function finish(

@@ -172,6 +172,22 @@ Doctor tries `server/discover` (`2026-07-28`) first and falls back to the
 container by name.
 See [MCP Tool Catalog](docs/guides/mcp-tool-catalog.md).
 
+### MCP Prompt Catalog and Diff
+
+Record a server's prompt list and catch prompt changes that break clients:
+
+```bash
+codex-plugin-doctor doctor prompts https://mcp.example.com/mcp --allow-network --save-response ./mcp/prompts-baseline.json
+codex-plugin-doctor doctor prompts-diff --before ./mcp/prompts-baseline.json --after ./prompts-current.json --fail-on breaking
+```
+
+`doctor prompts` reads `prompts/list` from an HTTP server, or from a local stdio
+server with `--server <name> --runtime`, without retrieving any prompt.
+`doctor prompts-file` inspects a saved list offline, and `doctor prompts-diff`
+labels a removed prompt, a removed argument, or a newly required argument as
+breaking. Like the tool diff, reports omit names unless `--show-names` is given.
+See [MCP Prompt Catalog and Diff](docs/guides/mcp-prompts.md).
+
 ### Remote MCP Readiness
 
 Remote MCP runtime probing is disabled until you explicitly pass `--runtime --allow-network`. Loopback endpoints also require `--allow-local-network`:

@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "modern": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern"
+      ]
+    },
+    "legacy": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy"
+      ]
+    },
+    "modern-no-prompts": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-no-prompts"
+      ]
+    },
+    "modern-prompts-list-missing": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-prompts-list-missing"
+      ]
+    }
+  }
+}
