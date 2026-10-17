@@ -32,6 +32,23 @@ capability is `not-applicable`. Legacy stdio servers that only support the
 `--save-response <path>` writes a complete enumeration as one `prompts/list`
 response. Nothing is written when enumeration is incomplete (exit `2`).
 
+| Status | Exit | Meaning |
+| --- | --- | --- |
+| `pass` | 0 | Enumeration completed with no findings. |
+| `warn` | 1 | Enumeration completed with warnings, such as duplicate prompt names. |
+| `fail` | 1 | Enumeration completed and prompt definition checks failed. |
+| `unsupported` | 1 | Discovery could not establish the requested protocol version. |
+| `not-applicable` | 1 | The server does not declare the `prompts` capability; no list request was made. |
+| `incomplete` | 2 | Enumeration could not finish; the reason says why. |
+| `blocked` | 2 | Consent or network policy prevented the capture. |
+
+A server without prompts exits `1`, so a CI step that runs `doctor prompts`
+against a server that may not offer prompts should check the status instead
+of the exit code alone. Incomplete reasons are those of `doctor tools`, with
+`prompt-limit` (more than 500 prompts) and `prompts-list-method-unsupported`
+(the capability is declared but `prompts/list` is not implemented) in place of
+their tool counterparts.
+
 The JSON report (`doctor.prompts.json`, scope `prompt-catalog-structure`) states
 coverage as `definitions: "shape-only"` and `promptRetrieval: "not-tested"`.
 Each finding's location gives the page, the one-based prompt index and, where it
@@ -49,6 +66,11 @@ Each prompt needs a non-empty string `name`. `title` and `description` must be
 strings when present. `arguments` must be an array of objects, each with a
 unique non-empty string `name`, an optional boolean `required`, and optional
 string `title` and `description`. Duplicate prompt names are a warning.
+Findings use `plugin.catalog.prompt.*` ids for definitions and
+`plugin.prompts_file.*` ids for the file itself. The inspection is incomplete
+(exit `2`) with reason `prompt-limit` past 500 prompts, `finding-limit` past
+100 findings, or `more-pages-present` when the saved response has a
+`nextCursor`; otherwise `pass` exits `0` and `warn` or `fail` exit `1`.
 
 ## Comparison
 
@@ -80,7 +102,8 @@ finding, or lists two prompts with the same name.
 Reports identify prompts by their one-based position in each file and never
 include prompt names, argument names, descriptions, or other values.
 `--show-names` adds the prompt `name` to each change and, for changed prompts,
-`locations`: the argument behind each reason (`null` for prompt-level fields).
+`locations`: the argument behind each reason (`null` for prompt-level fields),
+at most 100 per prompt; `reasons` always lists every reason.
 Names are shown as escaped JSON strings, in code spans in Markdown. The flag
 discloses the prompt surface, so keep it out of public output.
 

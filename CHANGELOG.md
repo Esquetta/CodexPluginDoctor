@@ -13,6 +13,10 @@ This changelog groups the shipped work into product-level release blocks instead
 - added `doctor prompts-diff`, which compares two saved prompt lists by prompt and argument name; a removed prompt, a removed argument, a new required argument, and an argument that became required are breaking, other argument or prompt fields are unclassified, and the `--json`, `--markdown`, `--fail-on`, and `--show-names` options and exit codes follow `tools-diff`
 - the `doctor.prompts.json`, `doctor.prompts.file.json`, and `doctor.prompts.diff.json` contracts describe the new reports, which identify prompts by position and omit names unless `--show-names` is given
 
+### Changed
+
+- the message for `--sandbox` on an unsupported command now also lists `doctor prompts --server`; tool command output is otherwise unchanged
+
 ## [1.76.0] - 2026-10-16
 
 ### Added

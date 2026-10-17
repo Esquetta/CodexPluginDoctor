@@ -206,6 +206,26 @@ describe("captureStdioMcpToolCatalog", () => {
     expect(snapshot.cache).toBeNull();
   });
 
+  it("keeps the exact tools wording of the stdio list findings shared with prompts", async () => {
+    const unparsable = "The tool catalog cannot be safely enumerated from this response.";
+    expect((await capture("modern-tools-list-missing")).report.findings).toEqual([{
+      id: "plugin.catalog.tools_list.method_unsupported", severity: "warn",
+      message: "The MCP server advertised tools but does not implement tools/list.",
+      impact: "Tool definitions cannot be enumerated from the advertised capability.",
+      suggestedFix: "Implement tools/list for the advertised MCP tools capability."
+    }]);
+    expect((await capture("modern-invalid-page")).report.findings).toEqual([{
+      id: "plugin.catalog.response.invalid", severity: "fail", message: "The MCP server returned an invalid tools/list response.",
+      impact: unparsable, suggestedFix: "Return a matching JSON-RPC complete result with valid tools and cache metadata."
+    }]);
+    expect((await capture("modern-cursor-loop")).report.findings).toEqual([expect.objectContaining({
+      id: "plugin.catalog.cursor.loop", message: "The MCP server repeated a tools/list cursor."
+    })]);
+    expect((await capture("missing-command")).report.discovery.findings).toEqual([expect.objectContaining({
+      id: "plugin.discovery.stdio.startup_failed", impact: "No tool definitions can be read from a server that does not start."
+    })]);
+  });
+
   it("reports a missing command without execution evidence", async () => {
     expect((await capture("missing-command")).report.execution).toBeNull();
   });

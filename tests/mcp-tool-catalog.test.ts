@@ -173,6 +173,35 @@ describe("inspectMcpToolCatalog", () => {
     assertRedacted(result);
   });
 
+  it("keeps the exact tools wording of the list findings shared with prompts", async () => {
+    const findings = async (...pages: BoundedHttpResponse[]) => {
+      const request = vi.fn().mockResolvedValueOnce(discoveryResponse());
+      for (const page of pages) request.mockResolvedValueOnce(page);
+      return (await inspectMcpToolCatalog("https://mcp.example/mcp", { allowNetwork: true, request })).findings;
+    };
+    const unparsable = "The tool catalog cannot be safely enumerated from this response.";
+
+    expect(await findings(response({ jsonrpc: "2.0", id: "tools-list-1", error: { code: -32601, message: "x" } }))).toEqual([{
+      id: "plugin.catalog.tools_list.method_unsupported", severity: "warn",
+      message: "The endpoint advertised tools but does not implement tools/list.",
+      impact: "Tool definitions cannot be enumerated from the advertised capability.",
+      suggestedFix: "Implement tools/list for the advertised modern MCP tools capability."
+    }]);
+    expect(await findings(nextCursorResponse("tools-list-1", [validTool()], undefined, 500))).toEqual([{
+      id: "plugin.catalog.http_status.invalid", severity: "fail", message: "The endpoint returned an unexpected tools/list HTTP status.",
+      impact: unparsable, suggestedFix: "Return HTTP 200 for a tools/list response after authorization succeeds."
+    }]);
+    expect(await findings(response({ jsonrpc: "2.0", id: "wrong-id", result: {} }))).toEqual([{
+      id: "plugin.catalog.response.invalid", severity: "fail", message: "The endpoint returned an invalid tools/list response.",
+      impact: unparsable, suggestedFix: "Return a matching JSON-RPC complete result with valid tools and cache metadata."
+    }]);
+    expect(await findings(toolsResponse("tools-list-1", [], "again"), toolsResponse("tools-list-2", [], "again"))).toEqual([{
+      id: "plugin.catalog.cursor.loop", severity: "warn", message: "The endpoint repeated a tools/list cursor.",
+      impact: "The bounded catalog enumeration cannot determine a complete result set.",
+      suggestedFix: "Return each continuation cursor at most once for a single enumeration."
+    }]);
+  });
+
   it("recognizes a matching tools/list unknown-method response on HTTP 404", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce(discoveryResponse())
