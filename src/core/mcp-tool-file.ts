@@ -156,7 +156,7 @@ function parseToolsResult(value: unknown): { tools: unknown[]; hasNextCursor: bo
   return { tools: value.result.tools, hasNextCursor };
 }
 
-async function readBoundedRegularFile(filePath: string): Promise<
+export async function readBoundedRegularFile(filePath: string): Promise<
   | { kind: "content"; content: Buffer; bytesRead: number }
   | { kind: "unavailable"; bytesRead: number }
   | { kind: "too-large"; bytesRead: number }

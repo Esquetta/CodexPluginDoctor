@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { compareMcpToolFiles } from "../src/core/mcp-tool-diff.js";
 import { inspectMcpToolFile } from "../src/core/mcp-tool-file.js";
-import { saveMcpToolsListResponse } from "../src/core/mcp-tool-response-file.js";
+import { saveMcpListResponse } from "../src/core/mcp-tool-response-file.js";
 
 const temporaryDirectories: string[] = [];
 const cache = { ttlMs: 0, cacheScope: "public" as const };
@@ -31,13 +31,13 @@ afterEach(async () => {
   }));
 });
 
-describe("saveMcpToolsListResponse", () => {
+describe("saveMcpListResponse", () => {
   it("writes a response that tools-file inspects as complete", async () => {
     const directory = await fixtureDirectory();
     const filePath = path.join(directory, "tools.json");
 
-    expect(await saveMcpToolsListResponse(filePath, [tool("first"), tool("second")], { ttlMs: 500, cacheScope: "private" }))
-      .toMatchObject({ kind: "saved", tools: 2 });
+    expect(await saveMcpListResponse(filePath, "tools", [tool("first"), tool("second")], { ttlMs: 500, cacheScope: "private" }))
+      .toMatchObject({ kind: "saved", count: 2 });
 
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
       jsonrpc: "2.0", id: "tools-list",
@@ -46,12 +46,23 @@ describe("saveMcpToolsListResponse", () => {
     expect(await inspectMcpToolFile(filePath)).toMatchObject({ status: "pass", inspection: { complete: true, toolsChecked: 2 } });
   });
 
+  it("writes a prompts/list response under the prompts key", async () => {
+    const filePath = path.join(await fixtureDirectory(), "prompts.json");
+
+    expect(await saveMcpListResponse(filePath, "prompts", [{ name: "review" }], cache)).toMatchObject({ kind: "saved", count: 1 });
+
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
+      jsonrpc: "2.0", id: "prompts-list",
+      result: { resultType: "complete", prompts: [{ name: "review" }], ttlMs: 0, cacheScope: "public" }
+    });
+  });
+
   it("produces baselines that tools-diff compares and classifies", async () => {
     const directory = await fixtureDirectory();
     const before = path.join(directory, "before.json");
     const after = path.join(directory, "after.json");
-    await saveMcpToolsListResponse(before, [tool("kept"), tool("removed")], cache);
-    await saveMcpToolsListResponse(after, [tool("kept")], cache);
+    await saveMcpListResponse(before, "tools", [tool("kept"), tool("removed")], cache);
+    await saveMcpListResponse(after, "tools", [tool("kept")], cache);
 
     const report = await compareMcpToolFiles(before, after);
 
@@ -63,7 +74,7 @@ describe("saveMcpToolsListResponse", () => {
     const filePath = path.join(directory, "tools.json");
     await writeFile(filePath, "stale", "utf8");
 
-    expect(await saveMcpToolsListResponse(filePath, [tool("fresh")], cache)).toMatchObject({ kind: "saved" });
+    expect(await saveMcpListResponse(filePath, "tools", [tool("fresh")], cache)).toMatchObject({ kind: "saved" });
 
     expect(await readFile(filePath, "utf8")).toContain("fresh");
     expect(await readdir(directory)).toEqual(["tools.json"]);
@@ -76,7 +87,7 @@ describe("saveMcpToolsListResponse", () => {
     await writeFile(filePath, "stale", "utf8");
     await chmod(filePath, 0o600);
 
-    expect(await saveMcpToolsListResponse(filePath, [tool("fresh")], cache)).toMatchObject({ kind: "saved" });
+    expect(await saveMcpListResponse(filePath, "tools", [tool("fresh")], cache)).toMatchObject({ kind: "saved" });
 
     expect((await stat(filePath)).mode & 0o777).toBe(0o600);
   });
@@ -86,7 +97,7 @@ describe("saveMcpToolsListResponse", () => {
     const target = path.join(directory, "tools.json");
     await mkdir(target);
 
-    expect(await saveMcpToolsListResponse(target, [], cache)).toEqual({ kind: "not-regular" });
+    expect(await saveMcpListResponse(target, "tools", [], cache)).toEqual({ kind: "not-regular" });
   });
 
   it("refuses a final symbolic link without changing its target", async (context) => {
@@ -100,13 +111,13 @@ describe("saveMcpToolsListResponse", () => {
       context.skip();
     }
 
-    expect(await saveMcpToolsListResponse(link, [tool("fresh")], cache)).toEqual({ kind: "not-regular" });
+    expect(await saveMcpListResponse(link, "tools", [tool("fresh")], cache)).toEqual({ kind: "not-regular" });
     expect(await readFile(target, "utf8")).toBe("original");
   });
 
   it.each(["https://example.test/tools.json", "file:///tmp/tools.json", "\\\\server\\share\\tools.json", "//server/share/tools.json"])(
     "refuses the non-local path %s", async (filePath) => {
-      expect(await saveMcpToolsListResponse(filePath, [], cache)).toEqual({ kind: "path-blocked" });
+      expect(await saveMcpListResponse(filePath, "tools", [], cache)).toEqual({ kind: "path-blocked" });
     }
   );
 
@@ -114,7 +125,7 @@ describe("saveMcpToolsListResponse", () => {
     const directory = await fixtureDirectory();
     const filePath = path.join(directory, "tools.json");
 
-    expect(await saveMcpToolsListResponse(filePath, [tool("large", { type: "object", description: "x".repeat(1024 * 1024) })], cache))
+    expect(await saveMcpListResponse(filePath, "tools", [tool("large", { type: "object", description: "x".repeat(1024 * 1024) })], cache))
       .toEqual({ kind: "too-large" });
     expect(await readdir(directory)).toEqual([]);
   });
@@ -127,7 +138,7 @@ describe("saveMcpToolsListResponse", () => {
     expect(Buffer.byteLength(rawSchema)).toBeLessThan(1024 * 1024);
     const schema = JSON.parse(rawSchema) as Record<string, unknown>;
 
-    await expect(saveMcpToolsListResponse(filePath, [tool("deep", schema)], cache)).resolves.toEqual({ kind: "write-failed" });
+    await expect(saveMcpListResponse(filePath, "tools", [tool("deep", schema)], cache)).resolves.toEqual({ kind: "write-failed" });
 
     expect(await readdir(directory)).toEqual(existing ? ["tools.json"] : []);
     if (existing) expect(await readFile(filePath, "utf8")).toBe("previous baseline");
@@ -136,7 +147,7 @@ describe("saveMcpToolsListResponse", () => {
   it("reports a missing parent directory as a write failure", async () => {
     const directory = await fixtureDirectory();
 
-    expect(await saveMcpToolsListResponse(path.join(directory, "missing", "tools.json"), [], cache)).toEqual({ kind: "write-failed" });
+    expect(await saveMcpListResponse(path.join(directory, "tools", "missing", "tools.json"), [], cache)).toEqual({ kind: "write-failed" });
     expect(await readdir(directory)).toEqual([]);
   });
 });

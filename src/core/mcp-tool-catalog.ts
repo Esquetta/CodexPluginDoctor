@@ -15,7 +15,7 @@ import {
 import { inspectMcpToolDefinition, type CatalogFinding } from "./mcp-tool-definition.js";
 import { RemoteNetworkPolicyError, type RemoteLookup } from "./remote-network-policy.js";
 import type { RemoteMcpRequest } from "./remote-mcp-probe.js";
-import type { RuntimeExecutionEvidence } from "../domain/types.js";
+import type { Finding, RuntimeExecutionEvidence } from "../domain/types.js";
 import { packageVersion } from "../version.js";
 
 const REQUESTED_VERSION = "2026-07-28";
@@ -107,18 +107,22 @@ export function hasMatchingEnvelope(message: McpJsonObject, requestId: string): 
     && Object.hasOwn(message, "result") !== Object.hasOwn(message, "error");
 }
 
-export function parseToolsResult(message: McpJsonObject, requestId: string): { tools: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null {
+export function parseListResult(
+  message: McpJsonObject,
+  requestId: string,
+  resultKey: McpCatalogList<Finding>["capability"]
+): { items: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null {
   if (!hasMatchingEnvelope(message, requestId)) {
     return null;
   }
-  if (!Object.hasOwn(message, "result") || !isPlainObject(message.result) || !validCacheMetadata(message.result) || !Array.isArray(message.result.tools)) {
+  if (!Object.hasOwn(message, "result") || !isPlainObject(message.result) || !validCacheMetadata(message.result) || !Array.isArray(message.result[resultKey])) {
     return null;
   }
   if (Object.hasOwn(message.result, "nextCursor") && typeof message.result.nextCursor !== "string") {
     return null;
   }
   return {
-    tools: message.result.tools,
+    items: message.result[resultKey] as unknown[],
     cursor: message.result.nextCursor as string | undefined,
     cache: { ttlMs: message.result.ttlMs as number, cacheScope: message.result.cacheScope as McpToolCatalogCache["cacheScope"] }
   };
@@ -149,12 +153,42 @@ export function buildMcpToolCatalogReport(
   };
 }
 
-export function finalCatalogStatus(findings: CatalogFinding[]): "pass" | "warn" | "fail" {
+export function finalCatalogStatus(findings: Finding[]): "pass" | "warn" | "fail" {
   return findings.some((item) => item.severity === "fail")
     ? "fail"
     : findings.some((item) => item.severity === "warn")
       ? "warn"
       : "pass";
+}
+
+type CatalogListName = Pick<McpCatalogList<Finding>, "method" | "capability" | "noun">;
+// HTTP findings name the "endpoint"; stdio findings name the "MCP server".
+type CatalogServer = "endpoint" | "MCP server";
+
+export function listMethodUnsupported(list: CatalogListName, server: CatalogServer): CatalogFinding {
+  return catalogFinding(
+    `plugin.catalog.${list.capability}_list.method_unsupported`, "warn", `The ${server} advertised ${list.capability} but does not implement ${list.method}.`,
+    `${list.noun === "tool" ? "Tool" : "Prompt"} definitions cannot be enumerated from the advertised capability.`,
+    `Implement ${list.method} for the advertised ${server === "endpoint" ? "modern " : ""}MCP ${list.capability} capability.`
+  );
+}
+
+export function modernInvalidFix(list: CatalogListName): string {
+  return `Return a matching JSON-RPC complete result with valid ${list.capability} and cache metadata.`;
+}
+
+export function listResponseInvalid(list: CatalogListName, server: CatalogServer, suggestedFix: string): CatalogFinding {
+  return catalogFinding(
+    "plugin.catalog.response.invalid", "fail", `The ${server} returned an invalid ${list.method} response.`,
+    `The ${list.noun} catalog cannot be safely enumerated from this response.`, suggestedFix
+  );
+}
+
+export function listCursorLoop(list: CatalogListName, server: CatalogServer): CatalogFinding {
+  return catalogFinding(
+    "plugin.catalog.cursor.loop", "warn", `The ${server} repeated a ${list.method} cursor.`,
+    "The bounded catalog enumeration cannot determine a complete result set.", "Return each continuation cursor at most once for a single enumeration."
+  );
 }
 
 function isAuthorizationFinding(discovery: McpDiscoveryReport): boolean {
@@ -227,11 +261,67 @@ export function createMcpToolCatalogInspector(): McpToolCatalogInspector {
   };
 }
 
-export function serializeToolsListRequest(id: string, cursor: string | undefined): string {
+/** A catalog page inspector for one kind of definition, shaped like the tool and prompt inspectors. */
+export interface McpCatalogInspector<F extends Finding> {
+  readonly findings: F[];
+  readonly items: unknown[];
+  readonly checked: number;
+  addFindings(items: Finding[]): boolean;
+  inspectPage(items: unknown[], page: number, timeExpired: () => boolean): string | null;
+}
+
+/** What differs between enumerating tool and prompt definitions; discovery, limits, paging, and findings are shared. */
+export interface McpCatalogList<F extends Finding> {
+  method: "tools/list" | "prompts/list";
+  // The capability a server must declare, which is also the result array's key.
+  capability: "tools" | "prompts";
+  noun: "tool" | "prompt";
+  createInspector(): McpCatalogInspector<F>;
+}
+
+export const MCP_TOOLS_LIST: McpCatalogList<CatalogFinding> = {
+  method: "tools/list",
+  capability: "tools",
+  noun: "tool",
+  createInspector() {
+    const inspector = createMcpToolCatalogInspector();
+    return {
+      findings: inspector.findings,
+      items: inspector.tools,
+      get checked() {
+        return inspector.toolsChecked;
+      },
+      addFindings: inspector.addFindings,
+      inspectPage: inspector.inspectPage
+    };
+  }
+};
+
+/** A capture before it is shaped into a tool or prompt catalog report. */
+export interface McpCatalogCapture<F extends Finding> {
+  discovery: McpDiscoveryReport;
+  status: CatalogStatus;
+  catalog: { complete: boolean; pagesRead: number; checked: number; reason: string | null };
+  enumeration: EnumerationCoverage;
+  findings: F[];
+  items: unknown[] | null;
+  cache: McpToolCatalogCache | null;
+}
+
+function toolCatalogSnapshot(capture: McpCatalogCapture<CatalogFinding>): McpToolCatalogSnapshot {
+  const { complete, pagesRead, checked, reason } = capture.catalog;
+  return {
+    report: buildMcpToolCatalogReport(capture.discovery, capture.status, { complete, pagesRead, toolsChecked: checked, reason }, capture.enumeration, capture.findings),
+    tools: capture.items,
+    cache: capture.cache
+  };
+}
+
+export function serializeListRequest(method: McpCatalogList<Finding>["method"], id: string, cursor: string | undefined): string {
   return JSON.stringify({
     jsonrpc: "2.0",
     id,
-    method: "tools/list",
+    method,
     params: {
       ...(cursor === undefined ? {} : { cursor }),
       _meta: {
@@ -249,6 +339,15 @@ export async function inspectMcpToolCatalog(rawUrl: string, options: McpToolCata
 
 // Tools and cache metadata are returned only for a complete enumeration.
 export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpToolCatalogSnapshot> {
+  return toolCatalogSnapshot(await captureMcpCatalog(rawUrl, MCP_TOOLS_LIST, options));
+}
+
+// Definitions and cache metadata are returned only for a complete enumeration.
+export async function captureMcpCatalog<F extends Finding>(
+  rawUrl: string,
+  list: McpCatalogList<F>,
+  options: McpToolCatalogOptions = {}
+): Promise<McpCatalogCapture<F>> {
   const request = options.request ?? requestBoundedHttp;
   const now = options.now ?? (() => performance.now());
   const deadline = now() + TOTAL_TIMEOUT_MS;
@@ -294,33 +393,34 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
     }
   });
 
-  const partial = (report: McpToolCatalogReport): McpToolCatalogSnapshot => ({ report, tools: null, cache: null });
-  const emptyCatalog = { complete: false, pagesRead: 0, toolsChecked: 0, reason: null };
+  const partial = (status: CatalogStatus, catalog: McpCatalogCapture<F>["catalog"], enumeration: EnumerationCoverage, findings: F[]): McpCatalogCapture<F> =>
+    ({ discovery, status, catalog, enumeration, findings, items: null, cache: null });
+  const emptyCatalog = { complete: false, pagesRead: 0, checked: 0, reason: null };
   if (discovery.status === "blocked") {
     const reason = discovery.findings.some((item) => item.id === "plugin.discovery.credentials.insecure_transport")
       ? "credentials-insecure-transport"
       : "network-blocked";
-    return partial(buildMcpToolCatalogReport(discovery, "blocked", { ...emptyCatalog, reason }, "not-tested", []));
+    return partial("blocked", { ...emptyCatalog, reason }, "not-tested", []);
   }
   if (isAuthorizationFinding(discovery)) {
-    return partial(buildMcpToolCatalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "authorization-required" }, "not-tested", []));
+    return partial("incomplete", { ...emptyCatalog, reason: "authorization-required" }, "not-tested", []);
   }
   if (discovery.status === "unsupported") {
-    return partial(buildMcpToolCatalogReport(discovery, "unsupported", { ...emptyCatalog, reason: "discovery-unsupported" }, "not-tested", []));
+    return partial("unsupported", { ...emptyCatalog, reason: "discovery-unsupported" }, "not-tested", []);
   }
   if (discovery.status !== "discovered") {
-    return partial(buildMcpToolCatalogReport(discovery, "incomplete", { ...emptyCatalog, reason: budgetReason ?? "discovery-failed" }, "not-tested", []));
+    return partial("incomplete", { ...emptyCatalog, reason: budgetReason ?? "discovery-failed" }, "not-tested", []);
   }
 
   const capabilities = discoveryResponse === null ? null : discoverMcpCapabilities(discoveryResponse);
   if (capabilities === null) {
-    return partial(buildMcpToolCatalogReport(discovery, "incomplete", { ...emptyCatalog, reason: "discovery-response-unavailable" }, "not-tested", []));
+    return partial("incomplete", { ...emptyCatalog, reason: "discovery-response-unavailable" }, "not-tested", []);
   }
-  if (!Object.hasOwn(capabilities, "tools")) {
-    return partial(buildMcpToolCatalogReport(discovery, "not-applicable", emptyCatalog, "not-tested", []));
+  if (!Object.hasOwn(capabilities, list.capability)) {
+    return partial("not-applicable", emptyCatalog, "not-tested", []);
   }
 
-  const inspector = createMcpToolCatalogInspector();
+  const inspector = list.createInspector();
   const findings = inspector.findings;
   const seenCursors = new Set<string>();
   let pagesRead = 0;
@@ -329,7 +429,7 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
   let blocked = false;
   let cache: McpToolCatalogCache | null = null;
 
-  const addFindings = (items: CatalogFinding[]): boolean => {
+  const addFindings = (items: Finding[]): boolean => {
     if (inspector.addFindings(items)) return true;
     incompleteReason = "finding-limit";
     return false;
@@ -345,7 +445,7 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
       break;
     }
 
-    const requestId = `tools-list-${pagesRead + 1}`;
+    const requestId = `${list.capability}-list-${pagesRead + 1}`;
     let response: BoundedHttpResponse;
     try {
       response = await requestWithinBudget(rawUrl, {
@@ -353,12 +453,12 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
         lookup: options.lookup,
         bearerToken: options.bearerToken,
         method: "POST",
-        body: serializeToolsListRequest(requestId, cursor),
+        body: serializeListRequest(list.method, requestId, cursor),
         headers: {
           Accept: "application/json, text/event-stream",
           "Content-Type": "application/json",
           "MCP-Protocol-Version": REQUESTED_VERSION,
-          "Mcp-Method": "tools/list"
+          "Mcp-Method": list.method
         },
         stopAfter: (received) => findMcpSseResponse(received, requestId) !== null
       });
@@ -384,25 +484,19 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
     const message = parseMcpResponse(response, requestId);
     if (message !== null && hasMatchingEnvelope(message, requestId) && Object.hasOwn(message, "error")
       && validJsonRpcError(message.error) && message.error.code === -32601 && (response.statusCode === 200 || response.statusCode === 404)) {
-      if (addFindings([catalogFinding(
-        "plugin.catalog.tools_list.method_unsupported", "warn", "The endpoint advertised tools but does not implement tools/list.",
-        "Tool definitions cannot be enumerated from the advertised capability.", "Implement tools/list for the advertised modern MCP tools capability."
-      )])) incompleteReason = "tools-list-method-unsupported";
+      if (addFindings([listMethodUnsupported(list, "endpoint")])) incompleteReason = `${list.capability}-list-method-unsupported`;
       break;
     }
     if (response.statusCode !== 200) {
       if (addFindings([catalogFinding(
-        "plugin.catalog.http_status.invalid", "fail", "The endpoint returned an unexpected tools/list HTTP status.",
-        "The tool catalog cannot be safely enumerated from this response.", "Return HTTP 200 for a tools/list response after authorization succeeds."
+        "plugin.catalog.http_status.invalid", "fail", `The endpoint returned an unexpected ${list.method} HTTP status.`,
+        `The ${list.noun} catalog cannot be safely enumerated from this response.`, `Return HTTP 200 for a ${list.method} response after authorization succeeds.`
       )])) incompleteReason = "http-status-invalid";
       break;
     }
-    const page = message === null ? null : parseToolsResult(message, requestId);
+    const page = message === null ? null : parseListResult(message, requestId, list.capability);
     if (page === null) {
-      if (addFindings([catalogFinding(
-        "plugin.catalog.response.invalid", "fail", "The endpoint returned an invalid tools/list response.",
-        "The tool catalog cannot be safely enumerated from this response.", "Return a matching JSON-RPC complete result with valid tools and cache metadata."
-      )])) incompleteReason = "response-invalid";
+      if (addFindings([listResponseInvalid(list, "endpoint", modernInvalidFix(list))])) incompleteReason = "response-invalid";
       break;
     }
 
@@ -411,33 +505,34 @@ export async function captureMcpToolCatalog(rawUrl: string, options: McpToolCata
       ttlMs: Math.min(cache.ttlMs, page.cache.ttlMs),
       cacheScope: cache.cacheScope === "private" ? "private" : page.cache.cacheScope
     };
-    incompleteReason = inspector.inspectPage(page.tools, pagesRead, () => deadline - now() <= 0);
+    incompleteReason = inspector.inspectPage(page.items, pagesRead, () => deadline - now() <= 0);
     if (incompleteReason !== null) break;
     if (page.cursor === undefined) break;
     if (seenCursors.has(page.cursor)) {
-      if (addFindings([catalogFinding(
-        "plugin.catalog.cursor.loop", "warn", "The endpoint repeated a tools/list cursor.",
-        "The bounded catalog enumeration cannot determine a complete result set.", "Return each continuation cursor at most once for a single enumeration."
-      )])) incompleteReason = "cursor-loop";
+      if (addFindings([listCursorLoop(list, "endpoint")])) incompleteReason = "cursor-loop";
       break;
     }
     seenCursors.add(page.cursor);
     cursor = page.cursor;
   }
 
-  const toolsChecked = inspector.toolsChecked;
+  const checked = inspector.checked;
   if (blocked) {
-    return partial(buildMcpToolCatalogReport(discovery, "blocked", { complete: false, pagesRead, toolsChecked, reason: "network-blocked" }, "incomplete", findings));
+    return partial("blocked", { complete: false, pagesRead, checked, reason: "network-blocked" }, "incomplete", findings);
   }
   if (incompleteReason !== null) {
-    return partial(buildMcpToolCatalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: incompleteReason }, "incomplete", findings));
+    return partial("incomplete", { complete: false, pagesRead, checked, reason: incompleteReason }, "incomplete", findings);
   }
   if (deadline - now() <= 0) {
-    return partial(buildMcpToolCatalogReport(discovery, "incomplete", { complete: false, pagesRead, toolsChecked, reason: "total-time-limit" }, "incomplete", findings));
+    return partial("incomplete", { complete: false, pagesRead, checked, reason: "total-time-limit" }, "incomplete", findings);
   }
   return {
-    report: buildMcpToolCatalogReport(discovery, finalCatalogStatus(findings), { complete: true, pagesRead, toolsChecked, reason: null }, "complete", findings),
-    tools: inspector.tools,
+    discovery,
+    status: finalCatalogStatus(findings),
+    catalog: { complete: true, pagesRead, checked, reason: null },
+    enumeration: "complete",
+    findings,
+    items: inspector.items,
     cache
   };
 }

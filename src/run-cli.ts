@@ -87,15 +87,34 @@ import { buildSubmissionArchivePreflight, submissionArchiveExitCode } from "./co
 import { buildSubmissionPreflight } from "./core/submission-preflight.js";
 import { isValidBearerToken } from "./core/bounded-http-client.js";
 import { discoverMcpServer } from "./core/mcp-discovery.js";
-import { captureMcpToolCatalog, inspectMcpToolCatalog, type McpToolCatalogSnapshot } from "./core/mcp-tool-catalog.js";
-import { captureStdioMcpToolCatalog, resolveMcpStdioServer } from "./core/mcp-stdio-tool-catalog.js";
+import {
+  captureMcpToolCatalog,
+  inspectMcpToolCatalog,
+  type CatalogStatus,
+  type McpToolCatalogCache,
+  type McpToolCatalogOptions,
+  type McpToolCatalogSnapshot
+} from "./core/mcp-tool-catalog.js";
+import {
+  captureStdioMcpToolCatalog,
+  resolveMcpStdioServer,
+  type McpStdioServer,
+  type McpStdioToolCatalogOptions
+} from "./core/mcp-stdio-tool-catalog.js";
+import { captureMcpPromptCatalog, captureStdioMcpPromptCatalog, type McpPromptCatalogSnapshot } from "./core/mcp-prompt-catalog.js";
+import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
+import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
-import { saveMcpToolsListResponse } from "./core/mcp-tool-response-file.js";
+import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
 import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
 import { renderMcpToolDiffMarkdown } from "./reporting/render-mcp-tool-diff-markdown.js";
 import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report.js";
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
+import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
+import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
+import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
+import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
 import {
   buildDoctorValidationCorpusReport,
@@ -309,6 +328,10 @@ export interface RunCliOptions {
   inspectMcpToolCatalogImpl?: typeof inspectMcpToolCatalog;
   captureMcpToolCatalogImpl?: typeof captureMcpToolCatalog;
   captureStdioMcpToolCatalogImpl?: typeof captureStdioMcpToolCatalog;
+  compareMcpPromptFilesImpl?: typeof compareMcpPromptFiles;
+  inspectMcpPromptFileImpl?: typeof inspectMcpPromptFile;
+  captureMcpPromptCatalogImpl?: typeof captureMcpPromptCatalog;
+  captureStdioMcpPromptCatalogImpl?: typeof captureStdioMcpPromptCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -355,7 +378,25 @@ const toolsDiffUsage = "Usage: codex-plugin-doctor doctor tools-diff --before <p
 
 const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--json]";
 
+const promptsDiffUsage = "Usage: codex-plugin-doctor doctor prompts-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+
+const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> [--json]";
+
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
+
+const promptsUsage = "Usage: codex-plugin-doctor doctor prompts <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor prompts <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
+
+/** What differs between the doctor tools and doctor prompts catalog commands. */
+interface CatalogCommand {
+  // The command name, which is also the saved response's list key.
+  name: "tools" | "prompts";
+  noun: "Tool" | "Prompt";
+  method: "tools/list" | "prompts/list";
+  usage: string;
+}
+
+const TOOL_CATALOG_COMMAND: CatalogCommand = { name: "tools", noun: "Tool", method: "tools/list", usage: toolsUsage };
+const PROMPT_CATALOG_COMMAND: CatalogCommand = { name: "prompts", noun: "Prompt", method: "prompts/list", usage: promptsUsage };
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json] [--bearer-token-env <NAME>]";
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
@@ -402,43 +443,111 @@ function resolveBearerToken(name: string | undefined, env: NodeJS.ProcessEnv): {
   return { token };
 }
 
-async function finishToolCatalogCommand(
+// Writes the catalog report and, when asked, saves a complete enumeration as one list response.
+async function finishCatalogCommand(
   io: CliIo,
-  snapshot: McpToolCatalogSnapshot,
-  json: boolean,
+  kind: CatalogCommand,
+  status: CatalogStatus,
+  output: string,
+  items: unknown[] | null,
+  cache: McpToolCatalogCache | null,
   savePath: string | undefined
 ): Promise<number> {
-  const report = snapshot.report;
-  io.writeStdout(json
-    ? JSON.stringify(report, null, 2)
-    : renderMcpToolCatalogReport(report));
-  const exitCode = report.status === "pass" ? 0
-    : report.status === "incomplete" || report.status === "blocked" ? 2 : 1;
+  io.writeStdout(output);
+  const exitCode = status === "pass" ? 0
+    : status === "incomplete" || status === "blocked" ? 2 : 1;
   if (savePath === undefined) return exitCode;
-  if (snapshot.tools === null || snapshot.cache === null) {
-    io.writeStderr("Tool catalog response was not saved because enumeration did not complete.");
+  if (items === null || cache === null) {
+    io.writeStderr(`${kind.noun} catalog response was not saved because enumeration did not complete.`);
     return 2;
   }
-  const saved = await saveMcpToolsListResponse(savePath, snapshot.tools, snapshot.cache);
+  const saved = await saveMcpListResponse(savePath, kind.name, items, cache);
   if (saved.kind !== "saved") {
     io.writeStderr({
-      "path-blocked": "Tool catalog response was not saved because the path is not a local file path.",
-      "not-regular": "Tool catalog response was not saved because the existing target is not a regular file.",
-      "too-large": "Tool catalog response was not saved because it exceeds the one MiB tools-file limit.",
-      "write-failed": "Tool catalog response could not be written."
+      "path-blocked": `${kind.noun} catalog response was not saved because the path is not a local file path.`,
+      "not-regular": `${kind.noun} catalog response was not saved because the existing target is not a regular file.`,
+      "too-large": `${kind.noun} catalog response was not saved because it exceeds the one MiB ${kind.name}-file limit.`,
+      "write-failed": `${kind.noun} catalog response could not be written.`
     }[saved.kind]);
     return 2;
   }
-  io.writeStderr(`Saved a complete tools/list response with ${saved.tools} tools (${saved.bytes} bytes).`);
+  io.writeStderr(`Saved a complete ${kind.method} response with ${saved.count} ${kind.name} (${saved.bytes} bytes).`);
   return exitCode;
 }
 
-async function runStdioToolCatalogCommand(
+function finishToolCatalogCommand(io: CliIo, snapshot: McpToolCatalogSnapshot, json: boolean, savePath: string | undefined): Promise<number> {
+  const report = snapshot.report;
+  return finishCatalogCommand(io, TOOL_CATALOG_COMMAND, report.status,
+    json ? JSON.stringify(report, null, 2) : renderMcpToolCatalogReport(report), snapshot.tools, snapshot.cache, savePath);
+}
+
+function finishPromptCatalogCommand(io: CliIo, snapshot: McpPromptCatalogSnapshot, json: boolean, savePath: string | undefined): Promise<number> {
+  const report = snapshot.report;
+  return finishCatalogCommand(io, PROMPT_CATALOG_COMMAND, report.status,
+    json ? JSON.stringify(report, null, 2) : renderMcpPromptCatalogReport(report), snapshot.prompts, snapshot.cache, savePath);
+}
+
+type CatalogRun<Target, Options> = (target: Target, captureOptions: Options, json: boolean, savePath: string | undefined) => Promise<number>;
+
+async function runHttpCatalogCommand(
+  url: string,
+  flags: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  kind: CatalogCommand,
+  run: CatalogRun<string, McpToolCatalogOptions>
+): Promise<number> {
+  const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
+  const switches: string[] = [];
+  let savePath: string | undefined;
+  let tokenEnv: string | undefined;
+  let invalid = false;
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+    if ((flag === "--save-response" && savePath === undefined) || (flag === "--bearer-token-env" && tokenEnv === undefined)) {
+      const value = flags[index + 1];
+      if (!value || value.startsWith("-")) { invalid = true; break; }
+      if (flag === "--save-response") savePath = value;
+      else tokenEnv = value;
+      index += 1;
+    } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
+      switches.push(flag);
+    } else {
+      invalid = true;
+      break;
+    }
+  }
+  if (invalid) {
+    io.writeStderr(`Invalid or duplicate ${kind.noun.toLowerCase()} catalog arguments. ${kind.usage}`);
+    return 2;
+  }
+  if (!switches.includes("--allow-network")) {
+    io.writeStderr(`doctor ${kind.name} requires explicit --allow-network consent.`);
+    return 2;
+  }
+  if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
+    io.writeStderr(`doctor ${kind.name} --save-response requires a local file path.`);
+    return 2;
+  }
+  const bearer = resolveBearerToken(tokenEnv, env);
+  if ("error" in bearer) {
+    io.writeStderr(bearer.error);
+    return 2;
+  }
+  return run(url, {
+    allowNetwork: true,
+    allowLocalNetwork: switches.includes("--allow-local-network"),
+    ...(bearer.token === undefined ? {} : { bearerToken: bearer.token })
+  }, switches.includes("--json"), savePath);
+}
+
+async function runStdioCatalogCommand(
   targetPath: string,
   flags: string[],
   io: CliIo,
-  options: RunCliOptions,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  kind: CatalogCommand,
+  run: CatalogRun<McpStdioServer, McpStdioToolCatalogOptions>
 ): Promise<number> {
   const allowedSwitches = new Set(["--runtime", "--json", "--require-runtime-approval"]);
   const switches: string[] = [];
@@ -470,11 +579,11 @@ async function runStdioToolCatalogCommand(
   const approvalDigest = values.get("--runtime-approval-digest");
   const requireApproval = switches.includes("--require-runtime-approval");
   if (invalid || serverName === undefined || (sandbox !== undefined && sandbox !== "docker")) {
-    io.writeStderr(`Invalid or duplicate tool catalog arguments. ${toolsUsage}`);
+    io.writeStderr(`Invalid or duplicate ${kind.noun.toLowerCase()} catalog arguments. ${kind.usage}`);
     return 2;
   }
   if (!switches.includes("--runtime")) {
-    io.writeStderr("doctor tools --server starts a local MCP server and requires explicit --runtime consent.");
+    io.writeStderr(`doctor ${kind.name} --server starts a local MCP server and requires explicit --runtime consent.`);
     return 2;
   }
   if (approvalDigest !== undefined && !requireApproval) {
@@ -501,14 +610,14 @@ async function runStdioToolCatalogCommand(
     }
   }
   if (isBlockedOfflinePath(targetPath)) {
-    io.writeStderr("doctor tools --server requires a local package path.");
+    io.writeStderr(`doctor ${kind.name} --server requires a local package path.`);
     return 2;
   }
   if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
-    io.writeStderr("doctor tools --save-response requires a local file path.");
+    io.writeStderr(`doctor ${kind.name} --save-response requires a local file path.`);
     return 2;
   }
-  const resolved = await resolveMcpStdioServer(targetPath, serverName);
+  const resolved = await resolveMcpStdioServer(targetPath, serverName, kind.name);
   if (!resolved.ok) {
     io.writeStderr(resolved.message);
     return 2;
@@ -533,11 +642,80 @@ async function runStdioToolCatalogCommand(
       return 1;
     }
   }
-  const snapshot = await (options.captureStdioMcpToolCatalogImpl ?? captureStdioMcpToolCatalog)(
+  return run(
     resolved.server,
-    sandbox !== "docker" ? {} : environment.length > 0 ? { sandbox: "docker", environment } : { sandbox: "docker" }
+    sandbox !== "docker" ? {} : environment.length > 0 ? { sandbox: "docker", environment } : { sandbox: "docker" },
+    switches.includes("--json"),
+    savePath
   );
-  return finishToolCatalogCommand(io, snapshot, switches.includes("--json"), savePath);
+}
+
+// Runs tools-diff or prompts-diff, which share their options and exit codes.
+async function runOfflineDiffCommand<R extends { status: string; comparison: { breaking: number | null; unclassified: number | null } }>(
+  args: string[],
+  io: CliIo,
+  usage: string,
+  compare: (beforePath: string, afterPath: string, showNames: boolean) => Promise<R>,
+  render: (report: R, markdown: boolean) => string
+): Promise<number> {
+  let beforePath: string | undefined;
+  let afterPath: string | undefined;
+  let format: "json" | "markdown" | undefined;
+  let failOn: "any" | "breaking" | undefined;
+  let showNames = false;
+  let invalid = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === "--show-names" && !showNames) {
+      showNames = true;
+    } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
+      format = flag === "--json" ? "json" : "markdown";
+    } else if (flag === "--fail-on" && failOn === undefined) {
+      const value = args[index + 1];
+      if (value !== "any" && value !== "breaking") { invalid = true; break; }
+      failOn = value;
+      index += 1;
+    } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) { invalid = true; break; }
+      if (flag === "--before") beforePath = value;
+      else afterPath = value;
+      index += 1;
+    } else {
+      invalid = true;
+      break;
+    }
+  }
+  if (invalid || !beforePath || !afterPath) {
+    io.writeStderr(`Invalid comparison arguments. ${usage}`);
+    return 2;
+  }
+  const report = await compare(beforePath, afterPath, showNames);
+  io.writeStdout(format === "json" ? JSON.stringify(report, null, 2) : render(report, format === "markdown"));
+  if (report.status !== "pass" && report.status !== "warn") return 2;
+  if (failOn === "breaking") {
+    return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
+  }
+  return report.status === "pass" ? 0 : 1;
+}
+
+// Runs tools-file or prompts-file, which share their options and exit codes.
+async function runOfflineFileCommand<R extends { status: string }>(
+  args: string[],
+  io: CliIo,
+  usage: string,
+  inspect: (filePath: string) => Promise<R>,
+  render: (report: R) => string
+): Promise<number> {
+  const [filePath, ...flags] = args;
+  if (!filePath || filePath.startsWith("-") || flags.some((flag) => flag !== "--json") || flags.length > 1) {
+    io.writeStderr(`Invalid file inspection arguments. ${usage}`);
+    return 2;
+  }
+  const report = await inspect(filePath);
+  io.writeStdout(flags.includes("--json") ? JSON.stringify(report, null, 2) : render(report));
+  return report.status === "pass" ? 0
+    : report.status === "warn" || report.status === "fail" ? 1 : 2;
 }
 
 function parseRuntimeSandbox(
@@ -647,8 +825,11 @@ function printUsage(io: CliIo): void {
   );
   io.writeStderr(discoveryUsage);
   io.writeStderr(toolsUsage);
+  io.writeStderr(promptsUsage);
   io.writeStderr(toolsFileUsage);
   io.writeStderr(toolsDiffUsage);
+  io.writeStderr(promptsFileUsage);
+  io.writeStderr(promptsDiffUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -1961,13 +2142,13 @@ export async function runCli(
       (
         ["runtime-plan", "runtime-policy"].includes(maybePath ?? "") ||
         (maybePath === "release-evidence" && remainingArgs[0] !== "verify") ||
-        (maybePath === "tools" && remainingArgs.includes("--server"))
+        ((maybePath === "tools" || maybePath === "prompts") && remainingArgs.includes("--server"))
       )) ||
     (command === "init-ci" && args.includes("--tools-diff-server"));
 
   if (args.includes("--sandbox") && !runtimeSandboxSupported) {
     io.writeStderr(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, and init-ci --tools-diff-server."
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, and init-ci --tools-diff-server."
     );
     return 2;
   }
@@ -2030,65 +2211,35 @@ export async function runCli(
 --show-names adds tool names and the JSON Pointer of each reason; reports omit both by default, so keep it out of public output such as pull request comments.`);
         return 0;
       }
-      let beforePath: string | undefined;
-      let afterPath: string | undefined;
-      let format: "json" | "markdown" | undefined;
-      let failOn: "any" | "breaking" | undefined;
-      let showNames = false;
-      let invalid = false;
-      for (let index = 0; index < remainingArgs.length; index += 1) {
-        const flag = remainingArgs[index];
-        if (flag === "--show-names" && !showNames) {
-          showNames = true;
-        } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
-          format = flag === "--json" ? "json" : "markdown";
-        } else if (flag === "--fail-on" && failOn === undefined) {
-          const value = remainingArgs[index + 1];
-          if (value !== "any" && value !== "breaking") { invalid = true; break; }
-          failOn = value;
-          index += 1;
-        } else if ((flag === "--before" && beforePath === undefined) || (flag === "--after" && afterPath === undefined)) {
-          const value = remainingArgs[index + 1];
-          if (!value || value.startsWith("-")) { invalid = true; break; }
-          if (flag === "--before") beforePath = value;
-          else afterPath = value;
-          index += 1;
-        } else {
-          invalid = true;
-          break;
-        }
+      return runOfflineDiffCommand(remainingArgs, io, toolsDiffUsage, (beforePath, afterPath, showNames) => {
+        const compare = options.compareMcpToolFilesImpl ?? compareMcpToolFiles;
+        return showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath);
+      }, (report, markdown) => markdown ? renderMcpToolDiffMarkdown(report) : renderMcpToolDiffReport(report));
+    }
+    if (maybePath === "prompts-diff") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${promptsDiffUsage}\nCompares two saved MCP prompts/list responses offline. Changes are classified heuristically as breaking, compatible, or unclassified; prompts are not retrieved and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).
+--show-names adds prompt names and the argument behind each reason; reports omit both by default, so keep it out of public output such as pull request comments.`);
+        return 0;
       }
-      if (invalid || !beforePath || !afterPath) {
-        io.writeStderr(`Invalid comparison arguments. ${toolsDiffUsage}`);
-        return 2;
-      }
-      const compare = options.compareMcpToolFilesImpl ?? compareMcpToolFiles;
-      const report = await (showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath));
-      io.writeStdout(format === "json" ? JSON.stringify(report, null, 2)
-        : format === "markdown" ? renderMcpToolDiffMarkdown(report)
-          : renderMcpToolDiffReport(report));
-      if (report.status !== "pass" && report.status !== "warn") return 2;
-      if (failOn === "breaking") {
-        return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
-      }
-      return report.status === "pass" ? 0 : 1;
+      return runOfflineDiffCommand(remainingArgs, io, promptsDiffUsage, (beforePath, afterPath, showNames) => {
+        const compare = options.compareMcpPromptFilesImpl ?? compareMcpPromptFiles;
+        return showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath);
+      }, (report, markdown) => markdown ? renderMcpPromptDiffMarkdown(report) : renderMcpPromptDiffReport(report));
     }
     if (maybePath === "tools-file") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
         io.writeStdout(`${toolsFileUsage}\nInspects one saved UTF-8 MCP tools/list response. No server connection or tool execution.`);
         return 0;
       }
-      const [filePath, ...flags] = remainingArgs;
-      if (!filePath || filePath.startsWith("-") || flags.some((flag) => flag !== "--json") || flags.length > 1) {
-        io.writeStderr(`Invalid file inspection arguments. ${toolsFileUsage}`);
-        return 2;
+      return runOfflineFileCommand(remainingArgs, io, toolsFileUsage, options.inspectMcpToolFileImpl ?? inspectMcpToolFile, renderMcpToolFileReport);
+    }
+    if (maybePath === "prompts-file") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${promptsFileUsage}\nInspects one saved UTF-8 MCP prompts/list response. No server connection or prompt retrieval.`);
+        return 0;
       }
-      const report = await (options.inspectMcpToolFileImpl ?? inspectMcpToolFile)(filePath);
-      io.writeStdout(flags.includes("--json")
-        ? JSON.stringify(report, null, 2)
-        : renderMcpToolFileReport(report));
-      return report.status === "pass" ? 0
-        : report.status === "warn" || report.status === "fail" ? 1 : 2;
+      return runOfflineFileCommand(remainingArgs, io, promptsFileUsage, options.inspectMcpPromptFileImpl ?? inspectMcpPromptFile, renderMcpPromptFileReport);
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
@@ -2101,54 +2252,32 @@ export async function runCli(
         return 2;
       }
       if (flags.includes("--server")) {
-        return runStdioToolCatalogCommand(url, flags, io, options, terminalContext.env);
+        return runStdioCatalogCommand(url, flags, io, terminalContext.env, TOOL_CATALOG_COMMAND, async (server, captureOptions, json, savePath) =>
+          finishToolCatalogCommand(io, await (options.captureStdioMcpToolCatalogImpl ?? captureStdioMcpToolCatalog)(server, captureOptions), json, savePath));
       }
-      const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
-      const switches: string[] = [];
-      let savePath: string | undefined;
-      let tokenEnv: string | undefined;
-      let invalid = false;
-      for (let index = 0; index < flags.length; index += 1) {
-        const flag = flags[index];
-        if ((flag === "--save-response" && savePath === undefined) || (flag === "--bearer-token-env" && tokenEnv === undefined)) {
-          const value = flags[index + 1];
-          if (!value || value.startsWith("-")) { invalid = true; break; }
-          if (flag === "--save-response") savePath = value;
-          else tokenEnv = value;
-          index += 1;
-        } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
-          switches.push(flag);
-        } else {
-          invalid = true;
-          break;
-        }
+      return runHttpCatalogCommand(url, flags, io, terminalContext.env, TOOL_CATALOG_COMMAND, async (target, catalogOptions, json, savePath) => {
+        const snapshot = savePath === undefined
+          ? { report: await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(target, catalogOptions), tools: null, cache: null }
+          : await (options.captureMcpToolCatalogImpl ?? captureMcpToolCatalog)(target, catalogOptions);
+        return finishToolCatalogCommand(io, snapshot, json, savePath);
+      });
+    }
+    if (maybePath === "prompts") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${promptsUsage}\nPrompt catalog structure only; prompts are not retrieved.\n--server starts the named stdio server from the package MCP configuration after explicit --runtime consent and stops it after reading the prompt list.\n${forwardedEnvironmentHelp}\n--save-response writes a complete enumeration as one prompts/list response for doctor prompts-file and prompts-diff; nothing is written when enumeration is incomplete.\n${bearerTokenHelp}`);
+        return 0;
       }
-      if (invalid) {
-        io.writeStderr(`Invalid or duplicate tool catalog arguments. ${toolsUsage}`);
+      const [target, ...flags] = remainingArgs;
+      if (!target || target.startsWith("-")) {
+        io.writeStderr(promptsUsage);
         return 2;
       }
-      if (!switches.includes("--allow-network")) {
-        io.writeStderr("doctor tools requires explicit --allow-network consent.");
-        return 2;
+      if (flags.includes("--server")) {
+        return runStdioCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (server, captureOptions, json, savePath) =>
+          finishPromptCatalogCommand(io, await (options.captureStdioMcpPromptCatalogImpl ?? captureStdioMcpPromptCatalog)(server, captureOptions), json, savePath));
       }
-      if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
-        io.writeStderr("doctor tools --save-response requires a local file path.");
-        return 2;
-      }
-      const bearer = resolveBearerToken(tokenEnv, terminalContext.env);
-      if ("error" in bearer) {
-        io.writeStderr(bearer.error);
-        return 2;
-      }
-      const catalogOptions = {
-        allowNetwork: true,
-        allowLocalNetwork: switches.includes("--allow-local-network"),
-        ...(bearer.token === undefined ? {} : { bearerToken: bearer.token })
-      };
-      const snapshot = savePath === undefined
-        ? { report: await (options.inspectMcpToolCatalogImpl ?? inspectMcpToolCatalog)(url, catalogOptions), tools: null, cache: null }
-        : await (options.captureMcpToolCatalogImpl ?? captureMcpToolCatalog)(url, catalogOptions);
-      return finishToolCatalogCommand(io, snapshot, switches.includes("--json"), savePath);
+      return runHttpCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
+        finishPromptCatalogCommand(io, await (options.captureMcpPromptCatalogImpl ?? captureMcpPromptCatalog)(url, catalogOptions), json, savePath));
     }
     if (maybePath === "discover") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
