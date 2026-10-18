@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "id": "prompts-list",
+  "result": {
+    "resultType": "complete",
+    "prompts": [
+      {
+        "name": "code_review",
+        "description": "Review code for bugs.",
+        "arguments": [
+          {
+            "name": "diff",
+            "required": true
+          }
+        ]
+      },
+      {
+        "name": "summary",
+        "description": "Summarize the current change."
+      }
+    ],
+    "ttlMs": 0,
+    "cacheScope": "private"
+  }
+}

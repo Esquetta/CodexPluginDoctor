@@ -48,12 +48,19 @@ describe("Action end-to-end workflow", () => {
 
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.capture.permissions).toBeUndefined();
-    expect(capture.with).toMatchObject({ check: "false", runtime: "true", "tools-capture-sandbox": "docker", "tools-capture-defer-findings": "true" });
+    expect(capture.with).toMatchObject({
+      check: "false", runtime: "true", "tools-capture-sandbox": "docker", "tools-capture-defer-findings": "true",
+      "prompts-capture-server": "doctorRuntime", "prompts-capture-sandbox": "docker", "prompts-capture-defer-findings": "true"
+    });
     expect(capture.with?.["tools-diff-comment"]).toBeUndefined();
+    expect(capture.with?.["prompts-diff-comment"]).toBeUndefined();
 
     expect(workflow.jobs.compare.needs).toEqual(["package", "capture"]);
     expect(workflow.jobs.compare.permissions).toEqual({ contents: "read", "pull-requests": "write" });
-    expect(compare.with).toMatchObject({ check: "false", "tools-diff-fail-on": "breaking", "tools-diff-comment": "true" });
+    expect(compare.with).toMatchObject({
+      check: "false", "tools-diff-fail-on": "breaking", "tools-diff-comment": "true",
+      "prompts-diff-before": "tests/fixtures/action-e2e/prompts-baseline.json", "prompts-diff-fail-on": "breaking", "prompts-diff-comment": "true"
+    });
     expect(compare.with?.runtime).toBeUndefined();
   });
 });

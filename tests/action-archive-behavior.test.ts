@@ -22,7 +22,7 @@ type ActionRun = {
   manifest: { target: { check: boolean }; reports: Record<string, { enabled: boolean; path: string }> };
   invocations: string[][];
   reportDirectory: string;
-  readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; status: string }>;
+  readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; promptsDiff: string; status: string }>;
   runSummary: () => Promise<string>;
   runComment: (event: CommentEvent) => Promise<{ stdout: string; gh: string[][]; body: string | null; ghToken: string | null }>;
   cleanup: () => Promise<void>;
@@ -94,7 +94,7 @@ async function runArchiveAction(
   const runDoctorScript = runDoctorStep?.run;
   const summaryStep = action.runs.steps.find((step) => step.name === "Publish Codex Plugin Doctor summary");
   const summaryScript = summaryStep?.run;
-  const commentStep = action.runs.steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
+  const commentStep = action.runs.steps.find((step) => step.name === "Comment Codex Plugin Doctor diffs");
 
   if (!runDoctorScript || !summaryScript || !commentStep?.run) throw new Error("Expected composite Action run-doctor, summary, and comment scripts.");
 
@@ -122,7 +122,7 @@ for (( index = 1; index <= $#; index += 1 )); do
     break
   fi
 done
-if [[ "\${1:-} \${2:-}" == "doctor tools" ]]; then
+if [[ "\${1:-} \${2:-}" == "doctor tools" || "\${1:-} \${2:-}" == "doctor prompts" ]]; then
   for (( index = 1; index <= $#; index += 1 )); do
     if [[ "\${!index}" == "--save-response" ]]; then
       next=$((index + 1))
@@ -130,6 +130,7 @@ if [[ "\${1:-} \${2:-}" == "doctor tools" ]]; then
     fi
   done
   code="\${MOCK_TOOLS_CAPTURE_EXIT:-0}"
+  if [[ "\${2:-}" == "prompts" ]]; then code="\${MOCK_PROMPTS_CAPTURE_EXIT:-0}"; fi
   if [[ "$code" -le 1 ]]; then
     printf '{"jsonrpc":"2.0"}\\n' > "$save"
   fi
@@ -148,6 +149,16 @@ if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
     printf 'Offline MCP Tool Diff\\nBreaking: 1\\n'
   fi
   exit "\${MOCK_TOOLS_DIFF_EXIT:-0}"
+fi
+if [[ "\${1:-} \${2:-}" == "doctor prompts-diff" ]]; then
+  if [[ " $* " == *" --json "* ]]; then
+    printf '{"status":"warn"}\\n'
+  elif [[ " $* " == *" --markdown "* ]]; then
+    printf '## MCP Prompt Definition Diff\\n\\n| Breaking |\\n| 1 |\\n'
+  else
+    printf 'Offline MCP Prompt Diff\\nBreaking: 1\\n'
+  fi
+  exit "\${MOCK_PROMPTS_DIFF_EXIT:-0}"
 fi
 if [[ -n "$output" ]]; then
   mkdir -p "\${output%/*}"
@@ -202,6 +213,7 @@ fi
         submission: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-submission-ran"), "utf8"),
         archive: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-submission-archive-ran"), "utf8"),
         toolsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "utf8"),
+        promptsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-prompts-diff-ran"), "utf8"),
         status: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "utf8")
       }),
       runSummary: async () => {
@@ -916,19 +928,21 @@ describe("GitHub Action tool diff pull request comment", () => {
   it("runs the comment step only when enabled, and gives the token to that step alone", async () => {
     const action = await loadAction();
     const steps = action.runs.steps as Array<{ name?: string; id?: string; if?: string; env?: Record<string, string>; run?: string }>;
-    const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor tool diff");
-    const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor tool diff comment");
+    const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor diffs");
+    const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor diff comments");
     // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
+    const commentRequested = "(inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true')";
     const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
     // Package code may have replaced tools on PATH for later steps, whatever the event.
-    expect(comment?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && !${packageCode} }}`);
-    expect(skip?.if).toBe(`${"${{"} always() && inputs['tools-diff-comment'] == 'true' && ${packageCode} }}`);
+    expect(comment?.if).toBe(`${"${{"} always() && ${commentRequested} && !${packageCode} }}`);
+    expect(skip?.if).toBe(`${"${{"} always() && ${commentRequested} && ${packageCode} }}`);
     expect(skip?.env).toBeUndefined();
-    expect(skip?.run).toContain("::warning::Tool diff comment skipped because this Action invocation ran package code or was allowed to.");
+    expect(skip?.run).toContain("::warning::Diff comments skipped because this Action invocation ran package code or was allowed to.");
     expect(comment?.env?.GH_TOKEN).toBe("${{ inputs['github-token'] }}");
     const others = steps.filter((step) => step !== comment).map((step) => JSON.stringify(step));
     expect(others.some((step) => step.includes("github-token"))).toBe(false);
     expect(action.inputs["tools-diff-comment"].default).toBe("false");
+    expect(action.inputs["prompts-diff-comment"].default).toBe("false");
   });
 
   it.each([
@@ -986,6 +1000,216 @@ describe("GitHub Action tool diff pull request comment", () => {
       const comment = await run.runComment(pullRequest);
       const fences = (comment.body ?? "").split("\n").filter((line) => line.startsWith("\`\`\`"));
       expect(fences.length % 2).toBe(0);
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+function promptsDiffInvocations(run: ActionRun): string[][] {
+  return run.invocations.filter((invocation) => invocation[0] === "doctor" && invocation[1] === "prompts-diff");
+}
+
+describe("GitHub Action prompt diff", () => {
+  const capture = { check: "false", runtime: "true", "prompts-capture-server": "local-server" };
+
+  it("compares saved prompt lists and publishes their reports without a tool diff", async () => {
+    const run = await runArchiveAction({ check: "false", "prompts-diff-before": "before.json", "prompts-diff-after": "after.json", "prompts-diff-fail-on": "breaking" });
+
+    try {
+      const jsonPath = toBashPath(path.join(run.reportDirectory, "mcp-prompts-diff.json"));
+      expect(promptsDiffInvocations(run)[0]).toEqual(["doctor", "prompts-diff", "--before", "before.json", "--after", "after.json", "--fail-on", "breaking", "--json"]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", promptsDiff: "true", status: "0" });
+      expect(run.output["prompts-diff-json-path"]).toBe(jsonPath);
+      expect(run.output["tools-diff-json-path"]).toBe("");
+      expect(run.manifest.reports.promptsDiffJson).toEqual({ enabled: true, path: jsonPath });
+      expect(run.manifest.reports.toolsDiffJson).toEqual({ enabled: false, path: "" });
+      const summary = await run.runSummary();
+      expect(summary).toContain("MCP Prompt Definition Diff");
+      expect(summary).not.toContain("MCP Tool Definition Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("propagates a failing prompt diff exit status", async () => {
+    const run = await runArchiveAction({ check: "false", "prompts-diff-before": "before.json", "prompts-diff-after": "after.json" }, "0", "0", false, { MOCK_PROMPTS_DIFF_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ promptsDiff: "true", status: "1" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("captures a stdio server's prompt list in the Docker sandbox and compares it with the baseline", async () => {
+    const run = await runArchiveAction({ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API_KEY", "prompts-diff-before": "baseline.json" }, "0", "0", false, { API_KEY: "secret-sentinel" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-prompts-current.json"));
+      const packagePath = toBashPath(path.join(run.root, "package"));
+      expect(invocationsOf(run, "prompts")).toEqual([[
+        "doctor", "prompts", packagePath, "--server", "local-server", "--runtime", "--save-response", capturePath, "--sandbox", "docker", "--env", "API_KEY"
+      ]]);
+      expect(invocationsOf(run, "tools")).toEqual([]);
+      expect(promptsDiffInvocations(run)[0]).toEqual(["doctor", "prompts-diff", "--before", "baseline.json", "--after", capturePath, "--fail-on", "any", "--json"]);
+      expect(run.output["prompts-capture-path"]).toBe(capturePath);
+      expect(run.manifest.reports.promptsCapture).toEqual({ enabled: true, path: capturePath });
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("captures and compares tools and prompts from one server independently", async () => {
+    const run = await runArchiveAction({
+      ...capture, "tools-capture-server": "local-server", "tools-diff-before": "tools.json", "prompts-diff-before": "prompts.json"
+    }, "0", "0", false, { MOCK_PROMPTS_CAPTURE_EXIT: "2" });
+
+    try {
+      expect(invocationsOf(run, "tools")).toHaveLength(1);
+      expect(invocationsOf(run, "prompts")).toHaveLength(1);
+      expect(toolsDiffInvocations(run)).toHaveLength(2);
+      // The prompt capture saved nothing, so its comparison is skipped and the step fails.
+      expect(promptsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", promptsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).not.toBe("");
+      expect(run.output["prompts-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("requires network consent before capturing a prompt list over HTTP", async () => {
+    const run = await runArchiveAction({ check: "false", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-diff-before": "baseline.json" });
+
+    try {
+      expect(invocationsOf(run, "prompts")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ promptsDiff: "false", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("forwards only the prompt token variable name to an HTTP capture", async () => {
+    const url = "https://mcp.example.test/mcp";
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "prompts-capture-url": url, "prompts-capture-token-env": "MCP_TOKEN" }, "0", "0", false, { MCP_TOKEN: "secret-sentinel" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-prompts-current.json"));
+      expect(invocationsOf(run, "prompts")).toEqual([["doctor", "prompts", url, "--allow-network", "--save-response", capturePath, "--bearer-token-env", "MCP_TOKEN"]]);
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ ...capture, "prompts-capture-sandbox": "podman" }, "prompts-capture-sandbox must be docker or empty."],
+    [{ ...capture, "prompts-capture-env": "API_KEY" }, "prompts-capture-env requires prompts-capture-sandbox: docker; a native server already inherits the step's environment."],
+    [{ ...capture, "prompts-capture-url": "https://mcp.example.test/mcp" }, "prompts-capture-url and prompts-capture-server cannot be combined."],
+    [{ ...capture, "prompts-capture-defer-findings": "yes" }, "prompts-capture-defer-findings must be true or false."],
+    [{ ...capture, "prompts-capture-token-env": "MCP_TOKEN" }, "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ check: "false", "prompts-capture-sandbox": "docker", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json" }, "prompts-capture-sandbox requires prompts-capture-server."],
+    [{ ...capture, installed: "true" }, "prompts-capture-server reads the package at path and cannot be combined with installed: true."],
+    [{ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API-KEY" }, "prompts-capture-env must list environment variable names."],
+    [{ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API_KEY, API_KEY" }, "prompts-capture-env lists API_KEY more than once."]
+  ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
+  it.each([
+    ["a stdio capture without runtime consent", { check: "false", "prompts-capture-server": "local-server", "prompts-diff-before": "baseline.json" }, {}],
+    ["a token variable without an HTTP capture", { check: "false", "prompts-capture-token-env": "MCP_TOKEN", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json" }, { MCP_TOKEN: "secret-sentinel" }],
+    ["a token variable name that is not a name", { check: "false", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP-TOKEN" }, {}],
+    ["an unset token variable", { check: "false", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP_TOKEN" }, {}]
+  ])("records status 2 without capturing prompts for %s", async (_label, overrides, environment) => {
+    const run = await runArchiveAction(overrides, "0", "0", false, environment);
+
+    try {
+      expect(invocationsOf(run, "prompts")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "2" });
+      expect(run.output["prompts-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("rejects an invalid prompt diff failure mode", async () => {
+    const run = await runArchiveAction({ check: "false", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json", "prompts-diff-fail-on": "warn" });
+
+    try {
+      expect(promptsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ promptsDiff: "false", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+describe("GitHub Action prompt diff pull request comment", () => {
+  const pullRequest = { name: "pull_request", payload: { pull_request: { number: 42 } } };
+  const promptsDiff = { check: "false", "prompts-diff-before": "before.json", "prompts-diff-after": "after.json", "prompts-diff-comment": "true", "github-token": "token-sentinel" };
+
+  it("posts the prompt diff under its own marker", async () => {
+    const run = await runArchiveAction(promptsDiff);
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh).toHaveLength(2);
+      expect(comment.gh[0]).toContain('.[] | select(.user.type == "Bot" and (.body | startswith("<!-- codex-plugin-doctor:prompts-diff -->"))) | .id');
+      expect(comment.body?.startsWith("<!-- codex-plugin-doctor:prompts-diff -->\n## MCP Prompt Definition Diff")).toBe(true);
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor prompt diff comment.");
+      expect(comment.stdout).not.toContain("tool diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("posts the tool and prompt diffs as two comments when both are enabled", async () => {
+    const run = await runArchiveAction({ ...promptsDiff, "tools-diff-before": "tools-before.json", "tools-diff-after": "tools-after.json", "tools-diff-comment": "true" });
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh.filter((call) => call.includes("POST"))).toHaveLength(2);
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor tool diff comment.");
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor prompt diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("treats comment flags without regard to case, as the step condition does", async () => {
+    const run = await runArchiveAction({ ...promptsDiff, "prompts-diff-comment": "True" });
+
+    try {
+      expect((await run.runComment(pullRequest)).stdout).toContain("Posted the Codex Plugin Doctor prompt diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("skips the prompt comment when no prompt diff ran", async () => {
+    const run = await runArchiveAction({ check: "false", "prompts-diff-comment": "true", "prompts-diff-before": "before.json" });
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh).toEqual([]);
+      expect(comment.stdout).toContain("Prompt diff comment skipped because no prompt diff ran.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("names the prompt summary file when truncating", async () => {
+    const run = await runArchiveAction(promptsDiff);
+
+    try {
+      await writeFile(path.join(run.reportDirectory, "mcp-prompts-diff.md"), "x".repeat(70_000), "utf8");
+      const comment = await run.runComment(pullRequest);
+      expect(comment.body?.length).toBeLessThanOrEqual(65_536);
+      expect(comment.body).toContain("Truncated; the full diff is in mcp-prompts-diff.md in the report directory.");
     } finally {
       await run.cleanup();
     }

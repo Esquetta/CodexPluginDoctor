@@ -164,6 +164,7 @@ describe("captureStdioMcpToolCatalog", () => {
     const { report, tools } = await capture("legacy-future-version");
     expect(report).toMatchObject({ status: "unsupported", protocol: { era: "legacy", version: null }, catalog: { reason: "protocol-version-unsupported" } });
     expect(report.findings.map((item) => item.id)).toEqual(["plugin.catalog.initialize.version_unsupported"]);
+    expect(report.findings[0].impact).toBe("The tool catalog was not read because the negotiated version is unknown to this inspection.");
     expect(tools).toBeNull();
   });
 
@@ -280,7 +281,9 @@ describe("captureStdioMcpToolCatalog", () => {
     expect(snapshot.report).toMatchObject({
       status: "blocked",
       execution: null,
-      discovery: { status: "blocked", findings: [expect.objectContaining({ id: "plugin.discovery.sandbox.unsupported" })] },
+      discovery: { status: "blocked", findings: [expect.objectContaining({
+        id: "plugin.discovery.sandbox.unsupported", impact: "The tool catalog was not read because the server cannot be isolated as requested."
+      })] },
       catalog: { reason: "sandbox-unsupported" }
     });
     expect(spawnImpl).not.toHaveBeenCalled();
@@ -302,6 +305,7 @@ describe("captureStdioMcpToolCatalog", () => {
     expect(snapshot.report).toMatchObject({ status, execution: { backend: "docker", network: "none", packageMount: "read_only" }, catalog: { complete: true } });
     expect(removeContainerImpl).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^codex-doctor-/));
     expect(snapshot.report.findings.map((item) => item.id)).toEqual(removed ? [] : ["plugin.catalog.stdio.sandbox_cleanup_failed"]);
+    if (!removed) expect(snapshot.report.findings[0].message).toBe("The Docker runtime container could not be removed after reading the tool list.");
     expect(snapshot.tools).toHaveLength(2);
   });
 

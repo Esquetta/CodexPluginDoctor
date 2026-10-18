@@ -91,11 +91,51 @@ inputs:
     required: false
     default: "false"
   github-token:
-    description: Token for the tool diff comment step, set only in that step's environment. Needs pull-requests write permission. The comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy lets this invocation run package code.
+    description: Token for the tool and prompt diff comment step, set only in that step's environment. Needs pull-requests write permission. The comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy lets this invocation run package code.
     required: false
     default: ${{ github.token }}
   tools-diff-fail-on:
     description: Tool diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes.
+    required: false
+    default: "any"
+  prompts-capture-url:
+    description: Optional HTTP MCP endpoint whose complete prompt list is saved to output-dir with doctor prompts --save-response, like tools-capture-url. Requires allow-network and CLI 1.77.0 or later in version. When prompts-diff-before is set and prompts-diff-after is empty, the capture becomes the comparison's after input.
+    required: false
+    default: ""
+  prompts-capture-server:
+    description: Optional name of a local stdio MCP server from the package at path whose complete prompt list is saved to output-dir with doctor prompts --server --runtime --save-response, like tools-capture-server. Requires runtime and CLI 1.77.0 or later in version; it cannot be combined with prompts-capture-url or installed.
+    required: false
+    default: ""
+  prompts-capture-sandbox:
+    description: Optional sandbox for prompts-capture-server, like tools-capture-sandbox.
+    required: false
+    default: ""
+  prompts-capture-env:
+    description: Optional names of host environment variables that prompts-capture-sandbox docker passes into the container by name, like tools-capture-env.
+    required: false
+    default: ""
+  prompts-capture-defer-findings:
+    description: When "true", catalog warnings and failures found during a prompt capture that saved its list do not fail this step, like tools-capture-defer-findings.
+    required: false
+    default: "false"
+  prompts-capture-token-env:
+    description: Optional name of an environment variable that holds a bearer token for prompts-capture-url, like tools-capture-token-env.
+    required: false
+    default: ""
+  prompts-diff-before:
+    description: Optional saved MCP prompts/list response used as the baseline for an offline prompt definition diff. Requires prompts-diff-after (or a prompt capture) and CLI 1.77.0 or later in version.
+    required: false
+    default: ""
+  prompts-diff-after:
+    description: Optional saved MCP prompts/list response compared against prompts-diff-before. Requires prompts-diff-before.
+    required: false
+    default: ""
+  prompts-diff-comment:
+    description: Post or update one pull request comment with the prompt diff summary, separate from the tool diff comment and under the same conditions as tools-diff-comment.
+    required: false
+    default: "false"
+  prompts-diff-fail-on:
+    description: Prompt diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes.
     required: false
     default: "any"
   installed:
@@ -250,6 +290,15 @@ outputs:
   tools-diff-summary-path:
     description: Path to the offline MCP tool diff Markdown summary when tools-diff-before and tools-diff-after are configured.
     value: ${{ steps.run-doctor.outputs.tools-diff-summary-path }}
+  prompts-capture-path:
+    description: Path to the saved MCP prompts/list response when prompts-capture-url or prompts-capture-server is configured and the capture completed.
+    value: ${{ steps.run-doctor.outputs.prompts-capture-path }}
+  prompts-diff-json-path:
+    description: Path to the offline MCP prompt diff JSON report when the prompt diff ran.
+    value: ${{ steps.run-doctor.outputs.prompts-diff-json-path }}
+  prompts-diff-summary-path:
+    description: Path to the offline MCP prompt diff Markdown summary when the prompt diff ran.
+    value: ${{ steps.run-doctor.outputs.prompts-diff-summary-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -266,7 +315,7 @@ runs:
         VERSION_INPUT: ${{ inputs.version }}
       run: |
         # A comparison recorded by an earlier invocation in this job must not be published if this one fails.
-        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
         npm install -g "codex-plugin-doctor@${VERSION_INPUT}"
 
     - name: Run Codex Plugin Doctor
@@ -298,6 +347,15 @@ runs:
         TOOLS_DIFF_BEFORE_INPUT: ${{ inputs['tools-diff-before'] }}
         TOOLS_DIFF_AFTER_INPUT: ${{ inputs['tools-diff-after'] }}
         TOOLS_DIFF_FAIL_ON_INPUT: ${{ inputs['tools-diff-fail-on'] }}
+        PROMPTS_CAPTURE_URL_INPUT: ${{ inputs['prompts-capture-url'] }}
+        PROMPTS_CAPTURE_SERVER_INPUT: ${{ inputs['prompts-capture-server'] }}
+        PROMPTS_CAPTURE_SANDBOX_INPUT: ${{ inputs['prompts-capture-sandbox'] }}
+        PROMPTS_CAPTURE_ENV_INPUT: ${{ inputs['prompts-capture-env'] }}
+        PROMPTS_CAPTURE_DEFER_FINDINGS_INPUT: ${{ inputs['prompts-capture-defer-findings'] }}
+        PROMPTS_CAPTURE_TOKEN_ENV_INPUT: ${{ inputs['prompts-capture-token-env'] }}
+        PROMPTS_DIFF_BEFORE_INPUT: ${{ inputs['prompts-diff-before'] }}
+        PROMPTS_DIFF_AFTER_INPUT: ${{ inputs['prompts-diff-after'] }}
+        PROMPTS_DIFF_FAIL_ON_INPUT: ${{ inputs['prompts-diff-fail-on'] }}
         OUTPUT_DIR_INPUT: ${{ inputs['output-dir'] }}
         REVIEW_BUNDLE_DIR_INPUT: ${{ inputs['review-bundle-dir'] }}
         FILTER_INPUT: ${{ inputs.filter }}
@@ -320,14 +378,14 @@ runs:
         set -euo pipefail
 
         # A comparison recorded by an earlier invocation in this job must not be published if this one stops early.
-        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
 
         # Exits before any Doctor command, recording status 2 for the later steps and the status output
         # and clearing state that an earlier invocation in the same job left behind.
         reject_usage() {
           local state_dir="${RUNNER_TEMP:-.}"
           printf "2" > "$state_dir/codex-plugin-doctor-status"
-          for state in submission-ran submission-archive-ran tools-diff-ran check-ran; do
+          for state in submission-ran submission-archive-ran tools-diff-ran prompts-diff-ran check-ran; do
             printf "false" > "$state_dir/codex-plugin-doctor-$state"
           done
           echo "status=2" >> "$GITHUB_OUTPUT"
@@ -335,47 +393,62 @@ runs:
           exit 2
         }
 
-        if [[ "$RUNTIME_INPUT" == "true" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
-          reject_usage "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
-        fi
-
-        # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
-        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
-          reject_usage "tools-capture-url and tools-capture-server cannot be combined."
-        fi
-
-        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" && "$INSTALLED_INPUT" == "true" ]]; then
-          reject_usage "tools-capture-server reads the package at path and cannot be combined with installed: true."
-        fi
-
-        if [[ -n "$TOOLS_CAPTURE_SANDBOX_INPUT" && "$TOOLS_CAPTURE_SANDBOX_INPUT" != "docker" ]]; then
-          reject_usage "tools-capture-sandbox must be docker or empty."
-        fi
-
-        if [[ -n "$TOOLS_CAPTURE_SANDBOX_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
-          reject_usage "tools-capture-sandbox requires tools-capture-server."
-        fi
-
         # Names are split on commas and whitespace; each becomes one --env argument.
-        tools_capture_env_names=()
-        read -r -a tools_capture_env_names <<< "${TOOLS_CAPTURE_ENV_INPUT//[,$'\n'$'\r']/ }"
-        if (( ${#tools_capture_env_names[@]} > 0 )) && [[ "$TOOLS_CAPTURE_SANDBOX_INPUT" != "docker" ]]; then
-          reject_usage "tools-capture-env requires tools-capture-sandbox: docker; a native server already inherits the step's environment."
-        fi
-        tools_capture_env_seen=" "
-        for name in "${tools_capture_env_names[@]}"; do
-          if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-            reject_usage "tools-capture-env must list environment variable names."
-          fi
-          if [[ "$tools_capture_env_seen" == *" $name "* ]]; then
-            reject_usage "tools-capture-env lists $name more than once."
-          fi
-          tools_capture_env_seen+="$name "
-        done
+        capture_env_names() {
+          local names=()
+          read -r -a names <<< "${1//[,$'\n'$'\r']/ }"
+          if (( ${#names[@]} > 0 )); then printf '%s\n' "${names[@]}"; fi
+        }
 
-        if [[ "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" != "true" && "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" != "false" ]]; then
-          reject_usage "tools-capture-defer-findings must be true or false."
-        fi
+        # Validates the capture inputs of one kind, tools or prompts, before any command runs.
+        # Arguments: kind, capture url, server, sandbox, env names, defer findings, token env.
+        validate_capture_inputs() {
+          local kind="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"
+          if [[ "$RUNTIME_INPUT" == "true" && -n "$token_env" ]]; then
+            reject_usage "$kind-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+          fi
+
+          # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
+          if [[ -n "$server" && -n "$url" ]]; then
+            reject_usage "$kind-capture-url and $kind-capture-server cannot be combined."
+          fi
+
+          if [[ -n "$server" && "$INSTALLED_INPUT" == "true" ]]; then
+            reject_usage "$kind-capture-server reads the package at path and cannot be combined with installed: true."
+          fi
+
+          if [[ -n "$sandbox" && "$sandbox" != "docker" ]]; then
+            reject_usage "$kind-capture-sandbox must be docker or empty."
+          fi
+
+          if [[ -n "$sandbox" && -z "$server" ]]; then
+            reject_usage "$kind-capture-sandbox requires $kind-capture-server."
+          fi
+
+          local names=() seen=" " name
+          mapfile -t names < <(capture_env_names "$env_input")
+          if (( ${#names[@]} > 0 )) && [[ "$sandbox" != "docker" ]]; then
+            reject_usage "$kind-capture-env requires $kind-capture-sandbox: docker; a native server already inherits the step's environment."
+          fi
+          for name in "${names[@]}"; do
+            if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+              reject_usage "$kind-capture-env must list environment variable names."
+            fi
+            if [[ "$seen" == *" $name "* ]]; then
+              reject_usage "$kind-capture-env lists $name more than once."
+            fi
+            seen+="$name "
+          done
+
+          if [[ "$defer" != "true" && "$defer" != "false" ]]; then
+            reject_usage "$kind-capture-defer-findings must be true or false."
+          fi
+        }
+
+        validate_capture_inputs tools "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \
+          "$TOOLS_CAPTURE_ENV_INPUT" "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" "$TOOLS_CAPTURE_TOKEN_ENV_INPUT"
+        validate_capture_inputs prompts "$PROMPTS_CAPTURE_URL_INPUT" "$PROMPTS_CAPTURE_SERVER_INPUT" "$PROMPTS_CAPTURE_SANDBOX_INPUT" \
+          "$PROMPTS_CAPTURE_ENV_INPUT" "$PROMPTS_CAPTURE_DEFER_FINDINGS_INPUT" "$PROMPTS_CAPTURE_TOKEN_ENV_INPUT"
 
         # Values that look like options would be read as flags such as --runtime, and the CLI would
         # then run package code without runtime: "true".
@@ -415,15 +488,13 @@ runs:
         submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"
         submission_archive_json_path="$report_dir/codex-plugin-doctor-submission-archive.json"
         submission_archive_summary_path="$report_dir/codex-plugin-doctor-submission-archive.md"
-        tools_capture_path="$report_dir/mcp-tools-current.json"
-        tools_diff_json_path="$report_dir/mcp-tools-diff.json"
-        tools_diff_summary_path="$report_dir/mcp-tools-diff.md"
         review_bundle_path="$report_dir/${REVIEW_BUNDLE_DIR_INPUT}"
         review_bundle_verification_path="$report_dir/review-bundle-verification.json"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         submission_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-ran"
         submission_archive_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-archive-ran"
         tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        prompts_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
         check_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-check-ran"
         status=0
         submission_ran=false
@@ -437,6 +508,10 @@ runs:
         tools_diff_ran=false
         tools_diff_json_output=""
         tools_diff_summary_output=""
+        prompts_capture_output=""
+        prompts_diff_ran=false
+        prompts_diff_json_output=""
+        prompts_diff_summary_output=""
         doctor_version="$(codex-plugin-doctor --version)"
 
         mkdir -p "$report_dir"
@@ -533,7 +608,7 @@ runs:
         elif [[ "$CHECK_INPUT" != "false" ]]; then
           echo "check must be true or false." >&2
           record_status 2
-        elif [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
+        elif [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$PROMPTS_CAPTURE_URL_INPUT" && -z "$PROMPTS_CAPTURE_SERVER_INPUT" && -z "$PROMPTS_DIFF_BEFORE_INPUT" && -z "$PROMPTS_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
           echo "check: false requires another Action mode." >&2
           record_status 2
         fi
@@ -581,119 +656,137 @@ runs:
           run_doctor "MCP Registry readiness" "${registry_args[@]}"
         fi
 
-        tools_diff_after="$TOOLS_DIFF_AFTER_INPUT"
-        capture_feeds_diff=false
-        if [[ ( -n "$TOOLS_CAPTURE_URL_INPUT" || -n "$TOOLS_CAPTURE_SERVER_INPUT" ) && -n "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
-          capture_feeds_diff=true
-        fi
+        # Captures and compares one definition list. Arguments: kind (tools or prompts), noun (tool or
+        # prompt), title (Tool or Prompt), then that kind's capture url, server, sandbox, env names,
+        # defer findings, and token env inputs, and its diff before, after, and fail-on inputs.
+        # Sets <kind>_capture_output, <kind>_diff_ran, <kind>_diff_json_output, and <kind>_diff_summary_output.
+        capture_and_diff() {
+          local kind="$1" noun="$2" title="$3" url="$4" server="$5" sandbox="$6" env_input="$7" defer="$8" token_env="$9"
+          local before="${10}" after="${11}" fail_on="${12}"
+          local capture_path="$report_dir/mcp-$kind-current.json"
+          local diff_json_path="$report_dir/mcp-$kind-diff.json"
+          local diff_summary_path="$report_dir/mcp-$kind-diff.md"
+          local capture_output="" diff_after="$after" capture_feeds_diff=false
+          local capture_args=() env_names=() name code diff_args diff_code diff_markdown
+          if [[ ( -n "$url" || -n "$server" ) && -n "$before" && -z "$after" ]]; then
+            capture_feeds_diff=true
+          fi
 
-        if [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
-          echo "tools-capture-token-env requires tools-capture-url." >&2
-          record_status 2
-        fi
-
-        run_tools_capture() {
-          # Remove an earlier capture so a failed run can never be compared as the live list.
-          rm -f "$tools_capture_path"
-          echo "::group::MCP tool capture"
-          set +e
-          codex-plugin-doctor "$@"
-          local code="$?"
-          set -e
-          echo "::endgroup::"
-          # Exit 0 or 1 means the response was saved; catalog findings reach the status here only
-          # when no comparison here or in a later job re-inspects the saved file.
-          if [[ ( "$code" -eq 0 || "$code" -eq 1 ) && -f "$tools_capture_path" ]]; then
-            tools_capture_output="$tools_capture_path"
-            if [[ "$capture_feeds_diff" != "true" && "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" != "true" ]]; then
-              record_status "$code"
-            fi
-          else
-            echo "Codex Plugin Doctor MCP tool capture did not save a response (status ${code})."
+          if [[ -z "$url" && -n "$token_env" ]]; then
+            echo "$kind-capture-token-env requires $kind-capture-url." >&2
             record_status 2
+          fi
+
+          if [[ -n "$server" ]]; then
+            # Starting a stdio server runs package code, so it needs the same consent as runtime probing.
+            if [[ "$RUNTIME_INPUT" != "true" ]]; then
+              echo "$kind-capture-server requires runtime: true." >&2
+              record_status 2
+            else
+              capture_args=(doctor "$kind" "$PACKAGE_PATH_INPUT" --server "$server" --runtime --save-response "$capture_path")
+              if [[ "$sandbox" == "docker" ]]; then
+                capture_args+=(--sandbox docker)
+                mapfile -t env_names < <(capture_env_names "$env_input")
+                for name in "${env_names[@]}"; do
+                  capture_args+=(--env "$name")
+                done
+              fi
+            fi
+          elif [[ -n "$url" ]]; then
+            if [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then
+              echo "$kind-capture-url requires allow-network: true." >&2
+              record_status 2
+            elif [[ -n "$token_env" && ! "$token_env" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+              echo "$kind-capture-token-env must be an environment variable name." >&2
+              record_status 2
+            elif [[ -n "$token_env" && -z "${!token_env:-}" ]]; then
+              echo "Bearer token environment variable is not set: ${token_env}" >&2
+              record_status 2
+            else
+              capture_args=(doctor "$kind" "$url" --allow-network --save-response "$capture_path")
+              if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
+                capture_args+=(--allow-local-network)
+              fi
+              if [[ -n "$token_env" ]]; then
+                capture_args+=(--bearer-token-env "$token_env")
+              fi
+            fi
+          fi
+
+          if (( ${#capture_args[@]} > 0 )); then
+            # Remove an earlier capture so a failed run can never be compared as the live list.
+            rm -f "$capture_path"
+            echo "::group::MCP $noun capture"
+            set +e
+            codex-plugin-doctor "${capture_args[@]}"
+            code="$?"
+            set -e
+            echo "::endgroup::"
+            # Exit 0 or 1 means the response was saved; catalog findings reach the status here only
+            # when no comparison here or in a later job re-inspects the saved file.
+            if [[ ( "$code" -eq 0 || "$code" -eq 1 ) && -f "$capture_path" ]]; then
+              capture_output="$capture_path"
+              if [[ "$capture_feeds_diff" != "true" && "$defer" != "true" ]]; then
+                record_status "$code"
+              fi
+            else
+              echo "Codex Plugin Doctor MCP $noun capture did not save a response (status ${code})."
+              record_status 2
+            fi
+          fi
+          printf -v "${kind}_capture_output" '%s' "$capture_output"
+
+          if [[ "$capture_feeds_diff" == "true" ]]; then
+            diff_after="$capture_output"
+          fi
+
+          if [[ -z "$before" && -z "$after" ]]; then
+            :
+          elif [[ "$capture_feeds_diff" == "true" && -z "$diff_after" ]]; then
+            echo "MCP $noun diff skipped because no $noun list was captured." >&2
+            record_status 2
+          elif [[ -z "$before" || -z "$diff_after" ]]; then
+            echo "$kind-diff-before and $kind-diff-after must be set together." >&2
+            record_status 2
+          elif [[ "$fail_on" != "any" && "$fail_on" != "breaking" ]]; then
+            echo "$kind-diff-fail-on must be any or breaking." >&2
+            record_status 2
+          else
+            printf -v "${kind}_diff_ran" '%s' true
+            diff_args=(doctor "$kind-diff" --before "$before" --after "$diff_after" --fail-on "$fail_on")
+            echo "::group::MCP $noun diff"
+            set +e
+            codex-plugin-doctor "${diff_args[@]}" --json > "$diff_json_path"
+            diff_code="$?"
+            diff_markdown="$(codex-plugin-doctor "${diff_args[@]}" --markdown 2>/dev/null)"
+            # Older CLI versions pinned through the version input have no --markdown; fall back to text.
+            if [[ "$diff_markdown" != "## MCP $title Definition Diff"* ]]; then
+              diff_markdown="$(printf '## MCP %s Definition Diff\n\n```text\n%s\n```' "$title" "$(codex-plugin-doctor "${diff_args[@]}")")"
+            fi
+            set -e
+            printf '%s\n' "$diff_markdown"
+            {
+              printf '%s\n' "$diff_markdown"
+              echo ""
+              echo "- Exit status: ${diff_code}"
+              echo "- Fail on: ${fail_on}"
+            } > "$diff_summary_path"
+            if [[ "$diff_code" -ne 0 ]]; then
+              echo "Codex Plugin Doctor MCP $noun diff exited with status ${diff_code}."
+            fi
+            echo "::endgroup::"
+            record_status "$diff_code"
+            printf -v "${kind}_diff_json_output" '%s' "$diff_json_path"
+            printf -v "${kind}_diff_summary_output" '%s' "$diff_summary_path"
           fi
         }
 
-        if [[ -n "$TOOLS_CAPTURE_SERVER_INPUT" ]]; then
-          # Starting a stdio server runs package code, so it needs the same consent as runtime probing.
-          if [[ "$RUNTIME_INPUT" != "true" ]]; then
-            echo "tools-capture-server requires runtime: true." >&2
-            record_status 2
-          else
-            tools_capture_args=(doctor tools "$PACKAGE_PATH_INPUT" --server "$TOOLS_CAPTURE_SERVER_INPUT" --runtime --save-response "$tools_capture_path")
-            if [[ "$TOOLS_CAPTURE_SANDBOX_INPUT" == "docker" ]]; then
-              tools_capture_args+=(--sandbox docker)
-              for name in "${tools_capture_env_names[@]}"; do
-                tools_capture_args+=(--env "$name")
-              done
-            fi
-            run_tools_capture "${tools_capture_args[@]}"
-          fi
-        elif [[ -n "$TOOLS_CAPTURE_URL_INPUT" ]]; then
-          if [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then
-            echo "tools-capture-url requires allow-network: true." >&2
-            record_status 2
-          elif [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" && ! "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-            echo "tools-capture-token-env must be an environment variable name." >&2
-            record_status 2
-          elif [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" && -z "${!TOOLS_CAPTURE_TOKEN_ENV_INPUT:-}" ]]; then
-            echo "Bearer token environment variable is not set: ${TOOLS_CAPTURE_TOKEN_ENV_INPUT}" >&2
-            record_status 2
-          else
-            tools_capture_args=(doctor tools "$TOOLS_CAPTURE_URL_INPUT" --allow-network --save-response "$tools_capture_path")
-            if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
-              tools_capture_args+=(--allow-local-network)
-            fi
-            if [[ -n "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" ]]; then
-              tools_capture_args+=(--bearer-token-env "$TOOLS_CAPTURE_TOKEN_ENV_INPUT")
-            fi
-            run_tools_capture "${tools_capture_args[@]}"
-          fi
-        fi
-
-        if [[ "$capture_feeds_diff" == "true" ]]; then
-          tools_diff_after="$tools_capture_output"
-        fi
-
-        if [[ -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" ]]; then
-          :
-        elif [[ "$capture_feeds_diff" == "true" && -z "$tools_diff_after" ]]; then
-          echo "MCP tool diff skipped because no tool list was captured." >&2
-          record_status 2
-        elif [[ -z "$TOOLS_DIFF_BEFORE_INPUT" || -z "$tools_diff_after" ]]; then
-          echo "tools-diff-before and tools-diff-after must be set together." >&2
-          record_status 2
-        elif [[ "$TOOLS_DIFF_FAIL_ON_INPUT" != "any" && "$TOOLS_DIFF_FAIL_ON_INPUT" != "breaking" ]]; then
-          echo "tools-diff-fail-on must be any or breaking." >&2
-          record_status 2
-        else
-          tools_diff_ran=true
-          tools_diff_args=(doctor tools-diff --before "$TOOLS_DIFF_BEFORE_INPUT" --after "$tools_diff_after" --fail-on "$TOOLS_DIFF_FAIL_ON_INPUT")
-          echo "::group::MCP tool diff"
-          set +e
-          codex-plugin-doctor "${tools_diff_args[@]}" --json > "$tools_diff_json_path"
-          tools_diff_code="$?"
-          tools_diff_markdown="$(codex-plugin-doctor "${tools_diff_args[@]}" --markdown 2>/dev/null)"
-          # Older CLI versions pinned through the version input have no --markdown; fall back to text.
-          if [[ "$tools_diff_markdown" != "## MCP Tool Definition Diff"* ]]; then
-            tools_diff_markdown="$(printf '## MCP Tool Definition Diff\n\n```text\n%s\n```' "$(codex-plugin-doctor "${tools_diff_args[@]}")")"
-          fi
-          set -e
-          printf '%s\n' "$tools_diff_markdown"
-          {
-            printf '%s\n' "$tools_diff_markdown"
-            echo ""
-            echo "- Exit status: ${tools_diff_code}"
-            echo "- Fail on: ${TOOLS_DIFF_FAIL_ON_INPUT}"
-          } > "$tools_diff_summary_path"
-          if [[ "$tools_diff_code" -ne 0 ]]; then
-            echo "Codex Plugin Doctor MCP tool diff exited with status ${tools_diff_code}."
-          fi
-          echo "::endgroup::"
-          record_status "$tools_diff_code"
-          tools_diff_json_output="$tools_diff_json_path"
-          tools_diff_summary_output="$tools_diff_summary_path"
-        fi
+        capture_and_diff tools tool Tool "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \
+          "$TOOLS_CAPTURE_ENV_INPUT" "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" \
+          "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" "$TOOLS_DIFF_FAIL_ON_INPUT"
+        capture_and_diff prompts prompt Prompt "$PROMPTS_CAPTURE_URL_INPUT" "$PROMPTS_CAPTURE_SERVER_INPUT" "$PROMPTS_CAPTURE_SANDBOX_INPUT" \
+          "$PROMPTS_CAPTURE_ENV_INPUT" "$PROMPTS_CAPTURE_DEFER_FINDINGS_INPUT" "$PROMPTS_CAPTURE_TOKEN_ENV_INPUT" \
+          "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" "$PROMPTS_DIFF_FAIL_ON_INPUT"
 
         if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then
           echo "submission and submission-archive cannot be selected together." >&2
@@ -779,6 +872,9 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_CAPTURE="$([[ -n "$tools_capture_output" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_CAPTURE_PATH="$tools_capture_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF="$tools_diff_ran"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_CAPTURE="$([[ -n "$prompts_capture_output" ]] && echo true || echo false)"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_CAPTURE_PATH="$prompts_capture_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF="$prompts_diff_ran"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${REVIEW_BUNDLE_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${REVIEW_BUNDLE_VERIFY_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
@@ -795,6 +891,8 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_SUBMISSION_ARCHIVE_SUMMARY_PATH="$submission_archive_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_JSON_PATH="$tools_diff_json_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_SUMMARY_PATH="$tools_diff_summary_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF_JSON_PATH="$prompts_diff_json_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF_SUMMARY_PATH="$prompts_diff_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
@@ -840,6 +938,9 @@ runs:
             toolsCapture: report("toolsCapture", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_CAPTURE", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_CAPTURE_PATH"),
             toolsDiffJson: report("toolsDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_JSON_PATH"),
             toolsDiffSummary: report("toolsDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_TOOLS_DIFF_SUMMARY_PATH"),
+            promptsCapture: report("promptsCapture", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_CAPTURE", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_CAPTURE_PATH"),
+            promptsDiffJson: report("promptsDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF_JSON_PATH"),
+            promptsDiffSummary: report("promptsDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF_SUMMARY_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
           }
@@ -856,6 +957,7 @@ runs:
         printf "%s" "$submission_ran" > "$submission_state_file"
         printf "%s" "$submission_archive_ran" > "$submission_archive_state_file"
         printf "%s" "$tools_diff_ran" > "$tools_diff_state_file"
+        printf "%s" "$prompts_diff_ran" > "$prompts_diff_state_file"
         printf "%s" "$check_ran" > "$check_state_file"
 
         {
@@ -877,6 +979,9 @@ runs:
           echo "tools-capture-path=$tools_capture_output"
           echo "tools-diff-json-path=$tools_diff_json_output"
           echo "tools-diff-summary-path=$tools_diff_summary_output"
+          echo "prompts-capture-path=$prompts_capture_output"
+          echo "prompts-diff-json-path=$prompts_diff_json_output"
+          echo "prompts-diff-summary-path=$prompts_diff_summary_output"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"
@@ -894,15 +999,18 @@ runs:
         submission_summary_path="$report_dir/codex-plugin-doctor-submission.md"
         submission_archive_summary_path="$report_dir/codex-plugin-doctor-submission-archive.md"
         tools_diff_summary_path="$report_dir/mcp-tools-diff.md"
+        prompts_diff_summary_path="$report_dir/mcp-prompts-diff.md"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         submission_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-ran"
         submission_archive_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-archive-ran"
         tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
+        prompts_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
         check_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-check-ran"
         status="unknown"
         submission_ran=false
         submission_archive_ran=false
         tools_diff_ran=false
+        prompts_diff_ran=false
         check_ran=false
 
         if [[ -f "$status_file" ]]; then
@@ -919,6 +1027,10 @@ runs:
 
         if [[ -f "$tools_diff_state_file" ]]; then
           tools_diff_ran="$(cat "$tools_diff_state_file")"
+        fi
+
+        if [[ -f "$prompts_diff_state_file" ]]; then
+          prompts_diff_ran="$(cat "$prompts_diff_state_file")"
         fi
 
         if [[ -f "$check_state_file" ]]; then
@@ -941,7 +1053,11 @@ runs:
           cat "$tools_diff_summary_path" >> "$GITHUB_STEP_SUMMARY"
         fi
 
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ( "$check_ran" != "true" || ! -f "$summary_path" ) && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) && ( "$tools_diff_ran" != "true" || ! -f "$tools_diff_summary_path" ) ]]; then
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && "$prompts_diff_ran" == "true" && -f "$prompts_diff_summary_path" ]]; then
+          cat "$prompts_diff_summary_path" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ( "$check_ran" != "true" || ! -f "$summary_path" ) && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) && ( "$tools_diff_ran" != "true" || ! -f "$tools_diff_summary_path" ) && ( "$prompts_diff_ran" != "true" || ! -f "$prompts_diff_summary_path" ) ]]; then
           {
             echo "## Codex Plugin Doctor"
             echo ""
@@ -953,77 +1069,94 @@ runs:
     # Package code started by this invocation (runtime probing, a stdio capture, or a profile or policy
     # that enables them) can change what later steps run, for example through GITHUB_PATH, on any event
     # whose token can write. The runner evaluates these conditions, so the token never reaches a step then.
-    - name: Skip Codex Plugin Doctor tool diff comment
-      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+    - name: Skip Codex Plugin Doctor diff comments
+      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true') && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
-      run: echo "::warning::Tool diff comment skipped because this Action invocation ran package code or was allowed to. Compare saved tool lists and post the comment from a separate job."
+      run: echo "::warning::Diff comments skipped because this Action invocation ran package code or was allowed to. Compare saved tool or prompt lists and post the comments from a separate job."
 
-    - name: Comment Codex Plugin Doctor tool diff
-      if: ${{ always() && inputs['tools-diff-comment'] == 'true' && !(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+    - name: Comment Codex Plugin Doctor diffs
+      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true') && !(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs['github-token'] }}
         REPORT_DIR_INPUT: ${{ inputs['output-dir'] }}
+        TOOLS_DIFF_COMMENT_INPUT: ${{ inputs['tools-diff-comment'] }}
+        PROMPTS_DIFF_COMMENT_INPUT: ${{ inputs['prompts-diff-comment'] }}
       run: |
         set -euo pipefail
 
-        tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
-        summary_path="$REPORT_DIR_INPUT/mcp-tools-diff.md"
-        body_path="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-comment.md"
-        marker="<!-- codex-plugin-doctor:tools-diff -->"
         # GitHub rejects comment bodies longer than 65,536 characters.
         max_summary_bytes=60000
 
-        if [[ "$(cat "$tools_diff_state_file" 2>/dev/null || echo false)" != "true" || ! -f "$summary_path" ]]; then
-          echo "Tool diff comment skipped because no tool diff ran."
-          exit 0
-        fi
+        # Posts or updates the one marker comment of a diff that ran. Arguments: kind (tools or prompts),
+        # noun (tool or prompt), and title (Tool or Prompt).
+        comment_diff() {
+          local kind="$1" noun="$2" title="$3"
+          local state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-$kind-diff-ran"
+          local summary_path="$REPORT_DIR_INPUT/mcp-$kind-diff.md"
+          local body_path="${RUNNER_TEMP:-.}/codex-plugin-doctor-$kind-diff-comment.md"
+          local marker="<!-- codex-plugin-doctor:$kind-diff -->"
+          local pull_request truncated comments_path existing
 
-        if [[ "${GITHUB_EVENT_NAME:-}" != "pull_request" && "${GITHUB_EVENT_NAME:-}" != "pull_request_target" ]]; then
-          echo "Tool diff comment skipped because the event is not a pull request."
-          exit 0
-        fi
-
-        if [[ "${GITHUB_SERVER_URL:-https://github.com}" != "https://github.com" ]]; then
-          echo "Tool diff comment skipped because it supports GitHub.com only."
-          exit 0
-        fi
-
-        pull_request="$(node -e 'const event = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const number = event.pull_request?.number; process.stdout.write(Number.isInteger(number) && number > 0 ? String(number) : "");' "${GITHUB_EVENT_PATH:-}" 2>/dev/null || true)"
-        if [[ -z "$pull_request" ]]; then
-          echo "Tool diff comment skipped because the event has no pull request number."
-          exit 0
-        fi
-
-        if ! command -v gh >/dev/null 2>&1; then
-          echo "::warning::Codex Plugin Doctor could not post the tool diff comment because the GitHub CLI is not installed."
-          exit 0
-        fi
-
-        {
-          echo "$marker"
-          if [[ "$(wc -c < "$summary_path")" -gt "$max_summary_bytes" ]]; then
-            truncated="$(head -c "$max_summary_bytes" "$summary_path")"
-            printf '%s\n' "$truncated"
-            # The text fallback wraps the diff in a code fence that the cut may leave open.
-            if (( $(printf '%s\n' "$truncated" | grep -c '^```' || true) % 2 == 1 )); then
-              printf '```\n'
-            fi
-            printf '\n_Truncated; the full diff is in mcp-tools-diff.md in the report directory._\n'
-          else
-            cat "$summary_path"
+          if [[ "$(cat "$state_file" 2>/dev/null || echo false)" != "true" || ! -f "$summary_path" ]]; then
+            echo "$title diff comment skipped because no $noun diff ran."
+            return 0
           fi
-        } > "$body_path"
 
-        comments_path="repos/${GITHUB_REPOSITORY}/issues/${pull_request}/comments"
-        # Only bot comments that start with the marker are updated, so people's comments are never edited.
-        existing="$(gh api --paginate "$comments_path" --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\"))) | .id" 2>/dev/null | tail -n 1 || true)"
-        if [[ "$existing" =~ ^[0-9]+$ ]] && gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F "body=@${body_path}" >/dev/null 2>&1; then
-          echo "Updated the Codex Plugin Doctor tool diff comment."
-        elif gh api -X POST "$comments_path" -F "body=@${body_path}" >/dev/null 2>&1; then
-          echo "Posted the Codex Plugin Doctor tool diff comment."
-        else
-          echo "::warning::Codex Plugin Doctor could not post the tool diff comment. Grant pull-requests: write to github-token; pull requests from forks receive a read-only token."
+          if [[ "${GITHUB_EVENT_NAME:-}" != "pull_request" && "${GITHUB_EVENT_NAME:-}" != "pull_request_target" ]]; then
+            echo "$title diff comment skipped because the event is not a pull request."
+            return 0
+          fi
+
+          if [[ "${GITHUB_SERVER_URL:-https://github.com}" != "https://github.com" ]]; then
+            echo "$title diff comment skipped because it supports GitHub.com only."
+            return 0
+          fi
+
+          pull_request="$(node -e 'const event = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const number = event.pull_request?.number; process.stdout.write(Number.isInteger(number) && number > 0 ? String(number) : "");' "${GITHUB_EVENT_PATH:-}" 2>/dev/null || true)"
+          if [[ -z "$pull_request" ]]; then
+            echo "$title diff comment skipped because the event has no pull request number."
+            return 0
+          fi
+
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::warning::Codex Plugin Doctor could not post the $noun diff comment because the GitHub CLI is not installed."
+            return 0
+          fi
+
+          {
+            echo "$marker"
+            if [[ "$(wc -c < "$summary_path")" -gt "$max_summary_bytes" ]]; then
+              truncated="$(head -c "$max_summary_bytes" "$summary_path")"
+              printf '%s\n' "$truncated"
+              # The text fallback wraps the diff in a code fence that the cut may leave open.
+              if (( $(printf '%s\n' "$truncated" | grep -c '^```' || true) % 2 == 1 )); then
+                printf '```\n'
+              fi
+              printf '\n_Truncated; the full diff is in mcp-%s-diff.md in the report directory._\n' "$kind"
+            else
+              cat "$summary_path"
+            fi
+          } > "$body_path"
+
+          comments_path="repos/${GITHUB_REPOSITORY}/issues/${pull_request}/comments"
+          # Only bot comments that start with the marker are updated, so people's comments are never edited.
+          existing="$(gh api --paginate "$comments_path" --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\"))) | .id" 2>/dev/null | tail -n 1 || true)"
+          if [[ "$existing" =~ ^[0-9]+$ ]] && gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F "body=@${body_path}" >/dev/null 2>&1; then
+            echo "Updated the Codex Plugin Doctor $noun diff comment."
+          elif gh api -X POST "$comments_path" -F "body=@${body_path}" >/dev/null 2>&1; then
+            echo "Posted the Codex Plugin Doctor $noun diff comment."
+          else
+            echo "::warning::Codex Plugin Doctor could not post the $noun diff comment. Grant pull-requests: write to github-token; pull requests from forks receive a read-only token."
+          fi
+        }
+
+        # Lowercased because the step's if: compares the flags without regard to case.
+        if [[ "${TOOLS_DIFF_COMMENT_INPUT,,}" == "true" ]]; then
+          comment_diff tools tool Tool
+        fi
+        if [[ "${PROMPTS_DIFF_COMMENT_INPUT,,}" == "true" ]]; then
+          comment_diff prompts prompt Prompt
         fi
 
     - name: Upload Codex Plugin Doctor reports

@@ -3302,6 +3302,40 @@ describe("runCli", () => {
     expect(doctor("compare")["output-dir"]).toBe("${{ runner.temp }}/codex-plugin-doctor-reports");
   });
 
+  it("adds the same server's prompt capture and comparison with --prompts-baseline", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-prompts-"));
+    const { io, stdout } = createIo();
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--prompts-baseline", "mcp/prompts/baseline.json", "--sandbox", "docker"], io)).toBe(0);
+    const workflow = parse(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")) as {
+      jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, string> }> }>;
+    };
+    const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
+
+    expect(doctor("capture")).toMatchObject({
+      "tools-capture-server": "my-server",
+      "prompts-capture-server": "my-server",
+      "prompts-capture-sandbox": "docker",
+      "prompts-capture-defer-findings": "true"
+    });
+    expect(doctor("capture")["prompts-diff-comment"]).toBeUndefined();
+    expect(doctor("compare")).toMatchObject({
+      "tools-diff-before": "mcp/tools-baseline.json",
+      "prompts-diff-before": "mcp/prompts/baseline.json",
+      "prompts-diff-after": "${{ runner.temp }}/mcp-tools-capture/mcp-prompts-current.json",
+      "prompts-diff-fail-on": "breaking",
+      "prompts-diff-comment": "true"
+    });
+    expect(doctor("compare").runtime).toBeUndefined();
+    expect((await stat(path.join(targetPath, "mcp", "prompts"))).isDirectory()).toBe(true);
+    expect(stdout.join("")).toContain(`doctor prompts ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-response ${JSON.stringify(path.join(targetPath, "mcp/prompts/baseline.json"))}`);
+  });
+
+  it("leaves prompts out of the tool diff workflow by default", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-no-prompts-"));
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "srv"], createIo().io)).toBe(0);
+    expect(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")).not.toContain("prompts-");
+  });
+
   it("writes the default tool diff baseline path", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-default-"));
     expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "srv"], createIo().io)).toBe(0);
@@ -3313,7 +3347,11 @@ describe("runCli", () => {
     [["--tools-diff-server", `bad${String.fromCharCode(0x85)}name`], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
     [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
-    [["--baseline", "mcp/tools.json"], "--baseline and --sandbox require --tools-diff-server."],
+    [["--baseline", "mcp/tools.json"], "--baseline, --prompts-baseline, and --sandbox require --tools-diff-server."],
+    [["--prompts-baseline", "mcp/prompts.json"], "--baseline, --prompts-baseline, and --sandbox require --tools-diff-server."],
+    [["--tools-diff-server", "srv", "--prompts-baseline", "../p.json"], "--prompts-baseline requires a relative path inside the repository."],
+    [["--tools-diff-server", "srv", "--prompts-baseline"], "--prompts-baseline requires a relative path inside the repository."],
+    [["--tools-diff-server", "srv", "--prompts-baseline", "mcp/./tools-baseline.json"], "--prompts-baseline must differ from --baseline."],
     [["--tools-diff-server", "srv${{ github.actor }}"], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "-srv"], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "srv", "--baseline", "/tmp/b.json"], "--baseline requires a relative path inside the repository."],
