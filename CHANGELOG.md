@@ -15,7 +15,8 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Changed
 
-- the comment steps are now named "Skip Codex Plugin Doctor diff comments" and "Comment Codex Plugin Doctor diffs", and the skip warning mentions both lists
+- the comment steps are now named "Skip Codex Plugin Doctor diff comments" and "Comment Codex Plugin Doctor diffs", and the skip warning mentions both lists; comment flags are read without regard to case, as the step condition reads them
+- the `init-ci` error for options given without `--tools-diff-server` now also names `--prompts-baseline`
 - the `doctor prompts` guide states every status and the file-level outcomes of `prompts-file`, and tests pin more of the shared stdio catalog wording for tools
 
 ## [1.77.0] - 2026-10-17

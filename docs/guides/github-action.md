@@ -417,6 +417,9 @@ The action also exposes these workflow outputs for follow-up steps:
 - `tools-capture-path`
 - `tools-diff-json-path`
 - `tools-diff-summary-path`
+- `prompts-capture-path`
+- `prompts-diff-json-path`
+- `prompts-diff-summary-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 

@@ -17,8 +17,8 @@ codex-plugin-doctor doctor prompts-diff --before ./mcp/prompts-baseline.json --a
 `doctor prompts` works like [`doctor tools`](mcp-tool-catalog.md) and shares its
 options and limits:
 - An HTTP server needs `--allow-network`, and `--allow-local-network` for a
-  loopback or private address. `--bearer-token-env <NAME>` sends a token from
-  an environment variable.
+  loopback address; private and reserved ranges stay blocked.
+  `--bearer-token-env <NAME>` sends a token from an environment variable.
 - A local stdio server from a package's MCP configuration needs `--server <name>`
   and `--runtime`. It can run in the Docker sandbox with `--sandbox docker`
   (plus `--env <NAME>`) and can require runtime approval.
@@ -30,7 +30,9 @@ capability is `not-applicable`. Legacy stdio servers that only support the
 `cacheScope: "private"`.
 
 `--save-response <path>` writes a complete enumeration as one `prompts/list`
-response. Nothing is written when enumeration is incomplete (exit `2`).
+response. When nothing was enumerated completely, including a server without
+the `prompts` capability, nothing is written and the command exits `2`
+whatever the status below.
 
 | Status | Exit | Meaning |
 | --- | --- | --- |
@@ -42,9 +44,9 @@ response. Nothing is written when enumeration is incomplete (exit `2`).
 | `incomplete` | 2 | Enumeration could not finish; the reason says why. |
 | `blocked` | 2 | Consent or network policy prevented the capture, or a stdio server cannot run in the requested sandbox. |
 
-A server without prompts exits `1`, so a CI step that runs `doctor prompts`
-against a server that may not offer prompts should check the status instead
-of the exit code alone. Incomplete reasons are those of `doctor tools`, with
+Without `--save-response`, a server without prompts exits `1`, so a CI step that
+runs `doctor prompts` against a server that may not offer prompts should check
+the status instead of the exit code alone. Incomplete reasons are those of `doctor tools`, with
 `prompt-limit` (more than 500 prompts) and `prompts-list-method-unsupported`
 (the capability is declared but `prompts/list` is not implemented) in place of
 their tool counterparts.
@@ -118,7 +120,7 @@ The contracts are `doctor.prompts.json`, `doctor.prompts.file.json`, and
 The GitHub Action has a `prompts-*` counterpart for every `tools-capture-*` and
 `tools-diff-*` input, such as `prompts-capture-server`, `prompts-diff-before`,
 and `prompts-diff-comment`, with the same rules; see
-[GitHub Action Usage](github-action.md#mcp-server-repositories). The prompt diff
+[GitHub Action Usage](github-action.md#prompt-lists). The prompt diff
 gets its own pull request comment, and it needs CLI 1.77.0 or later in
 `version`. `codex-plugin-doctor init-ci . --tools-diff-server <name>
 --prompts-baseline mcp/prompts-baseline.json` writes a workflow that captures

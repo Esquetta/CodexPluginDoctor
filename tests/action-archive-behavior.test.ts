@@ -1110,9 +1110,30 @@ describe("GitHub Action prompt diff", () => {
     [{ ...capture, "prompts-capture-env": "API_KEY" }, "prompts-capture-env requires prompts-capture-sandbox: docker; a native server already inherits the step's environment."],
     [{ ...capture, "prompts-capture-url": "https://mcp.example.test/mcp" }, "prompts-capture-url and prompts-capture-server cannot be combined."],
     [{ ...capture, "prompts-capture-defer-findings": "yes" }, "prompts-capture-defer-findings must be true or false."],
-    [{ ...capture, "prompts-capture-token-env": "MCP_TOKEN" }, "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."]
+    [{ ...capture, "prompts-capture-token-env": "MCP_TOKEN" }, "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ check: "false", "prompts-capture-sandbox": "docker", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json" }, "prompts-capture-sandbox requires prompts-capture-server."],
+    [{ ...capture, installed: "true" }, "prompts-capture-server reads the package at path and cannot be combined with installed: true."],
+    [{ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API-KEY" }, "prompts-capture-env must list environment variable names."],
+    [{ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API_KEY, API_KEY" }, "prompts-capture-env lists API_KEY more than once."]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
+  it.each([
+    ["a stdio capture without runtime consent", { check: "false", "prompts-capture-server": "local-server", "prompts-diff-before": "baseline.json" }, {}],
+    ["a token variable without an HTTP capture", { check: "false", "prompts-capture-token-env": "MCP_TOKEN", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json" }, { MCP_TOKEN: "secret-sentinel" }],
+    ["a token variable name that is not a name", { check: "false", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP-TOKEN" }, {}],
+    ["an unset token variable", { check: "false", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP_TOKEN" }, {}]
+  ])("records status 2 without capturing prompts for %s", async (_label, overrides, environment) => {
+    const run = await runArchiveAction(overrides, "0", "0", false, environment);
+
+    try {
+      expect(invocationsOf(run, "prompts")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "2" });
+      expect(run.output["prompts-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
   });
 
   it("rejects an invalid prompt diff failure mode", async () => {
@@ -1154,6 +1175,16 @@ describe("GitHub Action prompt diff pull request comment", () => {
       expect(comment.gh.filter((call) => call.includes("POST"))).toHaveLength(2);
       expect(comment.stdout).toContain("Posted the Codex Plugin Doctor tool diff comment.");
       expect(comment.stdout).toContain("Posted the Codex Plugin Doctor prompt diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("treats comment flags without regard to case, as the step condition does", async () => {
+    const run = await runArchiveAction({ ...promptsDiff, "prompts-diff-comment": "True" });
+
+    try {
+      expect((await run.runComment(pullRequest)).stdout).toContain("Posted the Codex Plugin Doctor prompt diff comment.");
     } finally {
       await run.cleanup();
     }
