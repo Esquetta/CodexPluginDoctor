@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.78.0] - 2026-10-18
+
+### Added
+
+- the GitHub Action has a `prompts-*` counterpart for every `tools-capture-*` and `tools-diff-*` input (`prompts-capture-url`, `prompts-capture-server`, `prompts-capture-sandbox`, `prompts-capture-env`, `prompts-capture-token-env`, `prompts-capture-defer-findings`, `prompts-diff-before`, `prompts-diff-after`, `prompts-diff-fail-on`, `prompts-diff-comment`), with the same validation and exit statuses; it captures and compares prompt lists with CLI 1.77.0 or later, writes `mcp-prompts-current.json`, `mcp-prompts-diff.json`, and `mcp-prompts-diff.md`, adds the summary to the step summary and the action manifest, and exposes `prompts-capture-path`, `prompts-diff-json-path`, and `prompts-diff-summary-path`
+- `prompts-diff-comment: "true"` posts the prompt diff as its own pull request comment with the marker `<!-- codex-plugin-doctor:prompts-diff -->`, under the same event, token, and package-code conditions as the tool diff comment
+- `init-ci --tools-diff-server <name> --prompts-baseline <path>` adds the same server's prompt capture to the `capture` job and the prompt comparison and comment to the `compare` job
+- the Action end-to-end workflow also captures the example server's prompts in the Docker sandbox and compares them with a committed baseline
+
+### Changed
+
+- the comment steps are now named "Skip Codex Plugin Doctor diff comments" and "Comment Codex Plugin Doctor diffs", and the skip warning mentions both lists
+- the `doctor prompts` guide states every status and the file-level outcomes of `prompts-file`, and tests pin more of the shared stdio catalog wording for tools
+
 ## [1.77.0] - 2026-10-17
 
 ### Added

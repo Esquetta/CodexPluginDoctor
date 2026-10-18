@@ -402,18 +402,18 @@ const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
-/** Reads init-ci --tools-diff-server, --baseline, and --sandbox; options is null when none is given. */
+/** Reads init-ci --tools-diff-server, --baseline, --prompts-baseline, and --sandbox; options is null when none is given. */
 function parseToolsDiffWorkflowOptions(flags: string[]): { options: ToolsDiffWorkflowOptions | null } | { error: string } {
   const values = new Map<string, string | undefined>();
   for (let index = 0; index < flags.length; index += 1) {
-    if (!["--tools-diff-server", "--baseline", "--sandbox"].includes(flags[index])) continue;
+    if (!["--tools-diff-server", "--baseline", "--prompts-baseline", "--sandbox"].includes(flags[index])) continue;
     const value = flags[index + 1];
     const present = value !== undefined && !value.startsWith("--");
     values.set(flags[index], present ? value : undefined);
     if (present) index += 1;
   }
   if (values.size === 0) return { options: null };
-  if (!values.has("--tools-diff-server")) return { error: "--baseline and --sandbox require --tools-diff-server." };
+  if (!values.has("--tools-diff-server")) return { error: "--baseline, --prompts-baseline, and --sandbox require --tools-diff-server." };
   // Control characters would break the generated workflow lines, GitHub evaluates "${{" in any
   // workflow value, and the Action rejects values that start with "-".
   const usable = (value: string | undefined): value is string =>
@@ -421,15 +421,21 @@ function parseToolsDiffWorkflowOptions(flags: string[]): { options: ToolsDiffWor
     && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
   const server = values.get("--tools-diff-server");
   if (!usable(server)) return { error: "--tools-diff-server requires a server name." };
-  // The workflow runs on Linux from the repository root, so the baseline is a relative POSIX path.
+  // The workflow runs on Linux from the repository root, so baselines are relative POSIX paths.
+  const relative = (value: string | undefined): value is string => usable(value) && !path.posix.isAbsolute(value)
+    && !/^[A-Za-z]:/u.test(value) && !path.posix.normalize(value).split("/").includes("..");
   const baseline = (values.has("--baseline") ? values.get("--baseline") : "mcp/tools-baseline.json")?.replaceAll("\\", "/");
-  if (!usable(baseline) || path.posix.isAbsolute(baseline) || /^[A-Za-z]:/u.test(baseline)
-    || path.posix.normalize(baseline).split("/").includes("..")) {
-    return { error: "--baseline requires a relative path inside the repository." };
+  if (!relative(baseline)) return { error: "--baseline requires a relative path inside the repository." };
+  const promptsBaseline = values.has("--prompts-baseline") ? values.get("--prompts-baseline")?.replaceAll("\\", "/") : null;
+  if (promptsBaseline !== null && !relative(promptsBaseline)) {
+    return { error: "--prompts-baseline requires a relative path inside the repository." };
+  }
+  if (promptsBaseline !== null && path.posix.normalize(promptsBaseline) === path.posix.normalize(baseline)) {
+    return { error: "--prompts-baseline must differ from --baseline." };
   }
   const sandbox = values.get("--sandbox");
   if (values.has("--sandbox") && sandbox !== "docker") return { error: "--sandbox must be docker." };
-  return { options: { server, baseline, sandbox: sandbox === "docker" ? "docker" : null } };
+  return { options: { server, baseline, sandbox: sandbox === "docker" ? "docker" : null, promptsBaseline } };
 }
 const MAX_FORWARDED_ENVIRONMENT_VARIABLES = 32;
 const forwardedEnvironmentHelp = "--env forwards the named host environment variable into the Docker sandbox by name; Doctor never prints its value, writes it to a report, or passes it as a command argument. Native servers already inherit Doctor's environment.";
@@ -821,7 +827,7 @@ function parseRemoteNetworkFlags(
 
 function printUsage(io: CliIo): void {
   io.writeStderr(
-            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>] [--fail-on <rule-id>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>] [--upload]|mcp <path> [--runtime [--allow-network [--allow-local-network]]]|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path] [--tools-diff-server <name> [--baseline <path>] [--sandbox docker]]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
+            "Usage: codex-plugin-doctor check <path|--installed> [filter] [--policy codex-publish|mcp-strict|security] [--compat] [--json|--markdown|--badge-json|--badge-markdown] [--output <path>] [--history <path>] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--require-runtime-approval --runtime-approval-digest <digest>] [--verbose-runtime] [--explain] [--no-animations] [--ascii] [--changed-since <ref>] [--fail-on <rule-id>]\n       codex-plugin-doctor audit --installed [filter] [--policy codex-publish|mcp-strict|security] [--security] [--compat] [--json] [--output <path>] [--cache] [--changed]\n       codex-plugin-doctor audit deps <path> [--policy codex-publish|mcp-strict|security] [--recommend] [--json|--sarif] [--output <path>]\n       codex-plugin-doctor mcp <path> [--runtime [--allow-network [--allow-local-network]]] [--json] [--output <path>]\n       codex-plugin-doctor security <path> [--policy security] [--json|--scorecard]\n       codex-plugin-doctor compat <path> [--all|--client <client>] [--json] [--scorecard] [--output <path>] [--install-preview|--apply --backup]\n       codex-plugin-doctor suppress add <path> [--fingerprint <sha256> --reason <text> --expires-at YYYY-MM-DD] [--config <path>] [--json]\n       codex-plugin-doctor suppress list <path> [--config <path>] [--json]\n       codex-plugin-doctor suppress remove <path> [--fingerprint <sha256>|--index <n>] [--config <path>] [--json]\n       codex-plugin-doctor fix <path> (--dry-run|--interactive --backup|--apply --backup)\n       codex-plugin-doctor history <history.jsonl> [--json] [--fail-on-regression]\n       codex-plugin-doctor watch <path> [--runtime] [--json] [--output <path>] [--debounce-ms <ms>] [--max-iterations <n>] [--fail-fast] [--accumulate-json <path>]\n       codex-plugin-doctor doctor [npm <package>|contract|corpus [--manifest <corpus.json>] [--json] [--output <path>]|corpus metrics --manifest <corpus.json> [--json|--markdown] [--output <path>] [--min-precision <0..1>] [--min-recall <0..1>] [--max-false-positive-rate <0..1>]|runtime-plan <path> [--sandbox docker] [--json|--markdown] [--output <path>]|runtime-policy <path> [--sandbox docker] [--json] [--output <path>]|review-bundle <path> --output <dir> --sign-key-env NAME [--json] [--allow-dirty] [--allow-untagged]|review-bundle verify <bundle-dir> --target <path> --sign-key-env NAME [--json] [--output <path>] [--failures-only]|review-bundle diff --before <dir> --after <dir> [--json]|attest <path> [--sign-key-env NAME]|attest verify <attestation.json> --target <path> --sign-key-env NAME|release-evidence <path> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>]|release-evidence verify <evidence.json> --target <path> --sign-key-env NAME|release-evidence asset <path> --tag <tag> --output <evidence.json> --sign-key-env NAME [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker] [--allow-dirty] [--allow-untagged] [--require-runtime-approval --runtime-approval-digest <digest>] [--upload]|mcp <path> [--runtime [--allow-network [--allow-local-network]]]|inspector <path>|diff --before <path> --after <path>|recommend <path>|trust <path>|perf <path> [--max-total-ms <ms>] [--max-stage-ms stage=ms]|export --bundle <path>|snapshot|clients|--json|--update-check]\n       codex-plugin-doctor init [path] [--template skill-only|mcp-stdio|mcp-http|full-runtime]\n       codex-plugin-doctor init-ci [path] [--tools-diff-server <name> [--baseline <path>] [--prompts-baseline <path>] [--sandbox docker]]\n       codex-plugin-doctor init-git-hooks [path] [--force] [--json]\n       codex-plugin-doctor init-git-hooks [path] --remove [--json]\n       codex-plugin-doctor completion bash|zsh|fish\n       codex-plugin-doctor config validate <path> [--json]\n       codex-plugin-doctor release check <path> [--json] [--runtime [--allow-network [--allow-local-network]]] [--sandbox docker]\n       codex-plugin-doctor self-test\n       codex-plugin-doctor list --installed\n       codex-plugin-doctor explain <finding-id>\n       codex-plugin-doctor --version\n\nFirst run:\n       codex-plugin-doctor doctor\n       codex-plugin-doctor self-test\n       codex-plugin-doctor init my-plugin\n       codex-plugin-doctor check . --runtime --explain"
   );
   io.writeStderr(discoveryUsage);
   io.writeStderr(toolsUsage);
@@ -3817,14 +3823,17 @@ export async function runCli(
       return 2;
     }
     if (toolsDiff.options !== null) {
-      const { server, baseline, sandbox } = toolsDiff.options;
+      const { server, baseline, sandbox, promptsBaseline } = toolsDiff.options;
       const toolsResult = await initToolsDiffWorkflow(targetPath, toolsDiff.options);
       io.writeStdout(
         [
           "Initialized Codex Plugin Doctor tool diff workflow",
           `Root: ${toolsResult.rootPath}`,
           `Workflow: ${toolsResult.workflowPath}`,
-          `Capture and commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, baseline))}`
+          `Capture and commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, baseline))}`,
+          ...(promptsBaseline === null ? [] : [
+            `Capture and commit a prompt baseline at ${promptsBaseline}, for example with: codex-plugin-doctor doctor prompts ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, promptsBaseline))}`
+          ])
         ].join("\n")
       );
       return 0;

@@ -186,6 +186,9 @@ server with `--server <name> --runtime`, without retrieving any prompt.
 `doctor prompts-file` inspects a saved list offline, and `doctor prompts-diff`
 labels a removed prompt, a removed argument, or a newly required argument as
 breaking. Like the tool diff, reports omit names unless `--show-names` is given.
+The GitHub Action runs the same capture and comparison through `prompts-*`
+inputs and comments on pull requests, and
+`init-ci --tools-diff-server <name> --prompts-baseline <path>` writes that workflow.
 See [MCP Prompt Catalog and Diff](docs/guides/mcp-prompts.md).
 
 ### Remote MCP Readiness
@@ -606,9 +609,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.77.0
+      - uses: Esquetta/CodexPluginDoctor@v1.78.0
         with:
-          version: "1.77.0"
+          version: "1.78.0"
           path: .
           runtime: "true"
           policy: codex-publish
