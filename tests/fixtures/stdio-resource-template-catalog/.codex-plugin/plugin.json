@@ -1,0 +1,6 @@
+{
+  "name": "stdio-resource-template-catalog",
+  "version": "1.0.0",
+  "description": "Fixture with scripted stdio MCP servers for resource template list capture.",
+  "mcpServers": "./.mcp.json"
+}

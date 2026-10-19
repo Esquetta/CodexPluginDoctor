@@ -102,6 +102,11 @@ import {
   type McpStdioToolCatalogOptions
 } from "./core/mcp-stdio-tool-catalog.js";
 import { captureMcpPromptCatalog, captureStdioMcpPromptCatalog, type McpPromptCatalogSnapshot } from "./core/mcp-prompt-catalog.js";
+import {
+  captureMcpResourceTemplateCatalog,
+  captureStdioMcpResourceTemplateCatalog,
+  type McpResourceTemplateCatalogSnapshot
+} from "./core/mcp-resource-template-catalog.js";
 import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
 import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
@@ -112,6 +117,7 @@ import { renderMcpToolDiffReport } from "./reporting/render-mcp-tool-diff-report
 import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report.js";
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
+import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-resource-template-catalog-report.js";
 import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
 import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
 import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
@@ -332,6 +338,8 @@ export interface RunCliOptions {
   inspectMcpPromptFileImpl?: typeof inspectMcpPromptFile;
   captureMcpPromptCatalogImpl?: typeof captureMcpPromptCatalog;
   captureStdioMcpPromptCatalogImpl?: typeof captureStdioMcpPromptCatalog;
+  captureMcpResourceTemplateCatalogImpl?: typeof captureMcpResourceTemplateCatalog;
+  captureStdioMcpResourceTemplateCatalogImpl?: typeof captureStdioMcpResourceTemplateCatalog;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -384,19 +392,27 @@ const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> 
 
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
+const resourceTemplatesUsage = "Usage: codex-plugin-doctor doctor resource-templates <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor resource-templates <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
+
 const promptsUsage = "Usage: codex-plugin-doctor doctor prompts <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor prompts <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
 /** What differs between the doctor tools and doctor prompts catalog commands. */
 interface CatalogCommand {
-  // The command name, which is also the saved response's list key.
-  name: "tools" | "prompts";
-  noun: "Tool" | "Prompt";
-  method: "tools/list" | "prompts/list";
+  name: "tools" | "prompts" | "resource-templates";
+  noun: "Tool" | "Prompt" | "Resource template";
+  plural: "tools" | "prompts" | "resource templates";
+  method: "tools/list" | "prompts/list" | "resources/templates/list";
+  // The saved response's result array key.
+  resultKey: "tools" | "prompts" | "resourceTemplates";
   usage: string;
 }
 
-const TOOL_CATALOG_COMMAND: CatalogCommand = { name: "tools", noun: "Tool", method: "tools/list", usage: toolsUsage };
-const PROMPT_CATALOG_COMMAND: CatalogCommand = { name: "prompts", noun: "Prompt", method: "prompts/list", usage: promptsUsage };
+const TOOL_CATALOG_COMMAND: CatalogCommand = { name: "tools", noun: "Tool", plural: "tools", method: "tools/list", resultKey: "tools", usage: toolsUsage };
+const PROMPT_CATALOG_COMMAND: CatalogCommand = { name: "prompts", noun: "Prompt", plural: "prompts", method: "prompts/list", resultKey: "prompts", usage: promptsUsage };
+const RESOURCE_TEMPLATE_CATALOG_COMMAND: CatalogCommand = {
+  name: "resource-templates", noun: "Resource template", plural: "resource templates",
+  method: "resources/templates/list", resultKey: "resourceTemplates", usage: resourceTemplatesUsage
+};
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json] [--bearer-token-env <NAME>]";
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
@@ -467,7 +483,7 @@ async function finishCatalogCommand(
     io.writeStderr(`${kind.noun} catalog response was not saved because enumeration did not complete.`);
     return 2;
   }
-  const saved = await saveMcpListResponse(savePath, kind.name, items, cache);
+  const saved = await saveMcpListResponse(savePath, kind.resultKey, items, cache);
   if (saved.kind !== "saved") {
     io.writeStderr({
       "path-blocked": `${kind.noun} catalog response was not saved because the path is not a local file path.`,
@@ -477,7 +493,7 @@ async function finishCatalogCommand(
     }[saved.kind]);
     return 2;
   }
-  io.writeStderr(`Saved a complete ${kind.method} response with ${saved.count} ${kind.name} (${saved.bytes} bytes).`);
+  io.writeStderr(`Saved a complete ${kind.method} response with ${saved.count} ${kind.plural} (${saved.bytes} bytes).`);
   return exitCode;
 }
 
@@ -491,6 +507,17 @@ function finishPromptCatalogCommand(io: CliIo, snapshot: McpPromptCatalogSnapsho
   const report = snapshot.report;
   return finishCatalogCommand(io, PROMPT_CATALOG_COMMAND, report.status,
     json ? JSON.stringify(report, null, 2) : renderMcpPromptCatalogReport(report), snapshot.prompts, snapshot.cache, savePath);
+}
+
+function finishResourceTemplateCatalogCommand(
+  io: CliIo,
+  snapshot: McpResourceTemplateCatalogSnapshot,
+  json: boolean,
+  savePath: string | undefined
+): Promise<number> {
+  const report = snapshot.report;
+  return finishCatalogCommand(io, RESOURCE_TEMPLATE_CATALOG_COMMAND, report.status,
+    json ? JSON.stringify(report, null, 2) : renderMcpResourceTemplateCatalogReport(report), snapshot.templates, snapshot.cache, savePath);
 }
 
 type CatalogRun<Target, Options> = (target: Target, captureOptions: Options, json: boolean, savePath: string | undefined) => Promise<number>;
@@ -832,6 +859,7 @@ function printUsage(io: CliIo): void {
   io.writeStderr(discoveryUsage);
   io.writeStderr(toolsUsage);
   io.writeStderr(promptsUsage);
+  io.writeStderr(resourceTemplatesUsage);
   io.writeStderr(toolsFileUsage);
   io.writeStderr(toolsDiffUsage);
   io.writeStderr(promptsFileUsage);
@@ -2148,13 +2176,13 @@ export async function runCli(
       (
         ["runtime-plan", "runtime-policy"].includes(maybePath ?? "") ||
         (maybePath === "release-evidence" && remainingArgs[0] !== "verify") ||
-        ((maybePath === "tools" || maybePath === "prompts") && remainingArgs.includes("--server"))
+        (["tools", "prompts", "resource-templates"].includes(maybePath ?? "") && remainingArgs.includes("--server"))
       )) ||
     (command === "init-ci" && args.includes("--tools-diff-server"));
 
   if (args.includes("--sandbox") && !runtimeSandboxSupported) {
     io.writeStderr(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, and init-ci --tools-diff-server."
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, doctor resource-templates --server, and init-ci --tools-diff-server."
     );
     return 2;
   }
@@ -2284,6 +2312,25 @@ export async function runCli(
       }
       return runHttpCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
         finishPromptCatalogCommand(io, await (options.captureMcpPromptCatalogImpl ?? captureMcpPromptCatalog)(url, catalogOptions), json, savePath));
+    }
+    if (maybePath === "resource-templates") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${resourceTemplatesUsage}\nResource template catalog structure only; no resource is read.\n--server starts the named stdio server from the package MCP configuration after explicit --runtime consent and stops it after reading the resource template list.\n${forwardedEnvironmentHelp}\n--save-response writes a complete enumeration as one resources/templates/list response for doctor resource-templates-file and resource-templates-diff; nothing is written when enumeration is incomplete.\n${bearerTokenHelp}`);
+        return 0;
+      }
+      const [target, ...flags] = remainingArgs;
+      if (!target || target.startsWith("-")) {
+        io.writeStderr(resourceTemplatesUsage);
+        return 2;
+      }
+      if (flags.includes("--server")) {
+        return runStdioCatalogCommand(target, flags, io, terminalContext.env, RESOURCE_TEMPLATE_CATALOG_COMMAND, async (server, captureOptions, json, savePath) =>
+          finishResourceTemplateCatalogCommand(io,
+            await (options.captureStdioMcpResourceTemplateCatalogImpl ?? captureStdioMcpResourceTemplateCatalog)(server, captureOptions), json, savePath));
+      }
+      return runHttpCatalogCommand(target, flags, io, terminalContext.env, RESOURCE_TEMPLATE_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
+        finishResourceTemplateCatalogCommand(io,
+          await (options.captureMcpResourceTemplateCatalogImpl ?? captureMcpResourceTemplateCatalog)(url, catalogOptions), json, savePath));
     }
     if (maybePath === "discover") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {

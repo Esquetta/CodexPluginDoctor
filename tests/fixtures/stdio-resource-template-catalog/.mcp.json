@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "modern": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern"
+      ]
+    },
+    "legacy": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "legacy"
+      ]
+    },
+    "modern-no-resources": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-no-resources"
+      ]
+    },
+    "modern-templates-list-missing": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-templates-list-missing"
+      ]
+    }
+  }
+}

@@ -3858,7 +3858,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(stderr.join("")).toContain(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, and init-ci --tools-diff-server"
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, doctor resource-templates --server, and init-ci --tools-diff-server"
     );
   });
 
