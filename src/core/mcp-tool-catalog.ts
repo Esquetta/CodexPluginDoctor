@@ -110,7 +110,7 @@ export function hasMatchingEnvelope(message: McpJsonObject, requestId: string): 
 export function parseListResult(
   message: McpJsonObject,
   requestId: string,
-  resultKey: McpCatalogList<Finding>["capability"]
+  resultKey: McpCatalogList<Finding>["resultKey"]
 ): { items: unknown[]; cursor: string | undefined; cache: McpToolCatalogCache } | null {
   if (!hasMatchingEnvelope(message, requestId)) {
     return null;
@@ -161,20 +161,20 @@ export function finalCatalogStatus(findings: Finding[]): "pass" | "warn" | "fail
       : "pass";
 }
 
-type CatalogListName = Pick<McpCatalogList<Finding>, "method" | "capability" | "noun">;
+type CatalogListName = Pick<McpCatalogList<Finding>, "method" | "capability" | "resultKey" | "slug" | "noun">;
 // HTTP findings name the "endpoint"; stdio findings name the "MCP server".
 type CatalogServer = "endpoint" | "MCP server";
 
 export function listMethodUnsupported(list: CatalogListName, server: CatalogServer): CatalogFinding {
   return catalogFinding(
-    `plugin.catalog.${list.capability}_list.method_unsupported`, "warn", `The ${server} advertised ${list.capability} but does not implement ${list.method}.`,
-    `${list.noun === "tool" ? "Tool" : "Prompt"} definitions cannot be enumerated from the advertised capability.`,
+    `plugin.catalog.${list.slug.replaceAll("-", "_")}_list.method_unsupported`, "warn", `The ${server} advertised ${list.capability} but does not implement ${list.method}.`,
+    `${list.noun[0].toUpperCase()}${list.noun.slice(1)} definitions cannot be enumerated from the advertised capability.`,
     `Implement ${list.method} for the advertised ${server === "endpoint" ? "modern " : ""}MCP ${list.capability} capability.`
   );
 }
 
 export function modernInvalidFix(list: CatalogListName): string {
-  return `Return a matching JSON-RPC complete result with valid ${list.capability} and cache metadata.`;
+  return `Return a matching JSON-RPC complete result with valid ${list.resultKey} and cache metadata.`;
 }
 
 export function listResponseInvalid(list: CatalogListName, server: CatalogServer, suggestedFix: string): CatalogFinding {
@@ -270,18 +270,24 @@ export interface McpCatalogInspector<F extends Finding> {
   inspectPage(items: unknown[], page: number, timeExpired: () => boolean): string | null;
 }
 
-/** What differs between enumerating tool and prompt definitions; discovery, limits, paging, and findings are shared. */
+/** What differs between enumerating tool, prompt, and resource template definitions; discovery, limits, paging, and findings are shared. */
 export interface McpCatalogList<F extends Finding> {
-  method: "tools/list" | "prompts/list";
-  // The capability a server must declare, which is also the result array's key.
-  capability: "tools" | "prompts";
-  noun: "tool" | "prompt";
+  method: "tools/list" | "prompts/list" | "resources/templates/list";
+  // The capability a server must declare.
+  capability: "tools" | "prompts" | "resources";
+  // The result array's key.
+  resultKey: "tools" | "prompts" | "resourceTemplates";
+  // Names request ids, reasons, and finding ids, such as "tools-list-1" and "tools-list-method-unsupported".
+  slug: "tools" | "prompts" | "resource-templates";
+  noun: "tool" | "prompt" | "resource template";
   createInspector(): McpCatalogInspector<F>;
 }
 
 export const MCP_TOOLS_LIST: McpCatalogList<CatalogFinding> = {
   method: "tools/list",
   capability: "tools",
+  resultKey: "tools",
+  slug: "tools",
   noun: "tool",
   createInspector() {
     const inspector = createMcpToolCatalogInspector();
@@ -445,7 +451,7 @@ export async function captureMcpCatalog<F extends Finding>(
       break;
     }
 
-    const requestId = `${list.capability}-list-${pagesRead + 1}`;
+    const requestId = `${list.slug}-list-${pagesRead + 1}`;
     let response: BoundedHttpResponse;
     try {
       response = await requestWithinBudget(rawUrl, {
@@ -484,7 +490,7 @@ export async function captureMcpCatalog<F extends Finding>(
     const message = parseMcpResponse(response, requestId);
     if (message !== null && hasMatchingEnvelope(message, requestId) && Object.hasOwn(message, "error")
       && validJsonRpcError(message.error) && message.error.code === -32601 && (response.statusCode === 200 || response.statusCode === 404)) {
-      if (addFindings([listMethodUnsupported(list, "endpoint")])) incompleteReason = `${list.capability}-list-method-unsupported`;
+      if (addFindings([listMethodUnsupported(list, "endpoint")])) incompleteReason = `${list.slug}-list-method-unsupported`;
       break;
     }
     if (response.statusCode !== 200) {
@@ -494,7 +500,7 @@ export async function captureMcpCatalog<F extends Finding>(
       )])) incompleteReason = "http-status-invalid";
       break;
     }
-    const page = message === null ? null : parseListResult(message, requestId, list.capability);
+    const page = message === null ? null : parseListResult(message, requestId, list.resultKey);
     if (page === null) {
       if (addFindings([listResponseInvalid(list, "endpoint", modernInvalidFix(list))])) incompleteReason = "response-invalid";
       break;

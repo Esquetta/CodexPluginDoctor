@@ -16,6 +16,8 @@ import {
 export const MCP_PROMPTS_LIST: McpCatalogList<PromptCatalogFinding> = {
   method: "prompts/list",
   capability: "prompts",
+  resultKey: "prompts",
+  slug: "prompts",
   noun: "prompt",
   createInspector() {
     const inspector = createMcpPromptCatalogInspector();

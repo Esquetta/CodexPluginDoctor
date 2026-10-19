@@ -8,13 +8,14 @@ import { isBlockedOfflinePath, MAX_TOOL_FILE_BYTES } from "./mcp-tool-file.js";
 export type McpListResponseSaveResult =
   | { kind: "saved"; bytes: number; count: number }
   | { kind: "path-blocked" | "not-regular" | "too-large" | "write-failed" };
-type ListKey = "tools" | "prompts";
+type ListKey = "tools" | "prompts" | "resourceTemplates";
+const RESPONSE_IDS: Record<ListKey, string> = { tools: "tools-list", prompts: "prompts-list", resourceTemplates: "resource-templates-list" };
 
-// Serializes an enumerated catalog as one complete tools/list or prompts/list response that the offline file and diff commands accept.
+// Serializes an enumerated catalog as one complete list response, keyed by its result array, that the offline file and diff commands accept.
 export function serializeMcpListResponse(key: ListKey, items: unknown[], cache: McpToolCatalogCache): string {
   return `${JSON.stringify({
     jsonrpc: "2.0",
-    id: `${key}-list`,
+    id: RESPONSE_IDS[key],
     result: { resultType: "complete", [key]: items, ttlMs: cache.ttlMs, cacheScope: cache.cacheScope }
   }, null, 2)}\n`;
 }

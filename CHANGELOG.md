@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.79.0] - 2026-10-19
+
+### Added
+
+- added `doctor resource-templates`, which reads an MCP server's `resources/templates/list` over HTTP (`--allow-network`) or from a local stdio server (`--server <name> --runtime`, with the Docker sandbox and runtime approval options of `doctor tools`) without reading any resource; `--save-response` writes a complete enumeration as one `resources/templates/list` response, and legacy stdio servers are read through `initialize`
+- added `doctor resource-templates-file`, which inspects a saved template list offline: names, RFC 6570 `uriTemplate` syntax, string `title`, `description`, and `mimeType`, and duplicate names, under the same file rules as `prompts-file`
+- added `doctor resource-templates-diff`, which compares two saved template lists by name; a removed template, a changed URI template, and an added or removed template variable are breaking, a `mimeType` change and other fields are unclassified, and the `--json`, `--markdown`, `--fail-on`, and `--show-names` options and exit codes follow `tools-diff`
+- the `doctor.resource-templates.json`, `doctor.resource-templates.file.json`, and `doctor.resource-templates.diff.json` contracts describe the new reports, which identify templates by position and never include URI templates; names and variables appear only with `--show-names`
+
+### Changed
+
+- the message for `--sandbox` on an unsupported command now also lists `doctor resource-templates --server`
+
 ## [1.78.0] - 2026-10-18
 
 ### Added

@@ -139,7 +139,7 @@ async function readManifestMcpServers(
 export async function resolveMcpStdioServer(
   targetPath: string,
   serverName: string,
-  command: "tools" | "prompts" = "tools"
+  command: "tools" | "prompts" | "resource-templates" = "tools"
 ): Promise<McpStdioServerResolution> {
   let packageRoot: string;
   try {
@@ -434,7 +434,7 @@ interface CatalogEra {
 function modernEra(list: McpCatalogList<Finding>): CatalogEra {
   return {
     request: (id, cursor) => serializeListRequest(list.method, id, cursor),
-    parse: (message, id) => parseListResult(message, id, list.capability),
+    parse: (message, id) => parseListResult(message, id, list.resultKey),
     invalidFix: modernInvalidFix(list)
   };
 }
@@ -449,13 +449,13 @@ function legacyEra(list: McpCatalogList<Finding>): CatalogEra {
     }),
     parse: (message, id) => {
       if (!hasMatchingEnvelope(message, id) || !Object.hasOwn(message, "result") || !isPlainObject(message.result)
-        || !Array.isArray(message.result[list.capability])) {
+        || !Array.isArray(message.result[list.resultKey])) {
         return null;
       }
       if (Object.hasOwn(message.result, "nextCursor") && typeof message.result.nextCursor !== "string") return null;
-      return { items: message.result[list.capability] as unknown[], cursor: message.result.nextCursor as string | undefined, cache: LEGACY_CACHE };
+      return { items: message.result[list.resultKey] as unknown[], cursor: message.result.nextCursor as string | undefined, cache: LEGACY_CACHE };
     },
-    invalidFix: `Return a matching JSON-RPC result with a ${list.capability} array and an optional string nextCursor.`
+    invalidFix: `Return a matching JSON-RPC result with a ${list.resultKey} array and an optional string nextCursor.`
   };
 }
 
@@ -594,7 +594,7 @@ export async function captureStdioMcpCatalog<F extends Finding>(
         reason = "page-limit";
         break;
       }
-      const id = `${list.capability}-list-${pagesRead + 1}`;
+      const id = `${list.slug}-list-${pagesRead + 1}`;
       const outcome = await send(id, era.request(id, cursor), requestMs);
       if (outcome.kind !== "message") {
         if (outcome.kind === "stopped") sessionStopped(outcome.reason);
@@ -603,7 +603,7 @@ export async function captureStdioMcpCatalog<F extends Finding>(
       }
       const message = outcome.message;
       if (hasMatchingEnvelope(message, id) && Object.hasOwn(message, "error") && validJsonRpcError(message.error) && message.error.code === -32601) {
-        if (addFindings([listMethodUnsupported(list, "MCP server")])) reason = `${list.capability}-list-method-unsupported`;
+        if (addFindings([listMethodUnsupported(list, "MCP server")])) reason = `${list.slug}-list-method-unsupported`;
         break;
       }
       const page = era.parse(message, id);
