@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { packageVersion } from "../version.js";
 import { MAX_PROMPT_CHANGE_LOCATIONS, PROMPT_CHANGE_REASONS } from "./mcp-prompt-impact.js";
+import { MAX_RESOURCE_TEMPLATE_CHANGE_LOCATIONS, RESOURCE_TEMPLATE_CHANGE_REASONS } from "./mcp-resource-template-impact.js";
 import { MAX_TOOL_CHANGE_LOCATIONS, MAX_TOOL_CHANGE_POINTER_LENGTH, TOOL_CHANGE_REASONS } from "./mcp-tool-impact.js";
 import {
   ruleCatalog,
@@ -1087,6 +1088,121 @@ publicSchemaDefinitions.push(promptFileReportDefinition, {
             items: {
               type: "object", required: ["reason", "argument"],
               properties: { reason: { enum: [...PROMPT_CHANGE_REASONS] }, argument: { type: ["string", "null"] } },
+              additionalProperties: false
+            }
+          }
+        }, additionalProperties: false
+      }
+    }
+  }
+});
+
+const resourceTemplateFileReportDefinition = {
+  id: "doctor.resource-templates.file.json",
+  command: "codex-plugin-doctor doctor resource-templates-file <path> --json",
+  required: ["schemaVersion", "scope", "status", "source", "inspection", "coverage", "findings"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "resource-template-definitions-file" },
+    status: { enum: ["pass", "warn", "fail", "incomplete", "blocked"] },
+    source: {
+      type: "object", required: ["kind", "format", "bytesRead"],
+      properties: {
+        kind: { const: "file" }, format: { const: "mcp-resource-templates-list-response" },
+        bytesRead: { type: "integer", minimum: 0, maximum: 1048577 }
+      }, additionalProperties: false
+    },
+    inspection: {
+      type: "object", required: ["complete", "templatesChecked", "hasNextCursor", "reason"],
+      properties: {
+        complete: { type: "boolean" }, templatesChecked: { type: "integer", minimum: 0, maximum: 500 },
+        hasNextCursor: { type: ["boolean", "null"] }, reason: { type: ["string", "null"] }
+      }, additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["definitions", "discovery", "serverCatalog", "resourceRead", "fullConformance"],
+      properties: {
+        definitions: { const: "shape-only" }, discovery: { const: "not-tested" },
+        serverCatalog: { const: "not-tested" }, resourceRead: { const: "not-tested" },
+        fullConformance: { const: "not-tested" }
+      }, additionalProperties: false
+    },
+    findings: {
+      type: "array", maxItems: 100,
+      items: {
+        type: "object", required: ["id", "severity", "message", "impact", "suggestedFix"],
+        properties: {
+          id: { type: "string", pattern: "^plugin\\.(catalog|resource_templates_file)\\." },
+          severity: { enum: ["warn", "fail"] },
+          message: { type: "string" }, impact: { type: "string" }, suggestedFix: { type: "string" },
+          location: {
+            type: "object", required: ["page", "templateIndex"],
+            properties: {
+              page: { const: 1 }, templateIndex: { type: "integer", minimum: 1, maximum: 500 },
+              relatedTemplateIndex: { type: "integer", minimum: 1, maximum: 500 }
+            }, additionalProperties: false
+          }
+        }, additionalProperties: false
+      }
+    }
+  }
+};
+const embeddedResourceTemplateFileReportSchema = {
+  type: "object",
+  required: resourceTemplateFileReportDefinition.required,
+  properties: resourceTemplateFileReportDefinition.properties,
+  additionalProperties: true
+};
+
+publicSchemaDefinitions.push(resourceTemplateFileReportDefinition, {
+  id: "doctor.resource-templates.diff.json",
+  command: "codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> --json",
+  required: ["schemaVersion", "scope", "status", "before", "after", "comparison", "coverage", "changes"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "resource-template-definitions-diff" },
+    status: { enum: ["pass", "warn", "incomplete", "blocked"] },
+    before: embeddedResourceTemplateFileReportSchema,
+    after: embeddedResourceTemplateFileReportSchema,
+    comparison: {
+      type: "object", required: ["complete", "reason", "added", "removed", "changed", "unchanged", "breaking", "unclassified"],
+      properties: {
+        complete: { type: "boolean" },
+        reason: { enum: [null, "input-blocked", "input-incomplete", "invalid-definitions", "ambiguous-names"] },
+        added: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        removed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        changed: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        unchanged: { type: ["integer", "null"], minimum: 0, maximum: 500 },
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 1000 },
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 1000 }
+      }, additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["comparison", "definitions", "compatibility", "serverCatalog", "resourceRead", "impactClassification"],
+      properties: {
+        comparison: { const: "structural-only" }, definitions: { const: "shape-only" },
+        compatibility: { const: "not-tested" }, serverCatalog: { const: "not-tested" },
+        resourceRead: { const: "not-tested" }, impactClassification: { const: "heuristic" }
+      }, additionalProperties: false
+    },
+    changes: {
+      type: "array", maxItems: 1000,
+      items: {
+        type: "object", required: ["kind", "beforeTemplateIndex", "afterTemplateIndex", "fields", "impact", "reasons"],
+        properties: {
+          kind: { enum: ["added", "removed", "changed"] },
+          beforeTemplateIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          afterTemplateIndex: { type: ["integer", "null"], minimum: 1, maximum: 500 },
+          fields: { type: "array", maxItems: 5, uniqueItems: true, items: { enum: ["uriTemplate", "mimeType", "description", "title", "other"] } },
+          impact: { enum: ["breaking", "compatible", "unclassified"] },
+          reasons: { type: "array", maxItems: RESOURCE_TEMPLATE_CHANGE_REASONS.length, uniqueItems: true, items: { enum: [...RESOURCE_TEMPLATE_CHANGE_REASONS] } },
+          // Only with --show-names; URI templates are never reported.
+          name: { type: "string" },
+          locations: {
+            type: "array", maxItems: MAX_RESOURCE_TEMPLATE_CHANGE_LOCATIONS,
+            items: {
+              type: "object", required: ["reason", "variable"],
+              properties: { reason: { enum: [...RESOURCE_TEMPLATE_CHANGE_REASONS] }, variable: { type: ["string", "null"] } },
               additionalProperties: false
             }
           }
