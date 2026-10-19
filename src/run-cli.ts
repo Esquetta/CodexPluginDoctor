@@ -109,6 +109,8 @@ import {
 } from "./core/mcp-resource-template-catalog.js";
 import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
 import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
+import { compareMcpResourceTemplateFiles } from "./core/mcp-resource-template-diff.js";
+import { inspectMcpResourceTemplateFile } from "./core/mcp-resource-template-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
 import { compareMcpToolFiles } from "./core/mcp-tool-diff.js";
@@ -121,6 +123,9 @@ import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-r
 import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
 import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
 import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
+import { renderMcpResourceTemplateDiffMarkdown } from "./reporting/render-mcp-resource-template-diff-markdown.js";
+import { renderMcpResourceTemplateDiffReport } from "./reporting/render-mcp-resource-template-diff-report.js";
+import { renderMcpResourceTemplateFileReport } from "./reporting/render-mcp-resource-template-file-report.js";
 import { renderMcpDiscoveryReport } from "./reporting/render-mcp-discovery-report.js";
 import {
   buildDoctorValidationCorpusReport,
@@ -335,6 +340,8 @@ export interface RunCliOptions {
   captureMcpToolCatalogImpl?: typeof captureMcpToolCatalog;
   captureStdioMcpToolCatalogImpl?: typeof captureStdioMcpToolCatalog;
   compareMcpPromptFilesImpl?: typeof compareMcpPromptFiles;
+  compareMcpResourceTemplateFilesImpl?: typeof compareMcpResourceTemplateFiles;
+  inspectMcpResourceTemplateFileImpl?: typeof inspectMcpResourceTemplateFile;
   inspectMcpPromptFileImpl?: typeof inspectMcpPromptFile;
   captureMcpPromptCatalogImpl?: typeof captureMcpPromptCatalog;
   captureStdioMcpPromptCatalogImpl?: typeof captureStdioMcpPromptCatalog;
@@ -389,6 +396,10 @@ const toolsFileUsage = "Usage: codex-plugin-doctor doctor tools-file <path> [--j
 const promptsDiffUsage = "Usage: codex-plugin-doctor doctor prompts-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
 
 const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> [--json]";
+
+const resourceTemplatesDiffUsage = "Usage: codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+
+const resourceTemplatesFileUsage = "Usage: codex-plugin-doctor doctor resource-templates-file <path> [--json]";
 
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
@@ -864,6 +875,8 @@ function printUsage(io: CliIo): void {
   io.writeStderr(toolsDiffUsage);
   io.writeStderr(promptsFileUsage);
   io.writeStderr(promptsDiffUsage);
+  io.writeStderr(resourceTemplatesFileUsage);
+  io.writeStderr(resourceTemplatesDiffUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -2274,6 +2287,25 @@ export async function runCli(
         return 0;
       }
       return runOfflineFileCommand(remainingArgs, io, promptsFileUsage, options.inspectMcpPromptFileImpl ?? inspectMcpPromptFile, renderMcpPromptFileReport);
+    }
+    if (maybePath === "resource-templates-diff") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${resourceTemplatesDiffUsage}\nCompares two saved MCP resources/templates/list responses offline. Changes are classified heuristically as breaking, compatible, or unclassified; no resource is read and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).
+--show-names adds template names and the variable behind each reason; reports omit both, and never include URI templates, so keep the flag out of public output such as pull request comments.`);
+        return 0;
+      }
+      return runOfflineDiffCommand(remainingArgs, io, resourceTemplatesDiffUsage, (beforePath, afterPath, showNames) => {
+        const compare = options.compareMcpResourceTemplateFilesImpl ?? compareMcpResourceTemplateFiles;
+        return showNames ? compare(beforePath, afterPath, { showNames: true }) : compare(beforePath, afterPath);
+      }, (report, markdown) => markdown ? renderMcpResourceTemplateDiffMarkdown(report) : renderMcpResourceTemplateDiffReport(report));
+    }
+    if (maybePath === "resource-templates-file") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${resourceTemplatesFileUsage}\nInspects one saved UTF-8 MCP resources/templates/list response. No server connection or resource read.`);
+        return 0;
+      }
+      return runOfflineFileCommand(remainingArgs, io, resourceTemplatesFileUsage,
+        options.inspectMcpResourceTemplateFileImpl ?? inspectMcpResourceTemplateFile, renderMcpResourceTemplateFileReport);
     }
     if (maybePath === "tools") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {

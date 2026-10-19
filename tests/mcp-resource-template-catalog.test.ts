@@ -5,6 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
 import { captureMcpResourceTemplateCatalog, captureStdioMcpResourceTemplateCatalog } from "../src/core/mcp-resource-template-catalog.js";
 import { resolveMcpStdioServer } from "../src/core/mcp-stdio-tool-catalog.js";
+import { buildDoctorOutputContract } from "../src/core/output-contract.js";
+import { violations } from "./helpers/json-schema-violations.js";
+
+const catalogSchema = buildDoctorOutputContract().schemas.find((schema) => schema.id === "doctor.resource-templates.json")!.schema as Record<string, unknown>;
 
 function response(body: unknown): BoundedHttpResponse {
   return { statusCode: 200, headers: { "content-type": "application/json" }, body: Buffer.from(JSON.stringify(body)) };
@@ -57,6 +61,7 @@ describe("captureMcpResourceTemplateCatalog", () => {
     const { report } = await captureMcpResourceTemplateCatalog("https://mcp.example.com/mcp", { ...network, request });
 
     expect(report.status).toBe("fail");
+    expect(violations(catalogSchema, report)).toEqual([]);
     expect(report.findings.map((finding) => [finding.id, finding.location])).toEqual([
       ["plugin.catalog.resource_template.uri_template.invalid", { page: 1, templateIndex: 2 }],
       ["plugin.catalog.resource_template.name.duplicate", { page: 1, templateIndex: 2, relatedTemplateIndex: 1 }]
@@ -123,6 +128,7 @@ describe("captureStdioMcpResourceTemplateCatalog", () => {
       protocol: { era: "modern", version: "2026-07-28" }, catalog: { complete: true, pagesRead: 1, templatesChecked: 2, reason: null }
     });
     expect(modern.methods).toEqual(["server/discover", "resources/templates/list"]);
+    expect(violations(catalogSchema, modern.snapshot.report)).toEqual([]);
     expect(modern.snapshot.cache).toEqual({ ttlMs: 60_000, cacheScope: "public" });
 
     const legacy = await capture("legacy");
