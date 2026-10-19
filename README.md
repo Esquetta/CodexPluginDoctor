@@ -201,8 +201,8 @@ codex-plugin-doctor doctor resource-templates-diff --before ./mcp/resource-templ
 `doctor resource-templates` reads `resources/templates/list` the same way, without
 reading any resource; `resource-templates-file` inspects a saved list, and
 `resource-templates-diff` labels a removed template, a changed URI template, or an
-added or removed template variable as breaking. Reports omit names and URI
-templates. See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
+added or removed template variable as breaking. Reports never include URI templates,
+and names appear only with `--show-names`. See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
 
 ### Remote MCP Readiness
 

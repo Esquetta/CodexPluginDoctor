@@ -25,8 +25,9 @@ function isJsonObject(value: unknown): value is JsonObject {
 // octets, and single dots between them.
 const OPERATORS = new Set(["+", "#", ".", "/", ";", "?", "&"]);
 const VARSPEC = /^((?:[A-Za-z0-9_]|%[0-9A-Fa-f]{2})(?:\.?(?:[A-Za-z0-9_]|%[0-9A-Fa-f]{2}))*)(?::[1-9][0-9]{0,3}|\*)?$/u;
-// Whitespace, controls, and characters RFC 6570 excludes from literals.
-const INVALID_LITERAL = /[\s\u0000-\u001F\u007F"'<>\\^`|]/u;
+// What RFC 6570 excludes from literals: controls, the space, a "%" that does not start a percent-encoded
+// octet, lone surrogates, and the listed ASCII characters. Other Unicode, including non-ASCII spaces, is allowed.
+const INVALID_LITERAL = /[ \u0000-\u001F\u007F-\u009F"'<>\\^`|\uD800-\uDFFF]|%(?![0-9A-Fa-f]{2})/u;
 
 export interface ParsedUriTemplate {
   // The template with each expression reduced to its operator, such as "file:///{}" or "/users{/}".

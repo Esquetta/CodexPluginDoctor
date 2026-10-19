@@ -16,17 +16,27 @@ describe("RFC 6570 URI template parsing", () => {
     ["db://{+schema}/tables{/table*}{#section:3}", "db://{+}/tables{/}{#}", ["schema", "table", "section"]],
     ["repo://{owner.login}/{%20name}", "repo://{}/{}", ["owner.login", "%20name"]],
     ["dns://host{.domain}", "dns://host{.}", ["domain"]],
-    ["static://readme", "static://readme", []]
+    ["static://readme", "static://readme", []],
+    ["file:///100%25/{path}", "file:///100%25/{}", ["path"]],
+    ["file:///docs\u00A0{path}", "file:///docs\u00A0{}", ["path"]]
   ])("parses %s", (template, skeleton, variables) => {
     expect(parseUriTemplate(template)).toEqual({ skeleton, variables });
   });
 
   it.each([
     "file:///{path", "file:///path}", "file:///{}", "file:///{{path}}", "file:///{pa th}", "file:///{path:0}",
-    "file:///{path:10000}", "file:///{path**}", "file:///{path.}", "file:///{a..b}", "file:///{a,}", "file:// /{path}", "file:///{=path}"
+    "file:///{path:10000}", "file:///100%/{path}", "x://%zz/{id}", "x://a\u0085b/{id}", "x://a\uD800b/{id}", "file:///{path**}", "file:///{path.}", "file:///{a..b}", "file:///{a,}", "file:// /{path}", "file:///{=path}"
   ])("rejects %s", (template) => {
     expect(parseUriTemplate(template)).toBeNull();
   });
+});
+
+it("parses near-limit templates in bounded time", () => {
+  const started = performance.now();
+  expect(parseUriTemplate(`{${"a".repeat(1_000_000)}!}`)).toBeNull();
+  expect(parseUriTemplate(`{${"a.".repeat(500_000)}a}`)?.variables).toHaveLength(1);
+  expect(parseUriTemplate(`x://${"{a}".repeat(300_000)}`)?.variables).toHaveLength(300_000);
+  expect(performance.now() - started).toBeLessThan(5_000);
 });
 
 describe("MCP resource template definition inspection", () => {

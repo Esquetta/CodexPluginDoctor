@@ -54,7 +54,9 @@ Each template needs a non-empty string `name` and a `uriTemplate` that parses
 as an RFC 6570 URI template: literal text, and expressions such as `{path}`,
 `{+path}`, `{/id}`, or `{?fields,page}` with variable names made of letters,
 digits, `_`, percent-encoded octets, and single dots, and an optional `:1` to
-`:9999` prefix or `*` explode modifier. `title`, `description`, and `mimeType`
+`:9999` prefix or `*` explode modifier. Literal text may not contain ASCII spaces,
+controls, quotes, `<`, `>`, `\`, `^`, `|`, or a backtick, and a `%` must start a
+percent-encoded octet. `title`, `description`, and `mimeType`
 must be strings when present. Duplicate names are a warning. Findings use
 `plugin.catalog.resource_template.*` ids for definitions and
 `plugin.resource_templates_file.*` ids for the file itself.
@@ -67,7 +69,7 @@ templates by `name` and labels each change:
 | Reason | Impact | Meaning |
 | --- | --- | --- |
 | `resource-template-removed` | breaking | A template is no longer listed. |
-| `resource-template-uri-changed` | breaking | The URI template's literal text or expression operators changed, or its variables were reordered or given other modifiers, so URIs built from it change. |
+| `resource-template-uri-changed` | breaking | The URI template's literal text or expression operators changed, or, with the same set of variables, its variables were reordered or given other modifiers, so URIs built from it change. |
 | `resource-template-variable-removed` | breaking | A variable clients fill in is gone. |
 | `resource-template-variable-added` | breaking | A new variable that existing clients do not fill in. |
 | `resource-template-mime-type-changed` | unclassified | `mimeType` was added, removed, or changed. |
