@@ -191,6 +191,19 @@ inputs and comments on pull requests, and
 `init-ci --tools-diff-server <name> --prompts-baseline <path>` writes that workflow.
 See [MCP Prompt Catalog and Diff](docs/guides/mcp-prompts.md).
 
+### MCP Resource Template Catalog and Diff
+
+```bash
+codex-plugin-doctor doctor resource-templates https://mcp.example.com/mcp --allow-network --save-response ./mcp/resource-templates-baseline.json
+codex-plugin-doctor doctor resource-templates-diff --before ./mcp/resource-templates-baseline.json --after ./resource-templates-current.json --fail-on breaking
+```
+
+`doctor resource-templates` reads `resources/templates/list` the same way, without
+reading any resource; `resource-templates-file` inspects a saved list, and
+`resource-templates-diff` labels a removed template, a changed URI template, or an
+added or removed template variable as breaking. Reports omit names and URI
+templates. See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
+
 ### Remote MCP Readiness
 
 Remote MCP runtime probing is disabled until you explicitly pass `--runtime --allow-network`. Loopback endpoints also require `--allow-local-network`:
@@ -609,9 +622,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.78.0
+      - uses: Esquetta/CodexPluginDoctor@v1.79.0
         with:
-          version: "1.78.0"
+          version: "1.79.0"
           path: .
           runtime: "true"
           policy: codex-publish
