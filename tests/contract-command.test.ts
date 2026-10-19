@@ -208,6 +208,16 @@ describe("doctor contract command", () => {
           id: "doctor.prompts.diff.json",
           command: "codex-plugin-doctor doctor prompts-diff --before <path> --after <path> --json",
           outputKind: null
+        }),
+        expect.objectContaining({
+          id: "doctor.resource-templates.file.json",
+          command: "codex-plugin-doctor doctor resource-templates-file <path> --json",
+          outputKind: null
+        }),
+        expect.objectContaining({
+          id: "doctor.resource-templates.diff.json",
+          command: "codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> --json",
+          outputKind: null
         })
       ])
     );
