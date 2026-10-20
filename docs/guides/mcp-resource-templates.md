@@ -95,5 +95,16 @@ public output.
 
 The contracts are `doctor.resource-templates.json`,
 `doctor.resource-templates.file.json`, and `doctor.resource-templates.diff.json`;
-`doctor contract --json` prints them. The GitHub Action does not run these
-commands yet.
+`doctor contract --json` prints them.
+
+## GitHub Action and init-ci
+
+The GitHub Action runs the capture and comparison through `resource-templates-*`
+inputs, such as `resource-templates-capture-server`,
+`resource-templates-diff-before`, and `resource-templates-diff-comment`, with the
+same rules as the tool inputs; see
+[GitHub Action Usage](github-action.md#resource-template-lists). The comparison
+gets its own pull request comment and needs CLI 1.79.0 or later in `version`.
+`codex-plugin-doctor init-ci . --tools-diff-server <name>
+--resource-templates-baseline mcp/resource-templates-baseline.json` adds the
+server's template capture and comparison to the generated workflow.

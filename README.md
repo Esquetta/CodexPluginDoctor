@@ -202,7 +202,9 @@ codex-plugin-doctor doctor resource-templates-diff --before ./mcp/resource-templ
 reading any resource; `resource-templates-file` inspects a saved list, and
 `resource-templates-diff` labels a removed template, a changed URI template, or an
 added or removed template variable as breaking. Reports never include URI templates,
-and names appear only with `--show-names`. See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
+and names appear only with `--show-names`. The GitHub Action and
+`init-ci --resource-templates-baseline` run the same comparison on pull requests.
+See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
 
 ### Remote MCP Readiness
 
@@ -622,9 +624,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.79.0
+      - uses: Esquetta/CodexPluginDoctor@v1.80.0
         with:
-          version: "1.79.0"
+          version: "1.80.0"
           path: .
           runtime: "true"
           policy: codex-publish

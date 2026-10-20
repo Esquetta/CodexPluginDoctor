@@ -3330,10 +3330,34 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain(`doctor prompts ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-response ${JSON.stringify(path.join(targetPath, "mcp/prompts/baseline.json"))}`);
   });
 
+  it("adds the same server's resource template capture and comparison with --resource-templates-baseline", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-templates-"));
+    const { io, stdout } = createIo();
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--resource-templates-baseline", "mcp/templates/baseline.json"], io)).toBe(0);
+    const workflow = parse(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")) as {
+      jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, string> }> }>;
+    };
+    const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
+
+    expect(doctor("capture")).toMatchObject({ "resource-templates-capture-server": "my-server", "resource-templates-capture-defer-findings": "true" });
+    expect(doctor("capture")["resource-templates-capture-sandbox"]).toBeUndefined();
+    expect(doctor("capture")["prompts-capture-server"]).toBeUndefined();
+    expect(doctor("compare")).toMatchObject({
+      "resource-templates-diff-before": "mcp/templates/baseline.json",
+      "resource-templates-diff-after": "${{ runner.temp }}/mcp-tools-capture/mcp-resource-templates-current.json",
+      "resource-templates-diff-fail-on": "breaking",
+      "resource-templates-diff-comment": "true"
+    });
+    expect((await stat(path.join(targetPath, "mcp", "templates"))).isDirectory()).toBe(true);
+    expect(stdout.join("")).toContain("doctor resource-templates ");
+  });
+
   it("leaves prompts out of the tool diff workflow by default", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-no-prompts-"));
     expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "srv"], createIo().io)).toBe(0);
-    expect(await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8")).not.toContain("prompts-");
+    const workflow = await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8");
+    expect(workflow).not.toContain("prompts-");
+    expect(workflow).not.toContain("resource-templates-");
   });
 
   it("writes the default tool diff baseline path", async () => {
@@ -3347,8 +3371,11 @@ describe("runCli", () => {
     [["--tools-diff-server", `bad${String.fromCharCode(0x85)}name`], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
     [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
-    [["--baseline", "mcp/tools.json"], "--baseline, --prompts-baseline, and --sandbox require --tools-diff-server."],
-    [["--prompts-baseline", "mcp/prompts.json"], "--baseline, --prompts-baseline, and --sandbox require --tools-diff-server."],
+    [["--baseline", "mcp/tools.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
+    [["--prompts-baseline", "mcp/prompts.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
+    [["--resource-templates-baseline", "mcp/templates.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
+    [["--tools-diff-server", "srv", "--resource-templates-baseline", "/abs.json"], "--resource-templates-baseline requires a relative path inside the repository."],
+    [["--tools-diff-server", "srv", "--prompts-baseline", "mcp/p.json", "--resource-templates-baseline", "mcp/p.json"], "--resource-templates-baseline must differ from --baseline and --prompts-baseline."],
     [["--tools-diff-server", "srv", "--prompts-baseline", "../p.json"], "--prompts-baseline requires a relative path inside the repository."],
     [["--tools-diff-server", "srv", "--prompts-baseline"], "--prompts-baseline requires a relative path inside the repository."],
     [["--tools-diff-server", "srv", "--prompts-baseline", "mcp/./tools-baseline.json"], "--prompts-baseline must differ from --baseline."],

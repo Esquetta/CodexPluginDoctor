@@ -27,9 +27,9 @@ The Action transfers these boolean inputs through environment-backed shell varia
 Use local Registry metadata gating when the repository contains a `server.json` intended for publication:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     registry-metadata: ./server.json
     require-registry-readiness: "true"
@@ -42,9 +42,9 @@ The Action writes `mcp-registry-readiness.json` and exposes `registry-report-pat
 Use the submission preflight only when a workflow needs its separate offline report:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     submission: "true"
     require-submission-ready: "true"
@@ -79,9 +79,9 @@ Compare two saved MCP `tools/list` responses, for example a committed baseline a
 a capture made earlier in the job with `doctor tools --save-response`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     tools-diff-before: mcp/tools-baseline.json
     tools-diff-after: tools-current.json
@@ -114,9 +114,9 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: Esquetta/CodexPluginDoctor@v1.79.0
+  - uses: Esquetta/CodexPluginDoctor@v1.80.0
     with:
-      version: "1.79.0"
+      version: "1.80.0"
       path: .
       tools-diff-before: mcp/tools-baseline.json
       tools-diff-after: tools-current.json
@@ -165,9 +165,9 @@ Repositories that ship an HTTP MCP server without a Codex plugin package can tur
 off the package check and compare the live tool list with a committed baseline:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     check: "false"
     allow-network: "true"
     tools-capture-url: https://mcp.example.com/mcp
@@ -180,8 +180,8 @@ off the package check and compare the live tool list with a committed baseline:
 
 `check: "false"` skips the package check and its JSON, Markdown, and SARIF
 reports; `summary-path`, `json-path`, and `sarif-path` are then empty and the
-manifest records `target.check: false`. Another mode, such as the tool or prompt
-diff, capture, registry, submission, corpus, contract, or review bundle, must be
+manifest records `target.check: false`. Another mode, such as the tool, prompt, or
+resource template diff, capture, registry, submission, corpus, contract, or review bundle, must be
 configured; otherwise the Action records usage status `2`. Values other than
 `true` and `false` also record status `2`.
 
@@ -216,9 +216,9 @@ To capture a stdio server from the package's MCP configuration, set
 `tools-capture-server` to its name instead of `tools-capture-url`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -265,7 +265,7 @@ did not answer discovery. To capture behind a runtime approval digest,
 capture in an earlier step with `doctor tools --require-runtime-approval` and
 pass that file as `tools-diff-after`.
 
-`codex-plugin-doctor init-ci . --tools-diff-server <name> [--baseline <path>] [--prompts-baseline <path>] [--sandbox docker]`
+`codex-plugin-doctor init-ci . --tools-diff-server <name> [--baseline <path>] [--prompts-baseline <path>] [--resource-templates-baseline <path>] [--sandbox docker]`
 writes `.github/workflows/codex-plugin-doctor-tools.yml` with this pattern for
 pull requests: a `capture` job that starts the server and uploads its tool list,
 and a `compare` job that downloads it and writes its reports outside the
@@ -287,9 +287,9 @@ Every `tools-capture-*` and `tools-diff-*` input has a `prompts-*` counterpart
 with the same rules, validation, and exit statuses:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -321,6 +321,23 @@ capture to the `capture` job and the prompt comparison and comment to the
 `compare` job, for the same server and sandbox. The prompt baseline must be a
 relative path inside the repository and differ from `--baseline`.
 
+### Resource template lists
+
+Resource templates follow the same pattern with `resource-templates-*` inputs:
+`resource-templates-capture-url` or `resource-templates-capture-server` (with
+`-sandbox`, `-env`, `-token-env`, and `-defer-findings`) run
+`doctor resource-templates` and save `mcp-resource-templates-current.json`, and
+`resource-templates-diff-before`, `-after`, `-fail-on`, and `-comment` run
+`doctor resource-templates-diff`, write `mcp-resource-templates-diff.json` and
+`mcp-resource-templates-diff.md`, and post a separate pull request comment with
+the marker `<!-- codex-plugin-doctor:resource-templates-diff -->`. The outputs
+are `resource-templates-capture-path`, `resource-templates-diff-json-path`, and
+`resource-templates-diff-summary-path`. The comparison never reports URI
+templates, which can carry host names and paths. These inputs need CLI `1.79.0`
+or later in `version`. `init-ci --resource-templates-baseline <path>` adds them
+to the generated workflow like `--prompts-baseline`; each baseline must be a
+different path.
+
 ## Recommended Workflow
 
 ```yaml
@@ -337,9 +354,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.79.0
+      - uses: Esquetta/CodexPluginDoctor@v1.80.0
         with:
-          version: "1.79.0"
+          version: "1.80.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -366,9 +383,9 @@ Every action run also writes `codex-plugin-doctor-action-manifest.json`. The man
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     sarif: "true"
 ```
@@ -380,9 +397,9 @@ The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to
 Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -420,6 +437,9 @@ The action also exposes these workflow outputs for follow-up steps:
 - `prompts-capture-path`
 - `prompts-diff-json-path`
 - `prompts-diff-summary-path`
+- `resource-templates-capture-path`
+- `resource-templates-diff-json-path`
+- `resource-templates-diff-summary-path`
 - `review-bundle-path`
 - `review-bundle-verification-path`
 
@@ -428,11 +448,11 @@ The action also exposes these workflow outputs for follow-up steps:
 Use review bundle artifacts when a pull request or release workflow should preserve signed runtime approval, runtime policy, attestation, and release evidence handoff files.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -463,9 +483,9 @@ The CLI can produce badge output for release notes, README automation, or a stat
 Use a private corpus metrics manifest to measure reviewed precision, recall, and false-positive share in CI. The action writes only the public-safe metrics report into its artifact directory; snapshots, manifest contents, local paths, and review notes are not copied.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
 ```
@@ -473,9 +493,9 @@ Use a private corpus metrics manifest to measure reviewed precision, recall, and
 This writes `corpus-metrics.json`. To compare the result with a retained report and fail the job on regression:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
     corpus-metrics-baseline: .doctor-baselines/corpus-metrics.json
@@ -504,9 +524,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -526,9 +546,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 The composite action can pass profiles directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     profile: publish
 ```
@@ -538,9 +558,9 @@ The composite action can pass profiles directly:
 Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     path: .
     policy: codex-publish
 ```
@@ -552,9 +572,9 @@ Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The C
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -565,9 +585,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.79.0
+- uses: Esquetta/CodexPluginDoctor@v1.80.0
   with:
-    version: "1.79.0"
+    version: "1.80.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

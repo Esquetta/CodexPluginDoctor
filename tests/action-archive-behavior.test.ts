@@ -22,7 +22,7 @@ type ActionRun = {
   manifest: { target: { check: boolean }; reports: Record<string, { enabled: boolean; path: string }> };
   invocations: string[][];
   reportDirectory: string;
-  readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; promptsDiff: string; status: string }>;
+  readState: () => Promise<{ submission: string; archive: string; toolsDiff: string; promptsDiff: string; resourceTemplatesDiff: string; status: string }>;
   runSummary: () => Promise<string>;
   runComment: (event: CommentEvent) => Promise<{ stdout: string; gh: string[][]; body: string | null; ghToken: string | null }>;
   cleanup: () => Promise<void>;
@@ -122,7 +122,7 @@ for (( index = 1; index <= $#; index += 1 )); do
     break
   fi
 done
-if [[ "\${1:-} \${2:-}" == "doctor tools" || "\${1:-} \${2:-}" == "doctor prompts" ]]; then
+if [[ "\${1:-} \${2:-}" == "doctor tools" || "\${1:-} \${2:-}" == "doctor prompts" || "\${1:-} \${2:-}" == "doctor resource-templates" ]]; then
   for (( index = 1; index <= $#; index += 1 )); do
     if [[ "\${!index}" == "--save-response" ]]; then
       next=$((index + 1))
@@ -131,6 +131,7 @@ if [[ "\${1:-} \${2:-}" == "doctor tools" || "\${1:-} \${2:-}" == "doctor prompt
   done
   code="\${MOCK_TOOLS_CAPTURE_EXIT:-0}"
   if [[ "\${2:-}" == "prompts" ]]; then code="\${MOCK_PROMPTS_CAPTURE_EXIT:-0}"; fi
+  if [[ "\${2:-}" == "resource-templates" ]]; then code="\${MOCK_RESOURCE_TEMPLATES_CAPTURE_EXIT:-0}"; fi
   if [[ "$code" -le 1 ]]; then
     printf '{"jsonrpc":"2.0"}\\n' > "$save"
   fi
@@ -159,6 +160,16 @@ if [[ "\${1:-} \${2:-}" == "doctor prompts-diff" ]]; then
     printf 'Offline MCP Prompt Diff\\nBreaking: 1\\n'
   fi
   exit "\${MOCK_PROMPTS_DIFF_EXIT:-0}"
+fi
+if [[ "\${1:-} \${2:-}" == "doctor resource-templates-diff" ]]; then
+  if [[ " $* " == *" --json "* ]]; then
+    printf '{"status":"warn"}\\n'
+  elif [[ " $* " == *" --markdown "* ]]; then
+    printf '## MCP Resource Template Definition Diff\\n\\n| Breaking |\\n| 1 |\\n'
+  else
+    printf 'Offline MCP Resource Template Diff\\nBreaking: 1\\n'
+  fi
+  exit "\${MOCK_RESOURCE_TEMPLATES_DIFF_EXIT:-0}"
 fi
 if [[ -n "$output" ]]; then
   mkdir -p "\${output%/*}"
@@ -214,6 +225,7 @@ fi
         archive: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-submission-archive-ran"), "utf8"),
         toolsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "utf8"),
         promptsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-prompts-diff-ran"), "utf8"),
+        resourceTemplatesDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-resource-templates-diff-ran"), "utf8"),
         status: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "utf8")
       }),
       runSummary: async () => {
@@ -931,7 +943,7 @@ describe("GitHub Action tool diff pull request comment", () => {
     const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor diffs");
     const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor diff comments");
     // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
-    const commentRequested = "(inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true')";
+    const commentRequested = "(inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true')";
     const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
     // Package code may have replaced tools on PATH for later steps, whatever the event.
     expect(comment?.if).toBe(`${"${{"} always() && ${commentRequested} && !${packageCode} }}`);
@@ -943,6 +955,7 @@ describe("GitHub Action tool diff pull request comment", () => {
     expect(others.some((step) => step.includes("github-token"))).toBe(false);
     expect(action.inputs["tools-diff-comment"].default).toBe("false");
     expect(action.inputs["prompts-diff-comment"].default).toBe("false");
+    expect(action.inputs["resource-templates-diff-comment"].default).toBe("false");
   });
 
   it.each([
@@ -1210,6 +1223,137 @@ describe("GitHub Action prompt diff pull request comment", () => {
       const comment = await run.runComment(pullRequest);
       expect(comment.body?.length).toBeLessThanOrEqual(65_536);
       expect(comment.body).toContain("Truncated; the full diff is in mcp-prompts-diff.md in the report directory.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+function resourceTemplatesDiffInvocations(run: ActionRun): string[][] {
+  return run.invocations.filter((invocation) => invocation[0] === "doctor" && invocation[1] === "resource-templates-diff");
+}
+
+describe("GitHub Action resource template diff", () => {
+  const capture = { check: "false", runtime: "true", "resource-templates-capture-server": "local-server" };
+
+  it("compares saved resource template lists and publishes their reports on their own", async () => {
+    const run = await runArchiveAction({ check: "false", "resource-templates-diff-before": "before.json", "resource-templates-diff-after": "after.json", "resource-templates-diff-fail-on": "breaking" });
+
+    try {
+      const jsonPath = toBashPath(path.join(run.reportDirectory, "mcp-resource-templates-diff.json"));
+      expect(resourceTemplatesDiffInvocations(run)[0]).toEqual([
+        "doctor", "resource-templates-diff", "--before", "before.json", "--after", "after.json", "--fail-on", "breaking", "--json"
+      ]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(promptsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", promptsDiff: "false", resourceTemplatesDiff: "true", status: "0" });
+      expect(run.output["resource-templates-diff-json-path"]).toBe(jsonPath);
+      expect(run.manifest.reports.resourceTemplatesDiffJson).toEqual({ enabled: true, path: jsonPath });
+      expect(await run.runSummary()).toContain("MCP Resource Template Definition Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("propagates a failing resource template diff exit status", async () => {
+    const run = await runArchiveAction({ check: "false", "resource-templates-diff-before": "a.json", "resource-templates-diff-after": "b.json" }, "0", "0", false, { MOCK_RESOURCE_TEMPLATES_DIFF_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ resourceTemplatesDiff: "true", status: "1" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("captures a stdio server's templates in the Docker sandbox and compares them with the baseline", async () => {
+    const run = await runArchiveAction({
+      ...capture, "resource-templates-capture-sandbox": "docker", "resource-templates-capture-env": "API_KEY", "resource-templates-diff-before": "baseline.json"
+    }, "0", "0", false, { API_KEY: "secret-sentinel" });
+
+    try {
+      const capturePath = toBashPath(path.join(run.reportDirectory, "mcp-resource-templates-current.json"));
+      const packagePath = toBashPath(path.join(run.root, "package"));
+      expect(invocationsOf(run, "resource-templates")).toEqual([[
+        "doctor", "resource-templates", packagePath, "--server", "local-server", "--runtime", "--save-response", capturePath, "--sandbox", "docker", "--env", "API_KEY"
+      ]]);
+      expect(resourceTemplatesDiffInvocations(run)[0]).toEqual(["doctor", "resource-templates-diff", "--before", "baseline.json", "--after", capturePath, "--fail-on", "any", "--json"]);
+      expect(run.output["resource-templates-capture-path"]).toBe(capturePath);
+      expect(run.manifest.reports.resourceTemplatesCapture).toEqual({ enabled: true, path: capturePath });
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("captures and compares all three lists from one server independently", async () => {
+    const run = await runArchiveAction({
+      ...capture,
+      "tools-capture-server": "local-server", "tools-diff-before": "tools.json",
+      "prompts-capture-server": "local-server", "prompts-diff-before": "prompts.json",
+      "resource-templates-diff-before": "templates.json"
+    }, "0", "0", false, { MOCK_RESOURCE_TEMPLATES_CAPTURE_EXIT: "2" });
+
+    try {
+      expect(invocationsOf(run, "tools")).toHaveLength(1);
+      expect(invocationsOf(run, "prompts")).toHaveLength(1);
+      expect(invocationsOf(run, "resource-templates")).toHaveLength(1);
+      // The template capture saved nothing, so only its comparison is skipped and the step fails.
+      expect(resourceTemplatesDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", promptsDiff: "true", resourceTemplatesDiff: "false", status: "2" });
+      expect(run.output["resource-templates-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ ...capture, "resource-templates-capture-sandbox": "podman" }, "resource-templates-capture-sandbox must be docker or empty."],
+    [{ ...capture, "resource-templates-capture-url": "https://mcp.example.test/mcp" }, "resource-templates-capture-url and resource-templates-capture-server cannot be combined."],
+    [{ ...capture, "resource-templates-capture-token-env": "MCP_TOKEN" }, "resource-templates-capture-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ ...capture, "resource-templates-capture-defer-findings": "yes" }, "resource-templates-capture-defer-findings must be true or false."]
+  ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
+  it("requires network consent before capturing templates over HTTP", async () => {
+    const run = await runArchiveAction({ check: "false", "resource-templates-capture-url": "https://mcp.example.test/mcp", "resource-templates-diff-before": "baseline.json" });
+
+    try {
+      expect(invocationsOf(run, "resource-templates")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ resourceTemplatesDiff: "false", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+});
+
+describe("GitHub Action resource template diff pull request comment", () => {
+  const pullRequest = { name: "pull_request", payload: { pull_request: { number: 42 } } };
+  const templatesDiff = {
+    check: "false", "resource-templates-diff-before": "before.json", "resource-templates-diff-after": "after.json",
+    "resource-templates-diff-comment": "true", "github-token": "token-sentinel"
+  };
+
+  it("posts the resource template diff under its own marker", async () => {
+    const run = await runArchiveAction(templatesDiff);
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh).toHaveLength(2);
+      expect(comment.body?.startsWith("<!-- codex-plugin-doctor:resource-templates-diff -->\n## MCP Resource Template Definition Diff")).toBe(true);
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor resource template diff comment.");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("skips the resource template comment when no resource template diff ran", async () => {
+    const run = await runArchiveAction({ check: "false", "resource-templates-diff-comment": "true", "resource-templates-diff-before": "before.json" });
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.gh).toEqual([]);
+      expect(comment.stdout).toContain("Resource template diff comment skipped because no resource template diff ran.");
     } finally {
       await run.cleanup();
     }

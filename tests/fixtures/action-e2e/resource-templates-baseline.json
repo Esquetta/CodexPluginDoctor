@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": "resource-templates-list",
+  "result": {
+    "resultType": "complete",
+    "resourceTemplates": [
+      {
+        "name": "doc",
+        "uriTemplate": "file:///workspace/docs/{name}.md"
+      },
+      {
+        "name": "log",
+        "uriTemplate": "file:///workspace/logs/{name}.log"
+      }
+    ],
+    "ttlMs": 0,
+    "cacheScope": "private"
+  }
+}
