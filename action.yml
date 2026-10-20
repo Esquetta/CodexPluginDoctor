@@ -460,7 +460,7 @@ runs:
           if (( ${#names[@]} > 0 )); then printf '%s\n' "${names[@]}"; fi
         }
 
-        # Validates the capture inputs of one kind, tools or prompts, before any command runs.
+        # Validates the capture inputs of one kind, tools, prompts, or resource-templates, before any command runs.
         # Arguments: kind, capture url, server, sandbox, env names, defer findings, token env.
         validate_capture_inputs() {
           local kind="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"

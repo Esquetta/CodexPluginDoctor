@@ -203,7 +203,7 @@ reading any resource; `resource-templates-file` inspects a saved list, and
 `resource-templates-diff` labels a removed template, a changed URI template, or an
 added or removed template variable as breaking. Reports never include URI templates,
 and names appear only with `--show-names`. The GitHub Action and
-`init-ci --resource-templates-baseline` run the same comparison on pull requests.
+`init-ci --tools-diff-server <name> --resource-templates-baseline <path>` run the same comparison on pull requests.
 See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
 
 ### Remote MCP Readiness

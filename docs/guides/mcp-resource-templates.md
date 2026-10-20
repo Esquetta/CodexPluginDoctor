@@ -86,7 +86,9 @@ incomplete, or failing inputs or two templates with the same name.
 
 Reports identify templates by their one-based position in each file and never
 include names, URI templates, variables, descriptions, or other values. URI
-templates can carry host names and paths, so they stay out of every report.
+templates can carry host names and paths, so they stay out of every report; the
+saved list itself holds them, so treat it, and any artifact that uploads it, like
+the committed baseline.
 `--show-names` adds the template `name` to each change and, for changed
 templates, `locations`: the variable behind each reason (`null` for
 template-level reasons), at most 100 per template. Names and variables are

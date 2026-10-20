@@ -333,7 +333,9 @@ Resource templates follow the same pattern with `resource-templates-*` inputs:
 the marker `<!-- codex-plugin-doctor:resource-templates-diff -->`. The outputs
 are `resource-templates-capture-path`, `resource-templates-diff-json-path`, and
 `resource-templates-diff-summary-path`. The comparison never reports URI
-templates, which can carry host names and paths. These inputs need CLI `1.79.0`
+templates, which can carry host names and paths, but the saved
+`mcp-resource-templates-current.json` holds them and is uploaded with the report
+artifact unless `upload-artifact` is `"false"`. These inputs need CLI `1.79.0`
 or later in `version`. `init-ci --resource-templates-baseline <path>` adds them
 to the generated workflow like `--prompts-baseline`; each baseline must be a
 different path.
