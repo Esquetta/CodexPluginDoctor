@@ -45,6 +45,8 @@ export interface ToolsDiffWorkflowOptions {
   sandbox: "docker" | null;
   // When set, the same server's prompt list is captured too and compared with this baseline.
   promptsBaseline: string | null;
+  // When set, the same server's resource template list is captured too and compared with this baseline.
+  resourceTemplatesBaseline: string | null;
 }
 
 // JSON strings are valid YAML double-quoted scalars, so names and paths cannot break the document.
@@ -88,6 +90,11 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
       ...(options.sandbox === "docker" ? ["          prompts-capture-sandbox: docker"] : []),
       "          prompts-capture-defer-findings: \"true\""
     ]),
+    ...(options.resourceTemplatesBaseline === null ? [] : [
+      `          resource-templates-capture-server: ${yamlString(options.server)}`,
+      ...(options.sandbox === "docker" ? ["          resource-templates-capture-sandbox: docker"] : []),
+      "          resource-templates-capture-defer-findings: \"true\""
+    ]),
     "          artifact-name: mcp-tools-capture",
     "",
     "  compare:",
@@ -119,6 +126,12 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
       "          prompts-diff-fail-on: breaking",
       "          prompts-diff-comment: \"true\""
     ]),
+    ...(options.resourceTemplatesBaseline === null ? [] : [
+      `          resource-templates-diff-before: ${yamlString(options.resourceTemplatesBaseline)}`,
+      "          resource-templates-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-resource-templates-current.json",
+      "          resource-templates-diff-fail-on: breaking",
+      "          resource-templates-diff-comment: \"true\""
+    ]),
     "          output-dir: ${{ runner.temp }}/codex-plugin-doctor-reports",
     "          artifact-name: mcp-tools-diff",
     ""
@@ -132,7 +145,7 @@ export async function initToolsDiffWorkflow(targetPath: string, options: ToolsDi
   await mkdir(path.dirname(workflowPath), { recursive: true });
   await writeFile(workflowPath, buildToolsDiffWorkflow(options), "utf8");
   // doctor tools --save-response writes into an existing directory, so the baselines can be captured next.
-  for (const baseline of [options.baseline, options.promptsBaseline]) {
+  for (const baseline of [options.baseline, options.promptsBaseline, options.resourceTemplatesBaseline]) {
     if (baseline !== null) await mkdir(path.dirname(path.resolve(rootPath, baseline)), { recursive: true });
   }
 

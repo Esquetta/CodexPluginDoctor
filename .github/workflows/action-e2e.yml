@@ -2,9 +2,9 @@ name: Action E2E
 
 # Runs the composite Action from this checkout on a real runner with the CLI built from the same
 # commit, following the two-job pattern of the workflow init-ci --tools-diff-server --prompts-baseline
-# writes: a capture job that starts the example stdio server in the Docker sandbox and saves its tool
-# and prompt lists, and a compare job that diffs both against committed baselines and comments on the
-# pull request.
+# --resource-templates-baseline writes: a capture job that starts the example stdio server in the Docker
+# sandbox and saves its tool, prompt, and resource template lists, and a compare job that diffs each
+# against a committed baseline and comments on the pull request.
 on:
   pull_request:
   push:
@@ -96,6 +96,9 @@ jobs:
           prompts-capture-server: doctorRuntime
           prompts-capture-sandbox: docker
           prompts-capture-defer-findings: "true"
+          resource-templates-capture-server: doctorRuntime
+          resource-templates-capture-sandbox: docker
+          resource-templates-capture-defer-findings: "true"
           output-dir: ${{ runner.temp }}/capture
           artifact-name: mcp-tools-capture
 
@@ -105,10 +108,12 @@ jobs:
           STATUS: ${{ steps.capture.outputs.status }}
           CAPTURE_PATH: ${{ steps.capture.outputs.tools-capture-path }}
           PROMPTS_CAPTURE_PATH: ${{ steps.capture.outputs.prompts-capture-path }}
+          TEMPLATES_CAPTURE_PATH: ${{ steps.capture.outputs.resource-templates-capture-path }}
         run: |
           test "$STATUS" = "0"
           test -s "$CAPTURE_PATH"
           test -s "$PROMPTS_CAPTURE_PATH"
+          test -s "$TEMPLATES_CAPTURE_PATH"
 
   compare:
     needs: [package, capture]
@@ -145,6 +150,10 @@ jobs:
           prompts-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-prompts-current.json
           prompts-diff-fail-on: breaking
           prompts-diff-comment: "true"
+          resource-templates-diff-before: tests/fixtures/action-e2e/resource-templates-baseline.json
+          resource-templates-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-resource-templates-current.json
+          resource-templates-diff-fail-on: breaking
+          resource-templates-diff-comment: "true"
           output-dir: ${{ runner.temp }}/compare
           artifact-name: mcp-tools-diff
 
@@ -154,10 +163,11 @@ jobs:
           STATUS: ${{ steps.diff.outputs.status }}
           DIFF_JSON: ${{ steps.diff.outputs.tools-diff-json-path }}
           PROMPTS_DIFF_JSON: ${{ steps.diff.outputs.prompts-diff-json-path }}
+          TEMPLATES_DIFF_JSON: ${{ steps.diff.outputs.resource-templates-diff-json-path }}
         run: |
           test "$STATUS" = "0"
           node -e '
-            for (const name of ["DIFF_JSON", "PROMPTS_DIFF_JSON"]) {
+            for (const name of ["DIFF_JSON", "PROMPTS_DIFF_JSON", "TEMPLATES_DIFF_JSON"]) {
               const report = JSON.parse(require("node:fs").readFileSync(process.env[name], "utf8"));
               const { complete, added, removed, changed, breaking, unclassified } = report.comparison;
               if (report.status !== "pass" || !complete || added !== 0 || removed !== 0 || changed !== 0 || breaking !== 0 || unclassified !== 0) {

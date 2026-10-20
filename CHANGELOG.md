@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.80.0] - 2026-10-20
+
+### Added
+
+- the GitHub Action has `resource-templates-*` counterparts of the tool and prompt inputs (`resource-templates-capture-url`, `-capture-server`, `-capture-sandbox`, `-capture-env`, `-capture-token-env`, `-capture-defer-findings`, `resource-templates-diff-before`, `-diff-after`, `-diff-fail-on`, `-diff-comment`), with the same validation and exit statuses; it captures and compares resource template lists with CLI 1.79.0 or later, writes `mcp-resource-templates-current.json`, `mcp-resource-templates-diff.json`, and `mcp-resource-templates-diff.md`, adds the summary to the step summary and the action manifest, and exposes `resource-templates-capture-path`, `resource-templates-diff-json-path`, and `resource-templates-diff-summary-path`
+- `resource-templates-diff-comment: "true"` posts the comparison as its own pull request comment with the marker `<!-- codex-plugin-doctor:resource-templates-diff -->`, under the same conditions as the tool and prompt diff comments
+- `init-ci --tools-diff-server <name> --resource-templates-baseline <path>` adds the same server's resource template capture and comparison to the two-job workflow; every baseline must be a different path
+- the Action end-to-end workflow also captures the example server's resource templates in the Docker sandbox and compares them with a committed baseline
+
+### Changed
+
+- the diff comment skip warning and the `init-ci` error for options given without `--tools-diff-server` also name resource templates
+
 ## [1.79.0] - 2026-10-19
 
 ### Added

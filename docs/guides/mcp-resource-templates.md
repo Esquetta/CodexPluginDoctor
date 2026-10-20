@@ -86,7 +86,9 @@ incomplete, or failing inputs or two templates with the same name.
 
 Reports identify templates by their one-based position in each file and never
 include names, URI templates, variables, descriptions, or other values. URI
-templates can carry host names and paths, so they stay out of every report.
+templates can carry host names and paths, so they stay out of every report; the
+saved list itself holds them, so treat it, and any artifact that uploads it, like
+the committed baseline.
 `--show-names` adds the template `name` to each change and, for changed
 templates, `locations`: the variable behind each reason (`null` for
 template-level reasons), at most 100 per template. Names and variables are
@@ -95,5 +97,16 @@ public output.
 
 The contracts are `doctor.resource-templates.json`,
 `doctor.resource-templates.file.json`, and `doctor.resource-templates.diff.json`;
-`doctor contract --json` prints them. The GitHub Action does not run these
-commands yet.
+`doctor contract --json` prints them.
+
+## GitHub Action and init-ci
+
+The GitHub Action runs the capture and comparison through `resource-templates-*`
+inputs, such as `resource-templates-capture-server`,
+`resource-templates-diff-before`, and `resource-templates-diff-comment`, with the
+same rules as the tool inputs; see
+[GitHub Action Usage](github-action.md#resource-template-lists). The comparison
+gets its own pull request comment and needs CLI 1.79.0 or later in `version`.
+`codex-plugin-doctor init-ci . --tools-diff-server <name>
+--resource-templates-baseline mcp/resource-templates-baseline.json` adds the
+server's template capture and comparison to the generated workflow.
