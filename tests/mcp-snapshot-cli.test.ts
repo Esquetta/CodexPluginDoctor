@@ -62,6 +62,12 @@ describe("doctor mcp-snapshot", () => {
         expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json \(\d+ bytes\)\.$/u)
       ]);
       expect((await readdir(saveDir)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-tools-current.json"]);
+
+      const none = snapshot("not-applicable");
+      none.responses = { tools: null, prompts: null, resourceTemplates: null };
+      const empty = capture();
+      expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", path.join(directory, "empty")], empty.io, { captureMcpSnapshotImpl: vi.fn().mockResolvedValue(none) })).toBe(2);
+      expect(empty.stderr).toEqual(["No list was enumerated completely, so nothing was saved."]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

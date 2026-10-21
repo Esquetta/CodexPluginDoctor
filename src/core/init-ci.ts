@@ -53,7 +53,7 @@ export interface ToolsDiffWorkflowOptions {
 const yamlString = (value: string) => JSON.stringify(value);
 
 /**
- * A pull request workflow in two jobs: the first starts the stdio server and uploads its tool list,
+ * A pull request workflow in two jobs: the first starts the stdio server and uploads its lists,
  * and the second compares it with the committed baseline and comments. Only the second job may write
  * to pull requests, and it runs no package code.
  */
@@ -81,19 +81,17 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          path: .",
     "          check: \"false\"",
     "          runtime: \"true\"",
-    `          tools-capture-server: ${yamlString(options.server)}`,
-    ...(options.sandbox === "docker" ? ["          tools-capture-sandbox: docker"] : []),
-    "          # Catalog findings do not fail this job; the compare job re-checks the saved list.",
-    "          tools-capture-defer-findings: \"true\"",
-    ...(options.promptsBaseline === null ? [] : [
-      `          prompts-capture-server: ${yamlString(options.server)}`,
-      ...(options.sandbox === "docker" ? ["          prompts-capture-sandbox: docker"] : []),
-      "          prompts-capture-defer-findings: \"true\""
-    ]),
-    ...(options.resourceTemplatesBaseline === null ? [] : [
-      `          resource-templates-capture-server: ${yamlString(options.server)}`,
-      ...(options.sandbox === "docker" ? ["          resource-templates-capture-sandbox: docker"] : []),
-      "          resource-templates-capture-defer-findings: \"true\""
+    // A snapshot reads every list in one server session, so the server starts once for several comparisons.
+    ...(options.promptsBaseline === null && options.resourceTemplatesBaseline === null ? [
+      `          tools-capture-server: ${yamlString(options.server)}`,
+      ...(options.sandbox === "docker" ? ["          tools-capture-sandbox: docker"] : []),
+      "          # Catalog findings do not fail this job; the compare job re-checks the saved list.",
+      "          tools-capture-defer-findings: \"true\""
+    ] : [
+      `          snapshot-server: ${yamlString(options.server)}`,
+      ...(options.sandbox === "docker" ? ["          snapshot-sandbox: docker"] : []),
+      "          # Catalog findings do not fail this job; the compare job re-checks the saved lists.",
+      "          snapshot-defer-findings: \"true\""
     ]),
     "          artifact-name: mcp-tools-capture",
     "",

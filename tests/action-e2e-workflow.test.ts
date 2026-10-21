@@ -41,7 +41,7 @@ describe("Action end-to-end workflow", () => {
     }
   });
 
-  it("captures in the Docker sandbox without a write token and compares in a separate job", async () => {
+  it("snapshots every list in the Docker sandbox without a write token and compares in a separate job", async () => {
     const workflow = await loadWorkflow();
     const [capture] = localAction(workflow.jobs.capture.steps);
     const [compare] = localAction(workflow.jobs.compare.steps);
@@ -49,10 +49,9 @@ describe("Action end-to-end workflow", () => {
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.capture.permissions).toBeUndefined();
     expect(capture.with).toMatchObject({
-      check: "false", runtime: "true", "tools-capture-sandbox": "docker", "tools-capture-defer-findings": "true",
-      "prompts-capture-server": "doctorRuntime", "prompts-capture-sandbox": "docker", "prompts-capture-defer-findings": "true",
-      "resource-templates-capture-server": "doctorRuntime", "resource-templates-capture-sandbox": "docker", "resource-templates-capture-defer-findings": "true"
+      check: "false", runtime: "true", "snapshot-server": "doctorRuntime", "snapshot-sandbox": "docker", "snapshot-defer-findings": "true"
     });
+    expect(Object.keys(capture.with ?? {}).filter((input) => input.includes("-capture-"))).toEqual([]);
     expect(capture.with?.["tools-diff-comment"]).toBeUndefined();
     expect(capture.with?.["prompts-diff-comment"]).toBeUndefined();
     expect(capture.with?.["resource-templates-diff-comment"]).toBeUndefined();

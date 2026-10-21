@@ -54,6 +54,30 @@ inputs:
     description: Fail unless the offline submission preflight is automatically ready; this does not replace manual review.
     required: false
     default: "false"
+  snapshot-url:
+    description: Optional HTTP MCP endpoint whose tool, prompt, and resource template lists are saved to output-dir with doctor mcp-snapshot --save-dir, as mcp-tools-current.json, mcp-prompts-current.json, and mcp-resource-templates-current.json. Each saved list becomes the after input of its comparison when that comparison's before input is set and its after input is empty. Requires allow-network and CLI 1.81.0 or later in version; it cannot be combined with the tools-, prompts-, or resource-templates-capture inputs.
+    required: false
+    default: ""
+  snapshot-server:
+    description: Optional name of a local stdio MCP server from the package at path that doctor mcp-snapshot --server --runtime starts once to save every list it offers, like snapshot-url. Requires runtime and CLI 1.81.0 or later in version; it cannot be combined with snapshot-url, installed, or the tools-, prompts-, or resource-templates-capture inputs.
+    required: false
+    default: ""
+  snapshot-sandbox:
+    description: Optional sandbox for snapshot-server, like tools-capture-sandbox.
+    required: false
+    default: ""
+  snapshot-env:
+    description: Optional names of host environment variables that snapshot-sandbox docker passes into the container by name, like tools-capture-env.
+    required: false
+    default: ""
+  snapshot-defer-findings:
+    description: When "true", catalog warnings and failures found during a snapshot do not fail this step, like tools-capture-defer-findings. A list the server offers but that cannot be read completely still records status 2.
+    required: false
+    default: "false"
+  snapshot-token-env:
+    description: Optional name of an environment variable that holds a bearer token for snapshot-url, like tools-capture-token-env.
+    required: false
+    default: ""
   tools-capture-url:
     description: Optional HTTP MCP endpoint whose complete tool list is saved to output-dir with doctor tools --save-response. Requires allow-network; loopback endpoints also require allow-local-network. When tools-diff-before is set and tools-diff-after is empty, the capture becomes the comparison's after input.
     required: false
@@ -386,6 +410,12 @@ runs:
         CORPUS_METRICS_FAIL_ON_REGRESSION_INPUT: ${{ inputs['corpus-metrics-fail-on-regression'] }}
         CHECK_INPUT: ${{ inputs.check }}
         RUNTIME_INPUT: ${{ inputs.runtime }}
+        SNAPSHOT_URL_INPUT: ${{ inputs['snapshot-url'] }}
+        SNAPSHOT_SERVER_INPUT: ${{ inputs['snapshot-server'] }}
+        SNAPSHOT_SANDBOX_INPUT: ${{ inputs['snapshot-sandbox'] }}
+        SNAPSHOT_ENV_INPUT: ${{ inputs['snapshot-env'] }}
+        SNAPSHOT_DEFER_FINDINGS_INPUT: ${{ inputs['snapshot-defer-findings'] }}
+        SNAPSHOT_TOKEN_ENV_INPUT: ${{ inputs['snapshot-token-env'] }}
         TOOLS_CAPTURE_URL_INPUT: ${{ inputs['tools-capture-url'] }}
         TOOLS_CAPTURE_SERVER_INPUT: ${{ inputs['tools-capture-server'] }}
         TOOLS_CAPTURE_SANDBOX_INPUT: ${{ inputs['tools-capture-sandbox'] }}
@@ -460,56 +490,62 @@ runs:
           if (( ${#names[@]} > 0 )); then printf '%s\n' "${names[@]}"; fi
         }
 
-        # Validates the capture inputs of one kind, tools, prompts, or resource-templates, before any command runs.
-        # Arguments: kind, capture url, server, sandbox, env names, defer findings, token env.
+        # Validates one set of capture inputs, before any command runs. Arguments: the input name prefix
+        # (snapshot, tools-capture, prompts-capture, or resource-templates-capture), then its url, server,
+        # sandbox, env names, defer findings, and token env inputs.
         validate_capture_inputs() {
-          local kind="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"
+          local prefix="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"
           if [[ "$RUNTIME_INPUT" == "true" && -n "$token_env" ]]; then
-            reject_usage "$kind-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+            reject_usage "$prefix-token-env cannot be combined with runtime probing. Use separate Action steps."
           fi
 
           # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
           if [[ -n "$server" && -n "$url" ]]; then
-            reject_usage "$kind-capture-url and $kind-capture-server cannot be combined."
+            reject_usage "$prefix-url and $prefix-server cannot be combined."
           fi
 
           if [[ -n "$server" && "$INSTALLED_INPUT" == "true" ]]; then
-            reject_usage "$kind-capture-server reads the package at path and cannot be combined with installed: true."
+            reject_usage "$prefix-server reads the package at path and cannot be combined with installed: true."
           fi
 
           if [[ -n "$sandbox" && "$sandbox" != "docker" ]]; then
-            reject_usage "$kind-capture-sandbox must be docker or empty."
+            reject_usage "$prefix-sandbox must be docker or empty."
           fi
 
           if [[ -n "$sandbox" && -z "$server" ]]; then
-            reject_usage "$kind-capture-sandbox requires $kind-capture-server."
+            reject_usage "$prefix-sandbox requires $prefix-server."
           fi
 
           local names=() seen=" " name
           mapfile -t names < <(capture_env_names "$env_input")
           if (( ${#names[@]} > 0 )) && [[ "$sandbox" != "docker" ]]; then
-            reject_usage "$kind-capture-env requires $kind-capture-sandbox: docker; a native server already inherits the step's environment."
+            reject_usage "$prefix-env requires $prefix-sandbox: docker; a native server already inherits the step's environment."
           fi
           for name in "${names[@]}"; do
             if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-              reject_usage "$kind-capture-env must list environment variable names."
+              reject_usage "$prefix-env must list environment variable names."
             fi
             if [[ "$seen" == *" $name "* ]]; then
-              reject_usage "$kind-capture-env lists $name more than once."
+              reject_usage "$prefix-env lists $name more than once."
             fi
             seen+="$name "
           done
 
           if [[ "$defer" != "true" && "$defer" != "false" ]]; then
-            reject_usage "$kind-capture-defer-findings must be true or false."
+            reject_usage "$prefix-defer-findings must be true or false."
           fi
         }
 
-        validate_capture_inputs tools "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \
+        validate_capture_inputs snapshot "$SNAPSHOT_URL_INPUT" "$SNAPSHOT_SERVER_INPUT" "$SNAPSHOT_SANDBOX_INPUT" \
+          "$SNAPSHOT_ENV_INPUT" "$SNAPSHOT_DEFER_FINDINGS_INPUT" "$SNAPSHOT_TOKEN_ENV_INPUT"
+        if [[ ( -n "$SNAPSHOT_URL_INPUT" || -n "$SNAPSHOT_SERVER_INPUT" ) && -n "$TOOLS_CAPTURE_URL_INPUT$TOOLS_CAPTURE_SERVER_INPUT$PROMPTS_CAPTURE_URL_INPUT$PROMPTS_CAPTURE_SERVER_INPUT$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" ]]; then
+          reject_usage "snapshot-url and snapshot-server cannot be combined with the tools-, prompts-, or resource-templates-capture inputs."
+        fi
+        validate_capture_inputs tools-capture "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \
           "$TOOLS_CAPTURE_ENV_INPUT" "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" "$TOOLS_CAPTURE_TOKEN_ENV_INPUT"
-        validate_capture_inputs prompts "$PROMPTS_CAPTURE_URL_INPUT" "$PROMPTS_CAPTURE_SERVER_INPUT" "$PROMPTS_CAPTURE_SANDBOX_INPUT" \
+        validate_capture_inputs prompts-capture "$PROMPTS_CAPTURE_URL_INPUT" "$PROMPTS_CAPTURE_SERVER_INPUT" "$PROMPTS_CAPTURE_SANDBOX_INPUT" \
           "$PROMPTS_CAPTURE_ENV_INPUT" "$PROMPTS_CAPTURE_DEFER_FINDINGS_INPUT" "$PROMPTS_CAPTURE_TOKEN_ENV_INPUT"
-        validate_capture_inputs resource-templates "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" \
+        validate_capture_inputs resource-templates-capture "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" \
           "$RESOURCE_TEMPLATES_CAPTURE_SANDBOX_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_ENV_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_DEFER_FINDINGS_INPUT" \
           "$RESOURCE_TEMPLATES_CAPTURE_TOKEN_ENV_INPUT"
 
@@ -676,7 +712,7 @@ runs:
         elif [[ "$CHECK_INPUT" != "false" ]]; then
           echo "check must be true or false." >&2
           record_status 2
-        elif [[ -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$PROMPTS_CAPTURE_URL_INPUT" && -z "$PROMPTS_CAPTURE_SERVER_INPUT" && -z "$PROMPTS_DIFF_BEFORE_INPUT" && -z "$PROMPTS_DIFF_AFTER_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
+        elif [[ -z "$SNAPSHOT_URL_INPUT" && -z "$SNAPSHOT_SERVER_INPUT" && -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$PROMPTS_CAPTURE_URL_INPUT" && -z "$PROMPTS_CAPTURE_SERVER_INPUT" && -z "$PROMPTS_DIFF_BEFORE_INPUT" && -z "$PROMPTS_DIFF_AFTER_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
           echo "check: false requires another Action mode." >&2
           record_status 2
         fi
@@ -727,18 +763,23 @@ runs:
         # Captures and compares one definition list. Arguments: kind (tools, prompts, or resource-templates),
         # var (the kind as a bash name), noun (tool, prompt, or resource template), title (as in the Markdown
         # heading), then that kind's capture url, server, sandbox, env names, defer findings, and token env
-        # inputs, and its diff before, after, and fail-on inputs. Sets <var>_capture_output, <var>_diff_ran,
-        # <var>_diff_json_output, and <var>_diff_summary_output.
+        # inputs, its diff before, after, and fail-on inputs, and the file a snapshot saved for it, or "" when
+        # no snapshot ran. Sets <var>_capture_output, <var>_diff_ran, <var>_diff_json_output, and
+        # <var>_diff_summary_output.
         capture_and_diff() {
           local kind="$1" var="$2" noun="$3" title="$4" url="$5" server="$6" sandbox="$7" env_input="$8" defer="$9"
-          local token_env="${10}" before="${11}" after="${12}" fail_on="${13}"
+          local token_env="${10}" before="${11}" after="${12}" fail_on="${13}" snapshot_file="${14}"
           local capture_path="$report_dir/mcp-$kind-current.json"
           local diff_json_path="$report_dir/mcp-$kind-diff.json"
           local diff_summary_path="$report_dir/mcp-$kind-diff.md"
           local capture_output="" diff_after="$after" capture_feeds_diff=false
           local capture_args=() env_names=() name code diff_args diff_code diff_markdown
-          if [[ ( -n "$url" || -n "$server" ) && -n "$before" && -z "$after" ]]; then
+          if [[ ( -n "$url" || -n "$server" || -n "$snapshot_file" ) && -n "$before" && -z "$after" ]]; then
             capture_feeds_diff=true
+          fi
+          # A snapshot earlier in this step saved the list when the server offered it and it was complete.
+          if [[ -n "$snapshot_file" && -f "$snapshot_file" ]]; then
+            capture_output="$snapshot_file"
           fi
 
           if [[ -z "$url" && -n "$token_env" ]]; then
@@ -850,16 +891,91 @@ runs:
           fi
         }
 
+        # A snapshot reads every list in one server session and saves the complete ones under the names the
+        # per-kind captures use. Succeeds when the snapshot saved a kind's list and no comparison in this
+        # step re-checks it. Arguments: kind, that kind's diff before and after inputs.
+        snapshot_unchecked() {
+          [[ -f "$report_dir/mcp-$1-current.json" && ( -z "$2" || -n "$3" ) ]]
+        }
+        snapshot_ran=false
+        if [[ -n "$SNAPSHOT_SERVER_INPUT" || -n "$SNAPSHOT_URL_INPUT" ]]; then
+          snapshot_args=()
+          if [[ -n "$SNAPSHOT_SERVER_INPUT" ]]; then
+            if [[ "$RUNTIME_INPUT" != "true" ]]; then
+              echo "snapshot-server requires runtime: true." >&2
+              record_status 2
+            else
+              snapshot_args=(doctor mcp-snapshot "$PACKAGE_PATH_INPUT" --server "$SNAPSHOT_SERVER_INPUT" --runtime --save-dir "$report_dir")
+              if [[ "$SNAPSHOT_SANDBOX_INPUT" == "docker" ]]; then
+                snapshot_args+=(--sandbox docker)
+                mapfile -t snapshot_env_names < <(capture_env_names "$SNAPSHOT_ENV_INPUT")
+                for name in "${snapshot_env_names[@]}"; do
+                  snapshot_args+=(--env "$name")
+                done
+              fi
+            fi
+          elif [[ "$ALLOW_NETWORK_INPUT" != "true" ]]; then
+            echo "snapshot-url requires allow-network: true." >&2
+            record_status 2
+          elif [[ -n "$SNAPSHOT_TOKEN_ENV_INPUT" && ! "$SNAPSHOT_TOKEN_ENV_INPUT" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            echo "snapshot-token-env must be an environment variable name." >&2
+            record_status 2
+          elif [[ -n "$SNAPSHOT_TOKEN_ENV_INPUT" && -z "${!SNAPSHOT_TOKEN_ENV_INPUT:-}" ]]; then
+            echo "Bearer token environment variable is not set: ${SNAPSHOT_TOKEN_ENV_INPUT}" >&2
+            record_status 2
+          else
+            snapshot_args=(doctor mcp-snapshot "$SNAPSHOT_URL_INPUT" --allow-network --save-dir "$report_dir")
+            if [[ "$ALLOW_LOCAL_NETWORK_INPUT" == "true" ]]; then
+              snapshot_args+=(--allow-local-network)
+            fi
+            if [[ -n "$SNAPSHOT_TOKEN_ENV_INPUT" ]]; then
+              snapshot_args+=(--bearer-token-env "$SNAPSHOT_TOKEN_ENV_INPUT")
+            fi
+          fi
+          if (( ${#snapshot_args[@]} > 0 )); then
+            # Remove earlier captures so a list that is not saved now can never be compared as the live one.
+            rm -f "$report_dir/mcp-tools-current.json" "$report_dir/mcp-prompts-current.json" "$report_dir/mcp-resource-templates-current.json"
+            echo "::group::MCP snapshot"
+            set +e
+            codex-plugin-doctor "${snapshot_args[@]}"
+            snapshot_code="$?"
+            set -e
+            echo "::endgroup::"
+            snapshot_ran=true
+            if [[ "$snapshot_code" -ne 0 && "$snapshot_code" -ne 1 ]]; then
+              echo "Codex Plugin Doctor MCP snapshot did not read every list the server offers completely (status ${snapshot_code})."
+              record_status 2
+            elif [[ ! -f "$report_dir/mcp-tools-current.json" && ! -f "$report_dir/mcp-prompts-current.json" && ! -f "$report_dir/mcp-resource-templates-current.json" ]]; then
+              echo "Codex Plugin Doctor MCP snapshot saved no list (status ${snapshot_code})."
+              record_status 2
+            elif [[ "$SNAPSHOT_DEFER_FINDINGS_INPUT" == "true" ]]; then
+              :
+            # Findings reach the status here unless every saved list feeds a comparison that re-checks it.
+            elif snapshot_unchecked tools "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" \
+              || snapshot_unchecked prompts "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" \
+              || snapshot_unchecked resource-templates "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT"; then
+              record_status "$snapshot_code"
+            fi
+          fi
+        elif [[ -n "$SNAPSHOT_TOKEN_ENV_INPUT" ]]; then
+          echo "snapshot-token-env requires snapshot-url." >&2
+          record_status 2
+        fi
+        snapshot_file() {
+          if [[ "$snapshot_ran" == "true" ]]; then printf '%s' "$report_dir/mcp-$1-current.json"; fi
+        }
+
         capture_and_diff tools tools tool Tool "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \
           "$TOOLS_CAPTURE_ENV_INPUT" "$TOOLS_CAPTURE_DEFER_FINDINGS_INPUT" "$TOOLS_CAPTURE_TOKEN_ENV_INPUT" \
-          "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" "$TOOLS_DIFF_FAIL_ON_INPUT"
+          "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" "$TOOLS_DIFF_FAIL_ON_INPUT" "$(snapshot_file tools)"
         capture_and_diff prompts prompts prompt Prompt "$PROMPTS_CAPTURE_URL_INPUT" "$PROMPTS_CAPTURE_SERVER_INPUT" "$PROMPTS_CAPTURE_SANDBOX_INPUT" \
           "$PROMPTS_CAPTURE_ENV_INPUT" "$PROMPTS_CAPTURE_DEFER_FINDINGS_INPUT" "$PROMPTS_CAPTURE_TOKEN_ENV_INPUT" \
-          "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" "$PROMPTS_DIFF_FAIL_ON_INPUT"
+          "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" "$PROMPTS_DIFF_FAIL_ON_INPUT" "$(snapshot_file prompts)"
         capture_and_diff resource-templates resource_templates "resource template" "Resource Template" \
           "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_SANDBOX_INPUT" \
           "$RESOURCE_TEMPLATES_CAPTURE_ENV_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_DEFER_FINDINGS_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_TOKEN_ENV_INPUT" \
-          "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" "$RESOURCE_TEMPLATES_DIFF_FAIL_ON_INPUT"
+          "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" "$RESOURCE_TEMPLATES_DIFF_FAIL_ON_INPUT" \
+          "$(snapshot_file resource-templates)"
 
         if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then
           echo "submission and submission-archive cannot be selected together." >&2

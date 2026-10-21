@@ -562,7 +562,10 @@ async function finishSnapshotCommand(io: CliIo, snapshot: McpSnapshot, json: boo
     io.writeStderr("The snapshot directory could not be created.");
     return 2;
   }
-  if (saved.length === 0) io.writeStderr("No list was enumerated completely, so nothing was saved.");
+  if (saved.length === 0) {
+    io.writeStderr("No list was enumerated completely, so nothing was saved.");
+    exitCode = 2;
+  }
   for (const { fileName, method, result } of saved) {
     if (result.kind === "saved") {
       io.writeStderr(`Saved a complete ${method} response with ${result.count} entries as ${fileName} (${result.bytes} bytes).`);

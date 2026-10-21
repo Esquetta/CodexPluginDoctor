@@ -4,6 +4,21 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.81.0] - 2026-10-21
+
+### Added
+
+- added `doctor mcp-snapshot`, which reads a server's tool, prompt, and resource template lists in one run over HTTP (`--allow-network`) or from a local stdio server (`--server <name> --runtime`, with the Docker sandbox and runtime approval options of `doctor tools`) that starts once for all three lists; lists whose capability the server does not declare are `not-applicable`, and the overall status is the most serious list status
+- `doctor mcp-snapshot --save-dir <dir>` writes each complete list as `mcp-tools-current.json`, `mcp-prompts-current.json`, or `mcp-resource-templates-current.json` for the matching `-file` and `-diff` commands, and exits `2` when it writes no list
+- the `doctor.mcp-snapshot.json` contract describes the report, with each list's status, catalog, enumeration, and findings
+- the GitHub Action has `snapshot-url`, `snapshot-server`, `snapshot-sandbox`, `snapshot-env`, `snapshot-token-env`, and `snapshot-defer-findings` inputs that run one snapshot with CLI 1.81.0 or later and feed each saved list to its tool, prompt, or resource template comparison; they cannot be combined with the per-list capture inputs
+
+### Changed
+
+- `init-ci --tools-diff-server <name>` with `--prompts-baseline` or `--resource-templates-baseline` writes a `capture` job that uses one snapshot instead of one capture per list
+- the Action end-to-end workflow captures the example server with one snapshot in the Docker sandbox
+- the message for `--sandbox` on an unsupported command now also lists `doctor mcp-snapshot --server`
+
 ## [1.80.0] - 2026-10-20
 
 ### Added

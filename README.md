@@ -206,6 +206,19 @@ and names appear only with `--show-names`. The GitHub Action and
 `init-ci --tools-diff-server <name> --resource-templates-baseline <path>` run the same comparison on pull requests.
 See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.md).
 
+### MCP Snapshot
+
+```bash
+codex-plugin-doctor doctor mcp-snapshot ./my-plugin --server my-server --runtime --save-dir ./mcp-current
+```
+
+`doctor mcp-snapshot` reads the tool, prompt, and resource template lists in one
+run, starting a stdio server once, and `--save-dir` writes each complete list
+under the file name the matching `-file` and `-diff` commands use. The GitHub
+Action's `snapshot-server` and `snapshot-url` inputs feed all three comparisons
+from that one run, and `init-ci` uses it when it compares more than the tool list.
+See [MCP Snapshot](docs/guides/mcp-snapshot.md).
+
 ### Remote MCP Readiness
 
 Remote MCP runtime probing is disabled until you explicitly pass `--runtime --allow-network`. Loopback endpoints also require `--allow-local-network`:
@@ -624,9 +637,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.80.0
+      - uses: Esquetta/CodexPluginDoctor@v1.81.0
         with:
-          version: "1.80.0"
+          version: "1.81.0"
           path: .
           runtime: "true"
           policy: codex-publish

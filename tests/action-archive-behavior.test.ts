@@ -137,6 +137,18 @@ if [[ "\${1:-} \${2:-}" == "doctor tools" || "\${1:-} \${2:-}" == "doctor prompt
   fi
   exit "$code"
 fi
+if [[ "\${1:-} \${2:-}" == "doctor mcp-snapshot" ]]; then
+  for (( index = 1; index <= $#; index += 1 )); do
+    if [[ "\${!index}" == "--save-dir" ]]; then
+      next=$((index + 1))
+      save_dir="\${!next}"
+    fi
+  done
+  for kind in \${MOCK_SNAPSHOT_LISTS-tools prompts resource-templates}; do
+    printf '{"jsonrpc":"2.0"}\\n' > "$save_dir/mcp-$kind-current.json"
+  done
+  exit "\${MOCK_SNAPSHOT_EXIT:-0}"
+fi
 if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
   if [[ " $* " == *" --json "* ]]; then
     printf '{"status":"warn"}\\n'
@@ -1324,6 +1336,108 @@ describe("GitHub Action resource template diff", () => {
     } finally {
       await run.cleanup();
     }
+  });
+});
+
+describe("GitHub Action MCP snapshot", () => {
+  const snapshot = { check: "false", runtime: "true", "snapshot-server": "local-server" };
+  const allDiffs = { "tools-diff-before": "tools.json", "prompts-diff-before": "prompts.json", "resource-templates-diff-before": "templates.json" };
+
+  it("reads every list in one sandboxed session and compares each saved list with its baseline", async () => {
+    const run = await runArchiveAction({
+      ...snapshot, "snapshot-sandbox": "docker", "snapshot-env": "API_KEY", ...allDiffs
+    }, "0", "0", false, { API_KEY: "secret-sentinel" });
+
+    try {
+      const reportDirectory = toBashPath(run.reportDirectory);
+      const packagePath = toBashPath(path.join(run.root, "package"));
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([[
+        "doctor", "mcp-snapshot", packagePath, "--server", "local-server", "--runtime", "--save-dir", reportDirectory, "--sandbox", "docker", "--env", "API_KEY"
+      ]]);
+      for (const command of ["tools", "prompts", "resource-templates"]) expect(invocationsOf(run, command)).toEqual([]);
+      expect(toolsDiffInvocations(run)[0]).toEqual(["doctor", "tools-diff", "--before", "tools.json", "--after", `${reportDirectory}/mcp-tools-current.json`, "--fail-on", "any", "--json"]);
+      expect(promptsDiffInvocations(run)[0]).toEqual(["doctor", "prompts-diff", "--before", "prompts.json", "--after", `${reportDirectory}/mcp-prompts-current.json`, "--fail-on", "any", "--json"]);
+      expect(resourceTemplatesDiffInvocations(run)[0]).toEqual([
+        "doctor", "resource-templates-diff", "--before", "templates.json", "--after", `${reportDirectory}/mcp-resource-templates-current.json`, "--fail-on", "any", "--json"
+      ]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", promptsDiff: "true", resourceTemplatesDiff: "true", status: "0" });
+      expect(run.output["prompts-capture-path"]).toBe(`${reportDirectory}/mcp-prompts-current.json`);
+      expect(run.manifest.reports.resourceTemplatesCapture).toEqual({ enabled: true, path: `${reportDirectory}/mcp-resource-templates-current.json` });
+      expect(JSON.stringify(run.invocations)).not.toContain("secret-sentinel");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("snapshots an HTTP endpoint with network consent and a bearer token by name", async () => {
+    const url = "https://mcp.example.test/mcp";
+    const refused = await runArchiveAction({ check: "false", "snapshot-url": url });
+    try {
+      expect(invocationsOf(refused, "mcp-snapshot")).toEqual([]);
+      expect(await refused.readState()).toMatchObject({ status: "2" });
+    } finally {
+      await refused.cleanup();
+    }
+
+    const run = await runArchiveAction({ check: "false", "allow-network": "true", "snapshot-url": url, "snapshot-token-env": "MCP_TOKEN" }, "0", "0", false, { MCP_TOKEN: "token-sentinel" });
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([[
+        "doctor", "mcp-snapshot", url, "--allow-network", "--save-dir", toBashPath(run.reportDirectory), "--bearer-token-env", "MCP_TOKEN"
+      ]]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "0" });
+      expect(run.output["tools-capture-path"]).toBe(toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json")));
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("compares only the lists the snapshot saved and never a stale capture", async () => {
+    const run = await runArchiveAction({ ...snapshot, ...allDiffs }, "0", "0", true, { MOCK_SNAPSHOT_LISTS: "prompts", MOCK_SNAPSHOT_EXIT: "2" });
+
+    try {
+      expect(promptsDiffInvocations(run)[0]).toContain(`${toBashPath(run.reportDirectory)}/mcp-prompts-current.json`);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(resourceTemplatesDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", promptsDiff: "true", resourceTemplatesDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    ["no comparison runs", {}, "1"],
+    ["findings are deferred", { "snapshot-defer-findings": "true" }, "0"],
+    ["every saved list feeds a comparison", allDiffs, "0"],
+    ["a saved list feeds no comparison", { "tools-diff-before": "tools.json" }, "1"]
+  ])("records snapshot findings when %s", async (_case, overrides, status) => {
+    const run = await runArchiveAction({ ...snapshot, ...overrides }, "0", "0", false, { MOCK_SNAPSHOT_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ status });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each(["false", "true"])("records status 2 when the snapshot saves no list, with deferred findings %s", async (defer) => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-defer-findings": defer }, "0", "0", false, { MOCK_SNAPSHOT_LISTS: "", MOCK_SNAPSHOT_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    [{ ...snapshot, "tools-capture-server": "local-server" }, "snapshot-url and snapshot-server cannot be combined with the tools-, prompts-, or resource-templates-capture inputs."],
+    [{ ...snapshot, "snapshot-url": "https://mcp.example.test/mcp" }, "snapshot-url and snapshot-server cannot be combined."],
+    [{ check: "false", "snapshot-sandbox": "docker" }, "snapshot-sandbox requires snapshot-server."],
+    [{ ...snapshot, "snapshot-env": "API_KEY" }, "snapshot-env requires snapshot-sandbox: docker; a native server already inherits the step's environment."],
+    [{ ...snapshot, "snapshot-defer-findings": "yes" }, "snapshot-defer-findings must be true or false."]
+  ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
+    await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
   });
 });
 

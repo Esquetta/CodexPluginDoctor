@@ -3298,11 +3298,12 @@ describe("runCli", () => {
     const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
     expect(doctor("capture")["tools-capture-server"]).toBe(server);
     expect(doctor("capture")["tools-capture-sandbox"]).toBeUndefined();
+    expect(doctor("capture")["snapshot-server"]).toBeUndefined();
     expect(doctor("compare")["tools-diff-before"]).toBe("mcp/tools.json");
     expect(doctor("compare")["output-dir"]).toBe("${{ runner.temp }}/codex-plugin-doctor-reports");
   });
 
-  it("adds the same server's prompt capture and comparison with --prompts-baseline", async () => {
+  it("captures every list in one snapshot session and adds the prompt comparison with --prompts-baseline", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-prompts-"));
     const { io, stdout } = createIo();
     expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--prompts-baseline", "mcp/prompts/baseline.json", "--sandbox", "docker"], io)).toBe(0);
@@ -3312,11 +3313,12 @@ describe("runCli", () => {
     const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
 
     expect(doctor("capture")).toMatchObject({
-      "tools-capture-server": "my-server",
-      "prompts-capture-server": "my-server",
-      "prompts-capture-sandbox": "docker",
-      "prompts-capture-defer-findings": "true"
+      "snapshot-server": "my-server",
+      "snapshot-sandbox": "docker",
+      "snapshot-defer-findings": "true",
+      "artifact-name": "mcp-tools-capture"
     });
+    expect(Object.keys(doctor("capture")).filter((input) => input.includes("-capture-"))).toEqual([]);
     expect(doctor("capture")["prompts-diff-comment"]).toBeUndefined();
     expect(doctor("compare")).toMatchObject({
       "tools-diff-before": "mcp/tools-baseline.json",
@@ -3330,7 +3332,7 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain(`doctor prompts ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-response ${JSON.stringify(path.join(targetPath, "mcp/prompts/baseline.json"))}`);
   });
 
-  it("adds the same server's resource template capture and comparison with --resource-templates-baseline", async () => {
+  it("captures every list in one snapshot session and adds the resource template comparison with --resource-templates-baseline", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-templates-"));
     const { io, stdout } = createIo();
     expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--resource-templates-baseline", "mcp/templates/baseline.json", "--sandbox", "docker"], io)).toBe(0);
@@ -3339,9 +3341,9 @@ describe("runCli", () => {
     };
     const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
 
-    expect(doctor("capture")).toMatchObject({ "resource-templates-capture-server": "my-server", "resource-templates-capture-defer-findings": "true" });
-    expect(doctor("capture")["resource-templates-capture-sandbox"]).toBe("docker");
-    expect(doctor("capture")["prompts-capture-server"]).toBeUndefined();
+    expect(doctor("capture")).toMatchObject({ "snapshot-server": "my-server", "snapshot-sandbox": "docker", "snapshot-defer-findings": "true" });
+    expect(doctor("capture")["tools-capture-server"]).toBeUndefined();
+    expect(doctor("compare")["prompts-diff-before"]).toBeUndefined();
     expect(doctor("compare")).toMatchObject({
       "resource-templates-diff-before": "mcp/templates/baseline.json",
       "resource-templates-diff-after": "${{ runner.temp }}/mcp-tools-capture/mcp-resource-templates-current.json",
