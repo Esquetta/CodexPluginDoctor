@@ -2,9 +2,9 @@ name: Action E2E
 
 # Runs the composite Action from this checkout on a real runner with the CLI built from the same
 # commit, following the two-job pattern of the workflow init-ci --tools-diff-server --prompts-baseline
-# --resource-templates-baseline writes: a capture job that starts the example stdio server in the Docker
-# sandbox and saves its tool, prompt, and resource template lists, and a compare job that diffs each
-# against a committed baseline and comments on the pull request.
+# --resource-templates-baseline writes: a capture job that starts the example stdio server once in the
+# Docker sandbox and saves its tool, prompt, and resource template lists in one snapshot, and a compare
+# job that diffs each against a committed baseline and comments on the pull request.
 on:
   pull_request:
   push:
@@ -90,15 +90,9 @@ jobs:
           path: examples/codex-doctor-runtime
           check: "false"
           runtime: "true"
-          tools-capture-server: doctorRuntime
-          tools-capture-sandbox: docker
-          tools-capture-defer-findings: "true"
-          prompts-capture-server: doctorRuntime
-          prompts-capture-sandbox: docker
-          prompts-capture-defer-findings: "true"
-          resource-templates-capture-server: doctorRuntime
-          resource-templates-capture-sandbox: docker
-          resource-templates-capture-defer-findings: "true"
+          snapshot-server: doctorRuntime
+          snapshot-sandbox: docker
+          snapshot-defer-findings: "true"
           output-dir: ${{ runner.temp }}/capture
           artifact-name: mcp-tools-capture
 

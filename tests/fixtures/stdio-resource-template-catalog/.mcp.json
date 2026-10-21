@@ -27,6 +27,13 @@
         "./server.js",
         "modern-templates-list-missing"
       ]
+    },
+    "modern-prompts-list-missing": {
+      "command": "node",
+      "args": [
+        "./server.js",
+        "modern-prompts-list-missing"
+      ]
     }
   }
 }

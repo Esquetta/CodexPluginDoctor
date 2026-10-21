@@ -27,6 +27,7 @@ This directory contains public documentation for users, contributors, and securi
 - [Offline MCP Tool Diff](guides/offline-tool-diff.md)
 - [MCP Prompt Catalog and Diff](guides/mcp-prompts.md)
 - [MCP Resource Template Catalog and Diff](guides/mcp-resource-templates.md)
+- [MCP Snapshot](guides/mcp-snapshot.md)
 
 - [GitHub Action](guides/github-action.md)
 - [Release Gating](guides/release-gating.md)

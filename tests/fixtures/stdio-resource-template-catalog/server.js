@@ -1,4 +1,4 @@
-// Scripted stdio MCP server for doctor resource-templates capture tests. The first argument selects the behavior.
+// Scripted stdio MCP server for doctor resource-templates and mcp-snapshot capture tests. The first argument selects the behavior.
 import readline from "node:readline";
 
 const mode = process.argv[2] ?? "modern";
@@ -25,7 +25,8 @@ lines.on("line", (line) => {
     return send({
       jsonrpc: "2.0", id: message.id, result: {
         resultType: "complete", ttlMs: 60000, cacheScope: "public", supportedVersions: ["2026-07-28"],
-        capabilities: mode === "modern-no-resources" ? { tools: {} } : { resources: {} }
+        capabilities: mode === "modern-no-resources" ? { tools: {} }
+          : mode === "modern-prompts-list-missing" ? { tools: {}, prompts: {}, resources: {} } : { resources: {} }
       }
     });
   }
@@ -34,6 +35,12 @@ lines.on("line", (line) => {
       jsonrpc: "2.0", id: message.id, result: {
         protocolVersion: "2025-11-25", capabilities: { resources: { listChanged: false } }, serverInfo: { name: "scripted-legacy", version: "1.0.0" }
       }
+    });
+  }
+  if (message.method === "tools/list" && mode === "modern-prompts-list-missing") {
+    return send({
+      jsonrpc: "2.0", id: message.id,
+      result: { resultType: "complete", tools: [{ name: "lookup", inputSchema: { type: "object" } }], ttlMs: 60000, cacheScope: "public" }
     });
   }
   if (message.method === "resources/templates/list" && mode !== "modern-templates-list-missing") {

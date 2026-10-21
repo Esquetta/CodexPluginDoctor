@@ -27,9 +27,9 @@ The Action transfers these boolean inputs through environment-backed shell varia
 Use local Registry metadata gating when the repository contains a `server.json` intended for publication:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     registry-metadata: ./server.json
     require-registry-readiness: "true"
@@ -42,9 +42,9 @@ The Action writes `mcp-registry-readiness.json` and exposes `registry-report-pat
 Use the submission preflight only when a workflow needs its separate offline report:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     submission: "true"
     require-submission-ready: "true"
@@ -79,9 +79,9 @@ Compare two saved MCP `tools/list` responses, for example a committed baseline a
 a capture made earlier in the job with `doctor tools --save-response`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     tools-diff-before: mcp/tools-baseline.json
     tools-diff-after: tools-current.json
@@ -114,9 +114,9 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: Esquetta/CodexPluginDoctor@v1.80.0
+  - uses: Esquetta/CodexPluginDoctor@v1.81.0
     with:
-      version: "1.80.0"
+      version: "1.81.0"
       path: .
       tools-diff-before: mcp/tools-baseline.json
       tools-diff-after: tools-current.json
@@ -165,9 +165,9 @@ Repositories that ship an HTTP MCP server without a Codex plugin package can tur
 off the package check and compare the live tool list with a committed baseline:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     check: "false"
     allow-network: "true"
     tools-capture-url: https://mcp.example.com/mcp
@@ -205,7 +205,9 @@ approved loopback endpoint and is never printed or saved. An invalid name, an
 unset variable, or `tools-capture-token-env` without `tools-capture-url` records
 status `2` without a request. Combining `tools-capture-token-env` with
 `runtime: "true"` is rejected with exit `2` before any Doctor command runs,
-even when `check` is disabled. Run capture and runtime probing in separate
+even when `check` is disabled, and so is combining it with a package check under
+`profile: publish` or `policy: codex-publish` or `mcp-strict`, which turn on
+runtime probing. Run capture and runtime probing in separate
 Action steps, and provide the token variable only to the capture step.
 The saved file contains the server's raw tool definitions and is uploaded with the
 report artifact unless `upload-artifact` is `"false"`.
@@ -216,9 +218,9 @@ To capture a stdio server from the package's MCP configuration, set
 `tools-capture-server` to its name instead of `tools-capture-url`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -267,7 +269,7 @@ pass that file as `tools-diff-after`.
 
 `codex-plugin-doctor init-ci . --tools-diff-server <name> [--baseline <path>] [--prompts-baseline <path>] [--resource-templates-baseline <path>] [--sandbox docker]`
 writes `.github/workflows/codex-plugin-doctor-tools.yml` with this pattern for
-pull requests: a `capture` job that starts the server and uploads its tool list,
+pull requests: a `capture` job that starts the server and uploads its lists,
 and a `compare` job that downloads it and writes its reports outside the
 checkout, compares it with the committed baseline (`mcp/tools-baseline.json` by default, whose directory
 `init-ci` creates), fails on breaking or unclassified changes, and comments. The
@@ -287,9 +289,9 @@ Every `tools-capture-*` and `tools-diff-*` input has a `prompts-*` counterpart
 with the same rules, validation, and exit statuses:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -316,9 +318,10 @@ are independent, so either can be used without the other, and a server without
 prompts makes a prompt capture fail with status `2`. The prompt commands need
 CLI `1.77.0` or later in `version`.
 
-`init-ci --tools-diff-server <name> --prompts-baseline <path>` adds the prompt
-capture to the `capture` job and the prompt comparison and comment to the
-`compare` job, for the same server and sandbox. The prompt baseline must be a
+`init-ci --tools-diff-server <name> --prompts-baseline <path>` captures the
+prompt list in the `capture` job, through [one snapshot](#one-snapshot-for-every-list)
+for the same server and sandbox, and adds the prompt comparison and comment to
+the `compare` job. The prompt baseline must be a
 relative path inside the repository and differ from `--baseline`.
 
 ### Resource template lists
@@ -340,6 +343,63 @@ or later in `version`. `init-ci --resource-templates-baseline <path>` adds them
 to the generated workflow like `--prompts-baseline`; each baseline must be a
 different path.
 
+### One snapshot for every list
+
+`snapshot-server` or `snapshot-url` replaces the three per-list captures with one
+[`doctor mcp-snapshot`](mcp-snapshot.md) run, which reads every list from a
+stdio server in one session:
+
+```yaml
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
+  with:
+    version: "1.81.0"
+    check: "false"
+    runtime: "true"
+    snapshot-server: my-server
+    snapshot-sandbox: docker
+    tools-diff-before: mcp/tools-baseline.json
+    prompts-diff-before: mcp/prompts-baseline.json
+    resource-templates-diff-before: mcp/resource-templates-baseline.json
+    tools-diff-fail-on: breaking
+    prompts-diff-fail-on: breaking
+    resource-templates-diff-fail-on: breaking
+```
+
+The snapshot removes earlier `mcp-tools-current.json`,
+`mcp-prompts-current.json`, and `mcp-resource-templates-current.json` files from
+`output-dir`, then saves each complete list under that name, exposed as
+`tools-capture-path`, `prompts-capture-path`, and
+`resource-templates-capture-path`. Each saved list becomes the after input of
+its comparison when that comparison's `-diff-before` is set and its
+`-diff-after` is empty, and each comparison keeps its own fail-on input, report
+files, and pull request comment. A comparison whose list was not saved, because
+the server does not offer it or it was not read completely, is skipped with
+status `2`. Every saved list is uploaded with the report artifact unless
+`upload-artifact` is `"false"`, including lists no comparison uses, and
+`mcp-resource-templates-current.json` holds URI templates that can carry host
+names and paths.
+
+`snapshot-sandbox`, `snapshot-env`, and `snapshot-token-env` work like their
+`tools-capture-*` counterparts, with the same consent and validation:
+`snapshot-server` needs `runtime: "true"`, `snapshot-url` needs
+`allow-network: "true"` (and `allow-local-network: "true"` for loopback
+endpoints), and invalid combinations are rejected with exit `2` before any
+Doctor command runs. The snapshot inputs cannot be combined with any
+`tools-capture-*`, `prompts-capture-*`, or `resource-templates-capture-*` server
+or URL. A snapshot that saves no list records status `2`. Otherwise a snapshot
+that does not read every offered list completely records status `2`, and its
+catalog findings reach the status when a saved list feeds no comparison in the
+same step. With `snapshot-defer-findings: "true"`, neither fails the step: a
+later comparison judges the saved lists, and one whose list was not saved fails
+there. The snapshot inputs need CLI `1.81.0` or later in `version`.
+
+With `--prompts-baseline` or `--resource-templates-baseline`, `init-ci` writes
+the `capture` job with `snapshot-server` and `snapshot-defer-findings: "true"`
+instead of one capture input per list; the `compare` job is unchanged. The
+snapshot reads every list the server offers, so the uploaded artifact can hold a
+list that no comparison uses, and a list that is not compared and cannot be
+read completely does not fail the workflow.
+
 ## Recommended Workflow
 
 ```yaml
@@ -356,9 +416,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.80.0
+      - uses: Esquetta/CodexPluginDoctor@v1.81.0
         with:
-          version: "1.80.0"
+          version: "1.81.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -385,9 +445,9 @@ Every action run also writes `codex-plugin-doctor-action-manifest.json`. The man
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     sarif: "true"
 ```
@@ -399,9 +459,9 @@ The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to
 Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -450,11 +510,11 @@ The action also exposes these workflow outputs for follow-up steps:
 Use review bundle artifacts when a pull request or release workflow should preserve signed runtime approval, runtime policy, attestation, and release evidence handoff files.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -485,9 +545,9 @@ The CLI can produce badge output for release notes, README automation, or a stat
 Use a private corpus metrics manifest to measure reviewed precision, recall, and false-positive share in CI. The action writes only the public-safe metrics report into its artifact directory; snapshots, manifest contents, local paths, and review notes are not copied.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
 ```
@@ -495,9 +555,9 @@ Use a private corpus metrics manifest to measure reviewed precision, recall, and
 This writes `corpus-metrics.json`. To compare the result with a retained report and fail the job on regression:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
     corpus-metrics-baseline: .doctor-baselines/corpus-metrics.json
@@ -526,9 +586,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -548,9 +608,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 The composite action can pass profiles directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     profile: publish
 ```
@@ -560,9 +620,9 @@ The composite action can pass profiles directly:
 Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     path: .
     policy: codex-publish
 ```
@@ -574,9 +634,9 @@ Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The C
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -587,9 +647,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.80.0
+- uses: Esquetta/CodexPluginDoctor@v1.81.0
   with:
-    version: "1.80.0"
+    version: "1.81.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.
