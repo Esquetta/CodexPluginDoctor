@@ -1,0 +1,124 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+
+import type { Finding, RuntimeExecutionEvidence } from "../domain/types.js";
+import type { McpDiscoveryReport } from "./mcp-discovery.js";
+import { MCP_PROMPTS_LIST } from "./mcp-prompt-catalog.js";
+import { MCP_RESOURCE_TEMPLATES_LIST } from "./mcp-resource-template-catalog.js";
+import { captureStdioMcpCatalogs, type McpStdioServer, type McpStdioToolCatalogOptions } from "./mcp-stdio-tool-catalog.js";
+import {
+  captureMcpCatalog,
+  MCP_TOOLS_LIST,
+  type CatalogStatus,
+  type EnumerationCoverage,
+  type McpCatalogCapture,
+  type McpCatalogList,
+  type McpToolCatalogCache,
+  type McpToolCatalogOptions,
+  type McpToolCatalogProtocol
+} from "./mcp-tool-catalog.js";
+import { saveMcpListResponse, type McpListResponseSaveResult } from "./mcp-tool-response-file.js";
+
+export type McpSnapshotListKey = "tools" | "prompts" | "resourceTemplates";
+
+// The lists a snapshot reads, in order, with the file each complete one is saved to.
+const SNAPSHOT_LISTS: Array<{ key: McpSnapshotListKey; list: McpCatalogList<Finding>; fileName: string }> = [
+  { key: "tools", list: MCP_TOOLS_LIST, fileName: "mcp-tools-current.json" },
+  { key: "prompts", list: MCP_PROMPTS_LIST, fileName: "mcp-prompts-current.json" },
+  { key: "resourceTemplates", list: MCP_RESOURCE_TEMPLATES_LIST, fileName: "mcp-resource-templates-current.json" }
+];
+
+export interface McpSnapshotList {
+  status: CatalogStatus;
+  catalog: { complete: boolean; pagesRead: number; checked: number; reason: string | null };
+  enumeration: EnumerationCoverage;
+  findings: Finding[];
+}
+
+export interface McpSnapshotReport {
+  schemaVersion: 1;
+  scope: "mcp-surface-snapshot";
+  // Present only for local stdio servers.
+  transport?: "stdio";
+  status: CatalogStatus;
+  protocol?: McpToolCatalogProtocol;
+  execution?: RuntimeExecutionEvidence | null;
+  discovery: McpDiscoveryReport;
+  lists: Record<McpSnapshotListKey, McpSnapshotList>;
+  coverage: {
+    discovery: "pass" | "fail" | "skipped";
+    definitions: "shape-only";
+    // No tool is called, no prompt is retrieved, and no resource is read.
+    execution: "not-tested";
+    fullConformance: "not-tested";
+  };
+}
+
+export interface McpSnapshot {
+  report: McpSnapshotReport;
+  // Complete enumerations, which are the ones that can be saved.
+  responses: Record<McpSnapshotListKey, { items: unknown[]; cache: McpToolCatalogCache } | null>;
+}
+
+// The worst list status leads, but a list the server does not offer never makes the snapshot fail.
+const STATUS_ORDER: CatalogStatus[] = ["blocked", "incomplete", "unsupported", "fail", "warn", "pass", "not-applicable"];
+
+function snapshot(
+  captures: Array<McpCatalogCapture<Finding>>,
+  stdio?: { protocol: McpToolCatalogProtocol; execution: RuntimeExecutionEvidence | null }
+): McpSnapshot {
+  const discovery = captures[0].discovery;
+  const status = STATUS_ORDER.find((candidate) => captures.some((capture) => capture.status === candidate)) ?? "not-applicable";
+  const lists = {} as Record<McpSnapshotListKey, McpSnapshotList>;
+  const responses = {} as McpSnapshot["responses"];
+  SNAPSHOT_LISTS.forEach(({ key }, index) => {
+    const capture = captures[index];
+    lists[key] = { status: capture.status, catalog: capture.catalog, enumeration: capture.enumeration, findings: capture.findings };
+    responses[key] = capture.items !== null && capture.cache !== null ? { items: capture.items, cache: capture.cache } : null;
+  });
+  return {
+    report: {
+      schemaVersion: 1,
+      scope: "mcp-surface-snapshot",
+      ...(stdio === undefined ? {} : { transport: "stdio" as const }),
+      status,
+      ...(stdio === undefined ? {} : { protocol: stdio.protocol, execution: stdio.execution }),
+      discovery,
+      lists,
+      coverage: { discovery: discovery.coverage.discovery, definitions: "shape-only", execution: "not-tested", fullConformance: "not-tested" }
+    },
+    responses
+  };
+}
+
+// HTTP requests carry no session, so each list is captured on its own; the report shows the first discovery.
+export async function captureMcpSnapshot(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpSnapshot> {
+  const captures: Array<McpCatalogCapture<Finding>> = [];
+  for (const { list } of SNAPSHOT_LISTS) captures.push(await captureMcpCatalog(rawUrl, list, options));
+  return snapshot(captures);
+}
+
+// Starts the stdio server once and reads every list it offers in that one session.
+export async function captureStdioMcpSnapshot(server: McpStdioServer, options: McpStdioToolCatalogOptions = {}): Promise<McpSnapshot> {
+  const { captures, protocol, execution } = await captureStdioMcpCatalogs(server, SNAPSHOT_LISTS.map(({ list }) => list), options);
+  return snapshot(captures, { protocol, execution });
+}
+
+export interface McpSnapshotSaveResult {
+  key: McpSnapshotListKey;
+  fileName: string;
+  method: McpCatalogList<Finding>["method"];
+  result: McpListResponseSaveResult;
+}
+
+/** Saves each complete list as its own response file in the directory, which is created when missing. */
+export async function saveMcpSnapshot(directory: string, responses: McpSnapshot["responses"]): Promise<McpSnapshotSaveResult[]> {
+  await mkdir(directory, { recursive: true });
+  const results: McpSnapshotSaveResult[] = [];
+  for (const { key, list, fileName } of SNAPSHOT_LISTS) {
+    const response = responses[key];
+    if (response === null) continue;
+    results.push({ key, fileName, method: list.method, result: await saveMcpListResponse(path.join(directory, fileName), list.resultKey, response.items, response.cache) });
+  }
+  return results;
+}

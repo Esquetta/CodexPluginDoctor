@@ -210,6 +210,11 @@ describe("doctor contract command", () => {
           outputKind: null
         }),
         expect.objectContaining({
+          id: "doctor.mcp-snapshot.json",
+          command: "codex-plugin-doctor doctor mcp-snapshot <url> --allow-network --json",
+          outputKind: null
+        }),
+        expect.objectContaining({
           id: "doctor.resource-templates.json",
           command: "codex-plugin-doctor doctor resource-templates <url> --allow-network --json",
           outputKind: null

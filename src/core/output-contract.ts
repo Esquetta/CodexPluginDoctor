@@ -1038,6 +1038,62 @@ publicSchemaDefinitions.push({
   }
 });
 
+// A snapshot reports each list like its own catalog report, without repeating discovery.
+const catalogFindings = (id: string) => publicSchemaDefinitions.find((definition) => definition.id === id)!.properties!.findings;
+const snapshotList = (findings: unknown) => ({
+  type: "object", required: ["status", "catalog", "enumeration", "findings"],
+  properties: {
+    status: toolCatalogProperties.status,
+    catalog: {
+      type: "object", required: ["complete", "pagesRead", "checked", "reason"],
+      properties: {
+        complete: { type: "boolean" },
+        pagesRead: { type: "integer", minimum: 0, maximum: 5 },
+        checked: { type: "integer", minimum: 0, maximum: 500 },
+        reason: { type: ["string", "null"] }
+      },
+      additionalProperties: false
+    },
+    enumeration: { enum: ["complete", "incomplete", "not-tested"] },
+    findings
+  },
+  additionalProperties: false
+});
+publicSchemaDefinitions.push({
+  id: "doctor.mcp-snapshot.json",
+  command: "codex-plugin-doctor doctor mcp-snapshot <url> --allow-network --json",
+  required: ["schemaVersion", "scope", "status", "discovery", "lists", "coverage"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "mcp-surface-snapshot" },
+    // transport, protocol, and execution appear only on reports from `doctor mcp-snapshot <path> --server <name> --runtime`.
+    transport: { const: "stdio" },
+    status: toolCatalogProperties.status,
+    protocol: toolCatalogProperties.protocol,
+    execution: toolCatalogProperties.execution,
+    discovery: toolCatalogProperties.discovery,
+    lists: {
+      type: "object", required: ["tools", "prompts", "resourceTemplates"],
+      properties: {
+        tools: snapshotList(catalogFindings("doctor.tools.json")),
+        prompts: snapshotList(catalogFindings("doctor.prompts.json")),
+        resourceTemplates: snapshotList(catalogFindings("doctor.resource-templates.json"))
+      },
+      additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["discovery", "definitions", "execution", "fullConformance"],
+      properties: {
+        discovery: { enum: ["pass", "fail", "skipped"] },
+        definitions: { const: "shape-only" },
+        execution: { const: "not-tested" },
+        fullConformance: { const: "not-tested" }
+      },
+      additionalProperties: false
+    }
+  }
+});
+
 const promptFileReportDefinition = {
   id: "doctor.prompts.file.json",
   command: "codex-plugin-doctor doctor prompts-file <path> --json",

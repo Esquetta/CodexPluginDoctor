@@ -110,6 +110,7 @@ import {
 import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
 import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { compareMcpResourceTemplateFiles } from "./core/mcp-resource-template-diff.js";
+import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, type McpSnapshot } from "./core/mcp-snapshot.js";
 import { inspectMcpResourceTemplateFile } from "./core/mcp-resource-template-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
@@ -120,6 +121,7 @@ import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
 import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-resource-template-catalog-report.js";
+import { renderMcpSnapshotReport } from "./reporting/render-mcp-snapshot-report.js";
 import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
 import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
 import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
@@ -347,6 +349,8 @@ export interface RunCliOptions {
   captureStdioMcpPromptCatalogImpl?: typeof captureStdioMcpPromptCatalog;
   captureMcpResourceTemplateCatalogImpl?: typeof captureMcpResourceTemplateCatalog;
   captureStdioMcpResourceTemplateCatalogImpl?: typeof captureStdioMcpResourceTemplateCatalog;
+  captureMcpSnapshotImpl?: typeof captureMcpSnapshot;
+  captureStdioMcpSnapshotImpl?: typeof captureStdioMcpSnapshot;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -403,27 +407,42 @@ const resourceTemplatesFileUsage = "Usage: codex-plugin-doctor doctor resource-t
 
 const toolsUsage = "Usage: codex-plugin-doctor doctor tools <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor tools <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
+const snapshotUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot <url> --allow-network [--allow-local-network] [--json] [--save-dir <dir>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor mcp-snapshot <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-dir <dir>]";
+
 const resourceTemplatesUsage = "Usage: codex-plugin-doctor doctor resource-templates <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor resource-templates <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
 const promptsUsage = "Usage: codex-plugin-doctor doctor prompts <url> --allow-network [--allow-local-network] [--json] [--save-response <path>] [--bearer-token-env <NAME>]\n       codex-plugin-doctor doctor prompts <path> --server <name> --runtime [--sandbox docker [--env <NAME>]...] [--require-runtime-approval [--runtime-approval-digest <digest>]] [--json] [--save-response <path>]";
 
-/** What differs between the doctor tools and doctor prompts catalog commands. */
-interface CatalogCommand {
+/** What the HTTP and stdio argument handling needs to know about a capture command. */
+interface CatalogRunCommand {
+  name: "tools" | "prompts" | "resource-templates" | "mcp-snapshot";
+  // Names the command in argument errors, such as "tool catalog".
+  label: string;
+  saveFlag: "--save-response" | "--save-dir";
+  usage: string;
+}
+
+/** What differs between the doctor tools, prompts, and resource-templates catalog commands. */
+interface CatalogCommand extends CatalogRunCommand {
   name: "tools" | "prompts" | "resource-templates";
   noun: "Tool" | "Prompt" | "Resource template";
   plural: "tools" | "prompts" | "resource templates";
   method: "tools/list" | "prompts/list" | "resources/templates/list";
   // The saved response's result array key.
   resultKey: "tools" | "prompts" | "resourceTemplates";
-  usage: string;
 }
 
-const TOOL_CATALOG_COMMAND: CatalogCommand = { name: "tools", noun: "Tool", plural: "tools", method: "tools/list", resultKey: "tools", usage: toolsUsage };
-const PROMPT_CATALOG_COMMAND: CatalogCommand = { name: "prompts", noun: "Prompt", plural: "prompts", method: "prompts/list", resultKey: "prompts", usage: promptsUsage };
+const TOOL_CATALOG_COMMAND: CatalogCommand = {
+  name: "tools", label: "tool catalog", saveFlag: "--save-response", noun: "Tool", plural: "tools", method: "tools/list", resultKey: "tools", usage: toolsUsage
+};
+const PROMPT_CATALOG_COMMAND: CatalogCommand = {
+  name: "prompts", label: "prompt catalog", saveFlag: "--save-response", noun: "Prompt", plural: "prompts", method: "prompts/list", resultKey: "prompts", usage: promptsUsage
+};
 const RESOURCE_TEMPLATE_CATALOG_COMMAND: CatalogCommand = {
-  name: "resource-templates", noun: "Resource template", plural: "resource templates",
+  name: "resource-templates", label: "resource template catalog", saveFlag: "--save-response", noun: "Resource template", plural: "resource templates",
   method: "resources/templates/list", resultKey: "resourceTemplates", usage: resourceTemplatesUsage
 };
+const SNAPSHOT_COMMAND: CatalogRunCommand = { name: "mcp-snapshot", label: "snapshot", saveFlag: "--save-dir", usage: snapshotUsage };
 
 const discoveryUsage = "Usage: codex-plugin-doctor doctor discover <url> --allow-network [--allow-local-network] [--json] [--bearer-token-env <NAME>]";
 const bearerTokenHelp = "--bearer-token-env reads a bearer token from the named environment variable and sends it only over HTTPS or to an approved loopback target; the token is never printed or saved.";
@@ -529,6 +548,37 @@ function finishPromptCatalogCommand(io: CliIo, snapshot: McpPromptCatalogSnapsho
     json ? JSON.stringify(report, null, 2) : renderMcpPromptCatalogReport(report), snapshot.prompts, snapshot.cache, savePath);
 }
 
+// Writes the snapshot report and, when asked, saves each complete list in the directory under its usual name.
+async function finishSnapshotCommand(io: CliIo, snapshot: McpSnapshot, json: boolean, saveDir: string | undefined): Promise<number> {
+  const report = snapshot.report;
+  io.writeStdout(json ? JSON.stringify(report, null, 2) : renderMcpSnapshotReport(report));
+  let exitCode = report.status === "pass" ? 0
+    : report.status === "incomplete" || report.status === "blocked" ? 2 : 1;
+  if (saveDir === undefined) return exitCode;
+  let saved: Awaited<ReturnType<typeof saveMcpSnapshot>>;
+  try {
+    saved = await saveMcpSnapshot(saveDir, snapshot.responses);
+  } catch {
+    io.writeStderr("The snapshot directory could not be created.");
+    return 2;
+  }
+  if (saved.length === 0) io.writeStderr("No list was enumerated completely, so nothing was saved.");
+  for (const { fileName, method, result } of saved) {
+    if (result.kind === "saved") {
+      io.writeStderr(`Saved a complete ${method} response with ${result.count} entries as ${fileName} (${result.bytes} bytes).`);
+      continue;
+    }
+    io.writeStderr(`${fileName} was not saved because ${{
+      "path-blocked": "the path is not a local file path",
+      "not-regular": "the existing target is not a regular file",
+      "too-large": "it exceeds the one MiB file limit",
+      "write-failed": "it could not be written"
+    }[result.kind]}.`);
+    exitCode = 2;
+  }
+  return exitCode;
+}
+
 function finishResourceTemplateCatalogCommand(
   io: CliIo,
   snapshot: McpResourceTemplateCatalogSnapshot,
@@ -547,7 +597,7 @@ async function runHttpCatalogCommand(
   flags: string[],
   io: CliIo,
   env: NodeJS.ProcessEnv,
-  kind: CatalogCommand,
+  kind: CatalogRunCommand,
   run: CatalogRun<string, McpToolCatalogOptions>
 ): Promise<number> {
   const allowedFlags = new Set(["--allow-network", "--allow-local-network", "--json"]);
@@ -557,10 +607,10 @@ async function runHttpCatalogCommand(
   let invalid = false;
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
-    if ((flag === "--save-response" && savePath === undefined) || (flag === "--bearer-token-env" && tokenEnv === undefined)) {
+    if ((flag === kind.saveFlag && savePath === undefined) || (flag === "--bearer-token-env" && tokenEnv === undefined)) {
       const value = flags[index + 1];
       if (!value || value.startsWith("-")) { invalid = true; break; }
-      if (flag === "--save-response") savePath = value;
+      if (flag === kind.saveFlag) savePath = value;
       else tokenEnv = value;
       index += 1;
     } else if (allowedFlags.has(flag) && !switches.includes(flag)) {
@@ -571,7 +621,7 @@ async function runHttpCatalogCommand(
     }
   }
   if (invalid) {
-    io.writeStderr(`Invalid or duplicate ${kind.noun.toLowerCase()} catalog arguments. ${kind.usage}`);
+    io.writeStderr(`Invalid or duplicate ${kind.label} arguments. ${kind.usage}`);
     return 2;
   }
   if (!switches.includes("--allow-network")) {
@@ -579,7 +629,7 @@ async function runHttpCatalogCommand(
     return 2;
   }
   if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
-    io.writeStderr(`doctor ${kind.name} --save-response requires a local file path.`);
+    io.writeStderr(`doctor ${kind.name} ${kind.saveFlag} requires a local ${kind.saveFlag === "--save-dir" ? "directory" : "file"} path.`);
     return 2;
   }
   const bearer = resolveBearerToken(tokenEnv, env);
@@ -599,7 +649,7 @@ async function runStdioCatalogCommand(
   flags: string[],
   io: CliIo,
   env: NodeJS.ProcessEnv,
-  kind: CatalogCommand,
+  kind: CatalogRunCommand,
   run: CatalogRun<McpStdioServer, McpStdioToolCatalogOptions>
 ): Promise<number> {
   const allowedSwitches = new Set(["--runtime", "--json", "--require-runtime-approval"]);
@@ -614,7 +664,7 @@ async function runStdioCatalogCommand(
       if (!value || value.startsWith("-") || environment.includes(value)) { invalid = true; break; }
       environment.push(value);
       index += 1;
-    } else if (["--server", "--save-response", "--sandbox", "--runtime-approval-digest"].includes(flag) && !values.has(flag)) {
+    } else if (["--server", kind.saveFlag, "--sandbox", "--runtime-approval-digest"].includes(flag) && !values.has(flag)) {
       const value = flags[index + 1];
       if (!value || value.startsWith("-")) { invalid = true; break; }
       values.set(flag, value);
@@ -627,12 +677,12 @@ async function runStdioCatalogCommand(
     }
   }
   const serverName = values.get("--server");
-  const savePath = values.get("--save-response");
+  const savePath = values.get(kind.saveFlag);
   const sandbox = values.get("--sandbox");
   const approvalDigest = values.get("--runtime-approval-digest");
   const requireApproval = switches.includes("--require-runtime-approval");
   if (invalid || serverName === undefined || (sandbox !== undefined && sandbox !== "docker")) {
-    io.writeStderr(`Invalid or duplicate ${kind.noun.toLowerCase()} catalog arguments. ${kind.usage}`);
+    io.writeStderr(`Invalid or duplicate ${kind.label} arguments. ${kind.usage}`);
     return 2;
   }
   if (!switches.includes("--runtime")) {
@@ -667,7 +717,7 @@ async function runStdioCatalogCommand(
     return 2;
   }
   if (savePath !== undefined && isBlockedOfflinePath(savePath)) {
-    io.writeStderr(`doctor ${kind.name} --save-response requires a local file path.`);
+    io.writeStderr(`doctor ${kind.name} ${kind.saveFlag} requires a local ${kind.saveFlag === "--save-dir" ? "directory" : "file"} path.`);
     return 2;
   }
   const resolved = await resolveMcpStdioServer(targetPath, serverName, kind.name);
@@ -880,6 +930,7 @@ function printUsage(io: CliIo): void {
   io.writeStderr(toolsUsage);
   io.writeStderr(promptsUsage);
   io.writeStderr(resourceTemplatesUsage);
+  io.writeStderr(snapshotUsage);
   io.writeStderr(toolsFileUsage);
   io.writeStderr(toolsDiffUsage);
   io.writeStderr(promptsFileUsage);
@@ -2198,13 +2249,13 @@ export async function runCli(
       (
         ["runtime-plan", "runtime-policy"].includes(maybePath ?? "") ||
         (maybePath === "release-evidence" && remainingArgs[0] !== "verify") ||
-        (["tools", "prompts", "resource-templates"].includes(maybePath ?? "") && remainingArgs.includes("--server"))
+        (["tools", "prompts", "resource-templates", "mcp-snapshot"].includes(maybePath ?? "") && remainingArgs.includes("--server"))
       )) ||
     (command === "init-ci" && args.includes("--tools-diff-server"));
 
   if (args.includes("--sandbox") && !runtimeSandboxSupported) {
     io.writeStderr(
-      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, doctor resource-templates --server, and init-ci --tools-diff-server."
+      "--sandbox is supported only by single-package check, release check, runtime-plan, runtime-policy, release-evidence, doctor tools --server, doctor prompts --server, doctor resource-templates --server, doctor mcp-snapshot --server, and init-ci --tools-diff-server."
     );
     return 2;
   }
@@ -2353,6 +2404,23 @@ export async function runCli(
       }
       return runHttpCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
         finishPromptCatalogCommand(io, await (options.captureMcpPromptCatalogImpl ?? captureMcpPromptCatalog)(url, catalogOptions), json, savePath));
+    }
+    if (maybePath === "mcp-snapshot") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${snapshotUsage}\nReads the tool, prompt, and resource template lists of one server; no tool is called, no prompt is retrieved, and no resource is read.\n--server starts the named stdio server once, after explicit --runtime consent, reads every list it offers in that session, and stops it.\n${forwardedEnvironmentHelp}\n--save-dir writes each complete list as mcp-tools-current.json, mcp-prompts-current.json, or mcp-resource-templates-current.json for the matching file and diff commands; a list that is not offered or not complete is not written.\n${bearerTokenHelp}`);
+        return 0;
+      }
+      const [target, ...flags] = remainingArgs;
+      if (!target || target.startsWith("-")) {
+        io.writeStderr(snapshotUsage);
+        return 2;
+      }
+      if (flags.includes("--server")) {
+        return runStdioCatalogCommand(target, flags, io, terminalContext.env, SNAPSHOT_COMMAND, async (server, captureOptions, json, saveDir) =>
+          finishSnapshotCommand(io, await (options.captureStdioMcpSnapshotImpl ?? captureStdioMcpSnapshot)(server, captureOptions), json, saveDir));
+      }
+      return runHttpCatalogCommand(target, flags, io, terminalContext.env, SNAPSHOT_COMMAND, async (url, catalogOptions, json, saveDir) =>
+        finishSnapshotCommand(io, await (options.captureMcpSnapshotImpl ?? captureMcpSnapshot)(url, catalogOptions), json, saveDir));
     }
     if (maybePath === "resource-templates") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
