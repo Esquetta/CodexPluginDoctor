@@ -1493,9 +1493,27 @@ describe("GitHub Action MCP snapshot", () => {
     [
       { policy: "mcp-strict", "allow-network": "true", "tools-capture-url": "https://mcp.example.test/mcp", "tools-capture-token-env": "MCP_TOKEN" },
       "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+    ],
+    [
+      { policy: "codex-publish", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP_TOKEN" },
+      "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
     ]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
+  });
+
+  it("accepts a token with the publish profile when the package check is off", async () => {
+    const run = await runArchiveAction({
+      check: "false", profile: "publish", "allow-network": "true", "snapshot-url": "https://mcp.example.test/mcp", "snapshot-token-env": "MCP_TOKEN"
+    }, "0", "0", false, { MCP_TOKEN: "token-sentinel" });
+
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toHaveLength(1);
+      expect(invocationsOf(run, "check")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ status: "0" });
+    } finally {
+      await run.cleanup();
+    }
   });
 });
 

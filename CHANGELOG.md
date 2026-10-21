@@ -21,7 +21,7 @@ This changelog groups the shipped work into product-level release blocks instead
 
 ### Fixed
 
-- the Action rejects a capture or snapshot `-token-env` input before any Doctor command runs when the package check runs with `profile: publish` or `policy: codex-publish` or `mcp-strict`, which turn on runtime probing, as it already did for `runtime: "true"`, so the token never reaches package code
+- the Action rejects a capture or snapshot `-token-env` input before any Doctor command runs when the package check runs with `profile: publish` or `policy: codex-publish` or `mcp-strict`, which turn on runtime probing, as it already did for `runtime: "true"`, so the token never reaches package code; run the capture in a separate step without that profile or policy
 
 ## [1.80.0] - 2026-10-20
 
