@@ -2,8 +2,9 @@
 
 `doctor mcp-snapshot` reads a server's tool, prompt, and resource template lists
 in one run and can save each one for the matching file and diff commands. A
-local stdio server starts once for all three lists, instead of once per
-[`doctor tools`](mcp-tool-catalog.md), [`doctor prompts`](mcp-prompts.md), and
+local stdio server is read in one session for all three lists, instead of one
+session per [`doctor tools`](mcp-tool-catalog.md),
+[`doctor prompts`](mcp-prompts.md), and
 [`doctor resource-templates`](mcp-resource-templates.md) capture. No tool is
 called, no prompt is retrieved, and no resource is read.
 
@@ -15,21 +16,26 @@ codex-plugin-doctor doctor tools-diff --before ./mcp/tools-baseline.json --after
 
 ## Capture
 
-The command takes the same options as the per-list captures:
+The command takes the same options as the per-list captures, with `--save-dir`
+in place of `--save-response`:
 - An HTTP server needs `--allow-network`, and `--allow-local-network` for a
   loopback address. `--bearer-token-env <NAME>` sends a token from an
   environment variable. Each list is requested separately, as a stateless
   server expects.
-- A local stdio server needs `--server <name>` and `--runtime`. Doctor starts it
-  once, reads every list it offers in that session, and stops it. It can run in
-  the Docker sandbox with `--sandbox docker` (plus `--env <NAME>`) and require
-  runtime approval.
+- A local stdio server needs `--server <name>` and `--runtime`. Doctor starts it,
+  reads every list it offers in one session, and stops it; an older server that
+  exits on the discovery probe is restarted once for the `initialize` handshake,
+  as with the per-list captures. It can run in the Docker sandbox with
+  `--sandbox docker` (plus `--env <NAME>`) and require runtime approval.
 
 Discovery, or the `initialize` handshake for older stdio servers, decides which
 lists the server offers. A list whose capability (`tools`, `prompts`, or
 `resources`) is not declared is `not-applicable`. Each offered list is read
-under its usual limits and findings: at most 5 pages, and 500 tools, prompts,
-or templates.
+with its usual findings, at most 5 pages, and at most 500 tools, prompts, or
+templates. In a stdio session the total time limit (30 seconds, or 90 in the
+Docker sandbox) and the response size limit cover all lists together, so a
+large server can leave a later list `incomplete` that a single-list capture
+would read.
 
 The overall status is the most serious list status, in this order: `blocked`,
 `incomplete`, `unsupported`, `fail`, `warn`, `pass`, `not-applicable`. The exit
@@ -75,4 +81,4 @@ and compares each saved list through the existing `tools-diff-*`,
 CLI 1.81.0 or later in `version`.
 `codex-plugin-doctor init-ci . --tools-diff-server <name> --prompts-baseline <path>`
 or `--resource-templates-baseline <path>` writes a workflow whose capture job
-uses one snapshot for all compared lists.
+uses one snapshot instead of one capture per compared list.

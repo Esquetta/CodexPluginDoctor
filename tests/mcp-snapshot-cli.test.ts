@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -68,6 +68,16 @@ describe("doctor mcp-snapshot", () => {
       const empty = capture();
       expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", path.join(directory, "empty")], empty.io, { captureMcpSnapshotImpl: vi.fn().mockResolvedValue(none) })).toBe(2);
       expect(empty.stderr).toEqual(["No list was enumerated completely, so nothing was saved."]);
+
+      // A directory in place of one file blocks only that list, and the command still exits 2.
+      const blockedDir = path.join(directory, "blocked");
+      await mkdir(path.join(blockedDir, "mcp-tools-current.json"), { recursive: true });
+      const blocked = capture();
+      expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", blockedDir], blocked.io, { captureMcpSnapshotImpl })).toBe(2);
+      expect(blocked.stderr).toEqual([
+        "mcp-tools-current.json was not saved because the existing target is not a regular file.",
+        expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json/u)
+      ]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

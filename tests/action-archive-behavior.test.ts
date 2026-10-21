@@ -1420,6 +1420,54 @@ describe("GitHub Action MCP snapshot", () => {
     }
   });
 
+  it.each([
+    ["every compared list was saved", "prompts resource-templates", { "prompts-diff-before": "prompts.json" }, "0"],
+    ["a compared list was not saved", "prompts", { "tools-diff-before": "tools.json" }, "2"]
+  ])("leaves an incomplete deferred snapshot to its comparisons when %s", async (_case, lists, diffs, status) => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-defer-findings": "true", ...diffs }, "0", "0", false, { MOCK_SNAPSHOT_LISTS: lists, MOCK_SNAPSHOT_EXIT: "2" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ status });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("keeps an explicit diff after input ahead of the snapshot file", async () => {
+    const run = await runArchiveAction({ ...snapshot, "tools-diff-before": "tools.json", "tools-diff-after": "explicit.json" });
+
+    try {
+      expect(toolsDiffInvocations(run)[0]).toEqual(["doctor", "tools-diff", "--before", "tools.json", "--after", "explicit.json", "--fail-on", "any", "--json"]);
+      expect(run.output["tools-capture-path"]).toBe(toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json")));
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("starts no server without runtime consent and skips the comparison it would feed", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-server": "local-server", "tools-diff-before": "tools.json" }, "0", "0", true);
+
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
+      expect(run.output["tools-capture-path"]).toBe("");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("records status 2 for snapshot-token-env without snapshot-url", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-token-env": "MCP_TOKEN", "tools-diff-before": "a.json", "tools-diff-after": "b.json" });
+
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
   it.each(["false", "true"])("records status 2 when the snapshot saves no list, with deferred findings %s", async (defer) => {
     const run = await runArchiveAction({ ...snapshot, "snapshot-defer-findings": defer }, "0", "0", false, { MOCK_SNAPSHOT_LISTS: "", MOCK_SNAPSHOT_EXIT: "1" });
 
@@ -1435,7 +1483,17 @@ describe("GitHub Action MCP snapshot", () => {
     [{ ...snapshot, "snapshot-url": "https://mcp.example.test/mcp" }, "snapshot-url and snapshot-server cannot be combined."],
     [{ check: "false", "snapshot-sandbox": "docker" }, "snapshot-sandbox requires snapshot-server."],
     [{ ...snapshot, "snapshot-env": "API_KEY" }, "snapshot-env requires snapshot-sandbox: docker; a native server already inherits the step's environment."],
-    [{ ...snapshot, "snapshot-defer-findings": "yes" }, "snapshot-defer-findings must be true or false."]
+    [{ ...snapshot, "snapshot-defer-findings": "yes" }, "snapshot-defer-findings must be true or false."],
+    [{ ...snapshot, installed: "true" }, "snapshot-server reads the package at path and cannot be combined with installed: true."],
+    [{ ...snapshot, "snapshot-token-env": "MCP_TOKEN" }, "snapshot-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [
+      { profile: "publish", "allow-network": "true", "snapshot-url": "https://mcp.example.test/mcp", "snapshot-token-env": "MCP_TOKEN" },
+      "snapshot-token-env cannot be combined with runtime probing. Use separate Action steps."
+    ],
+    [
+      { policy: "mcp-strict", "allow-network": "true", "tools-capture-url": "https://mcp.example.test/mcp", "tools-capture-token-env": "MCP_TOKEN" },
+      "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+    ]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
   });

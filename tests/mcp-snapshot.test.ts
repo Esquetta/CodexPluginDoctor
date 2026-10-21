@@ -103,6 +103,32 @@ describe("captureStdioMcpSnapshot", () => {
     expect(Object.values(responses).every((entry) => entry !== null)).toBe(true);
   });
 
+  it("keeps reading the next list in the same session after one offered list fails", async () => {
+    const resolved = await resolveMcpStdioServer(path.resolve("tests", "fixtures", "stdio-resource-template-catalog"), "modern-prompts-list-missing", "mcp-snapshot");
+    if (!resolved.ok) throw new Error(resolved.message);
+    let starts = 0;
+    const spawnImpl = ((command: string, args: readonly string[], options: object) => {
+      starts += 1;
+      return spawn(command, args, options);
+    }) as unknown as typeof spawn;
+
+    const { report, responses } = await captureStdioMcpSnapshot(resolved.server, { timeouts: fast, spawnImpl });
+
+    expect(report).toMatchObject({
+      transport: "stdio", status: "incomplete", protocol: { era: "modern" },
+      lists: {
+        tools: { status: "pass", catalog: { complete: true, checked: 1 } },
+        prompts: { status: "incomplete", catalog: { complete: false, reason: "prompts-list-method-unsupported" } },
+        resourceTemplates: { status: "pass", catalog: { complete: true, checked: 2 } }
+      }
+    });
+    expect(violations(snapshotSchema, report)).toEqual([]);
+    expect(starts).toBe(1);
+    expect(responses.prompts).toBeNull();
+    expect(responses.tools).not.toBeNull();
+    expect(responses.resourceTemplates).not.toBeNull();
+  });
+
   it("reports a failed Docker cleanup on every list of the session", async () => {
     const resolved = await resolveMcpStdioServer(path.resolve("tests", "fixtures", "stdio-resource-template-catalog"), "modern", "mcp-snapshot");
     if (!resolved.ok) throw new Error(resolved.message);

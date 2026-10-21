@@ -55,11 +55,11 @@ inputs:
     required: false
     default: "false"
   snapshot-url:
-    description: Optional HTTP MCP endpoint whose tool, prompt, and resource template lists are saved to output-dir with doctor mcp-snapshot --save-dir, as mcp-tools-current.json, mcp-prompts-current.json, and mcp-resource-templates-current.json. Each saved list becomes the after input of its comparison when that comparison's before input is set and its after input is empty. Requires allow-network and CLI 1.81.0 or later in version; it cannot be combined with the tools-, prompts-, or resource-templates-capture inputs.
+    description: Optional HTTP MCP endpoint whose tool, prompt, and resource template lists are saved to output-dir with doctor mcp-snapshot --save-dir, as mcp-tools-current.json, mcp-prompts-current.json, and mcp-resource-templates-current.json. Each saved list becomes the after input of its comparison when that comparison's before input is set and its after input is empty. Requires allow-network, plus allow-local-network for loopback endpoints, and CLI 1.81.0 or later in version; it cannot be combined with the tools-, prompts-, or resource-templates-capture url or server inputs.
     required: false
     default: ""
   snapshot-server:
-    description: Optional name of a local stdio MCP server from the package at path that doctor mcp-snapshot --server --runtime starts once to save every list it offers, like snapshot-url. Requires runtime and CLI 1.81.0 or later in version; it cannot be combined with snapshot-url, installed, or the tools-, prompts-, or resource-templates-capture inputs.
+    description: Optional name of a local stdio MCP server from the package at path that doctor mcp-snapshot --server --runtime starts to read every list it offers in one session, saved like snapshot-url. Requires runtime and CLI 1.81.0 or later in version; it cannot be combined with snapshot-url, installed, or the tools-, prompts-, or resource-templates-capture url or server inputs.
     required: false
     default: ""
   snapshot-sandbox:
@@ -71,7 +71,7 @@ inputs:
     required: false
     default: ""
   snapshot-defer-findings:
-    description: When "true", catalog warnings and failures found during a snapshot do not fail this step, like tools-capture-defer-findings. A list the server offers but that cannot be read completely still records status 2.
+    description: When "true", catalog findings and lists that could not be read completely during a snapshot do not fail this step, because a later comparison judges the saved lists. A snapshot that saves no list, or a comparison whose list was not saved, still records status 2.
     required: false
     default: "false"
   snapshot-token-env:
@@ -346,7 +346,7 @@ outputs:
     description: Path to the offline archive submission preflight Markdown report when submission-archive is configured.
     value: ${{ steps.run-doctor.outputs.submission-archive-summary-path }}
   tools-capture-path:
-    description: Path to the saved MCP tools/list response when tools-capture-url or tools-capture-server is configured and the capture completed.
+    description: Path to the saved MCP tools/list response when tools-capture-url, tools-capture-server, snapshot-url, or snapshot-server is configured and the list was saved.
     value: ${{ steps.run-doctor.outputs.tools-capture-path }}
   tools-diff-json-path:
     description: Path to the offline MCP tool diff JSON report when tools-diff-before and tools-diff-after are configured.
@@ -355,7 +355,7 @@ outputs:
     description: Path to the offline MCP tool diff Markdown summary when tools-diff-before and tools-diff-after are configured.
     value: ${{ steps.run-doctor.outputs.tools-diff-summary-path }}
   prompts-capture-path:
-    description: Path to the saved MCP prompts/list response when prompts-capture-url or prompts-capture-server is configured and the capture completed.
+    description: Path to the saved MCP prompts/list response when prompts-capture-url, prompts-capture-server, snapshot-url, or snapshot-server is configured and the list was saved.
     value: ${{ steps.run-doctor.outputs.prompts-capture-path }}
   prompts-diff-json-path:
     description: Path to the offline MCP prompt diff JSON report when the prompt diff ran.
@@ -364,7 +364,7 @@ outputs:
     description: Path to the offline MCP prompt diff Markdown summary when the prompt diff ran.
     value: ${{ steps.run-doctor.outputs.prompts-diff-summary-path }}
   resource-templates-capture-path:
-    description: Path to the saved MCP resources/templates/list response when resource-templates-capture-url or resource-templates-capture-server is configured and the capture completed.
+    description: Path to the saved MCP resources/templates/list response when resource-templates-capture-url, resource-templates-capture-server, snapshot-url, or snapshot-server is configured and the list was saved.
     value: ${{ steps.run-doctor.outputs.resource-templates-capture-path }}
   resource-templates-diff-json-path:
     description: Path to the offline MCP resource template diff JSON report when the resource template diff ran.
@@ -495,7 +495,8 @@ runs:
         # sandbox, env names, defer findings, and token env inputs.
         validate_capture_inputs() {
           local prefix="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"
-          if [[ "$RUNTIME_INPUT" == "true" && -n "$token_env" ]]; then
+          # The publish profile and the codex-publish and mcp-strict policies turn on runtime probing in the check.
+          if [[ -n "$token_env" && ( "$RUNTIME_INPUT" == "true" || ( "$CHECK_INPUT" == "true" && ( "$PROFILE_INPUT" == "publish" || "$POLICY_INPUT" == "codex-publish" || "$POLICY_INPUT" == "mcp-strict" ) ) ) ]]; then
             reject_usage "$prefix-token-env cannot be combined with runtime probing. Use separate Action steps."
           fi
 
@@ -763,8 +764,8 @@ runs:
         # Captures and compares one definition list. Arguments: kind (tools, prompts, or resource-templates),
         # var (the kind as a bash name), noun (tool, prompt, or resource template), title (as in the Markdown
         # heading), then that kind's capture url, server, sandbox, env names, defer findings, and token env
-        # inputs, its diff before, after, and fail-on inputs, and the file a snapshot saved for it, or "" when
-        # no snapshot ran. Sets <var>_capture_output, <var>_diff_ran, <var>_diff_json_output, and
+        # inputs, its diff before, after, and fail-on inputs, and the file a snapshot saves for it, or "" when
+        # no snapshot is configured. Sets <var>_capture_output, <var>_diff_ran, <var>_diff_json_output, and
         # <var>_diff_summary_output.
         capture_and_diff() {
           local kind="$1" var="$2" noun="$3" title="$4" url="$5" server="$6" sandbox="$7" env_input="$8" defer="$9"
@@ -777,7 +778,7 @@ runs:
           if [[ ( -n "$url" || -n "$server" || -n "$snapshot_file" ) && -n "$before" && -z "$after" ]]; then
             capture_feeds_diff=true
           fi
-          # A snapshot earlier in this step saved the list when the server offered it and it was complete.
+          # A snapshot earlier in this step saved the list only when the server offered it and it was complete.
           if [[ -n "$snapshot_file" && -f "$snapshot_file" ]]; then
             capture_output="$snapshot_file"
           fi
@@ -897,8 +898,11 @@ runs:
         snapshot_unchecked() {
           [[ -f "$report_dir/mcp-$1-current.json" && ( -z "$2" || -n "$3" ) ]]
         }
-        snapshot_ran=false
+        snapshot_configured=false
         if [[ -n "$SNAPSHOT_SERVER_INPUT" || -n "$SNAPSHOT_URL_INPUT" ]]; then
+          snapshot_configured=true
+          # Remove earlier captures so a list that is not saved now can never be compared as the live one.
+          rm -f "$report_dir/mcp-tools-current.json" "$report_dir/mcp-prompts-current.json" "$report_dir/mcp-resource-templates-current.json"
           snapshot_args=()
           if [[ -n "$SNAPSHOT_SERVER_INPUT" ]]; then
             if [[ "$RUNTIME_INPUT" != "true" ]]; then
@@ -933,23 +937,21 @@ runs:
             fi
           fi
           if (( ${#snapshot_args[@]} > 0 )); then
-            # Remove earlier captures so a list that is not saved now can never be compared as the live one.
-            rm -f "$report_dir/mcp-tools-current.json" "$report_dir/mcp-prompts-current.json" "$report_dir/mcp-resource-templates-current.json"
             echo "::group::MCP snapshot"
             set +e
             codex-plugin-doctor "${snapshot_args[@]}"
             snapshot_code="$?"
             set -e
             echo "::endgroup::"
-            snapshot_ran=true
-            if [[ "$snapshot_code" -ne 0 && "$snapshot_code" -ne 1 ]]; then
-              echo "Codex Plugin Doctor MCP snapshot did not read every list the server offers completely (status ${snapshot_code})."
-              record_status 2
-            elif [[ ! -f "$report_dir/mcp-tools-current.json" && ! -f "$report_dir/mcp-prompts-current.json" && ! -f "$report_dir/mcp-resource-templates-current.json" ]]; then
+            if [[ ! -f "$report_dir/mcp-tools-current.json" && ! -f "$report_dir/mcp-prompts-current.json" && ! -f "$report_dir/mcp-resource-templates-current.json" ]]; then
               echo "Codex Plugin Doctor MCP snapshot saved no list (status ${snapshot_code})."
               record_status 2
             elif [[ "$SNAPSHOT_DEFER_FINDINGS_INPUT" == "true" ]]; then
+              # A later comparison judges the saved lists, and one whose list was not saved fails there.
               :
+            elif [[ "$snapshot_code" -ne 0 && "$snapshot_code" -ne 1 ]]; then
+              echo "Codex Plugin Doctor MCP snapshot did not read every list the server offers completely (status ${snapshot_code})."
+              record_status 2
             # Findings reach the status here unless every saved list feeds a comparison that re-checks it.
             elif snapshot_unchecked tools "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" \
               || snapshot_unchecked prompts "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" \
@@ -962,7 +964,7 @@ runs:
           record_status 2
         fi
         snapshot_file() {
-          if [[ "$snapshot_ran" == "true" ]]; then printf '%s' "$report_dir/mcp-$1-current.json"; fi
+          if [[ "$snapshot_configured" == "true" ]]; then printf '%s' "$report_dir/mcp-$1-current.json"; fi
         }
 
         capture_and_diff tools tools tool Tool "$TOOLS_CAPTURE_URL_INPUT" "$TOOLS_CAPTURE_SERVER_INPUT" "$TOOLS_CAPTURE_SANDBOX_INPUT" \

@@ -205,7 +205,9 @@ approved loopback endpoint and is never printed or saved. An invalid name, an
 unset variable, or `tools-capture-token-env` without `tools-capture-url` records
 status `2` without a request. Combining `tools-capture-token-env` with
 `runtime: "true"` is rejected with exit `2` before any Doctor command runs,
-even when `check` is disabled. Run capture and runtime probing in separate
+even when `check` is disabled, and so is combining it with a package check under
+`profile: publish` or `policy: codex-publish` or `mcp-strict`, which turn on
+runtime probing. Run capture and runtime probing in separate
 Action steps, and provide the token variable only to the capture step.
 The saved file contains the server's raw tool definitions and is uploaded with the
 report artifact unless `upload-artifact` is `"false"`.
@@ -344,7 +346,8 @@ different path.
 ### One snapshot for every list
 
 `snapshot-server` or `snapshot-url` replaces the three per-list captures with one
-[`doctor mcp-snapshot`](mcp-snapshot.md) run, so a stdio server starts once:
+[`doctor mcp-snapshot`](mcp-snapshot.md) run, which reads every list from a
+stdio server in one session:
 
 ```yaml
 - uses: Esquetta/CodexPluginDoctor@v1.81.0
@@ -371,23 +374,31 @@ its comparison when that comparison's `-diff-before` is set and its
 `-diff-after` is empty, and each comparison keeps its own fail-on input, report
 files, and pull request comment. A comparison whose list was not saved, because
 the server does not offer it or it was not read completely, is skipped with
-status `2`.
+status `2`. Every saved list is uploaded with the report artifact unless
+`upload-artifact` is `"false"`, including lists no comparison uses, and
+`mcp-resource-templates-current.json` holds URI templates that can carry host
+names and paths.
 
-`snapshot-sandbox`, `snapshot-env`, `snapshot-token-env`, and
-`snapshot-defer-findings` work like their `tools-capture-*` counterparts, with
-the same consent and validation: `snapshot-server` needs `runtime: "true"`,
-`snapshot-url` needs `allow-network: "true"`, and invalid combinations are
-rejected with exit `2` before any Doctor command runs. The snapshot inputs cannot
-be combined with any `tools-capture-*`, `prompts-capture-*`, or
-`resource-templates-capture-*` server or URL. A snapshot that does not read
-every offered list completely, or saves no list, records status `2`. Catalog
-findings reach the status only when a saved list feeds no comparison in the
-same step, unless `snapshot-defer-findings` is `"true"`. The snapshot inputs
-need CLI `1.81.0` or later in `version`.
+`snapshot-sandbox`, `snapshot-env`, and `snapshot-token-env` work like their
+`tools-capture-*` counterparts, with the same consent and validation:
+`snapshot-server` needs `runtime: "true"`, `snapshot-url` needs
+`allow-network: "true"` (and `allow-local-network: "true"` for loopback
+endpoints), and invalid combinations are rejected with exit `2` before any
+Doctor command runs. The snapshot inputs cannot be combined with any
+`tools-capture-*`, `prompts-capture-*`, or `resource-templates-capture-*` server
+or URL. A snapshot that saves no list records status `2`. Otherwise a snapshot
+that does not read every offered list completely records status `2`, and its
+catalog findings reach the status when a saved list feeds no comparison in the
+same step. With `snapshot-defer-findings: "true"`, neither fails the step: a
+later comparison judges the saved lists, and one whose list was not saved fails
+there. The snapshot inputs need CLI `1.81.0` or later in `version`.
 
 With `--prompts-baseline` or `--resource-templates-baseline`, `init-ci` writes
 the `capture` job with `snapshot-server` and `snapshot-defer-findings: "true"`
-instead of one capture input per list; the `compare` job is unchanged.
+instead of one capture input per list; the `compare` job is unchanged. The
+snapshot reads every list the server offers, so the uploaded artifact can hold a
+list that no comparison uses, and a list that is not compared and cannot be
+read completely does not fail the workflow.
 
 ## Recommended Workflow
 

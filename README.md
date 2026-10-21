@@ -213,7 +213,7 @@ codex-plugin-doctor doctor mcp-snapshot ./my-plugin --server my-server --runtime
 ```
 
 `doctor mcp-snapshot` reads the tool, prompt, and resource template lists in one
-run, starting a stdio server once, and `--save-dir` writes each complete list
+run, reading a stdio server in one session, and `--save-dir` writes each complete list
 under the file name the matching `-file` and `-diff` commands use. The GitHub
 Action's `snapshot-server` and `snapshot-url` inputs feed all three comparisons
 from that one run, and `init-ci` uses it when it compares more than the tool list.
