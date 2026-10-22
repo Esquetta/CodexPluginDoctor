@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, realpath, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -196,6 +196,7 @@ fi
   if (seedEarlierReports) {
     await mkdir(reportDirectory, { recursive: true });
     await writeFile(path.join(reportDirectory, "mcp-tools-current.json"), "{}", "utf8");
+    await writeFile(path.join(reportDirectory, "mcp-snapshot-manifest.json"), "{}", "utf8");
     await writeFile(path.join(reportDirectory, "codex-plugin-doctor-summary.md"), "stale package summary", "utf8");
     await writeFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "0", "utf8");
     await writeFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "true", "utf8");
@@ -717,7 +718,7 @@ describe("GitHub Action authenticated capture", () => {
     }, "0", "0", true, { MCP_TOKEN: "secret-sentinel", MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({
       code: 2,
       stdout: "",
-      stderr: "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps.\n",
+      stderr: "tools-capture-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps.\n",
       actionState: { status: "2", toolsDiff: "false" },
       actionOutput: { status: "2" }
     });
@@ -1135,7 +1136,7 @@ describe("GitHub Action prompt diff", () => {
     [{ ...capture, "prompts-capture-env": "API_KEY" }, "prompts-capture-env requires prompts-capture-sandbox: docker; a native server already inherits the step's environment."],
     [{ ...capture, "prompts-capture-url": "https://mcp.example.test/mcp" }, "prompts-capture-url and prompts-capture-server cannot be combined."],
     [{ ...capture, "prompts-capture-defer-findings": "yes" }, "prompts-capture-defer-findings must be true or false."],
-    [{ ...capture, "prompts-capture-token-env": "MCP_TOKEN" }, "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ ...capture, "prompts-capture-token-env": "MCP_TOKEN" }, "prompts-capture-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."],
     [{ check: "false", "prompts-capture-sandbox": "docker", "prompts-diff-before": "a.json", "prompts-diff-after": "b.json" }, "prompts-capture-sandbox requires prompts-capture-server."],
     [{ ...capture, installed: "true" }, "prompts-capture-server reads the package at path and cannot be combined with installed: true."],
     [{ ...capture, "prompts-capture-sandbox": "docker", "prompts-capture-env": "API-KEY" }, "prompts-capture-env must list environment variable names."],
@@ -1321,7 +1322,7 @@ describe("GitHub Action resource template diff", () => {
   it.each([
     [{ ...capture, "resource-templates-capture-sandbox": "podman" }, "resource-templates-capture-sandbox must be docker or empty."],
     [{ ...capture, "resource-templates-capture-url": "https://mcp.example.test/mcp" }, "resource-templates-capture-url and resource-templates-capture-server cannot be combined."],
-    [{ ...capture, "resource-templates-capture-token-env": "MCP_TOKEN" }, "resource-templates-capture-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ ...capture, "resource-templates-capture-token-env": "MCP_TOKEN" }, "resource-templates-capture-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."],
     [{ ...capture, "resource-templates-capture-defer-findings": "yes" }, "resource-templates-capture-defer-findings must be true or false."]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });
@@ -1452,6 +1453,8 @@ describe("GitHub Action MCP snapshot", () => {
       expect(toolsDiffInvocations(run)).toEqual([]);
       expect(await run.readState()).toMatchObject({ toolsDiff: "false", status: "2" });
       expect(run.output["tools-capture-path"]).toBe("");
+      // The earlier run's manifest goes with its list files, so it can never describe this run.
+      await expect(stat(path.join(run.reportDirectory, "mcp-snapshot-manifest.json"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await run.cleanup();
     }
@@ -1485,18 +1488,18 @@ describe("GitHub Action MCP snapshot", () => {
     [{ ...snapshot, "snapshot-env": "API_KEY" }, "snapshot-env requires snapshot-sandbox: docker; a native server already inherits the step's environment."],
     [{ ...snapshot, "snapshot-defer-findings": "yes" }, "snapshot-defer-findings must be true or false."],
     [{ ...snapshot, installed: "true" }, "snapshot-server reads the package at path and cannot be combined with installed: true."],
-    [{ ...snapshot, "snapshot-token-env": "MCP_TOKEN" }, "snapshot-token-env cannot be combined with runtime probing. Use separate Action steps."],
+    [{ ...snapshot, "snapshot-token-env": "MCP_TOKEN" }, "snapshot-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."],
     [
       { profile: "publish", "allow-network": "true", "snapshot-url": "https://mcp.example.test/mcp", "snapshot-token-env": "MCP_TOKEN" },
-      "snapshot-token-env cannot be combined with runtime probing. Use separate Action steps."
+      "snapshot-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."
     ],
     [
       { policy: "mcp-strict", "allow-network": "true", "tools-capture-url": "https://mcp.example.test/mcp", "tools-capture-token-env": "MCP_TOKEN" },
-      "tools-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+      "tools-capture-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."
     ],
     [
       { policy: "codex-publish", "allow-network": "true", "prompts-capture-url": "https://mcp.example.test/mcp", "prompts-capture-token-env": "MCP_TOKEN" },
-      "prompts-capture-token-env cannot be combined with runtime probing. Use separate Action steps."
+      "prompts-capture-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."
     ]
   ])("rejects %j before any CLI invocation", async (overrides, stderr) => {
     await expect(runArchiveAction(overrides, "0", "0", false, { MOCK_FORBID_CLI: "true" })).rejects.toMatchObject({ code: 2, stdout: "", stderr: `${stderr}\n` });

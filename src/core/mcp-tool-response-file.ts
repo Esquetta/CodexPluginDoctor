@@ -5,6 +5,9 @@ import path from "node:path";
 import type { McpToolCatalogCache } from "./mcp-tool-catalog.js";
 import { isBlockedOfflinePath, MAX_TOOL_FILE_BYTES } from "./mcp-tool-file.js";
 
+export type McpLocalFileSaveResult =
+  | { kind: "saved"; bytes: number }
+  | { kind: "path-blocked" | "not-regular" | "too-large" | "write-failed" };
 export type McpListResponseSaveResult =
   | { kind: "saved"; bytes: number; count: number }
   | { kind: "path-blocked" | "not-regular" | "too-large" | "write-failed" };
@@ -29,13 +32,19 @@ export async function saveMcpListResponse(
   if (isBlockedOfflinePath(filePath)) return { kind: "path-blocked" };
 
   let content: string;
-  let bytes: number;
   try {
     content = serializeMcpListResponse(key, items, cache);
-    bytes = Buffer.byteLength(content);
   } catch {
     return { kind: "write-failed" };
   }
+  const saved = await saveLocalFile(filePath, content);
+  return saved.kind === "saved" ? { ...saved, count: items.length } : saved;
+}
+
+/** Replaces a local regular file of at most one MiB without leaving a partial file; links and other file types are refused. */
+export async function saveLocalFile(filePath: string, content: string): Promise<McpLocalFileSaveResult> {
+  if (isBlockedOfflinePath(filePath)) return { kind: "path-blocked" };
+  const bytes = Buffer.byteLength(content);
   if (bytes > MAX_TOOL_FILE_BYTES) return { kind: "too-large" };
 
   let existingMode: number | null = null;
@@ -58,5 +67,5 @@ export async function saveMcpListResponse(
     await rm(tempPath, { force: true }).catch(() => undefined);
     return { kind: "write-failed" };
   }
-  return { kind: "saved", bytes, count: items.length };
+  return { kind: "saved", bytes };
 }

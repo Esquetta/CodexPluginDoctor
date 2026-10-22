@@ -497,7 +497,7 @@ runs:
           local prefix="$1" url="$2" server="$3" sandbox="$4" env_input="$5" defer="$6" token_env="$7"
           # The publish profile and the codex-publish and mcp-strict policies turn on runtime probing in the check.
           if [[ -n "$token_env" && ( "$RUNTIME_INPUT" == "true" || ( "$CHECK_INPUT" == "true" && ( "$PROFILE_INPUT" == "publish" || "$POLICY_INPUT" == "codex-publish" || "$POLICY_INPUT" == "mcp-strict" ) ) ) ]]; then
-            reject_usage "$prefix-token-env cannot be combined with runtime probing. Use separate Action steps."
+            reject_usage "$prefix-token-env cannot be combined with runtime probing, which runtime: true, profile: publish, and policy: codex-publish or mcp-strict turn on. Use separate Action steps."
           fi
 
           # Rejected before any command, because runtime probing in the package check could otherwise start servers first.
@@ -902,7 +902,8 @@ runs:
         if [[ -n "$SNAPSHOT_SERVER_INPUT" || -n "$SNAPSHOT_URL_INPUT" ]]; then
           snapshot_configured=true
           # Remove earlier captures so a list that is not saved now can never be compared as the live one.
-          rm -f "$report_dir/mcp-tools-current.json" "$report_dir/mcp-prompts-current.json" "$report_dir/mcp-resource-templates-current.json"
+          rm -f "$report_dir/mcp-tools-current.json" "$report_dir/mcp-prompts-current.json" "$report_dir/mcp-resource-templates-current.json" \
+            "$report_dir/mcp-snapshot-manifest.json"
           snapshot_args=()
           if [[ -n "$SNAPSHOT_SERVER_INPUT" ]]; then
             if [[ "$RUNTIME_INPUT" != "true" ]]; then

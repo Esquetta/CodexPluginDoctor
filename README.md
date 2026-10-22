@@ -210,13 +210,17 @@ See [MCP Resource Template Catalog and Diff](docs/guides/mcp-resource-templates.
 
 ```bash
 codex-plugin-doctor doctor mcp-snapshot ./my-plugin --server my-server --runtime --save-dir ./mcp-current
+codex-plugin-doctor doctor mcp-snapshot-diff --before ./mcp/baseline --after ./mcp-current --fail-on breaking
 ```
 
 `doctor mcp-snapshot` reads the tool, prompt, and resource template lists in one
 run, reading a stdio server in one session, and `--save-dir` writes each complete list
-under the file name the matching `-file` and `-diff` commands use. The GitHub
-Action's `snapshot-server` and `snapshot-url` inputs feed all three comparisons
-from that one run, and `init-ci` uses it when it compares more than the tool list.
+under the file name the matching `-file` and `-diff` commands use, plus a
+manifest of what was saved. `doctor mcp-snapshot-diff` compares two snapshot
+directories in one report and labels a list the server stopped offering as
+breaking. The GitHub Action's `snapshot-server` and `snapshot-url` inputs feed
+all three comparisons from that one run, and `init-ci` uses it when it compares
+more than the tool list.
 See [MCP Snapshot](docs/guides/mcp-snapshot.md).
 
 ### Remote MCP Readiness
@@ -637,9 +641,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.81.0
+      - uses: Esquetta/CodexPluginDoctor@v1.82.0
         with:
-          version: "1.81.0"
+          version: "1.82.0"
           path: .
           runtime: "true"
           policy: codex-publish
