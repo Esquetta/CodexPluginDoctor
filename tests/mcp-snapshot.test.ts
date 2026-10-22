@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { BoundedHttpResponse } from "../src/core/bounded-http-client.js";
-import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot } from "../src/core/mcp-snapshot.js";
+import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, type McpSnapshot } from "../src/core/mcp-snapshot.js";
 import { resolveMcpStdioServer } from "../src/core/mcp-stdio-tool-catalog.js";
 import { buildDoctorOutputContract } from "../src/core/output-contract.js";
 import { DOCKER_RUNTIME_IMAGE } from "../src/core/runtime-sandbox.js";
@@ -157,13 +157,25 @@ describe("saveMcpSnapshot", () => {
     try {
       const directory = path.join(root, "nested", "snapshot");
       const saved = await saveMcpSnapshot(directory, {
-        tools: { items: [tool], cache: { ttlMs: 0, cacheScope: "private" } },
-        prompts: null,
-        resourceTemplates: { items: [{ name: "files", uriTemplate: "file:///{path}" }], cache: { ttlMs: 0, cacheScope: "private" } }
-      });
-      expect(saved.map(({ fileName, result }) => [fileName, result.kind])).toEqual([["mcp-tools-current.json", "saved"], ["mcp-resource-templates-current.json", "saved"]]);
-      expect((await readdir(directory)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-tools-current.json"]);
+        report: { lists: { tools: { status: "warn" }, prompts: { status: "not-applicable" }, resourceTemplates: { status: "pass" } } },
+        responses: {
+          tools: { items: [tool], cache: { ttlMs: 0, cacheScope: "private" } },
+          prompts: null,
+          resourceTemplates: { items: [{ name: "files", uriTemplate: "file:///{path}" }], cache: { ttlMs: 0, cacheScope: "private" } }
+        }
+      } as unknown as McpSnapshot);
+      expect(saved.lists.map(({ fileName, result }) => [fileName, result.kind])).toEqual([["mcp-tools-current.json", "saved"], ["mcp-resource-templates-current.json", "saved"]]);
+      expect(saved.manifest.kind).toBe("saved");
+      expect((await readdir(directory)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-snapshot-manifest.json", "mcp-tools-current.json"]);
       expect(JSON.parse(await readFile(path.join(directory, "mcp-resource-templates-current.json"), "utf8"))).toMatchObject({ id: "resource-templates-list" });
+      expect(JSON.parse(await readFile(path.join(directory, "mcp-snapshot-manifest.json"), "utf8"))).toEqual({
+        schemaVersion: 1, scope: "mcp-snapshot-manifest",
+        lists: {
+          tools: { status: "warn", file: "mcp-tools-current.json" },
+          prompts: { status: "not-applicable", file: null },
+          resourceTemplates: { status: "pass", file: "mcp-resource-templates-current.json" }
+        }
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { McpSnapshot } from "../src/core/mcp-snapshot.js";
+import { saveMcpSnapshot, type McpSnapshot } from "../src/core/mcp-snapshot.js";
 import { runCli } from "../src/run-cli.js";
 
 function capture() {
@@ -59,15 +59,16 @@ describe("doctor mcp-snapshot", () => {
       expect(c.stdout.join("\n")).toContain("Prompts: not-applicable");
       expect(c.stderr).toEqual([
         expect.stringMatching(/^Saved a complete tools\/list response with 1 entries as mcp-tools-current\.json \(\d+ bytes\)\.$/u),
-        expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json \(\d+ bytes\)\.$/u)
+        expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json \(\d+ bytes\)\.$/u),
+        expect.stringMatching(/^Saved the snapshot manifest as mcp-snapshot-manifest\.json \(\d+ bytes\)\.$/u)
       ]);
-      expect((await readdir(saveDir)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-tools-current.json"]);
+      expect((await readdir(saveDir)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-snapshot-manifest.json", "mcp-tools-current.json"]);
 
       const none = snapshot("not-applicable");
       none.responses = { tools: null, prompts: null, resourceTemplates: null };
       const empty = capture();
       expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", path.join(directory, "empty")], empty.io, { captureMcpSnapshotImpl: vi.fn().mockResolvedValue(none) })).toBe(2);
-      expect(empty.stderr).toEqual(["No list was enumerated completely, so nothing was saved."]);
+      expect(empty.stderr).toEqual(["No list was enumerated completely, so no list was saved.", expect.stringMatching(/^Saved the snapshot manifest as mcp-snapshot-manifest\.json/u)]);
 
       // A directory in place of one file blocks only that list, and the command still exits 2.
       const blockedDir = path.join(directory, "blocked");
@@ -76,8 +77,16 @@ describe("doctor mcp-snapshot", () => {
       expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", blockedDir], blocked.io, { captureMcpSnapshotImpl })).toBe(2);
       expect(blocked.stderr).toEqual([
         "mcp-tools-current.json was not saved because the existing target is not a regular file.",
-        expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json/u)
+        expect.stringMatching(/^Saved a complete resources\/templates\/list response with 1 entries as mcp-resource-templates-current\.json/u),
+        expect.stringMatching(/^Saved the snapshot manifest as mcp-snapshot-manifest\.json/u)
       ]);
+
+      // The manifest is checked like a list file, and a failed manifest write also exits 2.
+      const noManifestDir = path.join(directory, "no-manifest");
+      await mkdir(path.join(noManifestDir, "mcp-snapshot-manifest.json"), { recursive: true });
+      const noManifest = capture();
+      expect(await runCli(["doctor", "mcp-snapshot", "https://mcp.example/mcp", "--allow-network", "--save-dir", noManifestDir], noManifest.io, { captureMcpSnapshotImpl })).toBe(2);
+      expect(noManifest.stderr.at(-1)).toBe("mcp-snapshot-manifest.json was not saved because the existing target is not a regular file.");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -102,7 +111,7 @@ describe("doctor mcp-snapshot", () => {
         transport: "stdio", status: "pass",
         lists: { tools: { status: "not-applicable" }, prompts: { status: "not-applicable" }, resourceTemplates: { status: "pass" } }
       });
-      expect(await readdir(directory)).toEqual(["mcp-resource-templates-current.json"]);
+      expect((await readdir(directory)).sort()).toEqual(["mcp-resource-templates-current.json", "mcp-snapshot-manifest.json"]);
       expect(await runCli(["doctor", "resource-templates-file", path.join(directory, "mcp-resource-templates-current.json")], capture().io)).toBe(0);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -113,5 +122,64 @@ describe("doctor mcp-snapshot", () => {
     const c = capture();
     expect(await runCli(["doctor", "mcp-snapshot", "--help"], c.io)).toBe(0);
     expect(c.stdout.join("\n")).toContain("--save-dir writes each complete list as mcp-tools-current.json");
+  });
+});
+
+describe("doctor mcp-snapshot-diff", () => {
+  // Saves a snapshot directory; a list given as items is saved, one given as a status is only recorded.
+  async function snapshotDirectory(directory: string, lists: Record<"tools" | "prompts" | "resourceTemplates", unknown[] | string>): Promise<string> {
+    const keys = Object.keys(lists) as Array<keyof typeof lists>;
+    const report = { lists: Object.fromEntries(keys.map((key) => [key, { status: Array.isArray(lists[key]) ? "pass" : lists[key] }])) };
+    const responses = Object.fromEntries(keys.map((key) => [key, Array.isArray(lists[key]) ? { items: lists[key], cache: { ttlMs: 0, cacheScope: "private" } } : null]));
+    await saveMcpSnapshot(directory, { report, responses } as unknown as McpSnapshot);
+    return directory;
+  }
+  const tool = { name: "lookup", inputSchema: { type: "object" } };
+  const template = { name: "files", uriTemplate: "file:///{path}" };
+
+  it("exits by status and by --fail-on breaking", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "doctor-snapshot-diff-cli-"));
+    try {
+      const base = await snapshotDirectory(path.join(root, "base"), { tools: [tool], prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const same = await snapshotDirectory(path.join(root, "same"), { tools: [tool], prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const added = await snapshotDirectory(path.join(root, "added"), { tools: [tool], prompts: "not-applicable", resourceTemplates: [template] });
+      const removed = await snapshotDirectory(path.join(root, "removed"), { tools: "not-applicable", prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const unread = await snapshotDirectory(path.join(root, "unread"), { tools: "incomplete", prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const diff = (after: string, ...flags: string[]) => runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", after, ...flags], capture().io);
+
+      expect(await diff(same)).toBe(0);
+      expect(await diff(added)).toBe(1);
+      expect(await diff(added, "--fail-on", "breaking")).toBe(0);
+      expect(await diff(removed, "--fail-on", "breaking")).toBe(1);
+      expect(await diff(unread)).toBe(2);
+
+      const markdown = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", added, "--markdown"], markdown.io)).toBe(1);
+      expect(markdown.stdout.join("\n")).toContain("| Resource templates | **list-added** (compatible) |");
+      const json = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", removed, "--json"], json.io)).toBe(1);
+      expect(JSON.parse(json.stdout.join("\n"))).toMatchObject({ scope: "mcp-snapshot-diff", lists: { tools: { outcome: "list-removed" } } });
+
+      // Tool names reach the report only with --show-names.
+      const renamed = await snapshotDirectory(path.join(root, "renamed"), { tools: [{ ...tool, name: "search" }], prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const hidden = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, "--markdown"], hidden.io)).toBe(1);
+      expect(hidden.stdout.join("\n")).not.toMatch(/lookup|search/u);
+      const shown = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, "--json", "--show-names"], shown.io)).toBe(1);
+      expect(JSON.parse(shown.stdout.join("\n")).lists.tools.diff.changes.map((change: { name: string }) => change.name).sort()).toEqual(["lookup", "search"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid arguments and documents the command in help", async () => {
+    const invalid = capture();
+    expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", "a"], invalid.io)).toBe(2);
+    expect(invalid.stderr.join("\n")).toContain("Invalid comparison arguments. Usage: codex-plugin-doctor doctor mcp-snapshot-diff");
+
+    const help = capture();
+    expect(await runCli(["doctor", "mcp-snapshot-diff", "--help"], help.io)).toBe(0);
+    expect(help.stdout.join("\n")).toContain("a list the server stopped offering is breaking");
   });
 });

@@ -1326,6 +1326,91 @@ publicSchemaDefinitions.push(resourceTemplateFileReportDefinition, {
   }
 });
 
+// The snapshot manifest and the snapshot diff, which embeds each list's own diff report.
+const snapshotListStatus = toolCatalogProperties.status;
+publicSchemaDefinitions.push({
+  id: "doctor.mcp-snapshot.manifest.json",
+  command: "codex-plugin-doctor doctor mcp-snapshot <url> --allow-network --save-dir <dir> (writes <dir>/mcp-snapshot-manifest.json)",
+  required: ["schemaVersion", "scope", "lists"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "mcp-snapshot-manifest" },
+    lists: {
+      type: "object", required: ["tools", "prompts", "resourceTemplates"],
+      properties: Object.fromEntries(([
+        ["tools", "mcp-tools-current.json"],
+        ["prompts", "mcp-prompts-current.json"],
+        ["resourceTemplates", "mcp-resource-templates-current.json"]
+      ] as const).map(([key, file]) => [key, {
+        type: "object", required: ["status", "file"],
+        properties: { status: snapshotListStatus, file: { enum: [file, null] } },
+        additionalProperties: false
+      }])),
+      additionalProperties: false
+    }
+  }
+});
+
+const embeddedDiffReport = (id: string) => {
+  const definition = publicSchemaDefinitions.find((candidate) => candidate.id === id)!;
+  return { type: ["object", "null"], required: definition.required, properties: definition.properties, additionalProperties: false };
+};
+const snapshotListDiff = (diffId: string) => ({
+  type: "object", required: ["outcome", "impact", "before", "after", "diff"],
+  properties: {
+    outcome: { enum: ["compared", "list-added", "list-removed", "not-offered", "not-compared"] },
+    impact: { enum: ["breaking", "compatible", null] },
+    before: { enum: ["saved", "not-offered", "not-saved", null] },
+    after: { enum: ["saved", "not-offered", "not-saved", null] },
+    diff: embeddedDiffReport(diffId)
+  },
+  additionalProperties: false
+});
+publicSchemaDefinitions.push({
+  id: "doctor.mcp-snapshot.diff.json",
+  command: "codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> --json",
+  required: ["schemaVersion", "scope", "status", "manifests", "comparison", "lists", "coverage"],
+  properties: {
+    schemaVersion: { const: 1 },
+    scope: { const: "mcp-snapshot-diff" },
+    status: { enum: ["pass", "warn", "incomplete", "blocked"] },
+    manifests: {
+      type: "object", required: ["before", "after"],
+      properties: {
+        before: { enum: ["valid", "unavailable", "invalid", "blocked"] },
+        after: { enum: ["valid", "unavailable", "invalid", "blocked"] }
+      },
+      additionalProperties: false
+    },
+    comparison: {
+      type: "object", required: ["complete", "reason", "breaking", "unclassified"],
+      properties: {
+        complete: { type: "boolean" },
+        reason: { enum: [null, "input-blocked", "manifest-unavailable", "list-not-saved", "list-incomplete"] },
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 3000 },
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 3000 }
+      },
+      additionalProperties: false
+    },
+    lists: {
+      type: "object", required: ["tools", "prompts", "resourceTemplates"],
+      properties: {
+        tools: snapshotListDiff("doctor.tools.diff.json"),
+        prompts: snapshotListDiff("doctor.prompts.diff.json"),
+        resourceTemplates: snapshotListDiff("doctor.resource-templates.diff.json")
+      },
+      additionalProperties: false
+    },
+    coverage: {
+      type: "object", required: ["comparison", "serverCatalog", "impactClassification"],
+      properties: {
+        comparison: { const: "structural-only" }, serverCatalog: { const: "not-tested" }, impactClassification: { const: "heuristic" }
+      },
+      additionalProperties: false
+    }
+  }
+});
+
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }

@@ -228,6 +228,16 @@ describe("doctor contract command", () => {
           id: "doctor.resource-templates.diff.json",
           command: "codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> --json",
           outputKind: null
+        }),
+        expect.objectContaining({
+          id: "doctor.mcp-snapshot.manifest.json",
+          command: "codex-plugin-doctor doctor mcp-snapshot <url> --allow-network --save-dir <dir> (writes <dir>/mcp-snapshot-manifest.json)",
+          outputKind: null
+        }),
+        expect.objectContaining({
+          id: "doctor.mcp-snapshot.diff.json",
+          command: "codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> --json",
+          outputKind: null
         })
       ])
     );

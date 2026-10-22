@@ -147,7 +147,7 @@ describe("saveMcpListResponse", () => {
   it("reports a missing parent directory as a write failure", async () => {
     const directory = await fixtureDirectory();
 
-    expect(await saveMcpListResponse(path.join(directory, "tools", "missing", "tools.json"), [], cache)).toEqual({ kind: "write-failed" });
+    expect(await saveMcpListResponse(path.join(directory, "tools", "missing", "tools.json"), "tools", [], cache)).toEqual({ kind: "write-failed" });
     expect(await readdir(directory)).toEqual([]);
   });
 });

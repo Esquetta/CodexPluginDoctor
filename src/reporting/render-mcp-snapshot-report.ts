@@ -5,7 +5,7 @@ import type { CatalogLocation } from "../core/mcp-tool-definition.js";
 import { describePromptLocation } from "./render-mcp-prompt-file-report.js";
 import { describeResourceTemplateLocation } from "./render-mcp-resource-template-file-report.js";
 
-const LIST_LABELS: Record<McpSnapshotListKey, string> = { tools: "Tools", prompts: "Prompts", resourceTemplates: "Resource templates" };
+export const LIST_LABELS: Record<McpSnapshotListKey, string> = { tools: "Tools", prompts: "Prompts", resourceTemplates: "Resource templates" };
 
 function describeLocation(key: McpSnapshotListKey, location: unknown): string {
   if (key === "prompts") return describePromptLocation(location as PromptCatalogLocation);

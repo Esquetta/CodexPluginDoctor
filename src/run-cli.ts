@@ -110,7 +110,7 @@ import {
 import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
 import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { compareMcpResourceTemplateFiles } from "./core/mcp-resource-template-diff.js";
-import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, type McpSnapshot } from "./core/mcp-snapshot.js";
+import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, SNAPSHOT_MANIFEST_FILE, type McpSnapshot } from "./core/mcp-snapshot.js";
 import { inspectMcpResourceTemplateFile } from "./core/mcp-resource-template-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
@@ -121,6 +121,9 @@ import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
 import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-resource-template-catalog-report.js";
+import { compareMcpSnapshotDirectories } from "./core/mcp-snapshot-diff.js";
+import { renderMcpSnapshotDiffMarkdown } from "./reporting/render-mcp-snapshot-diff-markdown.js";
+import { renderMcpSnapshotDiffReport } from "./reporting/render-mcp-snapshot-diff-report.js";
 import { renderMcpSnapshotReport } from "./reporting/render-mcp-snapshot-report.js";
 import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
 import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
@@ -351,6 +354,7 @@ export interface RunCliOptions {
   captureStdioMcpResourceTemplateCatalogImpl?: typeof captureStdioMcpResourceTemplateCatalog;
   captureMcpSnapshotImpl?: typeof captureMcpSnapshot;
   captureStdioMcpSnapshotImpl?: typeof captureStdioMcpSnapshot;
+  compareMcpSnapshotDirectoriesImpl?: typeof compareMcpSnapshotDirectories;
   discoverMcpServerImpl?: typeof discoverMcpServer;
   terminalContext?: CliTerminalContext;
   runCheckImpl?: typeof runCheck;
@@ -402,6 +406,7 @@ const promptsDiffUsage = "Usage: codex-plugin-doctor doctor prompts-diff --befor
 const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> [--json]";
 
 const resourceTemplatesDiffUsage = "Usage: codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+const snapshotDiffUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
 
 const resourceTemplatesFileUsage = "Usage: codex-plugin-doctor doctor resource-templates-file <path> [--json]";
 
@@ -548,7 +553,7 @@ function finishPromptCatalogCommand(io: CliIo, snapshot: McpPromptCatalogSnapsho
     json ? JSON.stringify(report, null, 2) : renderMcpPromptCatalogReport(report), snapshot.prompts, snapshot.cache, savePath);
 }
 
-// Writes the snapshot report and, when asked, saves each complete list in the directory under its usual name.
+// Writes the snapshot report and, when asked, saves each complete list in the directory under its usual name, then the manifest.
 async function finishSnapshotCommand(io: CliIo, snapshot: McpSnapshot, json: boolean, saveDir: string | undefined): Promise<number> {
   const report = snapshot.report;
   io.writeStdout(json ? JSON.stringify(report, null, 2) : renderMcpSnapshotReport(report));
@@ -557,27 +562,35 @@ async function finishSnapshotCommand(io: CliIo, snapshot: McpSnapshot, json: boo
   if (saveDir === undefined) return exitCode;
   let saved: Awaited<ReturnType<typeof saveMcpSnapshot>>;
   try {
-    saved = await saveMcpSnapshot(saveDir, snapshot.responses);
+    saved = await saveMcpSnapshot(saveDir, snapshot);
   } catch {
     io.writeStderr("The snapshot directory could not be created.");
     return 2;
   }
-  if (saved.length === 0) {
-    io.writeStderr("No list was enumerated completely, so nothing was saved.");
+  if (saved.lists.length === 0) {
+    io.writeStderr("No list was enumerated completely, so no list was saved.");
     exitCode = 2;
   }
-  for (const { fileName, method, result } of saved) {
-    if (result.kind === "saved") {
-      io.writeStderr(`Saved a complete ${method} response with ${result.count} entries as ${fileName} (${result.bytes} bytes).`);
-      continue;
-    }
+  const notSaved = (fileName: string, kind: "path-blocked" | "not-regular" | "too-large" | "write-failed") => {
     io.writeStderr(`${fileName} was not saved because ${{
       "path-blocked": "the path is not a local file path",
       "not-regular": "the existing target is not a regular file",
       "too-large": "it exceeds the one MiB file limit",
       "write-failed": "it could not be written"
-    }[result.kind]}.`);
+    }[kind]}.`);
     exitCode = 2;
+  };
+  for (const { fileName, method, result } of saved.lists) {
+    if (result.kind === "saved") {
+      io.writeStderr(`Saved a complete ${method} response with ${result.count} entries as ${fileName} (${result.bytes} bytes).`);
+    } else {
+      notSaved(fileName, result.kind);
+    }
+  }
+  if (saved.manifest.kind === "saved") {
+    io.writeStderr(`Saved the snapshot manifest as ${SNAPSHOT_MANIFEST_FILE} (${saved.manifest.bytes} bytes).`);
+  } else {
+    notSaved(SNAPSHOT_MANIFEST_FILE, saved.manifest.kind);
   }
   return exitCode;
 }
@@ -940,6 +953,7 @@ function printUsage(io: CliIo): void {
   io.writeStderr(promptsDiffUsage);
   io.writeStderr(resourceTemplatesFileUsage);
   io.writeStderr(resourceTemplatesDiffUsage);
+  io.writeStderr(snapshotDiffUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -2408,9 +2422,19 @@ export async function runCli(
       return runHttpCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
         finishPromptCatalogCommand(io, await (options.captureMcpPromptCatalogImpl ?? captureMcpPromptCatalog)(url, catalogOptions), json, savePath));
     }
+    if (maybePath === "mcp-snapshot-diff") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${snapshotDiffUsage}\nCompares two directories written by doctor mcp-snapshot --save-dir, list by list, offline. Each directory's mcp-snapshot-manifest.json says which lists were saved: a list the server stopped offering is breaking, a newly offered list is compatible, and a list that was not read completely leaves the comparison incomplete.\nSaved lists are compared like tools-diff, prompts-diff, and resource-templates-diff; changes are classified heuristically and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).\n--show-names adds tool, prompt, and template names and the location behind each reason; reports omit them, and never include URI templates, so keep the flag out of public output such as pull request comments.`);
+        return 0;
+      }
+      return runOfflineDiffCommand(remainingArgs, io, snapshotDiffUsage, (beforeDirectory, afterDirectory, showNames) => {
+        const compare = options.compareMcpSnapshotDirectoriesImpl ?? compareMcpSnapshotDirectories;
+        return showNames ? compare(beforeDirectory, afterDirectory, { showNames: true }) : compare(beforeDirectory, afterDirectory);
+      }, (report, markdown) => markdown ? renderMcpSnapshotDiffMarkdown(report) : renderMcpSnapshotDiffReport(report));
+    }
     if (maybePath === "mcp-snapshot") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${snapshotUsage}\nReads the tool, prompt, and resource template lists of one server; no tool is called, no prompt is retrieved, and no resource is read.\n--server starts the named stdio server once, after explicit --runtime consent, reads every list it offers in that session, and stops it.\n${forwardedEnvironmentHelp}\n--save-dir writes each complete list as mcp-tools-current.json, mcp-prompts-current.json, or mcp-resource-templates-current.json for the matching file and diff commands; a list that is not offered or not complete is not written.\n${bearerTokenHelp}`);
+        io.writeStdout(`${snapshotUsage}\nReads the tool, prompt, and resource template lists of one server; no tool is called, no prompt is retrieved, and no resource is read.\n--server starts the named stdio server once, after explicit --runtime consent, reads every list it offers in that session, and stops it.\n${forwardedEnvironmentHelp}\n--save-dir writes each complete list as mcp-tools-current.json, mcp-prompts-current.json, or mcp-resource-templates-current.json for the matching file and diff commands, and mcp-snapshot-manifest.json, which records each list's status and file for doctor mcp-snapshot-diff; a list that is not offered or not complete is not written.\n${bearerTokenHelp}`);
         return 0;
       }
       const [target, ...flags] = remainingArgs;

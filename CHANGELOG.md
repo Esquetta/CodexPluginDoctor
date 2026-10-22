@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.82.0] - 2026-10-22
+
+### Added
+
+- added `doctor mcp-snapshot-diff --before <dir> --after <dir>`, which compares two `doctor mcp-snapshot --save-dir` directories offline in one report: saved lists are compared like `tools-diff`, `prompts-diff`, and `resource-templates-diff`, a list the server stopped offering is breaking (`list-removed`), a newly offered list is compatible (`list-added`), and a list that was offered but not saved leaves the comparison incomplete; `--json`, `--markdown`, `--fail-on any|breaking`, `--show-names`, and the exit codes follow `tools-diff`
+- `doctor mcp-snapshot --save-dir` also writes `mcp-snapshot-manifest.json`, which records each list's status and the file this run saved for it; it removes an earlier manifest first, and `mcp-snapshot-diff` compares only the files the manifest names, so a file left from an earlier run is not compared
+- the `doctor.mcp-snapshot.diff.json` and `doctor.mcp-snapshot.manifest.json` contracts describe the diff report, which embeds each compared list's diff report, and the manifest
+
+### Changed
+
+- the GitHub Action also removes an earlier `mcp-snapshot-manifest.json` before a snapshot, and its rejection of a `-token-env` input next to runtime probing now names `runtime: true`, `profile: publish`, and the `codex-publish` and `mcp-strict` policies
+- `doctor mcp-snapshot --save-dir` reports "so no list was saved" instead of "so nothing was saved" when no list was complete, because it still writes the manifest
+
 ## [1.81.0] - 2026-10-21
 
 ### Added

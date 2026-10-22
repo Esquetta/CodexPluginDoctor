@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { Finding, RuntimeExecutionEvidence } from "../domain/types.js";
@@ -17,7 +17,7 @@ import {
   type McpToolCatalogOptions,
   type McpToolCatalogProtocol
 } from "./mcp-tool-catalog.js";
-import { saveMcpListResponse, type McpListResponseSaveResult } from "./mcp-tool-response-file.js";
+import { saveLocalFile, saveMcpListResponse, type McpListResponseSaveResult, type McpLocalFileSaveResult } from "./mcp-tool-response-file.js";
 
 export type McpSnapshotListKey = "tools" | "prompts" | "resourceTemplates";
 
@@ -27,6 +27,17 @@ const SNAPSHOT_LISTS: Array<{ key: McpSnapshotListKey; list: McpCatalogList<Find
   { key: "prompts", list: MCP_PROMPTS_LIST, fileName: "mcp-prompts-current.json" },
   { key: "resourceTemplates", list: MCP_RESOURCE_TEMPLATES_LIST, fileName: "mcp-resource-templates-current.json" }
 ];
+export const SNAPSHOT_LIST_KEYS = SNAPSHOT_LISTS.map(({ key }) => key);
+export const SNAPSHOT_LIST_FILES = Object.fromEntries(SNAPSHOT_LISTS.map(({ key, fileName }) => [key, fileName])) as Record<McpSnapshotListKey, string>;
+export const SNAPSHOT_MANIFEST_FILE = "mcp-snapshot-manifest.json";
+
+// Records why each list file is present or absent, so a comparison never guesses from file presence.
+export interface McpSnapshotManifest {
+  schemaVersion: 1;
+  scope: "mcp-snapshot-manifest";
+  // file is the list's file name when this snapshot saved it, otherwise null.
+  lists: Record<McpSnapshotListKey, { status: CatalogStatus; file: string | null }>;
+}
 
 export interface McpSnapshotList {
   status: CatalogStatus;
@@ -111,14 +122,28 @@ export interface McpSnapshotSaveResult {
   result: McpListResponseSaveResult;
 }
 
-/** Saves each complete list as its own response file in the directory, which is created when missing. */
-export async function saveMcpSnapshot(directory: string, responses: McpSnapshot["responses"]): Promise<McpSnapshotSaveResult[]> {
+/**
+ * Saves each complete list as its own response file in the directory, which is created when missing,
+ * then the manifest that names the files this run saved. An earlier manifest is removed first, so a
+ * run that stops before writing its own leaves no manifest that names files this run did not save.
+ */
+export async function saveMcpSnapshot(
+  directory: string,
+  { report, responses }: McpSnapshot
+): Promise<{ lists: McpSnapshotSaveResult[]; manifest: McpLocalFileSaveResult }> {
   await mkdir(directory, { recursive: true });
+  await rm(path.join(directory, SNAPSHOT_MANIFEST_FILE), { force: true }).catch(() => undefined);
   const results: McpSnapshotSaveResult[] = [];
+  const manifest: McpSnapshotManifest = { schemaVersion: 1, scope: "mcp-snapshot-manifest", lists: {} as McpSnapshotManifest["lists"] };
   for (const { key, list, fileName } of SNAPSHOT_LISTS) {
     const response = responses[key];
-    if (response === null) continue;
-    results.push({ key, fileName, method: list.method, result: await saveMcpListResponse(path.join(directory, fileName), list.resultKey, response.items, response.cache) });
+    let saved = false;
+    if (response !== null) {
+      const result = await saveMcpListResponse(path.join(directory, fileName), list.resultKey, response.items, response.cache);
+      results.push({ key, fileName, method: list.method, result });
+      saved = result.kind === "saved";
+    }
+    manifest.lists[key] = { status: report.lists[key].status, file: saved ? fileName : null };
   }
-  return results;
+  return { lists: results, manifest: await saveLocalFile(path.join(directory, SNAPSHOT_MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`) };
 }
