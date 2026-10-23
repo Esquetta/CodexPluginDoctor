@@ -60,7 +60,7 @@
     "@types/yauzl": "^3.4.0",
     "tsx": "^4.20.4",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.0",
