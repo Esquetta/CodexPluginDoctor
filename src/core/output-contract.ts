@@ -1351,18 +1351,20 @@ publicSchemaDefinitions.push({
   }
 });
 
-const embeddedDiffReport = (id: string) => {
+const embeddedReport = (id: string) => {
   const definition = publicSchemaDefinitions.find((candidate) => candidate.id === id)!;
   return { type: ["object", "null"], required: definition.required, properties: definition.properties, additionalProperties: false };
 };
-const snapshotListDiff = (diffId: string) => ({
-  type: "object", required: ["outcome", "impact", "before", "after", "diff"],
+const snapshotListDiff = (diffId: string, fileId: string) => ({
+  type: "object", required: ["outcome", "impact", "before", "after", "diff", "inspection"],
   properties: {
     outcome: { enum: ["compared", "list-added", "list-removed", "not-offered", "not-compared"] },
     impact: { enum: ["breaking", "compatible", null] },
     before: { enum: ["saved", "not-offered", "not-saved", null] },
     after: { enum: ["saved", "not-offered", "not-saved", null] },
-    diff: embeddedDiffReport(diffId)
+    diff: embeddedReport(diffId),
+    // Only for list-added: the new list's file check.
+    inspection: embeddedReport(fileId)
   },
   additionalProperties: false
 });
@@ -1395,9 +1397,9 @@ publicSchemaDefinitions.push({
     lists: {
       type: "object", required: ["tools", "prompts", "resourceTemplates"],
       properties: {
-        tools: snapshotListDiff("doctor.tools.diff.json"),
-        prompts: snapshotListDiff("doctor.prompts.diff.json"),
-        resourceTemplates: snapshotListDiff("doctor.resource-templates.diff.json")
+        tools: snapshotListDiff("doctor.tools.diff.json", "doctor.tools.file.json"),
+        prompts: snapshotListDiff("doctor.prompts.diff.json", "doctor.prompts.file.json"),
+        resourceTemplates: snapshotListDiff("doctor.resource-templates.diff.json", "doctor.resource-templates.file.json")
       },
       additionalProperties: false
     },

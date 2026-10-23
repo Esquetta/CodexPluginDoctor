@@ -1,23 +1,27 @@
 import path from "node:path";
 
 import { compareMcpPromptFiles, type McpPromptDiffReport } from "./mcp-prompt-diff.js";
+import { inspectMcpPromptFile, type McpPromptFileReport } from "./mcp-prompt-file.js";
 import { compareMcpResourceTemplateFiles, type McpResourceTemplateDiffReport } from "./mcp-resource-template-diff.js";
+import { inspectMcpResourceTemplateFile, type McpResourceTemplateFileReport } from "./mcp-resource-template-file.js";
 import { SNAPSHOT_LIST_FILES, SNAPSHOT_LIST_KEYS, SNAPSHOT_MANIFEST_FILE, type McpSnapshotListKey, type McpSnapshotManifest } from "./mcp-snapshot.js";
 import { compareMcpToolFiles, type McpToolDiffReport } from "./mcp-tool-diff.js";
-import { isBlockedOfflinePath, readBoundedRegularFile } from "./mcp-tool-file.js";
+import { inspectMcpToolFile, isBlockedOfflinePath, readBoundedRegularFile, type McpToolFileReport } from "./mcp-tool-file.js";
 import type { CatalogStatus } from "./mcp-tool-catalog.js";
 
 type ManifestState = "valid" | "unavailable" | "invalid" | "blocked";
 // saved: the snapshot wrote the list; not-offered: the server does not offer it; not-saved: offered but not read completely.
 type ListState = "saved" | "not-offered" | "not-saved";
 
-export interface McpSnapshotListDiff<R> {
+export interface McpSnapshotListDiff<R, F> {
   outcome: "compared" | "list-added" | "list-removed" | "not-offered" | "not-compared";
   // Set for a list that appeared or disappeared; a compared list carries impacts per entry in its diff.
   impact: "breaking" | "compatible" | null;
   before: ListState | null;
   after: ListState | null;
   diff: R | null;
+  // The file check of a newly offered list, which has no baseline to be compared with.
+  inspection: F | null;
 }
 
 export interface McpSnapshotDiffReport {
@@ -32,9 +36,9 @@ export interface McpSnapshotDiffReport {
     unclassified: number | null;
   };
   lists: {
-    tools: McpSnapshotListDiff<McpToolDiffReport>;
-    prompts: McpSnapshotListDiff<McpPromptDiffReport>;
-    resourceTemplates: McpSnapshotListDiff<McpResourceTemplateDiffReport>;
+    tools: McpSnapshotListDiff<McpToolDiffReport, McpToolFileReport>;
+    prompts: McpSnapshotListDiff<McpPromptDiffReport, McpPromptFileReport>;
+    resourceTemplates: McpSnapshotListDiff<McpResourceTemplateDiffReport, McpResourceTemplateFileReport>;
   };
   coverage: {
     comparison: "structural-only";
@@ -52,6 +56,11 @@ const COMPARE = {
   tools: compareMcpToolFiles,
   prompts: compareMcpPromptFiles,
   resourceTemplates: compareMcpResourceTemplateFiles
+};
+const INSPECT = {
+  tools: inspectMcpToolFile,
+  prompts: inspectMcpPromptFile,
+  resourceTemplates: inspectMcpResourceTemplateFile
 };
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -102,37 +111,44 @@ export async function compareMcpSnapshotDirectories(
 ): Promise<McpSnapshotDiffReport> {
   const [before, after] = await Promise.all([readManifest(beforeDirectory), readManifest(afterDirectory)]);
   const diffOptions = options.showNames === true ? { showNames: true } : {};
-  const lists = {} as Record<McpSnapshotListKey, McpSnapshotListDiff<McpToolDiffReport | McpPromptDiffReport | McpResourceTemplateDiffReport>>;
+  const lists = {} as Record<McpSnapshotListKey, McpSnapshotListDiff<
+    McpToolDiffReport | McpPromptDiffReport | McpResourceTemplateDiffReport,
+    McpToolFileReport | McpPromptFileReport | McpResourceTemplateFileReport
+  >>;
 
   for (const key of SNAPSHOT_LIST_KEYS) {
     if (before.lists === null || after.lists === null) {
-      lists[key] = { outcome: "not-compared", impact: null, before: null, after: null, diff: null };
+      lists[key] = { outcome: "not-compared", impact: null, before: null, after: null, diff: null, inspection: null };
       continue;
     }
     const beforeState = listState(before.lists[key]);
     const afterState = listState(after.lists[key]);
-    const base = { before: beforeState, after: afterState };
+    const base = { before: beforeState, after: afterState, diff: null, inspection: null };
+    const fileName = SNAPSHOT_LIST_FILES[key];
     if (beforeState === "saved" && afterState === "saved") {
-      const fileName = SNAPSHOT_LIST_FILES[key];
       const diff = await COMPARE[key](path.join(beforeDirectory, fileName), path.join(afterDirectory, fileName), diffOptions);
       lists[key] = { outcome: "compared", impact: null, ...base, diff };
     } else if (beforeState === "saved" && afterState === "not-offered") {
-      lists[key] = { outcome: "list-removed", impact: "breaking", ...base, diff: null };
+      lists[key] = { outcome: "list-removed", impact: "breaking", ...base };
     } else if (beforeState === "not-offered" && afterState === "saved") {
-      lists[key] = { outcome: "list-added", impact: "compatible", ...base, diff: null };
+      // Nothing to compare it with, so the new list's definitions are checked on their own.
+      lists[key] = { outcome: "list-added", impact: "compatible", ...base, inspection: await INSPECT[key](path.join(afterDirectory, fileName)) };
     } else if (beforeState === "not-offered" && afterState === "not-offered") {
-      lists[key] = { outcome: "not-offered", impact: null, ...base, diff: null };
+      lists[key] = { outcome: "not-offered", impact: null, ...base };
     } else {
-      lists[key] = { outcome: "not-compared", impact: null, ...base, diff: null };
+      lists[key] = { outcome: "not-compared", impact: null, ...base };
     }
   }
 
   const entries = SNAPSHOT_LIST_KEYS.map((key) => lists[key]);
   const reason: McpSnapshotDiffReport["comparison"]["reason"] =
-    before.state === "blocked" || after.state === "blocked" || entries.some((entry) => entry.diff?.status === "blocked") ? "input-blocked"
+    before.state === "blocked" || after.state === "blocked"
+      || entries.some((entry) => entry.diff?.status === "blocked" || entry.inspection?.status === "blocked") ? "input-blocked"
       : before.lists === null || after.lists === null ? "manifest-unavailable"
         : entries.some((entry) => entry.outcome === "not-compared") ? "list-not-saved"
-          : entries.some((entry) => entry.diff !== null && !entry.diff.comparison.complete) ? "list-incomplete"
+          // A new list whose definitions fail or cannot be read completely is incomplete, like a compared one.
+          : entries.some((entry) => (entry.diff !== null && !entry.diff.comparison.complete)
+            || (entry.inspection !== null && entry.inspection.status !== "pass" && entry.inspection.status !== "warn")) ? "list-incomplete"
             : null;
   const changed = entries.some((entry) => entry.outcome === "list-added" || entry.outcome === "list-removed" || entry.diff?.status === "warn");
   const complete = reason === null;

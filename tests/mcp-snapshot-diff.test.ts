@@ -65,7 +65,7 @@ describe("compareMcpSnapshotDirectories", () => {
       lists: {
         tools: { outcome: "compared", diff: { comparison: { removed: 1, breaking: 1 } } },
         prompts: { outcome: "list-removed", impact: "breaking", before: "saved", after: "not-offered", diff: null },
-        resourceTemplates: { outcome: "list-added", impact: "compatible", before: "not-offered", after: "saved", diff: null }
+        resourceTemplates: { outcome: "list-added", impact: "compatible", before: "not-offered", after: "saved", diff: null, inspection: { status: "pass" } }
       }
     });
     expect(violations(diffSchema, report)).toEqual([]);
@@ -87,7 +87,7 @@ describe("compareMcpSnapshotDirectories", () => {
     const report = await compareMcpSnapshotDirectories(before, after);
 
     expect(report.status).toBe("pass");
-    expect(report.lists.prompts).toEqual({ outcome: "not-offered", impact: null, before: "not-offered", after: "not-offered", diff: null });
+    expect(report.lists.prompts).toEqual({ outcome: "not-offered", impact: null, before: "not-offered", after: "not-offered", diff: null, inspection: null });
   });
 
   it("is incomplete when an offered list was not saved, and ignores files the manifest does not name", async () => {
@@ -106,6 +106,45 @@ describe("compareMcpSnapshotDirectories", () => {
         resourceTemplates: { outcome: "list-removed" }
       }
     });
+    expect(violations(diffSchema, report)).toEqual([]);
+  });
+
+  it("checks a newly offered list on its own and reports its findings without names", async () => {
+    const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" });
+    // Two prompts with the same name are a warning; a prompt without a name makes the list fail.
+    const warned = await snapshotDirectory("warned", { tools, prompts: [{ name: "review" }, { name: "review" }], resourceTemplates: "not-applicable" });
+    const failed = await snapshotDirectory("failed", { tools, prompts: [{ title: "No name" }], resourceTemplates: "not-applicable" });
+
+    const warning = await compareMcpSnapshotDirectories(before, warned);
+    expect(warning).toMatchObject({ status: "warn", comparison: { complete: true }, lists: { prompts: { outcome: "list-added", inspection: { status: "warn" } } } });
+    expect(warning.lists.prompts.inspection?.findings.length).toBeGreaterThan(0);
+    expect(violations(diffSchema, warning)).toEqual([]);
+    const markdown = renderMcpSnapshotDiffMarkdown(warning);
+    expect(markdown).toContain("| Prompts | **list-added** (compatible), definitions `warn` |");
+    expect(markdown).toContain("### Added Prompts List");
+    expect(markdown).not.toContain("review");
+    expect(renderMcpSnapshotDiffReport(warning)).toContain("Added prompts list:");
+
+    const failure = await compareMcpSnapshotDirectories(before, failed);
+    expect(failure).toMatchObject({ status: "incomplete", comparison: { complete: false, reason: "list-incomplete" }, lists: { prompts: { inspection: { status: "fail" } } } });
+    expect(violations(diffSchema, failure)).toEqual([]);
+  });
+
+  it("is blocked when a newly offered list file is a symbolic link", async (context) => {
+    const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" });
+    const after = await snapshotDirectory("after", { tools, prompts, resourceTemplates: "not-applicable" });
+    const target = path.join(root, "elsewhere-prompts.json");
+    await writeFile(target, await readFile(path.join(after, "mcp-prompts-current.json")));
+    await rm(path.join(after, "mcp-prompts-current.json"));
+    try {
+      await symlink(target, path.join(after, "mcp-prompts-current.json"));
+    } catch {
+      context.skip();
+    }
+
+    const report = await compareMcpSnapshotDirectories(before, after);
+
+    expect(report).toMatchObject({ status: "blocked", comparison: { reason: "input-blocked" }, lists: { prompts: { outcome: "list-added", inspection: { status: "blocked" } } } });
     expect(violations(diffSchema, report)).toEqual([]);
   });
 

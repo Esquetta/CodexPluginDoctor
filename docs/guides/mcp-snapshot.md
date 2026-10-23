@@ -89,11 +89,13 @@ directories offline, list by list, using each directory's manifest:
 | --- | --- | --- |
 | saved | saved | `compared` with `tools-diff`, `prompts-diff`, or `resource-templates-diff` |
 | saved | not offered | `list-removed`, breaking |
-| not offered | saved | `list-added`, compatible |
+| not offered | saved | `list-added`, compatible; its definitions are checked like `tools-file`, `prompts-file`, or `resource-templates-file` |
 | not offered | not offered | `not-offered` |
 | either side offered but not saved | | `not-compared`; the comparison is incomplete |
 
 A list counts as not offered when its manifest status is `not-applicable`. A
+newly offered list whose definitions fail or cannot be read completely leaves
+the comparison incomplete, and its findings are listed without names. A
 missing or invalid manifest leaves every list `not-compared`, and a manifest
 can only name the fixed file names above. A remote or device path is blocked.
 
@@ -115,10 +117,12 @@ with 1.82.0 or later before comparing.
 ## GitHub Action and init-ci
 
 The GitHub Action runs a snapshot through `snapshot-url` or `snapshot-server`
-and compares each saved list through the existing `tools-diff-*`,
-`prompts-diff-*`, and `resource-templates-diff-*` inputs; see
-[GitHub Action Usage](github-action.md#one-snapshot-for-every-list). It needs
-CLI 1.81.0 or later in `version`.
-`codex-plugin-doctor init-ci . --tools-diff-server <name> --prompts-baseline <path>`
-or `--resource-templates-baseline <path>` writes a workflow whose capture job
-uses one snapshot instead of one capture per compared list.
+(CLI 1.81.0 or later) and compares it either list by list through the
+`tools-diff-*`, `prompts-diff-*`, and `resource-templates-diff-*` inputs, or in
+one report and one pull request comment through `snapshot-diff-before-dir` (CLI
+1.82.0 or later); see [GitHub Action Usage](github-action.md#snapshot-comparison).
+`codex-plugin-doctor init-ci . --tools-diff-server <name> --snapshot-baseline-dir <dir>`
+writes a workflow that compares the server's snapshot with a committed snapshot
+directory and posts one comment; with `--prompts-baseline` or
+`--resource-templates-baseline` instead, the capture job still uses one snapshot
+and the compare job compares each list on its own.

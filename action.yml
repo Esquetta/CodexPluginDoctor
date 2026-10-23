@@ -115,7 +115,7 @@ inputs:
     required: false
     default: "false"
   github-token:
-    description: Token for the tool, prompt, and resource template diff comment step, set only in that step's environment. Needs pull-requests write permission. The comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy lets this invocation run package code.
+    description: Token for the diff comment step, set only in that step's environment. Needs pull-requests write permission. The comment is skipped, without giving the token to any step, when runtime, the publish profile, or the codex-publish or mcp-strict policy lets this invocation run package code.
     required: false
     default: ${{ github.token }}
   tools-diff-fail-on:
@@ -202,6 +202,22 @@ inputs:
     description: Resource template diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes.
     required: false
     default: "any"
+  snapshot-diff-before-dir:
+    description: Optional directory saved by doctor mcp-snapshot --save-dir, such as a committed baseline, compared with doctor mcp-snapshot-diff in one report for all three lists. When snapshot-url or snapshot-server is set and snapshot-diff-after-dir is empty, this step's snapshot is the after directory. Requires CLI 1.82.0 or later in version.
+    required: false
+    default: ""
+  snapshot-diff-after-dir:
+    description: Optional snapshot directory compared against snapshot-diff-before-dir, such as one downloaded from an earlier job. Requires snapshot-diff-before-dir.
+    required: false
+    default: ""
+  snapshot-diff-fail-on:
+    description: Snapshot diff failure mode. any fails on every change or input warning; breaking fails only on breaking or unclassified changes, including a list the server stopped offering.
+    required: false
+    default: "any"
+  snapshot-diff-comment:
+    description: Post or update one pull request comment with the snapshot diff summary, under the same conditions as tools-diff-comment.
+    required: false
+    default: "false"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -372,6 +388,12 @@ outputs:
   resource-templates-diff-summary-path:
     description: Path to the offline MCP resource template diff Markdown summary when the resource template diff ran.
     value: ${{ steps.run-doctor.outputs.resource-templates-diff-summary-path }}
+  snapshot-diff-json-path:
+    description: Path to the MCP snapshot diff JSON report when the snapshot diff ran.
+    value: ${{ steps.run-doctor.outputs.snapshot-diff-json-path }}
+  snapshot-diff-summary-path:
+    description: Path to the MCP snapshot diff Markdown summary when the snapshot diff ran.
+    value: ${{ steps.run-doctor.outputs.snapshot-diff-summary-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -389,7 +411,7 @@ runs:
       run: |
         # A comparison recorded by an earlier invocation in this job must not be published if this one fails.
         rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran" \
-          "${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran"
+          "${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-snapshot-diff-ran"
         npm install -g "codex-plugin-doctor@${VERSION_INPUT}"
 
     - name: Run Codex Plugin Doctor
@@ -445,6 +467,9 @@ runs:
         RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT: ${{ inputs['resource-templates-diff-before'] }}
         RESOURCE_TEMPLATES_DIFF_AFTER_INPUT: ${{ inputs['resource-templates-diff-after'] }}
         RESOURCE_TEMPLATES_DIFF_FAIL_ON_INPUT: ${{ inputs['resource-templates-diff-fail-on'] }}
+        SNAPSHOT_DIFF_BEFORE_DIR_INPUT: ${{ inputs['snapshot-diff-before-dir'] }}
+        SNAPSHOT_DIFF_AFTER_DIR_INPUT: ${{ inputs['snapshot-diff-after-dir'] }}
+        SNAPSHOT_DIFF_FAIL_ON_INPUT: ${{ inputs['snapshot-diff-fail-on'] }}
         OUTPUT_DIR_INPUT: ${{ inputs['output-dir'] }}
         REVIEW_BUNDLE_DIR_INPUT: ${{ inputs['review-bundle-dir'] }}
         FILTER_INPUT: ${{ inputs.filter }}
@@ -468,14 +493,14 @@ runs:
 
         # A comparison recorded by an earlier invocation in this job must not be published if this one stops early.
         rm -f "${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran" \
-          "${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran"
+          "${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran" "${RUNNER_TEMP:-.}/codex-plugin-doctor-snapshot-diff-ran"
 
         # Exits before any Doctor command, recording status 2 for the later steps and the status output
         # and clearing state that an earlier invocation in the same job left behind.
         reject_usage() {
           local state_dir="${RUNNER_TEMP:-.}"
           printf "2" > "$state_dir/codex-plugin-doctor-status"
-          for state in submission-ran submission-archive-ran tools-diff-ran prompts-diff-ran resource-templates-diff-ran check-ran; do
+          for state in submission-ran submission-archive-ran tools-diff-ran prompts-diff-ran resource-templates-diff-ran snapshot-diff-ran check-ran; do
             printf "false" > "$state_dir/codex-plugin-doctor-$state"
           done
           echo "status=2" >> "$GITHUB_OUTPUT"
@@ -596,6 +621,7 @@ runs:
         tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
         prompts_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
         resource_templates_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran"
+        snapshot_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-snapshot-diff-ran"
         check_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-check-ran"
         status=0
         submission_ran=false
@@ -617,6 +643,9 @@ runs:
         resource_templates_diff_ran=false
         resource_templates_diff_json_output=""
         resource_templates_diff_summary_output=""
+        snapshot_diff_ran=false
+        snapshot_diff_json_output=""
+        snapshot_diff_summary_output=""
         doctor_version="$(codex-plugin-doctor --version)"
 
         mkdir -p "$report_dir"
@@ -713,7 +742,7 @@ runs:
         elif [[ "$CHECK_INPUT" != "false" ]]; then
           echo "check must be true or false." >&2
           record_status 2
-        elif [[ -z "$SNAPSHOT_URL_INPUT" && -z "$SNAPSHOT_SERVER_INPUT" && -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$PROMPTS_CAPTURE_URL_INPUT" && -z "$PROMPTS_CAPTURE_SERVER_INPUT" && -z "$PROMPTS_DIFF_BEFORE_INPUT" && -z "$PROMPTS_DIFF_AFTER_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
+        elif [[ -z "$SNAPSHOT_URL_INPUT" && -z "$SNAPSHOT_SERVER_INPUT" && -z "$TOOLS_CAPTURE_URL_INPUT" && -z "$TOOLS_CAPTURE_SERVER_INPUT" && -z "$TOOLS_DIFF_BEFORE_INPUT" && -z "$TOOLS_DIFF_AFTER_INPUT" && -z "$PROMPTS_CAPTURE_URL_INPUT" && -z "$PROMPTS_CAPTURE_SERVER_INPUT" && -z "$PROMPTS_DIFF_BEFORE_INPUT" && -z "$PROMPTS_DIFF_AFTER_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_URL_INPUT" && -z "$RESOURCE_TEMPLATES_CAPTURE_SERVER_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" && -z "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" && -z "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" && -z "$SNAPSHOT_DIFF_AFTER_DIR_INPUT" && -z "$REGISTRY_METADATA_INPUT" && "$SUBMISSION_INPUT" != "true" && -z "$SUBMISSION_ARCHIVE_INPUT" && "${CORPUS_INPUT}" != "true" && -z "$CORPUS_METRICS_MANIFEST_INPUT" && "${CONTRACT_INPUT}" != "true" && "${REVIEW_BUNDLE_INPUT}" != "true" ]]; then
           echo "check: false requires another Action mode." >&2
           record_status 2
         fi
@@ -761,6 +790,40 @@ runs:
           run_doctor "MCP Registry readiness" "${registry_args[@]}"
         fi
 
+        # Runs one comparison and writes its JSON report and Markdown summary. Arguments: var (the bash name
+        # its outputs use), noun (as in log lines), the doctor subcommand, the Markdown heading that subcommand
+        # prints, the before and after inputs, fail-on, and the JSON and Markdown paths. Sets <var>_diff_ran,
+        # <var>_diff_json_output, and <var>_diff_summary_output.
+        run_diff() {
+          local var="$1" noun="$2" command="$3" heading="$4" before="$5" after="$6" fail_on="$7" json_path="$8" summary_path="$9"
+          local diff_args=(doctor "$command" --before "$before" --after "$after" --fail-on "$fail_on") diff_code diff_markdown
+          printf -v "${var}_diff_ran" '%s' true
+          echo "::group::MCP $noun diff"
+          set +e
+          codex-plugin-doctor "${diff_args[@]}" --json > "$json_path"
+          diff_code="$?"
+          diff_markdown="$(codex-plugin-doctor "${diff_args[@]}" --markdown 2>/dev/null)"
+          # Older CLI versions pinned through the version input have no --markdown; fall back to text.
+          if [[ "$diff_markdown" != "$heading"* ]]; then
+            diff_markdown="$(printf '%s\n\n```text\n%s\n```' "$heading" "$(codex-plugin-doctor "${diff_args[@]}")")"
+          fi
+          set -e
+          printf '%s\n' "$diff_markdown"
+          {
+            printf '%s\n' "$diff_markdown"
+            echo ""
+            echo "- Exit status: ${diff_code}"
+            echo "- Fail on: ${fail_on}"
+          } > "$summary_path"
+          if [[ "$diff_code" -ne 0 ]]; then
+            echo "Codex Plugin Doctor MCP $noun diff exited with status ${diff_code}."
+          fi
+          echo "::endgroup::"
+          record_status "$diff_code"
+          printf -v "${var}_diff_json_output" '%s' "$json_path"
+          printf -v "${var}_diff_summary_output" '%s' "$summary_path"
+        }
+
         # Captures and compares one definition list. Arguments: kind (tools, prompts, or resource-templates),
         # var (the kind as a bash name), noun (tool, prompt, or resource template), title (as in the Markdown
         # heading), then that kind's capture url, server, sandbox, env names, defer findings, and token env
@@ -774,7 +837,7 @@ runs:
           local diff_json_path="$report_dir/mcp-$kind-diff.json"
           local diff_summary_path="$report_dir/mcp-$kind-diff.md"
           local capture_output="" diff_after="$after" capture_feeds_diff=false
-          local capture_args=() env_names=() name code diff_args diff_code diff_markdown
+          local capture_args=() env_names=() name code
           if [[ ( -n "$url" || -n "$server" || -n "$snapshot_file" ) && -n "$before" && -z "$after" ]]; then
             capture_feeds_diff=true
           fi
@@ -863,32 +926,7 @@ runs:
             echo "$kind-diff-fail-on must be any or breaking." >&2
             record_status 2
           else
-            printf -v "${var}_diff_ran" '%s' true
-            diff_args=(doctor "$kind-diff" --before "$before" --after "$diff_after" --fail-on "$fail_on")
-            echo "::group::MCP $noun diff"
-            set +e
-            codex-plugin-doctor "${diff_args[@]}" --json > "$diff_json_path"
-            diff_code="$?"
-            diff_markdown="$(codex-plugin-doctor "${diff_args[@]}" --markdown 2>/dev/null)"
-            # Older CLI versions pinned through the version input have no --markdown; fall back to text.
-            if [[ "$diff_markdown" != "## MCP $title Definition Diff"* ]]; then
-              diff_markdown="$(printf '## MCP %s Definition Diff\n\n```text\n%s\n```' "$title" "$(codex-plugin-doctor "${diff_args[@]}")")"
-            fi
-            set -e
-            printf '%s\n' "$diff_markdown"
-            {
-              printf '%s\n' "$diff_markdown"
-              echo ""
-              echo "- Exit status: ${diff_code}"
-              echo "- Fail on: ${fail_on}"
-            } > "$diff_summary_path"
-            if [[ "$diff_code" -ne 0 ]]; then
-              echo "Codex Plugin Doctor MCP $noun diff exited with status ${diff_code}."
-            fi
-            echo "::endgroup::"
-            record_status "$diff_code"
-            printf -v "${var}_diff_json_output" '%s' "$diff_json_path"
-            printf -v "${var}_diff_summary_output" '%s' "$diff_summary_path"
+            run_diff "$var" "$noun" "$kind-diff" "## MCP $title Definition Diff" "$before" "$diff_after" "$fail_on" "$diff_json_path" "$diff_summary_path"
           fi
         }
 
@@ -953,6 +991,9 @@ runs:
             elif [[ "$snapshot_code" -ne 0 && "$snapshot_code" -ne 1 ]]; then
               echo "Codex Plugin Doctor MCP snapshot did not read every list the server offers completely (status ${snapshot_code})."
               record_status 2
+            elif [[ -n "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" && -z "$SNAPSHOT_DIFF_AFTER_DIR_INPUT" ]]; then
+              # The snapshot diff later in this step re-checks every saved list.
+              :
             # Findings reach the status here unless every saved list feeds a comparison that re-checks it.
             elif snapshot_unchecked tools "$TOOLS_DIFF_BEFORE_INPUT" "$TOOLS_DIFF_AFTER_INPUT" \
               || snapshot_unchecked prompts "$PROMPTS_DIFF_BEFORE_INPUT" "$PROMPTS_DIFF_AFTER_INPUT" \
@@ -979,6 +1020,38 @@ runs:
           "$RESOURCE_TEMPLATES_CAPTURE_ENV_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_DEFER_FINDINGS_INPUT" "$RESOURCE_TEMPLATES_CAPTURE_TOKEN_ENV_INPUT" \
           "$RESOURCE_TEMPLATES_DIFF_BEFORE_INPUT" "$RESOURCE_TEMPLATES_DIFF_AFTER_INPUT" "$RESOURCE_TEMPLATES_DIFF_FAIL_ON_INPUT" \
           "$(snapshot_file resource-templates)"
+
+        # Compares a saved snapshot directory, such as a committed baseline, with this step's snapshot or
+        # another snapshot directory, in one report for all three lists.
+        snapshot_diff_after="$SNAPSHOT_DIFF_AFTER_DIR_INPUT"
+        if [[ "$snapshot_configured" == "true" && -n "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" && -z "$snapshot_diff_after" ]]; then
+          snapshot_diff_after="$report_dir"
+        fi
+        if [[ -z "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" && -z "$SNAPSHOT_DIFF_AFTER_DIR_INPUT" ]]; then
+          :
+        elif [[ -z "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" || -z "$snapshot_diff_after" ]]; then
+          echo "snapshot-diff-before-dir requires snapshot-diff-after-dir or a snapshot in this step, and snapshot-diff-after-dir requires snapshot-diff-before-dir." >&2
+          record_status 2
+        elif [[ "$SNAPSHOT_DIFF_FAIL_ON_INPUT" != "any" && "$SNAPSHOT_DIFF_FAIL_ON_INPUT" != "breaking" ]]; then
+          echo "snapshot-diff-fail-on must be any or breaking." >&2
+          record_status 2
+        elif [[ -z "$SNAPSHOT_DIFF_AFTER_DIR_INPUT" && ! -f "$report_dir/mcp-snapshot-manifest.json" ]]; then
+          echo "MCP snapshot diff skipped because this step's snapshot saved no manifest." >&2
+          record_status 2
+        else
+          run_diff snapshot snapshot mcp-snapshot-diff "## MCP Snapshot Diff" "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" "$snapshot_diff_after" \
+            "$SNAPSHOT_DIFF_FAIL_ON_INPUT" "$report_dir/mcp-snapshot-diff.json" "$report_dir/mcp-snapshot-diff.md"
+          # A CLI older than 1.82.0 runs its environment doctor for the unknown command and exits 0.
+          if ! node -e 'process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).scope === "mcp-snapshot-diff" ? 0 : 1)' \
+            "$report_dir/mcp-snapshot-diff.json" 2>/dev/null; then
+            echo "MCP snapshot diff wrote no snapshot diff report; it needs CLI 1.82.0 or later in version." >&2
+            record_status 2
+            # Another command's output must not be published as the comparison in the summary or a comment.
+            snapshot_diff_ran=false
+            snapshot_diff_json_output=""
+            snapshot_diff_summary_output=""
+          fi
+        fi
 
         if [[ "$SUBMISSION_INPUT" == "true" && -n "$SUBMISSION_ARCHIVE_INPUT" ]]; then
           echo "submission and submission-archive cannot be selected together." >&2
@@ -1070,6 +1143,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_CAPTURE="$([[ -n "$resource_templates_capture_output" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_CAPTURE_PATH="$resource_templates_capture_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF="$resource_templates_diff_ran"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF="$snapshot_diff_ran"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${REVIEW_BUNDLE_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${REVIEW_BUNDLE_VERIFY_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
@@ -1090,6 +1164,8 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_PROMPTS_DIFF_SUMMARY_PATH="$prompts_diff_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_JSON_PATH="$resource_templates_diff_json_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_SUMMARY_PATH="$resource_templates_diff_summary_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_JSON_PATH="$snapshot_diff_json_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_SUMMARY_PATH="$snapshot_diff_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
@@ -1141,6 +1217,8 @@ runs:
             resourceTemplatesCapture: report("resourceTemplatesCapture", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_CAPTURE", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_CAPTURE_PATH"),
             resourceTemplatesDiffJson: report("resourceTemplatesDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_JSON_PATH"),
             resourceTemplatesDiffSummary: report("resourceTemplatesDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_SUMMARY_PATH"),
+            snapshotDiffJson: report("snapshotDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_JSON_PATH"),
+            snapshotDiffSummary: report("snapshotDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_SUMMARY_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
           }
@@ -1159,6 +1237,7 @@ runs:
         printf "%s" "$tools_diff_ran" > "$tools_diff_state_file"
         printf "%s" "$prompts_diff_ran" > "$prompts_diff_state_file"
         printf "%s" "$resource_templates_diff_ran" > "$resource_templates_diff_state_file"
+        printf "%s" "$snapshot_diff_ran" > "$snapshot_diff_state_file"
         printf "%s" "$check_ran" > "$check_state_file"
 
         {
@@ -1186,6 +1265,8 @@ runs:
           echo "resource-templates-capture-path=$resource_templates_capture_output"
           echo "resource-templates-diff-json-path=$resource_templates_diff_json_output"
           echo "resource-templates-diff-summary-path=$resource_templates_diff_summary_output"
+          echo "snapshot-diff-json-path=$snapshot_diff_json_output"
+          echo "snapshot-diff-summary-path=$snapshot_diff_summary_output"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"
@@ -1205,12 +1286,14 @@ runs:
         tools_diff_summary_path="$report_dir/mcp-tools-diff.md"
         prompts_diff_summary_path="$report_dir/mcp-prompts-diff.md"
         resource_templates_diff_summary_path="$report_dir/mcp-resource-templates-diff.md"
+        snapshot_diff_summary_path="$report_dir/mcp-snapshot-diff.md"
         status_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-status"
         submission_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-ran"
         submission_archive_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-submission-archive-ran"
         tools_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-tools-diff-ran"
         prompts_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-prompts-diff-ran"
         resource_templates_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-resource-templates-diff-ran"
+        snapshot_diff_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-snapshot-diff-ran"
         check_state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-check-ran"
         status="unknown"
         submission_ran=false
@@ -1218,6 +1301,7 @@ runs:
         tools_diff_ran=false
         prompts_diff_ran=false
         resource_templates_diff_ran=false
+        snapshot_diff_ran=false
         check_ran=false
 
         if [[ -f "$status_file" ]]; then
@@ -1242,6 +1326,10 @@ runs:
 
         if [[ -f "$resource_templates_diff_state_file" ]]; then
           resource_templates_diff_ran="$(cat "$resource_templates_diff_state_file")"
+        fi
+
+        if [[ -f "$snapshot_diff_state_file" ]]; then
+          snapshot_diff_ran="$(cat "$snapshot_diff_state_file")"
         fi
 
         if [[ -f "$check_state_file" ]]; then
@@ -1272,7 +1360,11 @@ runs:
           cat "$resource_templates_diff_summary_path" >> "$GITHUB_STEP_SUMMARY"
         fi
 
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ( "$check_ran" != "true" || ! -f "$summary_path" ) && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) && ( "$tools_diff_ran" != "true" || ! -f "$tools_diff_summary_path" ) && ( "$prompts_diff_ran" != "true" || ! -f "$prompts_diff_summary_path" ) && ( "$resource_templates_diff_ran" != "true" || ! -f "$resource_templates_diff_summary_path" ) ]]; then
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && "$snapshot_diff_ran" == "true" && -f "$snapshot_diff_summary_path" ]]; then
+          cat "$snapshot_diff_summary_path" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && ( "$check_ran" != "true" || ! -f "$summary_path" ) && ( "$submission_ran" != "true" || ! -f "$submission_summary_path" ) && ( "$submission_archive_ran" != "true" || ! -f "$submission_archive_summary_path" ) && ( "$tools_diff_ran" != "true" || ! -f "$tools_diff_summary_path" ) && ( "$prompts_diff_ran" != "true" || ! -f "$prompts_diff_summary_path" ) && ( "$resource_templates_diff_ran" != "true" || ! -f "$resource_templates_diff_summary_path" ) && ( "$snapshot_diff_ran" != "true" || ! -f "$snapshot_diff_summary_path" ) ]]; then
           {
             echo "## Codex Plugin Doctor"
             echo ""
@@ -1285,12 +1377,12 @@ runs:
     # that enables them) can change what later steps run, for example through GITHUB_PATH, on any event
     # whose token can write. The runner evaluates these conditions, so the token never reaches a step then.
     - name: Skip Codex Plugin Doctor diff comments
-      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true') && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true' || inputs['snapshot-diff-comment'] == 'true') && (inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
-      run: echo "::warning::Diff comments skipped because this Action invocation ran package code or was allowed to. Compare saved tool, prompt, or resource template lists and post the comments from a separate job."
+      run: echo "::warning::Diff comments skipped because this Action invocation ran package code or was allowed to. Compare saved lists or snapshots and post the comments from a separate job."
 
     - name: Comment Codex Plugin Doctor diffs
-      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true') && !(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
+      if: ${{ always() && (inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true' || inputs['snapshot-diff-comment'] == 'true') && !(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict') }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs['github-token'] }}
@@ -1298,14 +1390,16 @@ runs:
         TOOLS_DIFF_COMMENT_INPUT: ${{ inputs['tools-diff-comment'] }}
         PROMPTS_DIFF_COMMENT_INPUT: ${{ inputs['prompts-diff-comment'] }}
         RESOURCE_TEMPLATES_DIFF_COMMENT_INPUT: ${{ inputs['resource-templates-diff-comment'] }}
+        SNAPSHOT_DIFF_COMMENT_INPUT: ${{ inputs['snapshot-diff-comment'] }}
       run: |
         set -euo pipefail
 
         # GitHub rejects comment bodies longer than 65,536 characters.
         max_summary_bytes=60000
 
-        # Posts or updates the one marker comment of a diff that ran. Arguments: kind (tools, prompts, or
-        # resource-templates), noun (tool, prompt, or resource template), and title (the noun capitalized).
+        # Posts or updates the one marker comment of a diff that ran. Arguments: kind (tools, prompts,
+        # resource-templates, or snapshot), noun (tool, prompt, resource template, or snapshot), and title
+        # (the noun capitalized).
         comment_diff() {
           local kind="$1" noun="$2" title="$3"
           local state_file="${RUNNER_TEMP:-.}/codex-plugin-doctor-$kind-diff-ran"
@@ -1376,6 +1470,9 @@ runs:
         fi
         if [[ "${RESOURCE_TEMPLATES_DIFF_COMMENT_INPUT,,}" == "true" ]]; then
           comment_diff resource-templates "resource template" "Resource template"
+        fi
+        if [[ "${SNAPSHOT_DIFF_COMMENT_INPUT,,}" == "true" ]]; then
+          comment_diff snapshot snapshot Snapshot
         fi
 
     - name: Upload Codex Plugin Doctor reports

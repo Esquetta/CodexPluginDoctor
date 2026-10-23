@@ -51,17 +51,19 @@ Every change should run:
 The `Action E2E` workflow (`.github/workflows/action-e2e.yml`) also runs the
 composite Action from the checkout on a real runner, with the CLI packed from the
 same commit and passed as `version: file:<tarball>`. It captures the example
-stdio server in the Docker sandbox, compares the capture in a second job with
-`tests/fixtures/action-e2e/tools-baseline.json`, and comments on the pull request.
-Regenerate that baseline only when the example server's tools change on purpose:
+stdio server in the Docker sandbox with one snapshot, compares it in a second job
+with the snapshot in `tests/fixtures/action-e2e/snapshot-baseline`, and posts one
+comment on the pull request. Regenerate that baseline only when the example
+server's tools, prompts, or resource templates change on purpose:
 
 ```bash
-node dist/cli.js doctor tools examples/codex-doctor-runtime --server doctorRuntime --runtime --save-response tests/fixtures/action-e2e/tools-baseline.json
+node dist/cli.js doctor mcp-snapshot examples/codex-doctor-runtime --server doctorRuntime --runtime --save-dir tests/fixtures/action-e2e/snapshot-baseline
 ```
 
-The check fails on any added, removed, or changed tool. A failed comment is only a
-warning in the Action, so the run stays green if posting breaks; check the pull
-request for the comment when changing the comment step.
+The check fails unless every list is compared and passes: a list that was added,
+removed, or not compared, a changed entry, or an input warning fails it. A failed
+comment is only a warning in the Action, so the run stays green if posting
+breaks; check the pull request for the comment when changing the comment step.
 
 ## Release Process
 

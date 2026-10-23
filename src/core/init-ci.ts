@@ -47,6 +47,8 @@ export interface ToolsDiffWorkflowOptions {
   promptsBaseline: string | null;
   // When set, the same server's resource template list is captured too and compared with this baseline.
   resourceTemplatesBaseline: string | null;
+  // When set, the compare job runs one snapshot diff against this snapshot directory instead of the per-list diffs.
+  snapshotBaselineDir: string | null;
 }
 
 // JSON strings are valid YAML double-quoted scalars, so names and paths cannot break the document.
@@ -58,8 +60,9 @@ const yamlString = (value: string) => JSON.stringify(value);
  * to pull requests, and it runs no package code.
  */
 function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
+  const snapshotDiff = options.snapshotBaselineDir !== null;
   return [
-    "name: MCP tool diff",
+    snapshotDiff ? "name: MCP snapshot diff" : "name: MCP tool diff",
     "",
     "on:",
     "  pull_request:",
@@ -82,7 +85,7 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          check: \"false\"",
     "          runtime: \"true\"",
     // A snapshot reads every list in one server session, so the server starts once for several comparisons.
-    ...(options.promptsBaseline === null && options.resourceTemplatesBaseline === null ? [
+    ...(!snapshotDiff && options.promptsBaseline === null && options.resourceTemplatesBaseline === null ? [
       `          tools-capture-server: ${yamlString(options.server)}`,
       ...(options.sandbox === "docker" ? ["          tools-capture-sandbox: docker"] : []),
       "          # Catalog findings do not fail this job; the compare job re-checks the saved list.",
@@ -114,10 +117,17 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "        with:",
     `          version: \"${packageVersion}\"`,
     "          check: \"false\"",
-    `          tools-diff-before: ${yamlString(options.baseline)}`,
-    "          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json",
-    "          tools-diff-fail-on: breaking",
-    "          tools-diff-comment: \"true\"",
+    ...(options.snapshotBaselineDir !== null ? [
+      `          snapshot-diff-before-dir: ${yamlString(options.snapshotBaselineDir)}`,
+      "          snapshot-diff-after-dir: ${{ runner.temp }}/mcp-tools-capture",
+      "          snapshot-diff-fail-on: breaking",
+      "          snapshot-diff-comment: \"true\""
+    ] : [
+      `          tools-diff-before: ${yamlString(options.baseline)}`,
+      "          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json",
+      "          tools-diff-fail-on: breaking",
+      "          tools-diff-comment: \"true\""
+    ]),
     ...(options.promptsBaseline === null ? [] : [
       `          prompts-diff-before: ${yamlString(options.promptsBaseline)}`,
       "          prompts-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-prompts-current.json",
@@ -142,9 +152,12 @@ export async function initToolsDiffWorkflow(targetPath: string, options: ToolsDi
 
   await mkdir(path.dirname(workflowPath), { recursive: true });
   await writeFile(workflowPath, buildToolsDiffWorkflow(options), "utf8");
-  // doctor tools --save-response writes into an existing directory, so the baselines can be captured next.
-  for (const baseline of [options.baseline, options.promptsBaseline, options.resourceTemplatesBaseline]) {
-    if (baseline !== null) await mkdir(path.dirname(path.resolve(rootPath, baseline)), { recursive: true });
+  // doctor tools --save-response writes into an existing directory, so the baselines can be captured next;
+  // doctor mcp-snapshot --save-dir creates its directory itself.
+  if (options.snapshotBaselineDir === null) {
+    for (const baseline of [options.baseline, options.promptsBaseline, options.resourceTemplatesBaseline]) {
+      if (baseline !== null) await mkdir(path.dirname(path.resolve(rootPath, baseline)), { recursive: true });
+    }
   }
 
   return { rootPath, workflowPath };

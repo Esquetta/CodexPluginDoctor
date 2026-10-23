@@ -155,7 +155,7 @@ describe("doctor mcp-snapshot-diff", () => {
 
       const markdown = capture();
       expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", added, "--markdown"], markdown.io)).toBe(1);
-      expect(markdown.stdout.join("\n")).toContain("| Resource templates | **list-added** (compatible) |");
+      expect(markdown.stdout.join("\n")).toContain("| Resource templates | **list-added** (compatible), definitions `pass` |");
       const json = capture();
       expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", removed, "--json"], json.io)).toBe(1);
       expect(JSON.parse(json.stdout.join("\n"))).toMatchObject({ scope: "mcp-snapshot-diff", lists: { tools: { outcome: "list-removed" } } });

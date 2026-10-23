@@ -52,18 +52,26 @@ describe("Action end-to-end workflow", () => {
       check: "false", runtime: "true", "snapshot-server": "doctorRuntime", "snapshot-sandbox": "docker", "snapshot-defer-findings": "true"
     });
     expect(Object.keys(capture.with ?? {}).filter((input) => input.includes("-capture-"))).toEqual([]);
-    expect(capture.with?.["tools-diff-comment"]).toBeUndefined();
-    expect(capture.with?.["prompts-diff-comment"]).toBeUndefined();
-    expect(capture.with?.["resource-templates-diff-comment"]).toBeUndefined();
+    expect(Object.keys(capture.with ?? {}).filter((input) => input.endsWith("-comment"))).toEqual([]);
 
     expect(workflow.jobs.compare.needs).toEqual(["package", "capture"]);
     expect(workflow.jobs.compare.permissions).toEqual({ contents: "read", "pull-requests": "write" });
     expect(compare.with).toMatchObject({
-      check: "false", "tools-diff-fail-on": "breaking", "tools-diff-comment": "true",
-      "prompts-diff-before": "tests/fixtures/action-e2e/prompts-baseline.json", "prompts-diff-fail-on": "breaking", "prompts-diff-comment": "true",
-      "resource-templates-diff-before": "tests/fixtures/action-e2e/resource-templates-baseline.json",
-      "resource-templates-diff-fail-on": "breaking", "resource-templates-diff-comment": "true"
+      check: "false",
+      "snapshot-diff-before-dir": "tests/fixtures/action-e2e/snapshot-baseline",
+      "snapshot-diff-after-dir": "${{ runner.temp }}/mcp-tools-capture",
+      "snapshot-diff-fail-on": "breaking",
+      "snapshot-diff-comment": "true"
     });
     expect(compare.with?.runtime).toBeUndefined();
+  });
+
+  it("commits a baseline snapshot whose manifest names every list file it holds", async () => {
+    const directory = "tests/fixtures/action-e2e/snapshot-baseline";
+    const manifest = JSON.parse(await readFile(`${directory}/mcp-snapshot-manifest.json`, "utf8")) as { lists: Record<string, { status: string; file: string | null }> };
+    for (const list of Object.values(manifest.lists)) {
+      expect(list.status).toBe("pass");
+      expect(JSON.parse(await readFile(`${directory}/${list.file}`, "utf8"))).toMatchObject({ jsonrpc: "2.0", result: { resultType: "complete" } });
+    }
   });
 });
