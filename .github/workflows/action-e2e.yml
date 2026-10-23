@@ -1,10 +1,10 @@
 name: Action E2E
 
 # Runs the composite Action from this checkout on a real runner with the CLI built from the same
-# commit, following the two-job pattern of the workflow init-ci --tools-diff-server --prompts-baseline
-# --resource-templates-baseline writes: a capture job that starts the example stdio server once in the
-# Docker sandbox and saves its tool, prompt, and resource template lists in one snapshot, and a compare
-# job that diffs each against a committed baseline and comments on the pull request.
+# commit, following the two-job pattern of the workflow init-ci --tools-diff-server --snapshot-baseline-dir
+# writes: a capture job that starts the example stdio server once in the Docker sandbox and saves its
+# tool, prompt, and resource template lists in one snapshot, and a compare job that diffs the snapshot
+# against a committed baseline snapshot and posts one comment on the pull request.
 on:
   pull_request:
   push:
@@ -136,18 +136,10 @@ jobs:
         with:
           version: file:${{ runner.temp }}/cli/${{ needs.package.outputs.tarball }}
           check: "false"
-          tools-diff-before: tests/fixtures/action-e2e/tools-baseline.json
-          tools-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-tools-current.json
-          tools-diff-fail-on: breaking
-          tools-diff-comment: "true"
-          prompts-diff-before: tests/fixtures/action-e2e/prompts-baseline.json
-          prompts-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-prompts-current.json
-          prompts-diff-fail-on: breaking
-          prompts-diff-comment: "true"
-          resource-templates-diff-before: tests/fixtures/action-e2e/resource-templates-baseline.json
-          resource-templates-diff-after: ${{ runner.temp }}/mcp-tools-capture/mcp-resource-templates-current.json
-          resource-templates-diff-fail-on: breaking
-          resource-templates-diff-comment: "true"
+          snapshot-diff-before-dir: tests/fixtures/action-e2e/snapshot-baseline
+          snapshot-diff-after-dir: ${{ runner.temp }}/mcp-tools-capture
+          snapshot-diff-fail-on: breaking
+          snapshot-diff-comment: "true"
           output-dir: ${{ runner.temp }}/compare
           artifact-name: mcp-tools-diff
 
@@ -155,17 +147,20 @@ jobs:
         shell: bash
         env:
           STATUS: ${{ steps.diff.outputs.status }}
-          DIFF_JSON: ${{ steps.diff.outputs.tools-diff-json-path }}
-          PROMPTS_DIFF_JSON: ${{ steps.diff.outputs.prompts-diff-json-path }}
-          TEMPLATES_DIFF_JSON: ${{ steps.diff.outputs.resource-templates-diff-json-path }}
+          DIFF_JSON: ${{ steps.diff.outputs.snapshot-diff-json-path }}
         run: |
           test "$STATUS" = "0"
           node -e '
-            for (const name of ["DIFF_JSON", "PROMPTS_DIFF_JSON", "TEMPLATES_DIFF_JSON"]) {
-              const report = JSON.parse(require("node:fs").readFileSync(process.env[name], "utf8"));
-              const { complete, added, removed, changed, breaking, unclassified } = report.comparison;
-              if (report.status !== "pass" || !complete || added !== 0 || removed !== 0 || changed !== 0 || breaking !== 0 || unclassified !== 0) {
-                console.error(`Unexpected ${report.scope} comparison: ${JSON.stringify(report.comparison)}`);
+            const report = JSON.parse(require("node:fs").readFileSync(process.env.DIFF_JSON, "utf8"));
+            if (report.status !== "pass" || !report.comparison.complete || report.comparison.breaking !== 0 || report.comparison.unclassified !== 0) {
+              console.error(`Unexpected snapshot comparison: ${JSON.stringify(report.comparison)}`);
+              process.exit(1);
+            }
+            // Every list is offered by the example server, so each one must be compared and unchanged.
+            for (const [key, list] of Object.entries(report.lists)) {
+              const { complete, added, removed, changed } = list.diff?.comparison ?? {};
+              if (list.outcome !== "compared" || list.diff.status !== "pass" || !complete || added !== 0 || removed !== 0 || changed !== 0) {
+                console.error(`Unexpected ${key} comparison: ${JSON.stringify({ outcome: list.outcome, comparison: list.diff?.comparison })}`);
                 process.exit(1);
               }
             }

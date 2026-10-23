@@ -5,8 +5,8 @@ import type { McpSnapshotDiffReport } from "../core/mcp-snapshot-diff.js";
 import type { McpToolDiffReport } from "../core/mcp-tool-diff.js";
 import { renderMcpPromptDiffMarkdown } from "./render-mcp-prompt-diff-markdown.js";
 import { renderMcpResourceTemplateDiffMarkdown } from "./render-mcp-resource-template-diff-markdown.js";
-import { hasListDetails } from "./render-mcp-snapshot-diff-report.js";
-import { LIST_LABELS } from "./render-mcp-snapshot-report.js";
+import { hasInspectionDetails, hasListDetails } from "./render-mcp-snapshot-diff-report.js";
+import { describeLocation, LIST_LABELS } from "./render-mcp-snapshot-report.js";
 import { renderMcpToolDiffMarkdown } from "./render-mcp-tool-diff-markdown.js";
 
 function count(value: number | null | undefined): string {
@@ -14,7 +14,8 @@ function count(value: number | null | undefined): string {
 }
 
 function outcome(entry: McpSnapshotDiffReport["lists"][McpSnapshotListKey]): string {
-  if (entry.outcome === "list-added" || entry.outcome === "list-removed") return `**${entry.outcome}** (${entry.impact})`;
+  if (entry.outcome === "list-added") return `**list-added** (compatible), definitions \`${entry.inspection?.status ?? "not checked"}\``;
+  if (entry.outcome === "list-removed") return "**list-removed** (breaking)";
   if (entry.outcome === "not-compared") return entry.before === null ? "not-compared (manifest not read)" : `not-compared (before \`${entry.before}\`, after \`${entry.after}\`)`;
   if (entry.diff === null) return entry.outcome;
   return entry.diff.comparison.complete ? `compared, \`${entry.diff.status}\`` : `compared, \`${entry.diff.status}\` (\`${entry.diff.comparison.reason}\`)`;
@@ -48,8 +49,18 @@ export function renderMcpSnapshotDiffMarkdown(report: McpSnapshotDiffReport): st
     lines.push("", `Before manifest: \`${report.manifests.before}\` · After manifest: \`${report.manifests.after}\``);
   }
   for (const key of SNAPSHOT_LIST_KEYS) {
-    const diff = report.lists[key].diff;
+    const { diff, inspection } = report.lists[key];
     if (hasListDetails(diff)) lines.push("", listSection(key, diff));
+    if (hasInspectionDetails(inspection)) {
+      lines.push(
+        "", `### Added ${LIST_LABELS[key]} List`, "",
+        `**Definitions:** \`${inspection.status}\`${inspection.inspection.reason === null ? "" : ` · **Reason:** \`${inspection.inspection.reason}\``}`
+      );
+      if (inspection.findings.length > 0) {
+        lines.push("", "| Severity | Finding | Location | Message |", "| --- | --- | --- | --- |",
+          ...inspection.findings.map((finding) => `| ${finding.severity} | \`${finding.id}\` | ${finding.location ? describeLocation(key, finding.location) : "-"} | ${finding.message} |`));
+      }
+    }
   }
   lines.push(
     "",

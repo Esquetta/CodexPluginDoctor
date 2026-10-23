@@ -3354,6 +3354,43 @@ describe("runCli", () => {
     expect(stdout.join("")).toContain("doctor resource-templates ");
   });
 
+  it("writes a snapshot diff workflow with --snapshot-baseline-dir", async () => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-snapshot-"));
+    const { io, stdout } = createIo();
+    expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "my-server", "--snapshot-baseline-dir", String.raw`mcp\baseline`, "--sandbox", "docker"], io)).toBe(0);
+    const raw = await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8");
+    const workflow = parse(raw) as { name: string; jobs: Record<string, { permissions?: Record<string, string>; steps: Array<{ uses?: string; with?: Record<string, string> }> }> };
+    const doctor = (job: string) => workflow.jobs[job].steps.find((step) => step.uses?.startsWith("Esquetta/CodexPluginDoctor@v"))?.with ?? {};
+
+    expect(workflow.name).toBe("MCP snapshot diff");
+    expect(doctor("capture")).toMatchObject({ "snapshot-server": "my-server", "snapshot-sandbox": "docker", "snapshot-defer-findings": "true", "artifact-name": "mcp-tools-capture" });
+    expect(doctor("compare")).toMatchObject({
+      check: "false",
+      "snapshot-diff-before-dir": "mcp/baseline",
+      "snapshot-diff-after-dir": "${{ runner.temp }}/mcp-tools-capture",
+      "snapshot-diff-fail-on": "breaking",
+      "snapshot-diff-comment": "true"
+    });
+    expect(workflow.jobs.compare.permissions).toEqual({ contents: "read", "pull-requests": "write" });
+    expect(raw).not.toMatch(/tools-diff-|prompts-diff-|resource-templates-diff-|-capture-server/u);
+    expect(stdout.join("")).toContain(`doctor mcp-snapshot ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-dir ${JSON.stringify(path.join(targetPath, "mcp/baseline"))}`);
+    await expect(stat(path.join(targetPath, "mcp"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    [["--snapshot-baseline-dir", "mcp/baseline"], "--baseline, --prompts-baseline, --resource-templates-baseline, --snapshot-baseline-dir, and --sandbox require --tools-diff-server."],
+    [["--tools-diff-server", "srv", "--snapshot-baseline-dir", "../outside"], "--snapshot-baseline-dir requires a relative path inside the repository."],
+    ...["--baseline", "--prompts-baseline", "--resource-templates-baseline"].map((flag) => [
+      ["--tools-diff-server", "srv", "--snapshot-baseline-dir", "mcp/baseline", flag, "mcp/list.json"],
+      "--snapshot-baseline-dir cannot be combined with --baseline, --prompts-baseline, or --resource-templates-baseline."
+    ] as [string[], string])
+  ])("rejects init-ci %j", async (flags, message) => {
+    const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-snapshot-invalid-"));
+    const { io, stderr } = createIo();
+    expect(await runCli(["init-ci", targetPath, ...flags], io)).toBe(2);
+    expect(stderr.join("")).toBe(message);
+  });
+
   it("leaves prompts out of the tool diff workflow by default", async () => {
     const targetPath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-init-ci-no-prompts-"));
     expect(await runCli(["init-ci", targetPath, "--tools-diff-server", "srv"], createIo().io)).toBe(0);
@@ -3373,9 +3410,9 @@ describe("runCli", () => {
     [["--tools-diff-server", `bad${String.fromCharCode(0x85)}name`], "--tools-diff-server requires a server name."],
     [["--tools-diff-server", "my-server", "--sandbox", "podman"], "--sandbox must be docker."],
     [["--tools-diff-server", "bad\nname"], "--tools-diff-server requires a server name."],
-    [["--baseline", "mcp/tools.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
-    [["--prompts-baseline", "mcp/prompts.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
-    [["--resource-templates-baseline", "mcp/templates.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, and --sandbox require --tools-diff-server."],
+    [["--baseline", "mcp/tools.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, --snapshot-baseline-dir, and --sandbox require --tools-diff-server."],
+    [["--prompts-baseline", "mcp/prompts.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, --snapshot-baseline-dir, and --sandbox require --tools-diff-server."],
+    [["--resource-templates-baseline", "mcp/templates.json"], "--baseline, --prompts-baseline, --resource-templates-baseline, --snapshot-baseline-dir, and --sandbox require --tools-diff-server."],
     [["--tools-diff-server", "srv", "--resource-templates-baseline", "/abs.json"], "--resource-templates-baseline requires a relative path inside the repository."],
     [["--tools-diff-server", "srv", "--prompts-baseline", "mcp/p.json", "--resource-templates-baseline", "mcp/p.json"], "--resource-templates-baseline must differ from --baseline and --prompts-baseline."],
     [["--tools-diff-server", "srv", "--resource-templates-baseline", "mcp/tools-baseline.json"], "--resource-templates-baseline must differ from --baseline and --prompts-baseline."],

@@ -218,9 +218,11 @@ run, reading a stdio server in one session, and `--save-dir` writes each complet
 under the file name the matching `-file` and `-diff` commands use, plus a
 manifest of what was saved. `doctor mcp-snapshot-diff` compares two snapshot
 directories in one report and labels a list the server stopped offering as
-breaking. The GitHub Action's `snapshot-server` and `snapshot-url` inputs feed
-all three comparisons from that one run, and `init-ci` uses it when it compares
-more than the tool list.
+breaking. In the GitHub Action, `snapshot-server` or `snapshot-url` takes the
+snapshot and `snapshot-diff-before-dir` compares it with a committed baseline
+directory in one report, and
+`init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes a
+two-job workflow that posts it as one pull request comment.
 See [MCP Snapshot](docs/guides/mcp-snapshot.md).
 
 ### Remote MCP Readiness
@@ -641,9 +643,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.82.0
+      - uses: Esquetta/CodexPluginDoctor@v1.83.0
         with:
-          version: "1.82.0"
+          version: "1.83.0"
           path: .
           runtime: "true"
           policy: codex-publish

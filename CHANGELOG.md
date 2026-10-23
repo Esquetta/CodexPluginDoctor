@@ -4,6 +4,20 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.83.0] - 2026-10-23
+
+### Added
+
+- the GitHub Action has `snapshot-diff-before-dir`, `snapshot-diff-after-dir`, `snapshot-diff-fail-on`, and `snapshot-diff-comment` inputs that run `doctor mcp-snapshot-diff` with CLI 1.82.0 or later: against this step's snapshot when `snapshot-server` or `snapshot-url` is set and the after directory is empty, or against another saved snapshot directory; it writes `mcp-snapshot-diff.json` and `mcp-snapshot-diff.md`, adds the summary to the step summary and the action manifest, exposes `snapshot-diff-json-path` and `snapshot-diff-summary-path`, and posts one pull request comment with the marker `<!-- codex-plugin-doctor:snapshot-diff -->`
+- `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes the two-job workflow with one snapshot capture and one snapshot diff against a committed snapshot directory; it cannot be combined with the per-list baseline options
+
+### Changed
+
+- a snapshot that feeds the snapshot diff leaves its catalog findings to that comparison, which compares each saved list and checks a newly offered one on its own
+- `doctor mcp-snapshot-diff` checks a newly offered list's definitions like the matching `-file` command and reports the result as the list's `inspection`; definitions that fail or cannot be read completely leave the comparison incomplete
+- the Action skips the snapshot diff with status 2 when this step's snapshot saved no manifest, and records status 2 when the CLI writes no snapshot diff report
+- the Action end-to-end workflow compares the example server's snapshot with a committed baseline snapshot in `tests/fixtures/action-e2e/snapshot-baseline` and posts one comment instead of three
+
 ## [1.82.0] - 2026-10-22
 
 ### Added

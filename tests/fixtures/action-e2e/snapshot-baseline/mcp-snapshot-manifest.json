@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "scope": "mcp-snapshot-manifest",
+  "lists": {
+    "tools": {
+      "status": "pass",
+      "file": "mcp-tools-current.json"
+    },
+    "prompts": {
+      "status": "pass",
+      "file": "mcp-prompts-current.json"
+    },
+    "resourceTemplates": {
+      "status": "pass",
+      "file": "mcp-resource-templates-current.json"
+    }
+  }
+}

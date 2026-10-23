@@ -147,7 +147,22 @@ if [[ "\${1:-} \${2:-}" == "doctor mcp-snapshot" ]]; then
   for kind in \${MOCK_SNAPSHOT_LISTS-tools prompts resource-templates}; do
     printf '{"jsonrpc":"2.0"}\\n' > "$save_dir/mcp-$kind-current.json"
   done
+  printf '{"scope":"mcp-snapshot-manifest"}\\n' > "$save_dir/mcp-snapshot-manifest.json"
   exit "\${MOCK_SNAPSHOT_EXIT:-0}"
+fi
+if [[ "\${1:-} \${2:-}" == "doctor mcp-snapshot-diff" ]]; then
+  if [[ " $* " == *" --json "* ]]; then
+    printf '{"scope":"%s","status":"warn"}\\n' "\${MOCK_SNAPSHOT_DIFF_SCOPE:-mcp-snapshot-diff}"
+  elif [[ " $* " == *" --markdown "* ]]; then
+    if [[ -n "\${MOCK_NO_MARKDOWN:-}" ]]; then
+      printf 'Invalid comparison arguments.\\n' >&2
+      exit 2
+    fi
+    printf '## MCP Snapshot Diff\\n\\n| List | Outcome |\\n| Prompts | list-removed |\\n'
+  else
+    printf 'MCP Snapshot Diff\\nPrompts: list-removed (breaking)\\n'
+  fi
+  exit "\${MOCK_SNAPSHOT_DIFF_EXIT:-0}"
 fi
 if [[ "\${1:-} \${2:-}" == "doctor tools-diff" ]]; then
   if [[ " $* " == *" --json "* ]]; then
@@ -239,6 +254,7 @@ fi
         toolsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-tools-diff-ran"), "utf8"),
         promptsDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-prompts-diff-ran"), "utf8"),
         resourceTemplatesDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-resource-templates-diff-ran"), "utf8"),
+        snapshotDiff: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-snapshot-diff-ran"), "utf8"),
         status: await readFile(path.join(runnerDirectory, "codex-plugin-doctor-status"), "utf8")
       }),
       runSummary: async () => {
@@ -956,7 +972,7 @@ describe("GitHub Action tool diff pull request comment", () => {
     const comment = steps.find((step) => step.name === "Comment Codex Plugin Doctor diffs");
     const skip = steps.find((step) => step.name === "Skip Codex Plugin Doctor diff comments");
     // Evaluated by the runner, so package code cannot change it; every input that starts package code is listed.
-    const commentRequested = "(inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true')";
+    const commentRequested = "(inputs['tools-diff-comment'] == 'true' || inputs['prompts-diff-comment'] == 'true' || inputs['resource-templates-diff-comment'] == 'true' || inputs['snapshot-diff-comment'] == 'true')";
     const packageCode = "(inputs.runtime == 'true' || inputs.profile == 'publish' || inputs.policy == 'codex-publish' || inputs.policy == 'mcp-strict')";
     // Package code may have replaced tools on PATH for later steps, whatever the event.
     expect(comment?.if).toBe(`${"${{"} always() && ${commentRequested} && !${packageCode} }}`);
@@ -969,6 +985,7 @@ describe("GitHub Action tool diff pull request comment", () => {
     expect(action.inputs["tools-diff-comment"].default).toBe("false");
     expect(action.inputs["prompts-diff-comment"].default).toBe("false");
     expect(action.inputs["resource-templates-diff-comment"].default).toBe("false");
+    expect(action.inputs["snapshot-diff-comment"].default).toBe("false");
   });
 
   it.each([
@@ -1516,6 +1533,150 @@ describe("GitHub Action MCP snapshot", () => {
       expect(await run.readState()).toMatchObject({ status: "0" });
     } finally {
       await run.cleanup();
+    }
+  });
+});
+
+function snapshotDiffInvocations(run: ActionRun): string[][] {
+  return run.invocations.filter((invocation) => invocation[0] === "doctor" && invocation[1] === "mcp-snapshot-diff");
+}
+
+describe("GitHub Action MCP snapshot diff", () => {
+  const snapshot = { check: "false", runtime: "true", "snapshot-server": "local-server" };
+
+  it("compares this step's snapshot with the committed baseline in one report", async () => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-diff-before-dir": "mcp/baseline", "snapshot-diff-fail-on": "breaking" });
+
+    try {
+      const reportDirectory = toBashPath(run.reportDirectory);
+      expect(invocationsOf(run, "mcp-snapshot")).toHaveLength(1);
+      expect(snapshotDiffInvocations(run)[0]).toEqual(["doctor", "mcp-snapshot-diff", "--before", "mcp/baseline", "--after", reportDirectory, "--fail-on", "breaking", "--json"]);
+      expect(toolsDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", toolsDiff: "false", status: "0" });
+      expect(run.output["snapshot-diff-json-path"]).toBe(`${reportDirectory}/mcp-snapshot-diff.json`);
+      expect(run.output["snapshot-diff-summary-path"]).toBe(`${reportDirectory}/mcp-snapshot-diff.md`);
+      expect(run.manifest.reports.snapshotDiffJson).toEqual({ enabled: true, path: `${reportDirectory}/mcp-snapshot-diff.json` });
+      expect(await readFile(path.join(run.reportDirectory, "mcp-snapshot-diff.md"), "utf8")).toContain("- Fail on: breaking");
+      expect(await run.runSummary()).toContain("## MCP Snapshot Diff");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("leaves snapshot findings to the snapshot diff, which re-checks every saved list", async () => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-diff-before-dir": "mcp/baseline" }, "0", "0", false, { MOCK_SNAPSHOT_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "0" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    ["an explicit after directory leaves the snapshot's findings to the status", { "snapshot-diff-after-dir": "elsewhere" }, { MOCK_SNAPSHOT_EXIT: "1" }, "1"],
+    ["an incomplete snapshot still records status 2 without deferred findings", {}, { MOCK_SNAPSHOT_EXIT: "2" }, "2"],
+    ["deferred findings leave an incomplete snapshot to the comparison", { "snapshot-defer-findings": "true" }, { MOCK_SNAPSHOT_EXIT: "2" }, "0"]
+  ])("records the snapshot status when %s", async (_case, overrides, environment, status) => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-diff-before-dir": "mcp/baseline", ...overrides }, "0", "0", false, environment);
+
+    try {
+      expect(snapshotDiffInvocations(run)).not.toEqual([]);
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("runs the per-list diffs and the snapshot diff from one snapshot", async () => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-diff-before-dir": "mcp/baseline", "tools-diff-before": "tools.json", "tools-diff-comment": "true" });
+
+    try {
+      expect(toolsDiffInvocations(run)[0]).toContain(toBashPath(path.join(run.reportDirectory, "mcp-tools-current.json")));
+      expect(snapshotDiffInvocations(run)).not.toEqual([]);
+      expect(await run.readState()).toMatchObject({ toolsDiff: "true", snapshotDiff: "true", status: "0" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("skips the snapshot diff when this step's snapshot did not run", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-server": "local-server", "snapshot-diff-before-dir": "mcp/baseline" });
+
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([]);
+      expect(snapshotDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "false", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("records status 2 when a CLI older than 1.82.0 answers the snapshot diff with another report", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, "0", "0", false, { MOCK_SNAPSHOT_DIFF_SCOPE: "environment" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("compares two saved directories without a snapshot and propagates the diff exit status", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, "0", "0", false, { MOCK_SNAPSHOT_DIFF_EXIT: "1" });
+
+    try {
+      expect(invocationsOf(run, "mcp-snapshot")).toEqual([]);
+      expect(snapshotDiffInvocations(run)[0]).toEqual(["doctor", "mcp-snapshot-diff", "--before", "before", "--after", "after", "--fail-on", "any", "--json"]);
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "1" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("falls back to the text report when the pinned CLI has no Markdown", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, "0", "0", false, { MOCK_NO_MARKDOWN: "1" });
+
+    try {
+      const summary = await readFile(path.join(run.reportDirectory, "mcp-snapshot-diff.md"), "utf8");
+      expect(summary.startsWith("## MCP Snapshot Diff\n\n```text\nMCP Snapshot Diff\n")).toBe(true);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    ["a before directory without an after directory or a snapshot", { check: "false", "snapshot-diff-before-dir": "before" }],
+    ["an after directory alone", { check: "false", "snapshot-diff-after-dir": "after" }],
+    ["an unknown fail-on mode", { check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after", "snapshot-diff-fail-on": "major" }]
+  ])("records status 2 for %s without running the diff", async (_case, overrides) => {
+    const run = await runArchiveAction(overrides);
+
+    try {
+      expect(snapshotDiffInvocations(run)).toEqual([]);
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "false", status: "2" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("posts the snapshot diff under its own marker, and skips it when no snapshot diff ran", async () => {
+    const pullRequest = { name: "pull_request", payload: { pull_request: { number: 42 } } };
+    const run = await runArchiveAction({
+      check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after", "snapshot-diff-comment": "true", "github-token": "token-sentinel"
+    });
+    const skipped = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-comment": "true" });
+
+    try {
+      const comment = await run.runComment(pullRequest);
+      expect(comment.body?.startsWith("<!-- codex-plugin-doctor:snapshot-diff -->\n## MCP Snapshot Diff")).toBe(true);
+      expect(comment.stdout).toContain("Posted the Codex Plugin Doctor snapshot diff comment.");
+      const none = await skipped.runComment(pullRequest);
+      expect(none.gh).toEqual([]);
+      expect(none.stdout).toContain("Snapshot diff comment skipped because no snapshot diff ran.");
+    } finally {
+      await run.cleanup();
+      await skipped.cleanup();
     }
   });
 });

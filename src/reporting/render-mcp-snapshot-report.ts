@@ -7,7 +7,7 @@ import { describeResourceTemplateLocation } from "./render-mcp-resource-template
 
 export const LIST_LABELS: Record<McpSnapshotListKey, string> = { tools: "Tools", prompts: "Prompts", resourceTemplates: "Resource templates" };
 
-function describeLocation(key: McpSnapshotListKey, location: unknown): string {
+export function describeLocation(key: McpSnapshotListKey, location: unknown): string {
   if (key === "prompts") return describePromptLocation(location as PromptCatalogLocation);
   if (key === "resourceTemplates") return describeResourceTemplateLocation(location as ResourceTemplateCatalogLocation);
   const tool = location as CatalogLocation;
