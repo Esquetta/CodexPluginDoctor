@@ -426,10 +426,9 @@ is empty, this step's snapshot in `output-dir` is the after directory, and the
 snapshot's catalog findings are left to the comparison, which compares each
 saved list and checks a newly offered one on its own. When that snapshot saved
 no manifest, for example because it lacked consent, the comparison is skipped
-with status `2`. Set
-`snapshot-diff-after-dir` to compare another saved directory instead, such as a
-snapshot downloaded from an earlier job; without a snapshot in the step, both
-directories are required. `snapshot-diff-fail-on` is `any` or `breaking`, like
+with status `2`. Set `snapshot-diff-after-dir` to compare another saved
+directory instead, such as a snapshot downloaded from an earlier job; without a
+snapshot in the step, both directories are required. `snapshot-diff-fail-on` is `any` or `breaking`, like
 `tools-diff-fail-on`. The Action writes `mcp-snapshot-diff.json` and
 `mcp-snapshot-diff.md` (outputs `snapshot-diff-json-path` and
 `snapshot-diff-summary-path`), adds the summary to the step summary and the
@@ -437,8 +436,9 @@ action manifest, and feeds the comparison's exit code into the Action status.
 `snapshot-diff-comment: "true"` posts the summary as one pull request comment
 with the marker `<!-- codex-plugin-doctor:snapshot-diff -->`, under the same
 conditions and token rules as the tool diff comment; it can replace the three
-per-list comments, and like them it is skipped when this invocation runs package
-code, so post it from a job without `runtime`. The per-list diff inputs still
+per-list comments, and like them it is skipped when this invocation may run
+package code (`runtime: "true"`, `profile: publish`, or the `codex-publish` or
+`mcp-strict` policy), so post it from a separate job. The per-list diff inputs still
 work and can be combined with the snapshot diff. These inputs need CLI `1.82.0`
 or later in `version`; an older CLI does not write a snapshot diff report, which
 records status `2`.

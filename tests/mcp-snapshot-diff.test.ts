@@ -130,6 +130,24 @@ describe("compareMcpSnapshotDirectories", () => {
     expect(violations(diffSchema, failure)).toEqual([]);
   });
 
+  it("is blocked when a newly offered list file is a symbolic link", async (context) => {
+    const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" });
+    const after = await snapshotDirectory("after", { tools, prompts, resourceTemplates: "not-applicable" });
+    const target = path.join(root, "elsewhere-prompts.json");
+    await writeFile(target, await readFile(path.join(after, "mcp-prompts-current.json")));
+    await rm(path.join(after, "mcp-prompts-current.json"));
+    try {
+      await symlink(target, path.join(after, "mcp-prompts-current.json"));
+    } catch {
+      context.skip();
+    }
+
+    const report = await compareMcpSnapshotDirectories(before, after);
+
+    expect(report).toMatchObject({ status: "blocked", comparison: { reason: "input-blocked" }, lists: { prompts: { outcome: "list-added", inspection: { status: "blocked" } } } });
+    expect(violations(diffSchema, report)).toEqual([]);
+  });
+
   it("is incomplete when a compared list file cannot be read", async () => {
     const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" });
     const after = await snapshotDirectory("after", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" });

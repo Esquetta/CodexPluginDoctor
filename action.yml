@@ -1046,6 +1046,10 @@ runs:
             "$report_dir/mcp-snapshot-diff.json" 2>/dev/null; then
             echo "MCP snapshot diff wrote no snapshot diff report; it needs CLI 1.82.0 or later in version." >&2
             record_status 2
+            # Another command's output must not be published as the comparison in the summary or a comment.
+            snapshot_diff_ran=false
+            snapshot_diff_json_output=""
+            snapshot_diff_summary_output=""
           fi
         fi
 

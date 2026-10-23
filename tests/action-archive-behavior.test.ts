@@ -1616,7 +1616,11 @@ describe("GitHub Action MCP snapshot diff", () => {
     const run = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, "0", "0", false, { MOCK_SNAPSHOT_DIFF_SCOPE: "environment" });
 
     try {
-      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "2" });
+      expect(snapshotDiffInvocations(run)).not.toEqual([]);
+      // Nothing from the other report reaches the summary, the outputs, or a comment.
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "false", status: "2" });
+      expect(run.output["snapshot-diff-summary-path"]).toBe("");
+      expect(await run.runSummary()).not.toContain("MCP Snapshot Diff");
     } finally {
       await run.cleanup();
     }
