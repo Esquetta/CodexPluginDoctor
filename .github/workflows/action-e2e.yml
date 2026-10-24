@@ -156,6 +156,11 @@ jobs:
               console.error(`Unexpected snapshot comparison: ${JSON.stringify(report.comparison)}`);
               process.exit(1);
             }
+            // The baseline records the server surface, so the protocol and capabilities must be compared too.
+            if (report.server.outcome !== "compared" || report.server.changes.length !== 0) {
+              console.error(`Unexpected server surface comparison: ${JSON.stringify(report.server)}`);
+              process.exit(1);
+            }
             // Every list is offered by the example server, so each one must be compared and unchanged.
             for (const [key, list] of Object.entries(report.lists)) {
               const { complete, added, removed, changed } = list.diff?.comparison ?? {};

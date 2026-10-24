@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { saveMcpSnapshot, type McpSnapshot, type McpSnapshotListKey } from "../src/core/mcp-snapshot.js";
+import { saveMcpSnapshot, type McpServerSurface, type McpSnapshot, type McpSnapshotListKey } from "../src/core/mcp-snapshot.js";
 import { compareMcpSnapshotDirectories } from "../src/core/mcp-snapshot-diff.js";
 import type { CatalogStatus } from "../src/core/mcp-tool-catalog.js";
 import { buildDoctorOutputContract } from "../src/core/output-contract.js";
@@ -28,10 +28,14 @@ afterEach(async () => {
 });
 
 // A list given as items is saved with status pass; a list given as a status is recorded but not saved.
-async function snapshotDirectory(name: string, lists: Record<McpSnapshotListKey, unknown[] | CatalogStatus>): Promise<string> {
+async function snapshotDirectory(
+  name: string,
+  lists: Record<McpSnapshotListKey, unknown[] | CatalogStatus>,
+  server?: McpServerSurface | null
+): Promise<string> {
   const directory = path.join(root, name);
   const keys = Object.keys(lists) as McpSnapshotListKey[];
-  const report = { lists: Object.fromEntries(keys.map((key) => [key, { status: Array.isArray(lists[key]) ? "pass" : lists[key] }])) };
+  const report = { server, lists: Object.fromEntries(keys.map((key) => [key, { status: Array.isArray(lists[key]) ? "pass" : lists[key] }])) };
   const responses = Object.fromEntries(keys.map((key) => [key, Array.isArray(lists[key]) ? { items: lists[key], cache: { ttlMs: 0, cacheScope: "private" } } : null]));
   await saveMcpSnapshot(directory, { report, responses } as unknown as McpSnapshot);
   return directory;
@@ -257,6 +261,92 @@ describe("compareMcpSnapshotDirectories", () => {
     expect(saved.manifest.kind).toBe("saved");
     expect(JSON.parse(await readFile(path.join(directory, "mcp-snapshot-manifest.json"), "utf8")).lists.prompts.file).toBeNull();
     expect(JSON.parse(await readFile(target, "utf8")).lists.prompts.file).toBe("mcp-prompts-current.json");
+  });
+
+  describe("server surface", () => {
+    const onlyTools = { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" } as const;
+    const modern = (versions: string[], capabilities: string[]): McpServerSurface => ({ era: "modern", versions, capabilities });
+
+    it("labels a dropped protocol version or capability as breaking and leaves list capabilities to the list rows", async () => {
+      const before = await snapshotDirectory("before", onlyTools, modern(["2025-11-25", "2026-07-28"], ["logging", "prompts", "tools"]));
+      const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["completions", "tools"]));
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      expect(report).toMatchObject({ status: "warn", comparison: { complete: true, breaking: 2, unclassified: 0 } });
+      expect(report.server).toMatchObject({ outcome: "compared" });
+      expect(report.server.changes).toEqual([
+        { kind: "protocol-version-removed", value: "2025-11-25", impact: "breaking" },
+        { kind: "capability-removed", value: "logging", impact: "breaking" },
+        { kind: "capability-added", value: "completions", impact: "compatible" }
+      ]);
+      expect(violations(diffSchema, report)).toEqual([]);
+      const markdown = renderMcpSnapshotDiffMarkdown(report);
+      expect(markdown).toContain("| Server surface | compared | 1 | 2 | 0 | 1 | 2 | 0 |");
+      expect(markdown).toContain("| protocol-version-removed | `\"2025-11-25\"` | **breaking** |");
+      expect(renderMcpSnapshotDiffReport(report)).toContain("  capability-removed \"logging\" (breaking)");
+    });
+
+    it.each([
+      ["modern", "legacy", "breaking"],
+      ["legacy", "modern", "unclassified"]
+    ] as const)("labels a %s to %s change as %s", async (from, to, impact) => {
+      const before = await snapshotDirectory("before", onlyTools, { era: from, versions: ["2026-07-28"], capabilities: ["tools"] });
+      const after = await snapshotDirectory("after", onlyTools, { era: to, versions: ["2026-07-28"], capabilities: ["tools"] });
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      expect(report.server.changes).toEqual([{ kind: "era-changed", value: `${from} -> ${to}`, impact }]);
+      expect(report.comparison).toMatchObject({ breaking: impact === "breaking" ? 1 : 0, unclassified: impact === "unclassified" ? 1 : 0 });
+    });
+
+    it.each([
+      ["2025-06-18", "2025-11-25", { kind: "protocol-version-added", value: "2025-11-25", impact: "compatible" }],
+      ["2025-11-25", "2025-06-18", { kind: "protocol-version-removed", value: "2025-11-25", impact: "breaking" }]
+    ] as const)("judges a legacy negotiated version %s -> %s by direction", async (from, to, change) => {
+      const before = await snapshotDirectory("before", onlyTools, { era: "legacy", versions: [from], capabilities: ["tools"] });
+      const after = await snapshotDirectory("after", onlyTools, { era: "legacy", versions: [to], capabilities: ["tools"] });
+
+      expect((await compareMcpSnapshotDirectories(before, after)).server.changes).toEqual([change]);
+    });
+
+    it("reports a surface the snapshot did not establish as not-recorded", async () => {
+      const before = await snapshotDirectory("before", onlyTools, null);
+      const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["tools"]));
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      expect(JSON.parse(await readFile(path.join(before, "mcp-snapshot-manifest.json"), "utf8")).server).toBeNull();
+      expect(report).toMatchObject({ status: "pass", server: { outcome: "not-recorded" } });
+    });
+
+    it("leaves the server surface out when a manifest predates it, without failing the comparison", async () => {
+      const before = await snapshotDirectory("before", onlyTools);
+      const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["tools"]));
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      expect(report).toMatchObject({ status: "pass", comparison: { complete: true, breaking: 0 } });
+      expect(report.server).toEqual({ outcome: "not-recorded", before: null, after: modern(["2026-07-28"], ["tools"]), changes: [] });
+      expect(renderMcpSnapshotDiffMarkdown(report)).toContain("| Server surface | not-recorded | - | - | - | - | - | - |");
+      expect(violations(diffSchema, report)).toEqual([]);
+    });
+
+    it("treats a malformed server surface as an invalid manifest", async () => {
+      const before = await snapshotDirectory("before", onlyTools, modern(["2026-07-28"], ["tools"]));
+      const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["tools"]));
+      const manifestPath = path.join(after, "mcp-snapshot-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const malformed = { ...manifest, server: { era: "modern", versions: ["2026-07-28", "2026-07-28"], capabilities: [] } };
+      await writeFile(manifestPath, JSON.stringify(malformed));
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      expect(report).toMatchObject({ status: "incomplete", manifests: { after: "invalid" }, comparison: { reason: "manifest-unavailable" } });
+      // The written manifest matches the contract, and the duplicate version the reader rejects breaks it too.
+      expect(violations(manifestSchema, manifest)).toEqual([]);
+      expect(violations(manifestSchema, malformed)).not.toEqual([]);
+    });
   });
 
   it("adds names to compared lists only with showNames", async () => {

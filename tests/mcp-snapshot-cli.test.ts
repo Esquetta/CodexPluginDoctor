@@ -24,7 +24,7 @@ const listOf = (status: string, checked = 1) => ({
 function snapshot(status = "pass"): McpSnapshot {
   return {
     report: {
-      schemaVersion: 1, scope: "mcp-surface-snapshot", status, discovery,
+      schemaVersion: 1, scope: "mcp-surface-snapshot", status, discovery, server: { era: "modern", versions: ["2026-07-28"], capabilities: ["logging", "tools"] },
       lists: { tools: listOf("pass"), prompts: listOf("not-applicable"), resourceTemplates: listOf("pass", 2) },
       coverage: { discovery: "pass", definitions: "shape-only", execution: "not-tested", fullConformance: "not-tested" }
     },
@@ -168,6 +168,27 @@ describe("doctor mcp-snapshot-diff", () => {
       const shown = capture();
       expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, "--json", "--show-names"], shown.io)).toBe(1);
       expect(JSON.parse(shown.stdout.join("\n")).lists.tools.diff.changes.map((change: { name: string }) => change.name).sort()).toEqual(["lookup", "search"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails --fail-on breaking when the server drops a protocol version", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "doctor-snapshot-diff-server-"));
+    try {
+      const save = (name: string, versions: string[]) => saveMcpSnapshot(path.join(root, name), {
+        report: {
+          server: { era: "modern", versions, capabilities: ["tools"] },
+          lists: { tools: { status: "pass" }, prompts: { status: "not-applicable" }, resourceTemplates: { status: "not-applicable" } }
+        },
+        responses: { tools: { items: [tool], cache: { ttlMs: 0, cacheScope: "private" } }, prompts: null, resourceTemplates: null }
+      } as unknown as McpSnapshot);
+      await save("before", ["2025-11-25", "2026-07-28"]);
+      await save("after", ["2026-07-28"]);
+
+      const c = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", path.join(root, "before"), "--after", path.join(root, "after"), "--fail-on", "breaking"], c.io)).toBe(1);
+      expect(c.stdout.join("\n")).toContain("  protocol-version-removed \"2025-11-25\" (breaking)");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

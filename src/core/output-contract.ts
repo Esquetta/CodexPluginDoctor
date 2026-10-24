@@ -1038,6 +1038,14 @@ publicSchemaDefinitions.push({
   }
 });
 
+// The protocol versions and capability names of a snapshot, or null when they were not established.
+const surfaceNames = (maxItems: number) => ({ type: "array", maxItems, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } });
+const serverSurfaceSchema = {
+  type: ["object", "null"], required: ["era", "versions", "capabilities"],
+  properties: { era: { enum: ["modern", "legacy"] }, versions: surfaceNames(32), capabilities: surfaceNames(64) },
+  additionalProperties: false
+};
+
 // A snapshot reports each list like its own catalog report, without repeating discovery.
 const catalogFindings = (id: string) => publicSchemaDefinitions.find((definition) => definition.id === id)!.properties!.findings;
 const snapshotList = (findings: unknown) => ({
@@ -1072,6 +1080,8 @@ publicSchemaDefinitions.push({
     protocol: toolCatalogProperties.protocol,
     execution: toolCatalogProperties.execution,
     discovery: toolCatalogProperties.discovery,
+    // Present on reports from 1.84.0.
+    server: serverSurfaceSchema,
     lists: {
       type: "object", required: ["tools", "prompts", "resourceTemplates"],
       properties: {
@@ -1347,7 +1357,9 @@ publicSchemaDefinitions.push({
         additionalProperties: false
       }])),
       additionalProperties: false
-    }
+    },
+    // Absent from manifests written before 1.84.0.
+    server: serverSurfaceSchema
   }
 });
 
@@ -1371,7 +1383,7 @@ const snapshotListDiff = (diffId: string, fileId: string) => ({
 publicSchemaDefinitions.push({
   id: "doctor.mcp-snapshot.diff.json",
   command: "codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> --json",
-  required: ["schemaVersion", "scope", "status", "manifests", "comparison", "lists", "coverage"],
+  required: ["schemaVersion", "scope", "status", "manifests", "server", "comparison", "lists", "coverage"],
   properties: {
     schemaVersion: { const: 1 },
     scope: { const: "mcp-snapshot-diff" },
@@ -1384,13 +1396,34 @@ publicSchemaDefinitions.push({
       },
       additionalProperties: false
     },
+    server: {
+      type: "object", required: ["outcome", "before", "after", "changes"],
+      properties: {
+        outcome: { enum: ["compared", "not-recorded"] },
+        before: serverSurfaceSchema,
+        after: serverSurfaceSchema,
+        changes: {
+          type: "array", maxItems: 193,
+          items: {
+            type: "object", required: ["kind", "value", "impact"],
+            properties: {
+              kind: { enum: ["era-changed", "protocol-version-removed", "protocol-version-added", "capability-removed", "capability-added"] },
+              value: { type: "string" },
+              impact: { enum: ["breaking", "compatible", "unclassified"] }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      additionalProperties: false
+    },
     comparison: {
       type: "object", required: ["complete", "reason", "breaking", "unclassified"],
       properties: {
         complete: { type: "boolean" },
         reason: { enum: [null, "input-blocked", "manifest-unavailable", "list-not-saved", "list-incomplete"] },
-        breaking: { type: ["integer", "null"], minimum: 0, maximum: 3000 },
-        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 3000 }
+        breaking: { type: ["integer", "null"], minimum: 0, maximum: 3097 },
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 3001 }
       },
       additionalProperties: false
     },
