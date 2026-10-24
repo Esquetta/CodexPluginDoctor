@@ -60,8 +60,11 @@ as one response file:
 
 A list that is not offered or not read completely is not written. The command
 first removes an earlier `mcp-snapshot-manifest.json` and last writes a new one,
-which records each list's status and the file this run saved for it, or `null`;
-it holds no names or definitions. `mcp-snapshot-diff` reads only the lists the
+which records each list's status and the file this run saved for it, or `null`,
+and the server surface: the protocol era (`modern` or `legacy`), the supported
+protocol versions (discovery's `supportedVersions`, or the version `initialize`
+negotiated), and the top-level capability names, without their values. It holds
+no tool, prompt, or template names or definitions. `mcp-snapshot-diff` reads only the lists the
 manifest names, so a list file left from an earlier run is not compared, and a
 run that could not write its manifest leaves none. The per-list diff commands
 do not read the manifest, so give them a fresh directory. When no
@@ -71,10 +74,11 @@ that can carry host names and paths; handle them like a committed baseline.
 
 ## Report
 
-The text report shows each list's status, pages, and checked entries, then the
-findings by list and position. `--json` prints `doctor.mcp-snapshot.json`
-(scope `mcp-surface-snapshot`): `discovery`, the stdio `protocol` and
-`execution` details, and under `lists` the `tools`, `prompts`, and
+The text report shows the server surface, each list's status, pages, and
+checked entries, then the findings by list and position. `--json` prints
+`doctor.mcp-snapshot.json` (scope `mcp-surface-snapshot`): `discovery`, the
+stdio `protocol` and `execution` details, `server` (the era, versions, and
+capability names, or `null` when not established), and under `lists` the `tools`, `prompts`, and
 `resourceTemplates` entries, each with `status`, `catalog`, `enumeration`, and
 `findings` in the shape of the matching single-list report. Coverage is stated
 as `definitions: "shape-only"`, `execution: "not-tested"`, and
@@ -93,6 +97,18 @@ directories offline, list by list, using each directory's manifest:
 | not offered | not offered | `not-offered` |
 | either side offered but not saved | | `not-compared`; the comparison is incomplete |
 
+The server surface is compared too. A removed protocol version or capability is
+breaking, an added one is compatible, a `modern` server that falls back to
+`legacy` is breaking, and the reverse is unclassified. The `tools`, `prompts`,
+and `resources` capabilities are left to the list rows above. When either
+manifest has no server surface, such as one written before 1.84.0, it is
+`not-recorded` and does not affect the result; capture the baseline again to
+compare it. A legacy surface holds only the version `initialize` negotiated, so
+between two legacy snapshots a newer version is compatible and an older one is
+breaking. At most 32 versions and 64 capability names of at most 128 characters
+are recorded. Protocol versions and capability names appear in the reports as
+quoted values, because they define the contract clients rely on.
+
 A list counts as not offered when its manifest status is `not-applicable`. A
 newly offered list whose definitions fail or cannot be read completely leaves
 the comparison incomplete, and its findings are listed without names. A
@@ -100,17 +116,19 @@ missing or invalid manifest leaves every list `not-compared`, and a manifest
 can only name the fixed file names above. A remote or device path is blocked.
 
 The status is `blocked` or `incomplete` when any list could not be compared,
-`warn` when a list was added or removed or a compared list changed or has input
-warnings, and `pass` otherwise. `comparison.breaking` adds removed lists to the
-breaking changes of each compared list, and `comparison.unclassified` adds up
-their unclassified ones. The options and exit codes follow
+`warn` when a list was added or removed, a compared list changed or has input
+warnings, or the server surface changed, and `pass` otherwise.
+`comparison.breaking` adds removed lists and breaking server surface changes to
+the breaking changes of each compared list, and `comparison.unclassified` adds
+up the unclassified ones of both. The options and exit codes follow
 [`doctor tools-diff`](offline-tool-diff.md): `--json` (`doctor.mcp-snapshot.diff.json`,
 which embeds each compared list's own diff report) or `--markdown`,
 `--fail-on any|breaking`, `--show-names`, and exit `2` for an incomplete or
 blocked comparison. The text and Markdown reports show one row per list and add
 the list's own section only when it has changes, input findings, or an
-incomplete comparison. They report positions; names appear only with
-`--show-names`, and URI templates and descriptions are never included.
+incomplete comparison. They report positions; tool, prompt, and template names
+appear only with `--show-names`, and URI templates and descriptions are never
+included.
 Directories saved by 1.81.0 have no manifest, so capture the baseline again
 with 1.82.0 or later before comparing.
 

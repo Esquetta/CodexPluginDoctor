@@ -425,6 +425,8 @@ interface ProtocolResult {
   protocol: McpToolCatalogProtocol;
   // One capture per requested list, in request order.
   captures: Array<McpCatalogCapture<Finding>>;
+  // The capability names the handshake declared, or null when it did not establish them.
+  capabilities: string[] | null;
 }
 
 interface CatalogEra {
@@ -519,6 +521,8 @@ export interface McpStdioCatalogsCapture {
   captures: Array<McpCatalogCapture<Finding>>;
   protocol: McpToolCatalogProtocol;
   execution: RuntimeExecutionEvidence | null;
+  // The capability names the handshake declared, or null when it did not establish them.
+  capabilities: string[] | null;
 }
 
 // Starts one configured stdio server, reads each requested definition list in that one session, and stops
@@ -573,7 +577,8 @@ export async function captureStdioMcpCatalogs(
         discovery, status: "blocked", catalog: { ...emptyCatalog, reason: "sandbox-unsupported" }, enumeration: "not-tested", findings: [], items: null, cache: null
       })),
       protocol: { era: null, version: null },
-      execution: null
+      execution: null,
+      capabilities: null
     };
   }
 
@@ -668,7 +673,8 @@ export async function captureStdioMcpCatalogs(
     protocol: McpToolCatalogProtocol,
     discovery: McpDiscoveryReport,
     declares: (capability: string) => boolean,
-    era: (list: McpCatalogList<Finding>) => CatalogEra
+    era: (list: McpCatalogList<Finding>) => CatalogEra,
+    capabilities: string[]
   ): Promise<ProtocolResult> => {
     const captures: Array<McpCatalogCapture<Finding>> = [];
     for (const list of lists) {
@@ -676,7 +682,7 @@ export async function captureStdioMcpCatalogs(
         ? await enumerate(list, era(list), discovery)
         : { discovery, status: "not-applicable", catalog: emptyCatalog, enumeration: "not-tested", findings: [], items: null, cache: null });
     }
-    return { protocol, captures };
+    return { protocol, captures, capabilities };
   };
 
   // findings builds each list's own findings, which may name that list.
@@ -688,6 +694,7 @@ export async function captureStdioMcpCatalogs(
     findings: (list: McpCatalogList<Finding>) => Finding[] = () => []
   ): ProtocolResult => ({
     protocol,
+    capabilities: null,
     captures: lists.map((list) => ({
       status, discovery, catalog: { ...emptyCatalog, reason }, enumeration: "not-tested", findings: findings(list), items: null, cache: null
     }))
@@ -724,7 +731,8 @@ export async function captureStdioMcpCatalogs(
     const protocol = { era: "legacy" as const, version };
     session.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
     const capabilities = result.capabilities as McpJsonObject;
-    return enumerateAll(protocol, discovery, (capability) => isPlainObject(capabilities[capability]), legacyEra);
+    return enumerateAll(protocol, discovery, (capability) => isPlainObject(capabilities[capability]), legacyEra,
+      Object.keys(capabilities).filter((name) => isPlainObject(capabilities[name])));
   };
 
   const run = async (): Promise<ProtocolResult> => {
@@ -773,7 +781,8 @@ export async function captureStdioMcpCatalogs(
       case "discovered": {
         const discovery = stdioDiscovery("discovered", "pass", [], outcome.supportedVersions);
         const protocol = { era: "modern" as const, version: MODERN_VERSION };
-        return enumerateAll(protocol, discovery, (capability) => Object.hasOwn(outcome.capabilities, capability), modernEra);
+        return enumerateAll(protocol, discovery, (capability) => Object.hasOwn(outcome.capabilities, capability), modernEra,
+          Object.keys(outcome.capabilities));
       }
     }
   };
@@ -808,7 +817,8 @@ export async function captureStdioMcpCatalogs(
   return {
     captures,
     protocol: result.protocol,
-    execution: started.some((entry) => entry.session.spawned) ? firstLaunch.evidence : null
+    execution: started.some((entry) => entry.session.spawned) ? firstLaunch.evidence : null,
+    capabilities: result.capabilities
   };
 }
 

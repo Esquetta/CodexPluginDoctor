@@ -14,5 +14,16 @@
       "status": "pass",
       "file": "mcp-resource-templates-current.json"
     }
+  },
+  "server": {
+    "era": "legacy",
+    "versions": [
+      "2025-11-25"
+    ],
+    "capabilities": [
+      "prompts",
+      "resources",
+      "tools"
+    ]
   }
 }

@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.84.0] - 2026-10-24
+
+### Added
+
+- `doctor mcp-snapshot` records the server surface: the protocol era, the supported protocol versions, and the top-level capability names, without their values; the text and JSON reports show it as `server`, and `--save-dir` writes it to `mcp-snapshot-manifest.json`
+- `doctor mcp-snapshot-diff` compares the server surface in a new `server` section: a removed protocol version or capability is breaking, an added one is compatible, a modern server falling back to legacy is breaking, and the reverse is unclassified; the `tools`, `prompts`, and `resources` capabilities stay with the list rows, and the counts and `--fail-on breaking` include these changes
+- the `doctor.mcp-snapshot.json`, `doctor.mcp-snapshot.manifest.json`, and `doctor.mcp-snapshot.diff.json` contracts describe the server surface
+
+### Changed
+
+- a manifest written before 1.84.0 has no server surface, so the comparison reports it as `not-recorded` without failing; capture the baseline again to compare it
+- the Action end-to-end baseline snapshot records the example server's surface, and the end-to-end check requires it to be compared without changes
+
 ## [1.83.0] - 2026-10-23
 
 ### Added

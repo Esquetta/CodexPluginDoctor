@@ -10,6 +10,7 @@ import { renderMcpPromptDiffReport } from "./render-mcp-prompt-diff-report.js";
 import { renderMcpPromptFileReport } from "./render-mcp-prompt-file-report.js";
 import { renderMcpResourceTemplateDiffReport } from "./render-mcp-resource-template-diff-report.js";
 import { renderMcpResourceTemplateFileReport } from "./render-mcp-resource-template-file-report.js";
+import { quoteServerText } from "./quote-server-text.js";
 import { LIST_LABELS } from "./render-mcp-snapshot-report.js";
 import { renderMcpToolDiffReport } from "./render-mcp-tool-diff-report.js";
 import { renderMcpToolFileReport } from "./render-mcp-tool-file-report.js";
@@ -54,6 +55,15 @@ function renderListDiff(key: McpSnapshotListKey, diff: AnyListDiff["diff"]): str
   return renderMcpResourceTemplateDiffReport(diff as McpResourceTemplateDiffReport);
 }
 
+/** The server surface row: its outcome, then each change with its impact. */
+function describeServerSurfaceDiff(server: McpSnapshotDiffReport["server"]): string {
+  if (server.outcome === "not-recorded") {
+    return "not-recorded (a manifest has none; snapshots from 1.84.0 record it when discovery or initialize completes)";
+  }
+  if (server.changes.length === 0) return "compared, no changes";
+  return `compared, ${server.changes.length} ${server.changes.length === 1 ? "change" : "changes"}`;
+}
+
 export function renderMcpSnapshotDiffReport(report: McpSnapshotDiffReport): string {
   const comparison = report.comparison;
   return [
@@ -67,6 +77,8 @@ export function renderMcpSnapshotDiffReport(report: McpSnapshotDiffReport): stri
     `Unclassified: ${comparison.unclassified ?? "not compared"}`,
     `Before manifest: ${report.manifests.before}`,
     `After manifest: ${report.manifests.after}`,
+    `Server surface: ${describeServerSurfaceDiff(report.server)}`,
+    ...report.server.changes.map((change) => `  ${change.kind} ${quoteServerText(change.value)} (${change.impact})`),
     ...SNAPSHOT_LIST_KEYS.map((key) => `${LIST_LABELS[key]}: ${describeSnapshotListDiff(report.lists[key])}`),
     "A list the server stopped offering is breaking and a newly offered list is compatible; within a list, impact labels are heuristics, not proof of compatibility.",
     ...SNAPSHOT_LIST_KEYS.flatMap((key) => {

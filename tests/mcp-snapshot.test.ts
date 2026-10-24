@@ -9,6 +9,7 @@ import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, type McpS
 import { resolveMcpStdioServer } from "../src/core/mcp-stdio-tool-catalog.js";
 import { buildDoctorOutputContract } from "../src/core/output-contract.js";
 import { DOCKER_RUNTIME_IMAGE } from "../src/core/runtime-sandbox.js";
+import { renderMcpSnapshotReport } from "../src/reporting/render-mcp-snapshot-report.js";
 import { violations } from "./helpers/json-schema-violations.js";
 
 const snapshotSchema = buildDoctorOutputContract().schemas.find((schema) => schema.id === "doctor.mcp-snapshot.json")!.schema as Record<string, unknown>;
@@ -50,6 +51,8 @@ describe("captureMcpSnapshot", () => {
       }
     });
     expect(report).not.toHaveProperty("transport");
+    // Only capability names are kept, sorted; their values are not recorded.
+    expect(report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "tools"] });
     expect(violations(snapshotSchema, report)).toEqual([]);
     expect(responses).toEqual({
       tools: { items: [tool], cache: { ttlMs: 60_000, cacheScope: "public" } },
@@ -70,6 +73,20 @@ describe("captureMcpSnapshot", () => {
 
     const empty = await captureMcpSnapshot("https://mcp.example.com/mcp", { allowNetwork: true, request: httpServer({ logging: {} }, {}) });
     expect(empty.report.status).toBe("not-applicable");
+    expect(empty.report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["logging"] });
+  });
+
+  it("bounds the recorded capability names and records no surface when discovery fails", async () => {
+    const many = Object.fromEntries([...Array.from({ length: 70 }, (_, index) => [`cap-${String(index).padStart(2, "0")}`, {}]), ["x".repeat(129), {}]]);
+    const bounded = await captureMcpSnapshot("https://mcp.example.com/mcp", { allowNetwork: true, request: httpServer(many, {}) });
+    expect(bounded.report.server?.capabilities).toEqual(Array.from({ length: 64 }, (_, index) => `cap-${String(index).padStart(2, "0")}`));
+    expect(violations(snapshotSchema, bounded.report)).toEqual([]);
+
+    const failed = await captureMcpSnapshot("https://mcp.example.com/mcp", {
+      allowNetwork: true, request: vi.fn(async () => ({ statusCode: 500, headers: {}, body: Buffer.from("") }))
+    });
+    expect(failed.report.server).toBeNull();
+    expect(renderMcpSnapshotReport(failed.report)).toContain("Server surface: not established");
   });
 });
 
@@ -95,6 +112,7 @@ describe("captureStdioMcpSnapshot", () => {
 
     expect(report).toMatchObject({
       transport: "stdio", status: "pass", protocol: { era: "legacy" },
+      server: { era: "legacy", versions: ["2025-11-25"], capabilities: ["prompts", "resources", "tools"] },
       lists: { tools: { status: "pass" }, prompts: { status: "pass" }, resourceTemplates: { status: "pass" } }
     });
     expect(violations(snapshotSchema, report)).toEqual([]);
@@ -116,6 +134,7 @@ describe("captureStdioMcpSnapshot", () => {
 
     expect(report).toMatchObject({
       transport: "stdio", status: "incomplete", protocol: { era: "modern" },
+      server: { era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "resources", "tools"] },
       lists: {
         tools: { status: "pass", catalog: { complete: true, checked: 1 } },
         prompts: { status: "incomplete", catalog: { complete: false, reason: "prompts-list-method-unsupported" } },
@@ -148,6 +167,19 @@ describe("captureStdioMcpSnapshot", () => {
       })]);
     }
     expect(report.status).toBe("fail");
+  });
+});
+
+describe("captureStdioMcpSnapshot server surface", () => {
+  it("records only the legacy capabilities whose value is an object, and quotes them in the report", async () => {
+    const resolved = await resolveMcpStdioServer(path.resolve("tests", "fixtures", "stdio-resource-template-catalog"), "legacy", "mcp-snapshot");
+    if (!resolved.ok) throw new Error(resolved.message);
+
+    const { report } = await captureStdioMcpSnapshot(resolved.server, { timeouts: fast });
+
+    expect(report.server).toEqual({ era: "legacy", versions: ["2025-11-25"], capabilities: ["resources"] });
+    expect(renderMcpSnapshotReport({ ...report, server: { era: "legacy", versions: ["2025-11-25"], capabilities: ["bell\u0007"] } }))
+      .toContain('Server surface: legacy; versions "2025-11-25"; capabilities "bell\\u0007"');
   });
 });
 

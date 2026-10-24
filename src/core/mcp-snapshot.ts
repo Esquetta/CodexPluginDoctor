@@ -31,12 +31,26 @@ export const SNAPSHOT_LIST_KEYS = SNAPSHOT_LISTS.map(({ key }) => key);
 export const SNAPSHOT_LIST_FILES = Object.fromEntries(SNAPSHOT_LISTS.map(({ key, fileName }) => [key, fileName])) as Record<McpSnapshotListKey, string>;
 export const SNAPSHOT_MANIFEST_FILE = "mcp-snapshot-manifest.json";
 
+// The protocol and capabilities a server offers, which clients depend on beyond its lists.
+export interface McpServerSurface {
+  era: "modern" | "legacy";
+  // Supported protocol versions: discovery's supportedVersions, or the version initialize negotiated.
+  versions: string[];
+  // Top-level capability names only; their values are not recorded.
+  capabilities: string[];
+}
+export const MAX_SURFACE_VERSIONS = 32;
+export const MAX_SURFACE_CAPABILITIES = 64;
+export const MAX_SURFACE_NAME_LENGTH = 128;
+
 // Records why each list file is present or absent, so a comparison never guesses from file presence.
 export interface McpSnapshotManifest {
   schemaVersion: 1;
   scope: "mcp-snapshot-manifest";
   // file is the list's file name when this snapshot saved it, otherwise null.
   lists: Record<McpSnapshotListKey, { status: CatalogStatus; file: string | null }>;
+  // Null when the snapshot did not establish it; absent from manifests written before 1.84.0.
+  server?: McpServerSurface | null;
 }
 
 export interface McpSnapshotList {
@@ -55,6 +69,8 @@ export interface McpSnapshotReport {
   protocol?: McpToolCatalogProtocol;
   execution?: RuntimeExecutionEvidence | null;
   discovery: McpDiscoveryReport;
+  // Null when discovery or the initialize handshake did not complete.
+  server: McpServerSurface | null;
   lists: Record<McpSnapshotListKey, McpSnapshotList>;
   coverage: {
     discovery: "pass" | "fail" | "skipped";
@@ -71,11 +87,19 @@ export interface McpSnapshot {
   responses: Record<McpSnapshotListKey, { items: unknown[]; cache: McpToolCatalogCache } | null>;
 }
 
+// Sorted, without duplicates, and bounded, so a manifest stays small and compares in a stable order.
+function serverSurface(era: McpServerSurface["era"], versions: string[], capabilities: string[]): McpServerSurface {
+  const bounded = (values: string[], max: number) =>
+    [...new Set(values.filter((value) => value.length > 0 && value.length <= MAX_SURFACE_NAME_LENGTH))].sort().slice(0, max);
+  return { era, versions: bounded(versions, MAX_SURFACE_VERSIONS), capabilities: bounded(capabilities, MAX_SURFACE_CAPABILITIES) };
+}
+
 // The worst list status leads, but a list the server does not offer never makes the snapshot fail.
 const STATUS_ORDER: CatalogStatus[] = ["blocked", "incomplete", "unsupported", "fail", "warn", "pass", "not-applicable"];
 
 function snapshot(
   captures: Array<McpCatalogCapture<Finding>>,
+  server: McpServerSurface | null,
   stdio?: { protocol: McpToolCatalogProtocol; execution: RuntimeExecutionEvidence | null }
 ): McpSnapshot {
   const discovery = captures[0].discovery;
@@ -95,6 +119,7 @@ function snapshot(
       status,
       ...(stdio === undefined ? {} : { protocol: stdio.protocol, execution: stdio.execution }),
       discovery,
+      server,
       lists,
       coverage: { discovery: discovery.coverage.discovery, definitions: "shape-only", execution: "not-tested", fullConformance: "not-tested" }
     },
@@ -106,13 +131,16 @@ function snapshot(
 export async function captureMcpSnapshot(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpSnapshot> {
   const captures: Array<McpCatalogCapture<Finding>> = [];
   for (const { list } of SNAPSHOT_LISTS) captures.push(await captureMcpCatalog(rawUrl, list, options));
-  return snapshot(captures);
+  const { discovery, capabilities } = captures[0];
+  return snapshot(captures, capabilities === undefined ? null : serverSurface("modern", discovery.supportedVersions, capabilities));
 }
 
 // Starts the stdio server once and reads every list it offers in that one session.
 export async function captureStdioMcpSnapshot(server: McpStdioServer, options: McpStdioToolCatalogOptions = {}): Promise<McpSnapshot> {
-  const { captures, protocol, execution } = await captureStdioMcpCatalogs(server, SNAPSHOT_LISTS.map(({ list }) => list), options);
-  return snapshot(captures, { protocol, execution });
+  const { captures, protocol, execution, capabilities } = await captureStdioMcpCatalogs(server, SNAPSHOT_LISTS.map(({ list }) => list), options);
+  const versions = protocol.era === "modern" ? captures[0].discovery.supportedVersions : protocol.version === null ? [] : [protocol.version];
+  const surface = capabilities === null || protocol.era === null ? null : serverSurface(protocol.era, versions, capabilities);
+  return snapshot(captures, surface, { protocol, execution });
 }
 
 export interface McpSnapshotSaveResult {
@@ -134,7 +162,7 @@ export async function saveMcpSnapshot(
   await mkdir(directory, { recursive: true });
   await rm(path.join(directory, SNAPSHOT_MANIFEST_FILE), { force: true }).catch(() => undefined);
   const results: McpSnapshotSaveResult[] = [];
-  const manifest: McpSnapshotManifest = { schemaVersion: 1, scope: "mcp-snapshot-manifest", lists: {} as McpSnapshotManifest["lists"] };
+  const manifest: McpSnapshotManifest = { schemaVersion: 1, scope: "mcp-snapshot-manifest", lists: {} as McpSnapshotManifest["lists"], server: report.server };
   for (const { key, list, fileName } of SNAPSHOT_LISTS) {
     const response = responses[key];
     let saved = false;

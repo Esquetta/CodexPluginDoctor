@@ -4,6 +4,7 @@ import type { ResourceTemplateCatalogLocation } from "../core/mcp-resource-templ
 import type { CatalogLocation } from "../core/mcp-tool-definition.js";
 import { describePromptLocation } from "./render-mcp-prompt-file-report.js";
 import { describeResourceTemplateLocation } from "./render-mcp-resource-template-file-report.js";
+import { quoteServerText } from "./quote-server-text.js";
 
 export const LIST_LABELS: Record<McpSnapshotListKey, string> = { tools: "Tools", prompts: "Prompts", resourceTemplates: "Resource templates" };
 
@@ -29,6 +30,9 @@ export function renderMcpSnapshotReport(report: McpSnapshotReport): string {
         ]
       : []),
     `Discovery: ${report.discovery.status}`,
+    report.server === null
+      ? "Server surface: not established"
+      : `Server surface: ${report.server.era}; versions ${report.server.versions.map(quoteServerText).join(", ") || "none"}; capabilities ${report.server.capabilities.map(quoteServerText).join(", ") || "none"}`,
     ...keys.map((key) => {
       const list = report.lists[key];
       return `${LIST_LABELS[key]}: ${list.status}${list.enumeration === "not-tested" ? "" : ` (${list.catalog.checked} checked in ${list.catalog.pagesRead} pages)`}${list.catalog.reason === null ? "" : `, reason ${list.catalog.reason}`}`;

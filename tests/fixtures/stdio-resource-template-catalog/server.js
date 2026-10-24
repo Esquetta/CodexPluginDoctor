@@ -33,7 +33,7 @@ lines.on("line", (line) => {
   if (message.method === "initialize" && legacy) {
     return send({
       jsonrpc: "2.0", id: message.id, result: {
-        protocolVersion: "2025-11-25", capabilities: { resources: { listChanged: false } }, serverInfo: { name: "scripted-legacy", version: "1.0.0" }
+        protocolVersion: "2025-11-25", capabilities: { resources: { listChanged: false }, logging: true }, serverInfo: { name: "scripted-legacy", version: "1.0.0" }
       }
     });
   }
