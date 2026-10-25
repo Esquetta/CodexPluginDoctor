@@ -110,7 +110,7 @@ import {
 import { compareMcpPromptFiles } from "./core/mcp-prompt-diff.js";
 import { inspectMcpPromptFile } from "./core/mcp-prompt-file.js";
 import { compareMcpResourceTemplateFiles } from "./core/mcp-resource-template-diff.js";
-import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, SNAPSHOT_MANIFEST_FILE, type McpSnapshot } from "./core/mcp-snapshot.js";
+import { captureMcpSnapshot, captureStdioMcpSnapshot, saveMcpSnapshot, SNAPSHOT_LIST_KEYS, SNAPSHOT_MANIFEST_FILE, type McpSnapshot } from "./core/mcp-snapshot.js";
 import { inspectMcpResourceTemplateFile } from "./core/mcp-resource-template-file.js";
 import { inspectMcpToolFile, isBlockedOfflinePath } from "./core/mcp-tool-file.js";
 import { saveMcpListResponse } from "./core/mcp-tool-response-file.js";
@@ -121,10 +121,11 @@ import { renderMcpToolFileReport } from "./reporting/render-mcp-tool-file-report
 import { renderMcpToolCatalogReport } from "./reporting/render-mcp-tool-catalog-report.js";
 import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-catalog-report.js";
 import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-resource-template-catalog-report.js";
+import { acceptMcpSnapshot } from "./core/mcp-snapshot-accept.js";
 import { compareMcpSnapshotDirectories } from "./core/mcp-snapshot-diff.js";
 import { renderMcpSnapshotDiffMarkdown } from "./reporting/render-mcp-snapshot-diff-markdown.js";
 import { renderMcpSnapshotDiffReport } from "./reporting/render-mcp-snapshot-diff-report.js";
-import { renderMcpSnapshotReport } from "./reporting/render-mcp-snapshot-report.js";
+import { LIST_LABELS, renderMcpSnapshotReport } from "./reporting/render-mcp-snapshot-report.js";
 import { renderMcpPromptDiffMarkdown } from "./reporting/render-mcp-prompt-diff-markdown.js";
 import { renderMcpPromptDiffReport } from "./reporting/render-mcp-prompt-diff-report.js";
 import { renderMcpPromptFileReport } from "./reporting/render-mcp-prompt-file-report.js";
@@ -407,6 +408,7 @@ const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> 
 
 const resourceTemplatesDiffUsage = "Usage: codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
 const snapshotDiffUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+const snapshotAcceptUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-accept --snapshot <dir> --baseline <dir>";
 
 const resourceTemplatesFileUsage = "Usage: codex-plugin-doctor doctor resource-templates-file <path> [--json]";
 
@@ -962,6 +964,7 @@ function printUsage(io: CliIo): void {
   io.writeStderr(resourceTemplatesFileUsage);
   io.writeStderr(resourceTemplatesDiffUsage);
   io.writeStderr(snapshotDiffUsage);
+  io.writeStderr(snapshotAcceptUsage);
   io.writeStderr(
     "Registry readiness: codex-plugin-doctor registry check <server.json|directory> [--json] [--output <path>] [--require-registry-readiness]\n"
     + "       codex-plugin-doctor registry inspect <server-name> --allow-network [--json] [--output <path>] [--require-registry-readiness]\n"
@@ -2429,6 +2432,40 @@ export async function runCli(
       }
       return runHttpCatalogCommand(target, flags, io, terminalContext.env, PROMPT_CATALOG_COMMAND, async (url, catalogOptions, json, savePath) =>
         finishPromptCatalogCommand(io, await (options.captureMcpPromptCatalogImpl ?? captureMcpPromptCatalog)(url, catalogOptions), json, savePath));
+    }
+    if (maybePath === "mcp-snapshot-accept") {
+      if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
+        io.writeStdout(`${snapshotAcceptUsage}\nMakes a directory written by doctor mcp-snapshot --save-dir the baseline, after reviewing the change with doctor mcp-snapshot-diff. It copies the list files the snapshot's mcp-snapshot-manifest.json names, each of which must pass its file check, removes baseline list files the manifest does not name, and writes the manifest last; no other file is read or written.\nA snapshot with a list that was offered but not saved, or whose definitions fail, is refused and the baseline is left as it was.`);
+        return 0;
+      }
+      const values = new Map<string, string>();
+      for (let index = 0; index < remainingArgs.length; index += 2) {
+        const [flag, value] = [remainingArgs[index], remainingArgs[index + 1]];
+        if ((flag !== "--snapshot" && flag !== "--baseline") || values.has(flag) || !value || value.startsWith("-")) {
+          io.writeStderr(`Invalid snapshot accept arguments. ${snapshotAcceptUsage}`);
+          return 2;
+        }
+        values.set(flag, value);
+      }
+      const snapshotDirectory = values.get("--snapshot");
+      const baselineDirectory = values.get("--baseline");
+      if (!snapshotDirectory || !baselineDirectory) {
+        io.writeStderr(`Invalid snapshot accept arguments. ${snapshotAcceptUsage}`);
+        return 2;
+      }
+      const result = await acceptMcpSnapshot(snapshotDirectory, baselineDirectory);
+      if (result.kind !== "accepted") {
+        io.writeStderr(result.reason);
+        return 2;
+      }
+      const state = { copied: "copied", "not-offered": "not offered" };
+      io.writeStdout([
+        `Accepted the MCP snapshot as the baseline in ${baselineDirectory}.`,
+        ...SNAPSHOT_LIST_KEYS.map((key) => `${LIST_LABELS[key]}: ${state[result.lists[key]]}`),
+        `Server surface: ${result.server ? "recorded" : "not recorded"}`,
+        ...(result.removed.length === 0 ? [] : [`Removed: ${result.removed.join(", ")}`])
+      ].join("\n"));
+      return 0;
     }
     if (maybePath === "mcp-snapshot-diff") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
@@ -4024,7 +4061,10 @@ export async function runCli(
           `Workflow: ${toolsResult.workflowPath}`,
           snapshotBaselineDir === null
             ? `Capture and commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools ${JSON.stringify(targetPath)} ${runtime} --save-response ${JSON.stringify(path.join(targetPath, baseline))}`
-            : `Capture and commit a snapshot baseline in ${snapshotBaselineDir}, for example with: codex-plugin-doctor doctor mcp-snapshot ${JSON.stringify(targetPath)} ${runtime} --save-dir ${JSON.stringify(path.join(targetPath, snapshotBaselineDir))}`,
+            : [
+              `Capture and commit a snapshot baseline in ${snapshotBaselineDir}, for example with: codex-plugin-doctor doctor mcp-snapshot ${JSON.stringify(targetPath)} ${runtime} --save-dir ${JSON.stringify(path.join(targetPath, snapshotBaselineDir))}`,
+              "Later, run the workflow by hand to open a pull request that updates the baseline from a new snapshot; allow GitHub Actions to create pull requests in the repository settings first."
+            ].join("\n"),
           ...(promptsBaseline === null ? [] : [
             `Capture and commit a prompt baseline at ${promptsBaseline}, for example with: codex-plugin-doctor doctor prompts ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, promptsBaseline))}`
           ]),

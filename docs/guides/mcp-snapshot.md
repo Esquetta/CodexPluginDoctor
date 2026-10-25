@@ -132,6 +132,26 @@ included.
 Directories saved by 1.81.0 have no manifest, so capture the baseline again
 with 1.82.0 or later before comparing.
 
+## Accepting a change
+
+When a comparison shows an intended change, make the new snapshot the baseline:
+
+```bash
+codex-plugin-doctor doctor mcp-snapshot-accept --snapshot ./mcp-current --baseline ./mcp/baseline
+```
+
+`doctor mcp-snapshot-accept` reads the snapshot's manifest and copies the list
+files it names into the baseline directory, which it creates when missing, then
+writes the manifest last. Each copied list must pass its file check, and a list
+that was offered but not saved is refused, so a baseline never records a list
+that could not be read. Baseline list files that the manifest does not name are
+removed; no other file in the directory is read or written. Every check runs
+before the baseline changes, and the earlier baseline manifest is removed before
+the first write, so a write that fails partway leaves no manifest to compare
+against. The command exits `0` when it accepted the snapshot and `2` when it
+refused it or a write failed. Review and commit the baseline like any other
+change.
+
 ## GitHub Action and init-ci
 
 The GitHub Action runs a snapshot through `snapshot-url` or `snapshot-server`
@@ -141,6 +161,7 @@ one report and one pull request comment through `snapshot-diff-before-dir` (CLI
 1.82.0 or later); see [GitHub Action Usage](github-action.md#snapshot-comparison).
 `codex-plugin-doctor init-ci . --tools-diff-server <name> --snapshot-baseline-dir <dir>`
 writes a workflow that compares the server's snapshot with a committed snapshot
-directory and posts one comment; with `--prompts-baseline` or
+directory and posts one comment, and that opens a pull request with an updated
+baseline when it is run by hand; with `--prompts-baseline` or
 `--resource-templates-baseline` instead, the capture job still uses one snapshot
 and the compare job compares each list on its own.

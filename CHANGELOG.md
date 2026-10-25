@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.85.0] - 2026-10-25
+
+### Added
+
+- added `doctor mcp-snapshot-accept --snapshot <dir> --baseline <dir>`, which makes a `doctor mcp-snapshot --save-dir` directory the baseline: it copies the list files the manifest names, each of which must pass its file check, removes baseline list files the manifest does not name, and writes the manifest last; a snapshot with a list that was offered but not saved, or whose definitions fail, is refused before anything changes
+- `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` also runs the workflow on `workflow_dispatch`, where an `update-baseline` job with `contents: write` and `pull-requests: write` accepts the new snapshot and opens a pull request from a new `mcp-baseline-update/<run id>-<attempt>` branch into the branch the workflow ran on, with the comparison as its description (cut to GitHub's size limit); it runs no package code, pushes only the new branch, and keeps the token out of the checkout until the push
+
 ## [1.84.0] - 2026-10-24
 
 ### Added

@@ -78,7 +78,8 @@ const COMPARE = {
   prompts: compareMcpPromptFiles,
   resourceTemplates: compareMcpResourceTemplateFiles
 };
-const INSPECT = {
+// Each list's offline file check, which also judges a list that has no baseline to be compared with.
+export const INSPECT = {
   tools: inspectMcpToolFile,
   prompts: inspectMcpPromptFile,
   resourceTemplates: inspectMcpResourceTemplateFile
@@ -119,7 +120,7 @@ function parseManifest(value: unknown): ParsedManifest | null {
   return server === "invalid" ? null : { lists, server };
 }
 
-async function readManifest(directory: string): Promise<{ state: ManifestState; manifest: ParsedManifest | null }> {
+export async function readSnapshotManifest(directory: string): Promise<{ state: ManifestState; manifest: ParsedManifest | null }> {
   if (isBlockedOfflinePath(directory)) return { state: "blocked", manifest: null };
   const file = await readBoundedRegularFile(path.join(directory, SNAPSHOT_MANIFEST_FILE));
   if (file.kind === "unavailable") return { state: "unavailable", manifest: null };
@@ -176,7 +177,7 @@ export async function compareMcpSnapshotDirectories(
   afterDirectory: string,
   options: McpSnapshotDiffOptions = {}
 ): Promise<McpSnapshotDiffReport> {
-  const [beforeRead, afterRead] = await Promise.all([readManifest(beforeDirectory), readManifest(afterDirectory)]);
+  const [beforeRead, afterRead] = await Promise.all([readSnapshotManifest(beforeDirectory), readSnapshotManifest(afterDirectory)]);
   const before = { state: beforeRead.state, lists: beforeRead.manifest?.lists ?? null };
   const after = { state: afterRead.state, lists: afterRead.manifest?.lists ?? null };
   const server = compareServerSurfaces(beforeRead.manifest?.server, afterRead.manifest?.server);
