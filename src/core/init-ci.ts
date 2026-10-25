@@ -66,6 +66,8 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "",
     "on:",
     "  pull_request:",
+    // Running the workflow by hand opens a pull request that makes the current snapshot the baseline.
+    ...(snapshotDiff ? ["  workflow_dispatch:"] : []),
     "",
     "permissions:",
     "  contents: read",
@@ -99,6 +101,7 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     "          artifact-name: mcp-tools-capture",
     "",
     "  compare:",
+    ...(snapshotDiff ? ["    if: github.event_name == 'pull_request'"] : []),
     "    needs: capture",
     "    runs-on: ubuntu-latest",
     "    permissions:",
@@ -142,8 +145,80 @@ function buildToolsDiffWorkflow(options: ToolsDiffWorkflowOptions): string {
     ]),
     "          output-dir: ${{ runner.temp }}/codex-plugin-doctor-reports",
     "          artifact-name: mcp-tools-diff",
+    ...(options.snapshotBaselineDir === null ? [] : baselineUpdateJob(options.snapshotBaselineDir)),
     ""
   ].join("\n");
+}
+
+/**
+ * The job a manual run uses to open a pull request with the snapshot as the new baseline. It runs no
+ * package code, writes only the files the snapshot's manifest names, and never pushes to the default branch.
+ * The write token stays out of the checkout and reaches git only in the step that pushes.
+ */
+function baselineUpdateJob(baselineDir: string): string[] {
+  return [
+    "",
+    "  update-baseline:",
+    "    if: github.event_name == 'workflow_dispatch'",
+    "    needs: capture",
+    "    runs-on: ubuntu-latest",
+    "    permissions:",
+    "      contents: write",
+    "      pull-requests: write",
+    "    steps:",
+    "      - uses: actions/checkout@v5",
+    "        with:",
+    "          persist-credentials: false",
+    "      - uses: actions/download-artifact@v5",
+    "        with:",
+    "          name: mcp-tools-capture",
+    "          path: ${{ runner.temp }}/mcp-tools-capture",
+    "      # No cache: nothing another run wrote may reach the job that holds the write token.",
+    "      - uses: actions/setup-node@v5",
+    "        with:",
+    "          node-version: 22",
+    "          package-manager-cache: false",
+    "      - name: Accept the snapshot as the baseline",
+    "        shell: bash",
+    "        env:",
+    `          BASELINE_DIR: ${yamlString(baselineDir)}`,
+    "          SNAPSHOT_DIR: ${{ runner.temp }}/mcp-tools-capture",
+    `          DOCTOR: codex-plugin-doctor@${packageVersion}`,
+    "        run: |",
+    "          # The comparison is the pull request description; it may report changes, which is why this runs.",
+    "          npx --yes \"$DOCTOR\" doctor mcp-snapshot-diff --before \"$BASELINE_DIR\" --after \"$SNAPSHOT_DIR\" --markdown > \"$RUNNER_TEMP/mcp-baseline-update.md\" || true",
+    "          npx --yes \"$DOCTOR\" doctor mcp-snapshot-accept --snapshot \"$SNAPSHOT_DIR\" --baseline \"$BASELINE_DIR\"",
+    "      - name: Open the baseline pull request",
+    "        shell: bash",
+    "        env:",
+    "          GH_TOKEN: ${{ github.token }}",
+    `          BASELINE_DIR: ${yamlString(baselineDir)}`,
+    "        run: |",
+    "          changes=\"$(git status --porcelain -- \"$BASELINE_DIR\")\"",
+    "          if [[ -z \"$changes\" ]]; then",
+    "            echo \"The baseline already matches the snapshot.\"",
+    "            exit 0",
+    "          fi",
+    "          # GitHub rejects pull request bodies longer than 65,536 characters.",
+    "          body=\"$RUNNER_TEMP/mcp-baseline-update.md\"",
+    "          if [[ \"$(wc -c < \"$body\")\" -gt 60000 ]]; then",
+    "            truncated=\"$(head -c 60000 \"$body\")\"",
+    "            {",
+    "              printf '%s\\n' \"$truncated\"",
+    "              if (( $(printf '%s\\n' \"$truncated\" | grep -c '^```' || true) % 2 == 1 )); then printf '```\\n'; fi",
+    "              printf '\\n_Truncated; run doctor mcp-snapshot-diff locally for the full comparison._\\n'",
+    "            } > \"$body.cut\"",
+    "            mv \"$body.cut\" \"$body\"",
+    "          fi",
+    "          branch=\"mcp-baseline-update/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"",
+    "          git switch -c \"$branch\"",
+    "          git add -A -- \"$BASELINE_DIR\"",
+    "          git -c user.name=\"github-actions[bot]\" -c user.email=\"41898282+github-actions[bot]@users.noreply.github.com\" commit -m \"chore: update the MCP snapshot baseline\"",
+    "          gh auth setup-git",
+    "          git push origin \"$branch\"",
+    "          # Into the branch the workflow ran on, so a run from a feature branch updates that branch's baseline.",
+    "          gh pr create --base \"$GITHUB_REF_NAME\" --head \"$branch\" --title \"chore: update the MCP snapshot baseline\" --body-file \"$body\""
+  ];
 }
 
 export async function initToolsDiffWorkflow(targetPath: string, options: ToolsDiffWorkflowOptions): Promise<InitCiResult> {

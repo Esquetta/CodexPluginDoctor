@@ -3373,6 +3373,32 @@ describe("runCli", () => {
     });
     expect(workflow.jobs.compare.permissions).toEqual({ contents: "read", "pull-requests": "write" });
     expect(raw).not.toMatch(/tools-diff-|prompts-diff-|resource-templates-diff-|-capture-server/u);
+
+    // A manual run captures a snapshot and opens a pull request that makes it the baseline.
+    const jobs = workflow.jobs as Record<string, { if?: string; needs?: string; permissions?: Record<string, string>; steps: Array<{ uses?: string; with?: Record<string, unknown>; env?: Record<string, string>; run?: string }> }>;
+    expect(Object.keys((parse(raw) as { on: Record<string, unknown> }).on)).toEqual(["pull_request", "workflow_dispatch"]);
+    expect(jobs.compare.if).toBe("github.event_name == 'pull_request'");
+    expect(jobs["update-baseline"]).toMatchObject({ if: "github.event_name == 'workflow_dispatch'", needs: "capture", permissions: { contents: "write", "pull-requests": "write" } });
+    expect(jobs.capture.permissions).toBeUndefined();
+    const update = jobs["update-baseline"].steps;
+    expect(update.map((step) => step.uses ?? step.run?.split("\n")[0])).toEqual([
+      "actions/checkout@v5", "actions/download-artifact@v5", "actions/setup-node@v5",
+      "# The comparison is the pull request description; it may report changes, which is why this runs.",
+      "changes=\"$(git status --porcelain -- \"$BASELINE_DIR\")\""
+    ]);
+    // The write token is not stored in the checkout, and no cache another run wrote is restored.
+    expect(update[0].with).toEqual({ "persist-credentials": false });
+    expect(update[2].with).toEqual({ "node-version": 22, "package-manager-cache": false });
+    expect(update[3].env).toMatchObject({ BASELINE_DIR: "mcp/baseline", SNAPSHOT_DIR: "${{ runner.temp }}/mcp-tools-capture" });
+    expect(update[3].run).toContain("doctor mcp-snapshot-accept --snapshot \"$SNAPSHOT_DIR\" --baseline \"$BASELINE_DIR\"");
+    expect(update[4].env?.GH_TOKEN).toBe("${{ github.token }}");
+    expect(update[4].run).toContain("branch=\"mcp-baseline-update/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"");
+    expect(update[4].run).toContain("gh auth setup-git\n");
+    expect(update[4].run).toContain("gh pr create --base \"$GITHUB_REF_NAME\" --head \"$branch\"");
+    expect(update[4].run).toContain("head -c 60000");
+    // The write token reaches no step that runs package code.
+    expect(JSON.stringify(jobs.capture)).not.toContain("github.token");
+    expect(stdout.join("")).toContain("run the workflow by hand to open a pull request that updates the baseline");
     expect(stdout.join("")).toContain(`doctor mcp-snapshot ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-dir ${JSON.stringify(path.join(targetPath, "mcp/baseline"))}`);
     await expect(stat(path.join(targetPath, "mcp"))).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -3397,6 +3423,8 @@ describe("runCli", () => {
     const workflow = await readFile(path.join(targetPath, ".github", "workflows", "codex-plugin-doctor-tools.yml"), "utf8");
     expect(workflow).not.toContain("prompts-");
     expect(workflow).not.toContain("resource-templates-");
+    expect(workflow).not.toContain("workflow_dispatch");
+    expect(workflow).not.toContain("update-baseline");
   });
 
   it("writes the default tool diff baseline path", async () => {
