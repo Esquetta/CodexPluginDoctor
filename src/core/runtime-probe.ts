@@ -42,6 +42,8 @@ const MAX_TOOL_CALL_CONTENT_LENGTH = 4096;
 const MAX_RESOURCE_READ_CONTENT_LENGTH = 4096;
 const MAX_PROMPT_GET_CONTENT_LENGTH = 4096;
 const DOCKER_CLEANUP_TIMEOUT_MS = 5_000;
+// A native server answers initialize only once its process has started, which can take seconds on a cold start.
+const NATIVE_INITIALIZE_TIMEOUT_MS = 10_000;
 const MAX_RUNTIME_PAGINATION_PAGES = 100;
 
 type JsonObject = Record<string, unknown>;
@@ -1166,6 +1168,7 @@ async function probeCommandServer(input: {
   args: string[];
   cwd: string;
   startupTimeoutMs: number;
+  initializeTimeoutMs: number;
   sandbox?: RuntimeSandboxMode;
   transcript?: (line: string) => void;
 }): Promise<RuntimeProbeResult> {
@@ -1176,6 +1179,7 @@ async function probeCommandServer(input: {
     args,
     cwd,
     startupTimeoutMs,
+    initializeTimeoutMs,
     sandbox,
     transcript
   } = input;
@@ -1283,10 +1287,9 @@ async function probeCommandServer(input: {
         const id = nextRequestId++;
         transcript?.(formatRequestTranscriptForLog(method, params));
 
-        const requestTimeoutMs =
-          launch.evidence.backend === "docker" && method === "initialize"
-            ? DOCKER_RUNTIME_STARTUP_TIMEOUT_MS
-            : startupTimeoutMs;
+        const requestTimeoutMs = method !== "initialize"
+          ? startupTimeoutMs
+          : launch.evidence.backend === "docker" ? DOCKER_RUNTIME_STARTUP_TIMEOUT_MS : initializeTimeoutMs;
         const timer = setTimeout(() => {
           pendingRequests.delete(id);
           requestReject(timeoutFinding);
@@ -1981,6 +1984,7 @@ export async function probeRuntime(
 }
 
 export interface RuntimeProbeOptions {
+  // The timeout of each request (400 ms by default); when set, it also replaces the 10 s a native initialize gets.
   startupTimeoutMs?: number;
   sandbox?: RuntimeSandboxMode;
   transcript?: (line: string) => void;
@@ -2005,6 +2009,7 @@ export async function probeRuntimeConfig(
   const resolvedRootPath = path.resolve(rootPath);
   const resolvedMcpConfigPath = path.resolve(resolvedRootPath, mcpConfigPath);
   const startupTimeoutMs = options.startupTimeoutMs ?? 400;
+  const initializeTimeoutMs = options.startupTimeoutMs ?? NATIVE_INITIALIZE_TIMEOUT_MS;
   let canonicalRootPath: string;
   let canonicalMcpConfigPath: string;
 
@@ -2101,6 +2106,7 @@ export async function probeRuntimeConfig(
             args,
             cwd,
             startupTimeoutMs,
+            initializeTimeoutMs,
             sandbox: options.sandbox,
             transcript: options.transcript
           });

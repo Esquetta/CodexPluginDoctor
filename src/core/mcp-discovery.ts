@@ -125,16 +125,25 @@ function unsupportedVersions(error: unknown): string[] | null {
   return error.data.requested === REQUESTED_VERSION && validVersions(error.data.supported) ? error.data.supported : null;
 }
 
-export function discoverMcpCapabilities(response: BoundedHttpResponse, requestId = REQUEST_ID): McpJsonObject | null {
+// The validated discovery result that lists the requested version, or null.
+function discoveredResult(response: BoundedHttpResponse, requestId: string): (McpJsonObject & { supportedVersions: string[] }) | null {
   const message = parseMcpResponse(response, requestId);
   if (!message || !hasMatchingResponseEnvelope(message, requestId) || !Object.hasOwn(message, "result")) {
     return null;
   }
   const result = message.result;
-  if (!validDiscoverResult(result)) return null;
-  const capabilities = result.capabilities;
-  if (!isPlainObject(capabilities)) return null;
-  return result.supportedVersions.includes(REQUESTED_VERSION) ? capabilities : null;
+  return validDiscoverResult(result) && result.supportedVersions.includes(REQUESTED_VERSION) ? result : null;
+}
+
+export function discoverMcpCapabilities(response: BoundedHttpResponse, requestId = REQUEST_ID): McpJsonObject | null {
+  const capabilities = discoveredResult(response, requestId)?.capabilities;
+  return isPlainObject(capabilities) ? capabilities : null;
+}
+
+// The optional natural-language instructions of a discovered server, or null when it sends none.
+export function discoverMcpInstructions(response: BoundedHttpResponse, requestId = REQUEST_ID): string | null {
+  const instructions = discoveredResult(response, requestId)?.instructions;
+  return typeof instructions === "string" ? instructions : null;
 }
 
 export function serializeMcpDiscoverRequest(requestId = REQUEST_ID): string {
@@ -146,7 +155,7 @@ export function serializeMcpDiscoverRequest(requestId = REQUEST_ID): string {
 }
 
 export type McpDiscoverOutcome =
-  | { kind: "discovered"; supportedVersions: string[]; capabilities: McpJsonObject }
+  | { kind: "discovered"; supportedVersions: string[]; capabilities: McpJsonObject; instructions: string | null }
   | { kind: "version-not-listed"; supportedVersions: string[] }
   | { kind: "version-unsupported"; supportedVersions: string[] }
   | { kind: "result-invalid" }
@@ -164,7 +173,10 @@ export function classifyMcpDiscoverMessage(message: McpJsonObject, requestId = R
   const result = message.result;
   if (!validDiscoverResult(result)) return { kind: "result-invalid" };
   return result.supportedVersions.includes(REQUESTED_VERSION)
-    ? { kind: "discovered", supportedVersions: result.supportedVersions, capabilities: result.capabilities as McpJsonObject }
+    ? {
+      kind: "discovered", supportedVersions: result.supportedVersions, capabilities: result.capabilities as McpJsonObject,
+      instructions: typeof result.instructions === "string" ? result.instructions : null
+    }
     : { kind: "version-not-listed", supportedVersions: result.supportedVersions };
 }
 

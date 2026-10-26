@@ -218,7 +218,8 @@ run, reading a stdio server in one session, and `--save-dir` writes each complet
 under the file name the matching `-file` and `-diff` commands use, plus a
 manifest of what was saved. `doctor mcp-snapshot-diff` compares two snapshot
 directories in one report and labels a list the server stopped offering, or a
-dropped protocol version or capability, as breaking. In the GitHub Action, `snapshot-server` or `snapshot-url` takes the
+dropped protocol version or capability, as breaking, and changed server
+instructions as unclassified. In the GitHub Action, `snapshot-server` or `snapshot-url` takes the
 snapshot and `snapshot-diff-before-dir` compares it with a committed baseline
 directory in one report, and
 `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes a
@@ -645,9 +646,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.85.0
+      - uses: Esquetta/CodexPluginDoctor@v1.86.0
         with:
-          version: "1.85.0"
+          version: "1.86.0"
           path: .
           runtime: "true"
           policy: codex-publish

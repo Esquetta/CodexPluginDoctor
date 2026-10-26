@@ -35,8 +35,9 @@ export interface McpSnapshotListDiff<R, F> {
 }
 
 export interface McpServerSurfaceChange {
-  kind: "era-changed" | "protocol-version-removed" | "protocol-version-added" | "capability-removed" | "capability-added";
-  // A protocol version, a capability name, or the eras as "before -> after".
+  kind: "era-changed" | "protocol-version-removed" | "protocol-version-added" | "capability-removed" | "capability-added"
+    | "instructions-added" | "instructions-removed" | "instructions-changed";
+  // A protocol version, a capability name, the eras as "before -> after", or an instructions hash prefix and length.
   value: string;
   impact: "breaking" | "compatible" | "unclassified";
 }
@@ -101,7 +102,15 @@ function parseServerSurface(value: unknown): McpServerSurface | null | undefined
   if (!isJsonObject(value) || (value.era !== "modern" && value.era !== "legacy")) return "invalid";
   const versions = surfaceNames(value.versions, MAX_SURFACE_VERSIONS);
   const capabilities = surfaceNames(value.capabilities, MAX_SURFACE_CAPABILITIES);
-  return versions === null || capabilities === null ? "invalid" : { era: value.era, versions, capabilities };
+  const instructions = value.instructions;
+  const validInstructions = instructions === undefined || instructions === null
+    || (isJsonObject(instructions) && typeof instructions.sha256 === "string" && /^[0-9a-f]{64}$/u.test(instructions.sha256)
+      && Number.isSafeInteger(instructions.length) && (instructions.length as number) >= 0);
+  if (versions === null || capabilities === null || !validInstructions) return "invalid";
+  return {
+    era: value.era, versions, capabilities,
+    ...(instructions === undefined ? {} : { instructions: instructions === null ? null : { sha256: (instructions as { sha256: string }).sha256, length: (instructions as { length: number }).length } })
+  };
 }
 
 type ParsedManifest = { lists: McpSnapshotManifest["lists"]; server: McpServerSurface | null | undefined };
@@ -159,6 +168,16 @@ function compareServerSurfaces(before: McpServerSurface | null | undefined, afte
   const capabilities = (surface: McpServerSurface) => surface.capabilities.filter((name) => !LIST_CAPABILITIES.has(name));
   for (const value of difference(capabilities(before), capabilities(after))) changes.push({ kind: "capability-removed", value, impact: "breaking" });
   for (const value of difference(capabilities(after), capabilities(before))) changes.push({ kind: "capability-added", value, impact: "compatible" });
+  // Instructions steer the agent, so any change needs a person to read it; surfaces before 1.86.0 have none to compare.
+  if (before.instructions !== undefined && after.instructions !== undefined) {
+    const [from, to] = [before.instructions, after.instructions];
+    const describe = (instructions: { sha256: string; length: number }) => `sha256:${instructions.sha256.slice(0, 12)}, ${instructions.length} characters`;
+    if (from === null && to !== null) changes.push({ kind: "instructions-added", value: describe(to), impact: "unclassified" });
+    else if (from !== null && to === null) changes.push({ kind: "instructions-removed", value: describe(from), impact: "unclassified" });
+    else if (from !== null && to !== null && from.sha256 !== to.sha256) {
+      changes.push({ kind: "instructions-changed", value: `${describe(from)} -> ${describe(to)}`, impact: "unclassified" });
+    }
+  }
   return { outcome: "compared", before, after, changes };
 }
 

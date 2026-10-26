@@ -24,6 +24,7 @@
       "prompts",
       "resources",
       "tools"
-    ]
+    ],
+    "instructions": null
   }
 }

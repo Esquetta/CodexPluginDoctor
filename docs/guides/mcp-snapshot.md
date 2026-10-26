@@ -63,8 +63,9 @@ first removes an earlier `mcp-snapshot-manifest.json` and last writes a new one,
 which records each list's status and the file this run saved for it, or `null`,
 and the server surface: the protocol era (`modern` or `legacy`), the supported
 protocol versions (discovery's `supportedVersions`, or the version `initialize`
-negotiated), and the top-level capability names, without their values. It holds
-no tool, prompt, or template names or definitions. `mcp-snapshot-diff` reads only the lists the
+negotiated), the top-level capability names, without their values, and, from
+1.86.0, a SHA-256 hash and the length of the server's `instructions`, never the
+text itself. It holds no tool, prompt, or template names or definitions. `mcp-snapshot-diff` reads only the lists the
 manifest names, so a list file left from an earlier run is not compared, and a
 run that could not write its manifest leaves none. The per-list diff commands
 do not read the manifest, so give them a fresh directory. When no
@@ -99,7 +100,10 @@ directories offline, list by list, using each directory's manifest:
 
 The server surface is compared too. A removed protocol version or capability is
 breaking, an added one is compatible, a `modern` server that falls back to
-`legacy` is breaking, and the reverse is unclassified. The `tools`, `prompts`,
+`legacy` is breaking, and the reverse is unclassified. Instructions that were
+added, removed, or changed are unclassified, because they steer how agents use
+the server and need a person to read them; only the hash prefix and the length
+appear in the reports. The `tools`, `prompts`,
 and `resources` capabilities are left to the list rows above. When either
 manifest has no server surface, such as one written before 1.84.0, it is
 `not-recorded` and does not affect the result; capture the baseline again to

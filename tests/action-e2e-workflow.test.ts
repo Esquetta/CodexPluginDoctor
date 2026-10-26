@@ -70,9 +70,9 @@ describe("Action end-to-end workflow", () => {
     const directory = "tests/fixtures/action-e2e/snapshot-baseline";
     const manifest = JSON.parse(await readFile(`${directory}/mcp-snapshot-manifest.json`, "utf8")) as {
       lists: Record<string, { status: string; file: string | null }>;
-      server: { era: string; versions: string[]; capabilities: string[] } | null;
+      server: { era: string; versions: string[]; capabilities: string[]; instructions: unknown } | null;
     };
-    expect(manifest.server).toEqual({ era: "legacy", versions: ["2025-11-25"], capabilities: ["prompts", "resources", "tools"] });
+    expect(manifest.server).toEqual({ era: "legacy", versions: ["2025-11-25"], capabilities: ["prompts", "resources", "tools"], instructions: null });
     for (const list of Object.values(manifest.lists)) {
       expect(list.status).toBe("pass");
       expect(JSON.parse(await readFile(`${directory}/${list.file}`, "utf8"))).toMatchObject({ jsonrpc: "2.0", result: { resultType: "complete" } });

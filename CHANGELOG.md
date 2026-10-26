@@ -4,6 +4,19 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.86.0] - 2026-10-26
+
+### Added
+
+- the server surface of `doctor mcp-snapshot` records a SHA-256 hash and the length of the server's `instructions` from `server/discover` or `initialize`, or `null` when it sends none; the text itself is never written to a report or the manifest
+- `doctor mcp-snapshot-diff` reports instructions that were added, removed, or changed as `instructions-added`, `instructions-removed`, or `instructions-changed`, all unclassified, with the hash prefix and length as the value; surfaces recorded before 1.86.0 have no instructions to compare and report no change
+- the `doctor.mcp-snapshot.json`, `doctor.mcp-snapshot.manifest.json`, and `doctor.mcp-snapshot.diff.json` contracts describe the instructions hash and the new change kinds
+
+### Changed
+
+- runtime probing of a native stdio server gives `initialize` 10 seconds instead of 400 milliseconds, so a server that starts slowly, for example on a cold start or a busy machine, is no longer reported with `plugin.runtime.initialize.timeout`; every later request still has 400 milliseconds, and the Docker sandbox keeps its 60 seconds
+- the Action end-to-end baseline snapshot records that the example server sends no instructions
+
 ## [1.85.0] - 2026-10-25
 
 ### Added
