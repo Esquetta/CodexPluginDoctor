@@ -11,7 +11,9 @@ import { runCli } from "../src/run-cli.js";
 
 const tools = [{ name: "lookup", inputSchema: { type: "object" } }];
 const prompts = [{ name: "review" }];
-const server: McpServerSurface = { era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "tools"] };
+const server: McpServerSurface = {
+  era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "tools"], instructions: { sha256: "a".repeat(64), length: 12 }
+};
 
 let root: string;
 beforeEach(async () => {

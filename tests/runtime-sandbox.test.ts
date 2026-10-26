@@ -345,6 +345,26 @@ describe("Docker runtime launch policy", () => {
     }
   });
 
+  it("gives a native initialize the startup budget, and an explicit timeout replaces it", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    childProcessMocks.spawn.mockImplementation(() => createProtocolChild({ tools: true }));
+
+    try {
+      await probeRuntime(runtimePackage());
+      const defaults = timeoutSpy.mock.calls.map((call) => call[1]);
+      expect(defaults).toContain(10_000);
+      expect(defaults).toContain(400);
+
+      timeoutSpy.mockClear();
+      await probeRuntime(runtimePackage(), { startupTimeoutMs: 17 });
+      const explicit = timeoutSpy.mock.calls.map((call) => call[1]);
+      expect(explicit).toContain(17);
+      expect(explicit).not.toContain(10_000);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
   it("turns Docker cleanup failures into sanitized findings", async () => {
     childProcessMocks.spawn.mockImplementation(() => createProtocolChild());
     childProcessMocks.execFile.mockImplementation(

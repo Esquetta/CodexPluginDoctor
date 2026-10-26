@@ -323,7 +323,9 @@ describe("compareMcpSnapshotDirectories", () => {
 
       const report = await compareMcpSnapshotDirectories(before, after);
 
-      expect(report.server.changes).toEqual([expect.objectContaining({ kind, impact: "unclassified" })]);
+      const describe = (value: { sha256: string; length: number }) => `sha256:${value.sha256.slice(0, 12)}, ${value.length} characters`;
+      const value = from === null ? describe(to!) : to === null ? describe(from) : `${describe(from)} -> ${describe(to)}`;
+      expect(report.server.changes).toEqual([{ kind, value, impact: "unclassified" }]);
       expect(report).toMatchObject({ status: "warn", comparison: { breaking: 0, unclassified: 1 } });
       expect(violations(diffSchema, report)).toEqual([]);
       expect(renderMcpSnapshotDiffMarkdown(report)).toContain("| Server surface | compared | 0 | 0 | 1 | 1 | 0 | 1 |");
@@ -340,8 +342,12 @@ describe("compareMcpSnapshotDirectories", () => {
       expect((await compareMcpSnapshotDirectories(older, same)).server.changes).toEqual([]);
     });
 
-    it("treats a malformed instructions hash as an invalid manifest", async () => {
-      const before = await snapshotDirectory("before", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions: { sha256: "not-a-hash", length: 3 } });
+    it.each([
+      ["a hash that is not hex", { sha256: "not-a-hash", length: 3 }],
+      ["a negative length", { ...hash("Use lookup."), length: -1 }],
+      ["a string", "Use lookup."]
+    ])("treats instructions with %s as an invalid manifest", async (_case, instructions) => {
+      const before = await snapshotDirectory("before", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions } as unknown as McpServerSurface);
       const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["tools"]));
 
       expect(await compareMcpSnapshotDirectories(before, after)).toMatchObject({ manifests: { before: "invalid" } });

@@ -26,7 +26,8 @@ lines.on("line", (line) => {
       jsonrpc: "2.0", id: message.id, result: {
         resultType: "complete", ttlMs: 60000, cacheScope: "public", supportedVersions: ["2026-07-28"],
         capabilities: mode === "modern-no-resources" ? { tools: {} }
-          : mode === "modern-prompts-list-missing" ? { tools: {}, prompts: {}, resources: {} } : { resources: {} }
+          : mode === "modern-prompts-list-missing" ? { tools: {}, prompts: {}, resources: {} } : { resources: {} },
+        ...(mode === "modern-prompts-list-missing" ? { instructions: "Prefer resource templates. 📁" } : {})
       }
     });
   }

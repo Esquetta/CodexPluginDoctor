@@ -64,8 +64,8 @@ which records each list's status and the file this run saved for it, or `null`,
 and the server surface: the protocol era (`modern` or `legacy`), the supported
 protocol versions (discovery's `supportedVersions`, or the version `initialize`
 negotiated), the top-level capability names, without their values, and, from
-1.86.0, a SHA-256 hash and the length of the server's `instructions`, never the
-text itself. It holds no tool, prompt, or template names or definitions. `mcp-snapshot-diff` reads only the lists the
+1.86.0, a SHA-256 hash of the server's `instructions` and their length in
+characters (Unicode code points), never the text itself. It holds no tool, prompt, or template names or definitions. `mcp-snapshot-diff` reads only the lists the
 manifest names, so a list file left from an earlier run is not compared, and a
 run that could not write its manifest leaves none. The per-list diff commands
 do not read the manifest, so give them a fresh directory. When no
@@ -78,8 +78,9 @@ that can carry host names and paths; handle them like a committed baseline.
 The text report shows the server surface, each list's status, pages, and
 checked entries, then the findings by list and position. `--json` prints
 `doctor.mcp-snapshot.json` (scope `mcp-surface-snapshot`): `discovery`, the
-stdio `protocol` and `execution` details, `server` (the era, versions, and
-capability names, or `null` when not established), and under `lists` the `tools`, `prompts`, and
+stdio `protocol` and `execution` details, `server` (the era, versions,
+capability names, and instructions hash, or `null` when not established), and
+under `lists` the `tools`, `prompts`, and
 `resourceTemplates` entries, each with `status`, `catalog`, `enumeration`, and
 `findings` in the shape of the matching single-list report. Coverage is stated
 as `definitions: "shape-only"`, `execution: "not-tested"`, and
@@ -102,8 +103,11 @@ The server surface is compared too. A removed protocol version or capability is
 breaking, an added one is compatible, a `modern` server that falls back to
 `legacy` is breaking, and the reverse is unclassified. Instructions that were
 added, removed, or changed are unclassified, because they steer how agents use
-the server and need a person to read them; only the hash prefix and the length
-appear in the reports. The `tools`, `prompts`,
+the server and need a person to read them. The text and Markdown reports show a
+12-character hash prefix and the length; the JSON reports and the manifest hold
+the full hash. A surface recorded before 1.86.0 has no instructions, so
+instructions are not compared against it; capture the baseline again to compare
+them. The `tools`, `prompts`,
 and `resources` capabilities are left to the list rows above. When either
 manifest has no server surface, such as one written before 1.84.0, it is
 `not-recorded` and does not affect the result; capture the baseline again to

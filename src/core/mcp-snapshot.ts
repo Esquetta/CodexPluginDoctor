@@ -99,7 +99,7 @@ function serverSurface(era: McpServerSurface["era"], versions: string[], capabil
     era,
     versions: bounded(versions, MAX_SURFACE_VERSIONS),
     capabilities: bounded(capabilities, MAX_SURFACE_CAPABILITIES),
-    instructions: instructions === null ? null : { sha256: createHash("sha256").update(instructions, "utf8").digest("hex"), length: instructions.length }
+    instructions: instructions === null ? null : { sha256: createHash("sha256").update(instructions, "utf8").digest("hex"), length: [...instructions].length }
   };
 }
 

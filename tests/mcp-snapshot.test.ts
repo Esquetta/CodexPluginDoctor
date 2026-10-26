@@ -87,6 +87,13 @@ describe("captureMcpSnapshot", () => {
     expect(report.server?.instructions).toEqual({ sha256: createHash("sha256").update(text).digest("hex"), length: text.length });
     expect(violations(snapshotSchema, report)).toEqual([]);
     expect(JSON.stringify(report)).not.toContain("lookup before");
+
+    // A value that is not a string is no instructions.
+    const numeric = await captureMcpSnapshot("https://mcp.example.com/mcp", {
+      allowNetwork: true, request: httpServer({ tools: {} }, { tools: [tool] }, 42 as unknown as string)
+    });
+    expect(numeric.report.server?.instructions).toBeNull();
+    expect(renderMcpSnapshotReport(numeric.report)).toContain("; no instructions");
     expect(renderMcpSnapshotReport(report)).toContain(`instructions sha256:${report.server?.instructions?.sha256.slice(0, 12)} (${text.length} characters)`);
   });
 
@@ -148,7 +155,11 @@ describe("captureStdioMcpSnapshot", () => {
 
     expect(report).toMatchObject({
       transport: "stdio", status: "incomplete", protocol: { era: "modern" },
-      server: { era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "resources", "tools"], instructions: null },
+      // Length counts code points, so the emoji counts once.
+      server: {
+        era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "resources", "tools"],
+        instructions: { sha256: createHash("sha256").update("Prefer resource templates. 📁").digest("hex"), length: 28 }
+      },
       lists: {
         tools: { status: "pass", catalog: { complete: true, checked: 1 } },
         prompts: { status: "incomplete", catalog: { complete: false, reason: "prompts-list-method-unsupported" } },

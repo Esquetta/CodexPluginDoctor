@@ -1047,7 +1047,7 @@ const serverSurfaceSchema = {
     // From 1.86.0: a hash and length of the instructions, never the text.
     instructions: {
       type: ["object", "null"], required: ["sha256", "length"],
-      properties: { sha256: { type: "string", minLength: 64, maxLength: 64 }, length: { type: "integer", minimum: 0 } },
+      properties: { sha256: { type: "string", pattern: "^[0-9a-f]{64}$" }, length: { type: "integer", minimum: 0 } },
       additionalProperties: false
     }
   },
