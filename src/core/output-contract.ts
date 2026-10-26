@@ -1042,7 +1042,15 @@ publicSchemaDefinitions.push({
 const surfaceNames = (maxItems: number) => ({ type: "array", maxItems, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 128 } });
 const serverSurfaceSchema = {
   type: ["object", "null"], required: ["era", "versions", "capabilities"],
-  properties: { era: { enum: ["modern", "legacy"] }, versions: surfaceNames(32), capabilities: surfaceNames(64) },
+  properties: {
+    era: { enum: ["modern", "legacy"] }, versions: surfaceNames(32), capabilities: surfaceNames(64),
+    // From 1.86.0: a hash and length of the instructions, never the text.
+    instructions: {
+      type: ["object", "null"], required: ["sha256", "length"],
+      properties: { sha256: { type: "string", pattern: "^[0-9a-f]{64}$" }, length: { type: "integer", minimum: 0 } },
+      additionalProperties: false
+    }
+  },
   additionalProperties: false
 };
 
@@ -1403,11 +1411,14 @@ publicSchemaDefinitions.push({
         before: serverSurfaceSchema,
         after: serverSurfaceSchema,
         changes: {
-          type: "array", maxItems: 193,
+          type: "array", maxItems: 194,
           items: {
             type: "object", required: ["kind", "value", "impact"],
             properties: {
-              kind: { enum: ["era-changed", "protocol-version-removed", "protocol-version-added", "capability-removed", "capability-added"] },
+              kind: {
+                enum: ["era-changed", "protocol-version-removed", "protocol-version-added", "capability-removed", "capability-added",
+                  "instructions-added", "instructions-removed", "instructions-changed"]
+              },
               value: { type: "string" },
               impact: { enum: ["breaking", "compatible", "unclassified"] }
             },
@@ -1423,7 +1434,7 @@ publicSchemaDefinitions.push({
         complete: { type: "boolean" },
         reason: { enum: [null, "input-blocked", "manifest-unavailable", "list-not-saved", "list-incomplete"] },
         breaking: { type: ["integer", "null"], minimum: 0, maximum: 3097 },
-        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 3001 }
+        unclassified: { type: ["integer", "null"], minimum: 0, maximum: 3002 }
       },
       additionalProperties: false
     },

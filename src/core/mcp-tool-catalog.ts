@@ -6,6 +6,7 @@ import {
 } from "./bounded-http-client.js";
 import {
   discoverMcpCapabilities,
+  discoverMcpInstructions,
   discoverMcpServer,
   findMcpSseResponse,
   parseMcpResponse,
@@ -312,8 +313,9 @@ export interface McpCatalogCapture<F extends Finding> {
   findings: F[];
   items: unknown[] | null;
   cache: McpToolCatalogCache | null;
-  // The capability names discovery declared, set by an HTTP capture once discovery completed.
+  // The capability names and instructions discovery declared, set by an HTTP capture once discovery completed.
   capabilities?: string[];
+  instructions?: string | null;
 }
 
 function toolCatalogSnapshot(capture: McpCatalogCapture<CatalogFinding>): McpToolCatalogSnapshot {
@@ -401,9 +403,9 @@ export async function captureMcpCatalog<F extends Finding>(
     }
   });
 
-  let capabilityNames: string[] | undefined;
+  let surface: { capabilities: string[]; instructions: string | null } | undefined;
   const partial = (status: CatalogStatus, catalog: McpCatalogCapture<F>["catalog"], enumeration: EnumerationCoverage, findings: F[]): McpCatalogCapture<F> =>
-    ({ discovery, status, catalog, enumeration, findings, items: null, cache: null, ...(capabilityNames === undefined ? {} : { capabilities: capabilityNames }) });
+    ({ discovery, status, catalog, enumeration, findings, items: null, cache: null, ...surface });
   const emptyCatalog = { complete: false, pagesRead: 0, checked: 0, reason: null };
   if (discovery.status === "blocked") {
     const reason = discovery.findings.some((item) => item.id === "plugin.discovery.credentials.insecure_transport")
@@ -425,7 +427,7 @@ export async function captureMcpCatalog<F extends Finding>(
   if (capabilities === null) {
     return partial("incomplete", { ...emptyCatalog, reason: "discovery-response-unavailable" }, "not-tested", []);
   }
-  capabilityNames = Object.keys(capabilities);
+  surface = { capabilities: Object.keys(capabilities), instructions: discoveryResponse === null ? null : discoverMcpInstructions(discoveryResponse) };
   if (!Object.hasOwn(capabilities, list.capability)) {
     return partial("not-applicable", emptyCatalog, "not-tested", []);
   }
@@ -544,6 +546,6 @@ export async function captureMcpCatalog<F extends Finding>(
     findings,
     items: inspector.items,
     cache,
-    capabilities: capabilityNames
+    ...surface
   };
 }

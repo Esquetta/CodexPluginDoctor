@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -308,6 +309,48 @@ describe("compareMcpSnapshotDirectories", () => {
       const after = await snapshotDirectory("after", onlyTools, { era: "legacy", versions: [to], capabilities: ["tools"] });
 
       expect((await compareMcpSnapshotDirectories(before, after)).server.changes).toEqual([change]);
+    });
+
+    const hash = (text: string) => ({ sha256: createHash("sha256").update(text).digest("hex"), length: text.length });
+
+    it.each([
+      [null, hash("Use lookup."), "instructions-added"],
+      [hash("Use lookup."), null, "instructions-removed"],
+      [hash("Use lookup."), hash("Use search."), "instructions-changed"]
+    ] as const)("labels %j -> %j instructions as %s and unclassified", async (from, to, kind) => {
+      const before = await snapshotDirectory("before", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions: from });
+      const after = await snapshotDirectory("after", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions: to });
+
+      const report = await compareMcpSnapshotDirectories(before, after);
+
+      const describe = (value: { sha256: string; length: number }) => `sha256:${value.sha256.slice(0, 12)}, ${value.length} characters`;
+      const value = from === null ? describe(to!) : to === null ? describe(from) : `${describe(from)} -> ${describe(to)}`;
+      expect(report.server.changes).toEqual([{ kind, value, impact: "unclassified" }]);
+      expect(report).toMatchObject({ status: "warn", comparison: { breaking: 0, unclassified: 1 } });
+      expect(violations(diffSchema, report)).toEqual([]);
+      expect(renderMcpSnapshotDiffMarkdown(report)).toContain("| Server surface | compared | 0 | 0 | 1 | 1 | 0 | 1 |");
+    });
+
+    it("compares unchanged instructions as unchanged and skips them when a surface predates them", async () => {
+      const same = await snapshotDirectory("same", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions: hash("Use lookup.") });
+      const again = await snapshotDirectory("again", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions: hash("Use lookup.") });
+      const older = await snapshotDirectory("older", onlyTools, modern(["2026-07-28"], ["tools"]));
+
+      const unchanged = await compareMcpSnapshotDirectories(same, again);
+      expect(unchanged).toMatchObject({ status: "pass", server: { changes: [] } });
+      expect(renderMcpSnapshotDiffMarkdown(unchanged)).toContain("| Server surface | compared | 0 | 0 | 0 | 2 | 0 | 0 |");
+      expect((await compareMcpSnapshotDirectories(older, same)).server.changes).toEqual([]);
+    });
+
+    it.each([
+      ["a hash that is not hex", { sha256: "not-a-hash", length: 3 }],
+      ["a negative length", { ...hash("Use lookup."), length: -1 }],
+      ["a string", "Use lookup."]
+    ])("treats instructions with %s as an invalid manifest", async (_case, instructions) => {
+      const before = await snapshotDirectory("before", onlyTools, { ...modern(["2026-07-28"], ["tools"]), instructions } as unknown as McpServerSurface);
+      const after = await snapshotDirectory("after", onlyTools, modern(["2026-07-28"], ["tools"]));
+
+      expect(await compareMcpSnapshotDirectories(before, after)).toMatchObject({ manifests: { before: "invalid" } });
     });
 
     it("reports a surface the snapshot did not establish as not-recorded", async () => {

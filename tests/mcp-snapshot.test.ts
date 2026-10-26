@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,11 +21,14 @@ function response(body: unknown): BoundedHttpResponse {
 }
 
 // Answers discovery and each list by method, as a stateless HTTP server would.
-function httpServer(capabilities: Record<string, unknown>, lists: Record<string, unknown[] | "error">) {
+function httpServer(capabilities: Record<string, unknown>, lists: Record<string, unknown[] | "error">, instructions?: string) {
   return vi.fn(async (_url: string, options: { body?: string }) => {
     const message = JSON.parse(options.body ?? "{}");
     if (message.method === "server/discover") {
-      return response({ jsonrpc: "2.0", id: message.id, result: { resultType: "complete", supportedVersions: ["2026-07-28"], capabilities, ttlMs: 0, cacheScope: "public" } });
+      return response({
+        jsonrpc: "2.0", id: message.id,
+        result: { resultType: "complete", supportedVersions: ["2026-07-28"], capabilities, ttlMs: 0, cacheScope: "public", ...(instructions === undefined ? {} : { instructions }) }
+      });
     }
     const key = { "tools/list": "tools", "prompts/list": "prompts", "resources/templates/list": "resourceTemplates" }[message.method as string] as string;
     const items = lists[key];
@@ -52,7 +56,7 @@ describe("captureMcpSnapshot", () => {
     });
     expect(report).not.toHaveProperty("transport");
     // Only capability names are kept, sorted; their values are not recorded.
-    expect(report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "tools"] });
+    expect(report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "tools"], instructions: null });
     expect(violations(snapshotSchema, report)).toEqual([]);
     expect(responses).toEqual({
       tools: { items: [tool], cache: { ttlMs: 60_000, cacheScope: "public" } },
@@ -73,7 +77,24 @@ describe("captureMcpSnapshot", () => {
 
     const empty = await captureMcpSnapshot("https://mcp.example.com/mcp", { allowNetwork: true, request: httpServer({ logging: {} }, {}) });
     expect(empty.report.status).toBe("not-applicable");
-    expect(empty.report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["logging"] });
+    expect(empty.report.server).toEqual({ era: "modern", versions: ["2026-07-28"], capabilities: ["logging"], instructions: null });
+  });
+
+  it("records a hash and the length of the instructions, never the text", async () => {
+    const text = "Call lookup before search.";
+    const { report } = await captureMcpSnapshot("https://mcp.example.com/mcp", { allowNetwork: true, request: httpServer({ tools: {} }, { tools: [tool] }, text) });
+
+    expect(report.server?.instructions).toEqual({ sha256: createHash("sha256").update(text).digest("hex"), length: text.length });
+    expect(violations(snapshotSchema, report)).toEqual([]);
+    expect(JSON.stringify(report)).not.toContain("lookup before");
+
+    // A value that is not a string is no instructions.
+    const numeric = await captureMcpSnapshot("https://mcp.example.com/mcp", {
+      allowNetwork: true, request: httpServer({ tools: {} }, { tools: [tool] }, 42 as unknown as string)
+    });
+    expect(numeric.report.server?.instructions).toBeNull();
+    expect(renderMcpSnapshotReport(numeric.report)).toContain("; no instructions");
+    expect(renderMcpSnapshotReport(report)).toContain(`instructions sha256:${report.server?.instructions?.sha256.slice(0, 12)} (${text.length} characters)`);
   });
 
   it("bounds the recorded capability names and records no surface when discovery fails", async () => {
@@ -112,7 +133,7 @@ describe("captureStdioMcpSnapshot", () => {
 
     expect(report).toMatchObject({
       transport: "stdio", status: "pass", protocol: { era: "legacy" },
-      server: { era: "legacy", versions: ["2025-11-25"], capabilities: ["prompts", "resources", "tools"] },
+      server: { era: "legacy", versions: ["2025-11-25"], capabilities: ["prompts", "resources", "tools"], instructions: null },
       lists: { tools: { status: "pass" }, prompts: { status: "pass" }, resourceTemplates: { status: "pass" } }
     });
     expect(violations(snapshotSchema, report)).toEqual([]);
@@ -134,7 +155,11 @@ describe("captureStdioMcpSnapshot", () => {
 
     expect(report).toMatchObject({
       transport: "stdio", status: "incomplete", protocol: { era: "modern" },
-      server: { era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "resources", "tools"] },
+      // Length counts code points, so the emoji counts once.
+      server: {
+        era: "modern", versions: ["2026-07-28"], capabilities: ["prompts", "resources", "tools"],
+        instructions: { sha256: createHash("sha256").update("Prefer resource templates. 📁").digest("hex"), length: 28 }
+      },
       lists: {
         tools: { status: "pass", catalog: { complete: true, checked: 1 } },
         prompts: { status: "incomplete", catalog: { complete: false, reason: "prompts-list-method-unsupported" } },
@@ -177,7 +202,12 @@ describe("captureStdioMcpSnapshot server surface", () => {
 
     const { report } = await captureStdioMcpSnapshot(resolved.server, { timeouts: fast });
 
-    expect(report.server).toEqual({ era: "legacy", versions: ["2025-11-25"], capabilities: ["resources"] });
+    const instructions = "Ask before reading project files.";
+    expect(report.server).toEqual({
+      era: "legacy", versions: ["2025-11-25"], capabilities: ["resources"],
+      instructions: { sha256: createHash("sha256").update(instructions).digest("hex"), length: instructions.length }
+    });
+    expect(JSON.stringify(report)).not.toContain(instructions);
     expect(renderMcpSnapshotReport({ ...report, server: { era: "legacy", versions: ["2025-11-25"], capabilities: ["bell\u0007"] } }))
       .toContain('Server surface: legacy; versions "2025-11-25"; capabilities "bell\\u0007"');
   });

@@ -1,4 +1,4 @@
-import type { McpSnapshotListKey, McpSnapshotReport } from "../core/mcp-snapshot.js";
+import type { McpServerSurface, McpSnapshotListKey, McpSnapshotReport } from "../core/mcp-snapshot.js";
 import type { PromptCatalogLocation } from "../core/mcp-prompt-definition.js";
 import type { ResourceTemplateCatalogLocation } from "../core/mcp-resource-template-definition.js";
 import type { CatalogLocation } from "../core/mcp-tool-definition.js";
@@ -7,6 +7,12 @@ import { describeResourceTemplateLocation } from "./render-mcp-resource-template
 import { quoteServerText } from "./quote-server-text.js";
 
 export const LIST_LABELS: Record<McpSnapshotListKey, string> = { tools: "Tools", prompts: "Prompts", resourceTemplates: "Resource templates" };
+
+// Only a hash prefix and the length are shown; the instructions text is never recorded.
+export function describeInstructions(instructions: McpServerSurface["instructions"]): string {
+  if (instructions === undefined) return "instructions not recorded";
+  return instructions === null ? "no instructions" : `instructions sha256:${instructions.sha256.slice(0, 12)} (${instructions.length} characters)`;
+}
 
 export function describeLocation(key: McpSnapshotListKey, location: unknown): string {
   if (key === "prompts") return describePromptLocation(location as PromptCatalogLocation);
@@ -32,7 +38,7 @@ export function renderMcpSnapshotReport(report: McpSnapshotReport): string {
     `Discovery: ${report.discovery.status}`,
     report.server === null
       ? "Server surface: not established"
-      : `Server surface: ${report.server.era}; versions ${report.server.versions.map(quoteServerText).join(", ") || "none"}; capabilities ${report.server.capabilities.map(quoteServerText).join(", ") || "none"}`,
+      : `Server surface: ${report.server.era}; versions ${report.server.versions.map(quoteServerText).join(", ") || "none"}; capabilities ${report.server.capabilities.map(quoteServerText).join(", ") || "none"}; ${describeInstructions(report.server.instructions)}`,
     ...keys.map((key) => {
       const list = report.lists[key];
       return `${LIST_LABELS[key]}: ${list.status}${list.enumeration === "not-tested" ? "" : ` (${list.catalog.checked} checked in ${list.catalog.pagesRead} pages)`}${list.catalog.reason === null ? "" : `, reason ${list.catalog.reason}`}`;

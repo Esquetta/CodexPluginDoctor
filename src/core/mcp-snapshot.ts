@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
@@ -38,6 +39,9 @@ export interface McpServerSurface {
   versions: string[];
   // Top-level capability names only; their values are not recorded.
   capabilities: string[];
+  // A hash and the length of the server's instructions, never the text, or null when it sends none.
+  // Absent from surfaces recorded before 1.86.0.
+  instructions?: { sha256: string; length: number } | null;
 }
 export const MAX_SURFACE_VERSIONS = 32;
 export const MAX_SURFACE_CAPABILITIES = 64;
@@ -88,10 +92,15 @@ export interface McpSnapshot {
 }
 
 // Sorted, without duplicates, and bounded, so a manifest stays small and compares in a stable order.
-function serverSurface(era: McpServerSurface["era"], versions: string[], capabilities: string[]): McpServerSurface {
+function serverSurface(era: McpServerSurface["era"], versions: string[], capabilities: string[], instructions: string | null): McpServerSurface {
   const bounded = (values: string[], max: number) =>
     [...new Set(values.filter((value) => value.length > 0 && value.length <= MAX_SURFACE_NAME_LENGTH))].sort().slice(0, max);
-  return { era, versions: bounded(versions, MAX_SURFACE_VERSIONS), capabilities: bounded(capabilities, MAX_SURFACE_CAPABILITIES) };
+  return {
+    era,
+    versions: bounded(versions, MAX_SURFACE_VERSIONS),
+    capabilities: bounded(capabilities, MAX_SURFACE_CAPABILITIES),
+    instructions: instructions === null ? null : { sha256: createHash("sha256").update(instructions, "utf8").digest("hex"), length: [...instructions].length }
+  };
 }
 
 // The worst list status leads, but a list the server does not offer never makes the snapshot fail.
@@ -131,15 +140,15 @@ function snapshot(
 export async function captureMcpSnapshot(rawUrl: string, options: McpToolCatalogOptions = {}): Promise<McpSnapshot> {
   const captures: Array<McpCatalogCapture<Finding>> = [];
   for (const { list } of SNAPSHOT_LISTS) captures.push(await captureMcpCatalog(rawUrl, list, options));
-  const { discovery, capabilities } = captures[0];
-  return snapshot(captures, capabilities === undefined ? null : serverSurface("modern", discovery.supportedVersions, capabilities));
+  const { discovery, capabilities, instructions } = captures[0];
+  return snapshot(captures, capabilities === undefined ? null : serverSurface("modern", discovery.supportedVersions, capabilities, instructions ?? null));
 }
 
 // Starts the stdio server once and reads every list it offers in that one session.
 export async function captureStdioMcpSnapshot(server: McpStdioServer, options: McpStdioToolCatalogOptions = {}): Promise<McpSnapshot> {
-  const { captures, protocol, execution, capabilities } = await captureStdioMcpCatalogs(server, SNAPSHOT_LISTS.map(({ list }) => list), options);
+  const { captures, protocol, execution, capabilities, instructions } = await captureStdioMcpCatalogs(server, SNAPSHOT_LISTS.map(({ list }) => list), options);
   const versions = protocol.era === "modern" ? captures[0].discovery.supportedVersions : protocol.version === null ? [] : [protocol.version];
-  const surface = capabilities === null || protocol.era === null ? null : serverSurface(protocol.era, versions, capabilities);
+  const surface = capabilities === null || protocol.era === null ? null : serverSurface(protocol.era, versions, capabilities, instructions);
   return snapshot(captures, surface, { protocol, execution });
 }
 

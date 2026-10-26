@@ -29,9 +29,10 @@ function serverRow(server: McpSnapshotDiffReport["server"]): string {
   const offered = (surface: NonNullable<McpSnapshotDiffReport["server"]["before"]>) =>
     [...surface.versions.map((version) => `v:${version}`), ...surface.capabilities.filter((name) => !LIST_CAPABILITIES.has(name)).map((name) => `c:${name}`)];
   const after = new Set(offered(server.after!));
-  const unchanged = offered(server.before!).filter((value) => after.has(value)).length;
+  const sameInstructions = server.before!.instructions?.sha256 !== undefined && server.before!.instructions.sha256 === server.after!.instructions?.sha256;
+  const unchanged = offered(server.before!).filter((value) => after.has(value)).length + (sameInstructions ? 1 : 0);
   const impact = (kind: string) => server.changes.filter((change) => change.impact === kind).length;
-  return `| Server surface | compared | ${of("protocol-version-added", "capability-added")} | ${of("protocol-version-removed", "capability-removed")} | ${of("era-changed")} | ${unchanged} | ${impact("breaking")} | ${impact("unclassified")} |`;
+  return `| Server surface | compared | ${of("protocol-version-added", "capability-added")} | ${of("protocol-version-removed", "capability-removed")} | ${of("era-changed", "instructions-added", "instructions-removed", "instructions-changed")} | ${unchanged} | ${impact("breaking")} | ${impact("unclassified")} |`;
 }
 
 // Each compared list keeps its own section, one heading level below the snapshot heading.

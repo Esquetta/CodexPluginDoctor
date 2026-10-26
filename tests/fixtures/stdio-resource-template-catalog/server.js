@@ -26,14 +26,16 @@ lines.on("line", (line) => {
       jsonrpc: "2.0", id: message.id, result: {
         resultType: "complete", ttlMs: 60000, cacheScope: "public", supportedVersions: ["2026-07-28"],
         capabilities: mode === "modern-no-resources" ? { tools: {} }
-          : mode === "modern-prompts-list-missing" ? { tools: {}, prompts: {}, resources: {} } : { resources: {} }
+          : mode === "modern-prompts-list-missing" ? { tools: {}, prompts: {}, resources: {} } : { resources: {} },
+        ...(mode === "modern-prompts-list-missing" ? { instructions: "Prefer resource templates. 📁" } : {})
       }
     });
   }
   if (message.method === "initialize" && legacy) {
     return send({
       jsonrpc: "2.0", id: message.id, result: {
-        protocolVersion: "2025-11-25", capabilities: { resources: { listChanged: false }, logging: true }, serverInfo: { name: "scripted-legacy", version: "1.0.0" }
+        protocolVersion: "2025-11-25", capabilities: { resources: { listChanged: false }, logging: true }, serverInfo: { name: "scripted-legacy", version: "1.0.0" },
+        instructions: "Ask before reading project files."
       }
     });
   }

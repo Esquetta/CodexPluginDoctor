@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parse } from "yaml";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const bashExecutable = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash";
@@ -64,6 +64,10 @@ async function cleanupActionFixture(root: string): Promise<void> {
   }
   await rm(resolved, { recursive: true, force: true });
 }
+
+// Each Action run starts several bash processes, which on Windows under a loaded machine can take longer
+// than vitest's 5 s default; the tests assert behaviour, not speed.
+vi.setConfig({ testTimeout: 20_000 });
 
 async function runArchiveAction(
   overrides: Record<string, string> = {},
