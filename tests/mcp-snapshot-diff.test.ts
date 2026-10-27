@@ -8,6 +8,7 @@ import { saveMcpSnapshot, type McpServerSurface, type McpSnapshot, type McpSnaps
 import { compareMcpSnapshotDirectories } from "../src/core/mcp-snapshot-diff.js";
 import type { CatalogStatus } from "../src/core/mcp-tool-catalog.js";
 import { buildDoctorOutputContract } from "../src/core/output-contract.js";
+import { renderMcpSnapshotDiffChangelog } from "../src/reporting/render-mcp-snapshot-diff-changelog.js";
 import { renderMcpSnapshotDiffMarkdown } from "../src/reporting/render-mcp-snapshot-diff-markdown.js";
 import { renderMcpSnapshotDiffReport } from "../src/reporting/render-mcp-snapshot-diff-report.js";
 import { violations } from "./helpers/json-schema-violations.js";
@@ -389,6 +390,105 @@ describe("compareMcpSnapshotDirectories", () => {
       // The written manifest matches the contract, and the duplicate version the reader rejects breaks it too.
       expect(violations(manifestSchema, manifest)).toEqual([]);
       expect(violations(manifestSchema, malformed)).not.toEqual([]);
+    });
+  });
+
+  describe("changelog", () => {
+    const surface = (versions: string[], capabilities: string[], text: string | null, era: "modern" | "legacy" = "modern"): McpServerSurface => ({
+      era, versions, capabilities,
+      instructions: text === null ? null : { sha256: createHash("sha256").update(text).digest("hex"), length: text.length }
+    });
+    const prefix = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
+    const same = surface(["2026-07-28"], ["tools"], null);
+    const changelog = async (before: string, after: string) => renderMcpSnapshotDiffChangelog(await compareMcpSnapshotDirectories(before, after, { showNames: true }));
+
+    it("puts every change once under Breaking, Needs review, or Compatible with names", async () => {
+      const before = await snapshotDirectory("before", {
+        tools: [...tools, { name: "legacy", inputSchema: { type: "object" } }], prompts, resourceTemplates: "not-applicable"
+      }, surface(["2025-11-25", "2026-07-28"], ["logging", "tools"], "Use lookup."));
+      const after = await snapshotDirectory("after", {
+        tools: [...tools, { name: "a|b", inputSchema: { type: "object" } }], prompts: "not-applicable", resourceTemplates: templates
+      }, surface(["2026-07-28"], ["tools"], "Use search."));
+
+      expect(await changelog(before, after)).toBe([
+        "## MCP surface changes",
+        "",
+        "### Breaking",
+        "",
+        "- Dropped protocol version `\"2025-11-25\"`",
+        "- Dropped the `\"logging\"` capability",
+        "- Removed tool `\"legacy\"`",
+        "- Stopped offering prompts",
+        "",
+        "### Needs review",
+        "",
+        `- Changed server instructions (\`"sha256:${prefix("Use lookup.")}, 11 characters -> sha256:${prefix("Use search.")}, 11 characters"\`)`,
+        "",
+        "### Compatible",
+        "",
+        "- Added tool `\"a|b\"`",
+        "- Started offering resource templates"
+      ].join("\n"));
+    });
+
+    it("words the other server changes and a new list with warnings", async () => {
+      const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" }, surface(["2026-07-28"], ["tools"], null));
+      const after = await snapshotDirectory("after", {
+        tools, prompts: [{ name: "review" }, { name: "review" }], resourceTemplates: "not-applicable"
+      }, surface(["2026-07-28", "2026-12-01"], ["completions", "tools"], "Use lookup.", "legacy"));
+      const removed = await snapshotDirectory("removed", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" }, surface(["2026-07-28"], ["tools"], null));
+
+      const notes = await changelog(before, after);
+      expect(notes).toContain("### Breaking\n\n- Protocol era changed: `\"modern -> legacy\"`");
+      expect(notes).toContain(`- Added server instructions (\`"sha256:${prefix("Use lookup.")}, 11 characters"\`)`);
+      expect(notes).toContain("- Started offering prompts, whose definitions have warnings");
+      expect(notes).not.toContain("- Started offering prompts\n");
+      expect(notes).toContain("### Compatible\n\n- Added protocol version `\"2026-12-01\"`\n- Added the `\"completions\"` capability");
+      expect(await changelog(after, removed)).toContain(`- Removed server instructions (\`"sha256:${prefix("Use lookup.")}, 11 characters"\`)`);
+    });
+
+    it("starts with the incomplete comparison when a new list fails, cannot be read, or a compared list is incomplete", async () => {
+      const base = await snapshotDirectory("base", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" }, same);
+      const failing = await snapshotDirectory("failing", { tools, prompts: [{ title: "No name" }], resourceTemplates: "not-applicable" }, same);
+      const broken = await snapshotDirectory("broken", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" }, same);
+      await writeFile(path.join(broken, "mcp-tools-current.json"), "not json");
+
+      const failed = await changelog(base, failing);
+      expect(failed).toBe([
+        "## MCP surface changes", "",
+        "**The comparison is incomplete**, so these notes may miss changes.", "",
+        "### Not compared", "",
+        "- Prompts: list-added (compatible), definitions fail", "",
+        "No changes in the lists that were compared."
+      ].join("\n"));
+      expect(await changelog(base, broken)).toContain("### Not compared\n\n- Tools: compared, incomplete (");
+    });
+
+    it("says so when nothing changed, names input warnings, and notes a surface that was not recorded", async () => {
+      const first = await snapshotDirectory("first", { tools, prompts, resourceTemplates: "not-applicable" }, same);
+      const second = await snapshotDirectory("second", { tools, prompts, resourceTemplates: "not-applicable" }, same);
+      // A tool name outside the recommended pattern is an input warning, not a failure.
+      const warned = await snapshotDirectory("warned", { tools: [{ name: "has space", inputSchema: { type: "object" } }], prompts, resourceTemplates: "not-applicable" }, same);
+      const warnedAgain = await snapshotDirectory("warned-again", { tools: [{ name: "has space", inputSchema: { type: "object" } }], prompts, resourceTemplates: "not-applicable" }, same);
+      const older = await snapshotDirectory("older", { tools, prompts, resourceTemplates: "not-applicable" });
+
+      expect(await changelog(first, second)).toBe("## MCP surface changes\n\nNo changes to the MCP surface.");
+      expect(await changelog(warned, warnedAgain)).toBe("## MCP surface changes\n\n### Needs review\n\n- The tool lists have input warnings");
+      expect(await changelog(older, second)).toBe([
+        "## MCP surface changes", "",
+        "The server surface was not recorded in both snapshots, so protocol versions and capabilities were not compared.", "",
+        "No changes to the MCP surface."
+      ].join("\n"));
+    });
+
+    it("names the reasons of a changed entry", async () => {
+      const before = await snapshotDirectory("before", { tools, prompts: "not-applicable", resourceTemplates: "not-applicable" }, same);
+      const after = await snapshotDirectory("after", {
+        tools: [{ name: "lookup", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } }],
+        prompts: "not-applicable", resourceTemplates: "not-applicable"
+      }, same);
+
+      expect(await changelog(before, after)).toContain("### Breaking\n\n- Changed tool `\"lookup\"` (`input-required-added`)\n- Removed tool `\"search\"`");
     });
   });
 

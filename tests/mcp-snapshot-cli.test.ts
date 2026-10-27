@@ -194,6 +194,32 @@ describe("doctor mcp-snapshot-diff", () => {
     }
   });
 
+  it("prints release notes with names for --changelog and accepts it only once and only here", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "doctor-snapshot-diff-changelog-"));
+    try {
+      const base = await snapshotDirectory(path.join(root, "base"), { tools: [tool], prompts: "not-applicable", resourceTemplates: "not-applicable" });
+      const renamed = await snapshotDirectory(path.join(root, "renamed"), { tools: [{ ...tool, name: "search" }], prompts: "not-applicable", resourceTemplates: "not-applicable" });
+
+      const notes = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, "--changelog", "--fail-on", "breaking"], notes.io)).toBe(1);
+      expect(notes.stdout.join("\n")).toContain("### Breaking\n\n- Removed tool `\"lookup\"`\n\n### Compatible\n\n- Added tool `\"search\"`");
+      const withNames = capture();
+      expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, "--show-names", "--changelog"], withNames.io)).toBe(1);
+      expect(withNames.stdout).toEqual(notes.stdout);
+
+      for (const args of [["--changelog", "--json"], ["--changelog", "--changelog"]]) {
+        const invalid = capture();
+        expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", base, "--after", renamed, ...args], invalid.io)).toBe(2);
+        expect(invalid.stderr.join("\n")).toContain("Invalid comparison arguments.");
+      }
+      const elsewhere = capture();
+      expect(await runCli(["doctor", "tools-diff", "--before", "a.json", "--after", "b.json", "--changelog"], elsewhere.io)).toBe(2);
+      expect(elsewhere.stderr.join("\n")).toContain("Invalid comparison arguments.");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects invalid arguments and documents the command in help", async () => {
     const invalid = capture();
     expect(await runCli(["doctor", "mcp-snapshot-diff", "--before", "a"], invalid.io)).toBe(2);
@@ -202,5 +228,6 @@ describe("doctor mcp-snapshot-diff", () => {
     const help = capture();
     expect(await runCli(["doctor", "mcp-snapshot-diff", "--help"], help.io)).toBe(0);
     expect(help.stdout.join("\n")).toContain("a list the server stopped offering is breaking");
+    expect(help.stdout.join("\n")).toContain("--changelog prints release notes for the server's maintainer");
   });
 });

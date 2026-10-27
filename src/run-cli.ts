@@ -123,6 +123,7 @@ import { renderMcpPromptCatalogReport } from "./reporting/render-mcp-prompt-cata
 import { renderMcpResourceTemplateCatalogReport } from "./reporting/render-mcp-resource-template-catalog-report.js";
 import { acceptMcpSnapshot } from "./core/mcp-snapshot-accept.js";
 import { compareMcpSnapshotDirectories } from "./core/mcp-snapshot-diff.js";
+import { renderMcpSnapshotDiffChangelog } from "./reporting/render-mcp-snapshot-diff-changelog.js";
 import { renderMcpSnapshotDiffMarkdown } from "./reporting/render-mcp-snapshot-diff-markdown.js";
 import { renderMcpSnapshotDiffReport } from "./reporting/render-mcp-snapshot-diff-report.js";
 import { LIST_LABELS, renderMcpSnapshotReport } from "./reporting/render-mcp-snapshot-report.js";
@@ -407,7 +408,7 @@ const promptsDiffUsage = "Usage: codex-plugin-doctor doctor prompts-diff --befor
 const promptsFileUsage = "Usage: codex-plugin-doctor doctor prompts-file <path> [--json]";
 
 const resourceTemplatesDiffUsage = "Usage: codex-plugin-doctor doctor resource-templates-diff --before <path> --after <path> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
-const snapshotDiffUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> [--json|--markdown] [--fail-on any|breaking] [--show-names]";
+const snapshotDiffUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-diff --before <dir> --after <dir> [--json|--markdown|--changelog] [--fail-on any|breaking] [--show-names]";
 const snapshotAcceptUsage = "Usage: codex-plugin-doctor doctor mcp-snapshot-accept --snapshot <dir> --baseline <dir>";
 
 const resourceTemplatesFileUsage = "Usage: codex-plugin-doctor doctor resource-templates-file <path> [--json]";
@@ -785,11 +786,13 @@ async function runOfflineDiffCommand<R extends { status: string; comparison: { b
   io: CliIo,
   usage: string,
   compare: (beforePath: string, afterPath: string, showNames: boolean) => Promise<R>,
-  render: (report: R, markdown: boolean) => string
+  render: (report: R, markdown: boolean) => string,
+  // When given, --changelog prints these release notes, which always need names.
+  changelog?: (report: R) => string
 ): Promise<number> {
   let beforePath: string | undefined;
   let afterPath: string | undefined;
-  let format: "json" | "markdown" | undefined;
+  let format: "json" | "markdown" | "changelog" | undefined;
   let failOn: "any" | "breaking" | undefined;
   let showNames = false;
   let invalid = false;
@@ -797,8 +800,8 @@ async function runOfflineDiffCommand<R extends { status: string; comparison: { b
     const flag = args[index];
     if (flag === "--show-names" && !showNames) {
       showNames = true;
-    } else if ((flag === "--json" || flag === "--markdown") && format === undefined) {
-      format = flag === "--json" ? "json" : "markdown";
+    } else if ((flag === "--json" || flag === "--markdown" || (flag === "--changelog" && changelog !== undefined)) && format === undefined) {
+      format = flag === "--json" ? "json" : flag === "--markdown" ? "markdown" : "changelog";
     } else if (flag === "--fail-on" && failOn === undefined) {
       const value = args[index + 1];
       if (value !== "any" && value !== "breaking") { invalid = true; break; }
@@ -819,8 +822,9 @@ async function runOfflineDiffCommand<R extends { status: string; comparison: { b
     io.writeStderr(`Invalid comparison arguments. ${usage}`);
     return 2;
   }
-  const report = await compare(beforePath, afterPath, showNames);
-  io.writeStdout(format === "json" ? JSON.stringify(report, null, 2) : render(report, format === "markdown"));
+  const report = await compare(beforePath, afterPath, showNames || format === "changelog");
+  io.writeStdout(format === "json" ? JSON.stringify(report, null, 2)
+    : format === "changelog" && changelog !== undefined ? changelog(report) : render(report, format === "markdown"));
   if (report.status !== "pass" && report.status !== "warn") return 2;
   if (failOn === "breaking") {
     return (report.comparison.breaking ?? 0) + (report.comparison.unclassified ?? 0) > 0 ? 1 : 0;
@@ -2469,13 +2473,13 @@ export async function runCli(
     }
     if (maybePath === "mcp-snapshot-diff") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
-        io.writeStdout(`${snapshotDiffUsage}\nCompares two directories written by doctor mcp-snapshot --save-dir, list by list, offline. Each directory's mcp-snapshot-manifest.json says which lists were saved: a list the server stopped offering is breaking, a newly offered list is compatible and its definitions are checked like the matching -file command, and a list that was not read completely, or a new list whose definitions fail, leaves the comparison incomplete. The protocol versions and capabilities each manifest records are compared too: a removed one is breaking.\nSaved lists are compared like tools-diff, prompts-diff, and resource-templates-diff; changes are classified heuristically and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).\n--show-names adds tool, prompt, and template names and the location behind each reason; reports omit them, and never include URI templates, so keep the flag out of public output such as pull request comments.`);
+        io.writeStdout(`${snapshotDiffUsage}\nCompares two directories written by doctor mcp-snapshot --save-dir, list by list, offline. Each directory's mcp-snapshot-manifest.json says which lists were saved: a list the server stopped offering is breaking, a newly offered list is compatible and its definitions are checked like the matching -file command, and a list that was not read completely, or a new list whose definitions fail, leaves the comparison incomplete. The protocol versions and capabilities each manifest records are compared too: a removed one is breaking.\n--changelog prints release notes for the server's maintainer: every change under Breaking, Needs review, or Compatible, with tool, prompt, and template names; it implies --show-names, so publish it only where those names may appear.\nSaved lists are compared like tools-diff, prompts-diff, and resource-templates-diff; changes are classified heuristically and compatibility is not tested.\n--fail-on breaking exits 1 only for breaking or unclassified changes (default: any change or input warning).\n--show-names adds tool, prompt, and template names and the location behind each reason; reports omit them, and never include URI templates, so keep the flag out of public output such as pull request comments.`);
         return 0;
       }
       return runOfflineDiffCommand(remainingArgs, io, snapshotDiffUsage, (beforeDirectory, afterDirectory, showNames) => {
         const compare = options.compareMcpSnapshotDirectoriesImpl ?? compareMcpSnapshotDirectories;
         return showNames ? compare(beforeDirectory, afterDirectory, { showNames: true }) : compare(beforeDirectory, afterDirectory);
-      }, (report, markdown) => markdown ? renderMcpSnapshotDiffMarkdown(report) : renderMcpSnapshotDiffReport(report));
+      }, (report, markdown) => markdown ? renderMcpSnapshotDiffMarkdown(report) : renderMcpSnapshotDiffReport(report), renderMcpSnapshotDiffChangelog);
     }
     if (maybePath === "mcp-snapshot") {
       if (remainingArgs.length === 1 && remainingArgs[0] === "--help") {
