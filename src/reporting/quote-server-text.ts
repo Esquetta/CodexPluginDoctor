@@ -9,8 +9,9 @@ export function quoteServerText(text: string): string {
 }
 
 // Names and pointers come from the server, so they are quoted and put in a code span, where Markdown,
-// HTML, mentions, and links stay inert; the fence outgrows any backtick run, and pipes are escaped for the table.
-export function markdownCodeSpan(text: string): string {
+// HTML, mentions, and links stay inert; the fence outgrows any backtick run, and pipes are escaped when the
+// span sits in a table, the only place a pipe could end it.
+export function markdownCodeSpan(text: string, options: { table?: boolean } = {}): string {
   const quoted = quoteServerText(text);
   let run = 0;
   let longest = 0;
@@ -19,5 +20,5 @@ export function markdownCodeSpan(text: string): string {
     longest = Math.max(longest, run);
   }
   const fence = "`".repeat(longest + 1);
-  return `${fence}${quoted.replace(/\|/gu, "\\|")}${fence}`;
+  return `${fence}${options.table === false ? quoted : quoted.replace(/\|/gu, "\\|")}${fence}`;
 }

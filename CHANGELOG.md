@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.87.0] - 2026-10-27
+
+### Added
+
+- `doctor mcp-snapshot-diff --changelog` prints the comparison as release notes for the server's maintainer: every change under Breaking, Needs review, or Compatible, with tool, prompt, and template names and the reasons of changed entries, after what could not be compared when the comparison is incomplete; it implies `--show-names`, cannot be combined with `--json` or `--markdown`, and keeps the comparison's exit codes
+
 ## [1.86.0] - 2026-10-26
 
 ### Added

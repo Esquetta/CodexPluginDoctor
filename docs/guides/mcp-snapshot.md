@@ -140,6 +140,26 @@ included.
 Directories saved by 1.81.0 have no manifest, so capture the baseline again
 with 1.82.0 or later before comparing.
 
+## Release notes
+
+```bash
+codex-plugin-doctor doctor mcp-snapshot-diff --before ./mcp/baseline --after ./mcp-current --changelog
+```
+
+`--changelog` prints the comparison as release notes for the server's
+maintainer; it cannot be combined with `--json` or `--markdown`. Every change
+appears once under **Breaking**, **Needs review** (unclassified changes, server
+instructions, a new list whose definitions have warnings, and lists with input
+warnings), or **Compatible**, such as ``Removed tool `"search"` ``,
+``Changed tool `"lookup"` (`input-required-added`)``, "Stopped offering
+prompts", or ``Dropped protocol version `"2025-06-18"` ``. Changed entries list
+their reasons. Names appear as quoted code, so `--changelog` implies
+`--show-names`: publish the notes only where the server's tool, prompt, and
+template names may appear. When the comparison is incomplete, including a new
+list whose definitions fail or cannot be read, the notes start with what could
+not be compared, and they say when the server surface was not recorded in both
+snapshots. The exit codes are those of the comparison.
+
 ## Accepting a change
 
 When a comparison shows an intended change, make the new snapshot the baseline:
