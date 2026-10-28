@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.88.0] - 2026-10-28
+
+### Changed
+
+- the `update-baseline` job that `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes describes its pull request with the `doctor mcp-snapshot-diff --changelog` release notes instead of the Markdown summary, so the description names each added, removed, or changed tool, prompt, and template and each list the server started or stopped offering, which the pull request's diff of the baseline files already shows; in an existing workflow, change `--markdown` to `--changelog` in that job and its `DOCTOR` pin to 1.87.0 or later, or run `init-ci` again, which rewrites the whole file
+
 ## [1.87.0] - 2026-10-27
 
 ### Added
