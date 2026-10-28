@@ -3383,13 +3383,15 @@ describe("runCli", () => {
     const update = jobs["update-baseline"].steps;
     expect(update.map((step) => step.uses ?? step.run?.split("\n")[0])).toEqual([
       "actions/checkout@v5", "actions/download-artifact@v5", "actions/setup-node@v5",
-      "# The comparison is the pull request description; it may report changes, which is why this runs.",
+      "# The release notes are the pull request description: they name what changed, as the pull request's",
       "changes=\"$(git status --porcelain -- \"$BASELINE_DIR\")\""
     ]);
     // The write token is not stored in the checkout, and no cache another run wrote is restored.
     expect(update[0].with).toEqual({ "persist-credentials": false });
     expect(update[2].with).toEqual({ "node-version": 22, "package-manager-cache": false });
-    expect(update[3].env).toMatchObject({ BASELINE_DIR: "mcp/baseline", SNAPSHOT_DIR: "${{ runner.temp }}/mcp-tools-capture" });
+    // --changelog needs CLI 1.87.0 or later, so the job runs the version that wrote it.
+    expect(update[3].env).toMatchObject({ BASELINE_DIR: "mcp/baseline", SNAPSHOT_DIR: "${{ runner.temp }}/mcp-tools-capture", DOCTOR: `codex-plugin-doctor@${packageJson.version}` });
+    expect(update[3].run).toContain("doctor mcp-snapshot-diff --before \"$BASELINE_DIR\" --after \"$SNAPSHOT_DIR\" --changelog > \"$RUNNER_TEMP/mcp-baseline-update.md\" || true");
     expect(update[3].run).toContain("doctor mcp-snapshot-accept --snapshot \"$SNAPSHOT_DIR\" --baseline \"$BASELINE_DIR\"");
     expect(update[4].env?.GH_TOKEN).toBe("${{ github.token }}");
     expect(update[4].run).toContain("branch=\"mcp-baseline-update/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"");
