@@ -4289,6 +4289,9 @@ describe("runCli", () => {
     vi.useFakeTimers();
 
     const { io, stdout, stderr } = createIo();
+    // runCli reads files before it runs the check, so advancing the clock earlier would skip the check's timer.
+    let checkStarted!: () => void;
+    const started = new Promise<void>((resolve) => { checkStarted = resolve; });
 
     const exitCodePromise = runCli(
       ["check", "tests/fixtures/valid-plugin-with-mcp"],
@@ -4300,6 +4303,7 @@ describe("runCli", () => {
           env: {}
         },
         runCheckImpl: async () => {
+          checkStarted();
           await new Promise((resolve) => setTimeout(resolve, 150));
 
           return {
@@ -4312,6 +4316,7 @@ describe("runCli", () => {
       }
     );
 
+    await started;
     await vi.advanceTimersByTimeAsync(250);
     const exitCode = await exitCodePromise;
 
