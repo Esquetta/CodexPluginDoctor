@@ -224,7 +224,8 @@ notes with names. In the GitHub Action, `snapshot-server` or `snapshot-url` take
 snapshot and `snapshot-diff-before-dir` compares it with a committed baseline
 directory in one report, and
 `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes a
-two-job workflow that posts it as one pull request comment. After an intended
+two-job workflow that posts it as one pull request comment;
+`snapshot-diff-changelog` also writes the release notes to a file for a release. After an intended
 change, `doctor mcp-snapshot-accept` makes a new snapshot the baseline, and
 running that workflow by hand opens a pull request that does the same.
 See [MCP Snapshot](docs/guides/mcp-snapshot.md).
@@ -647,9 +648,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.88.0
+      - uses: Esquetta/CodexPluginDoctor@v1.89.0
         with:
-          version: "1.88.0"
+          version: "1.89.0"
           path: .
           runtime: "true"
           policy: codex-publish

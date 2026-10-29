@@ -140,6 +140,7 @@ jobs:
           snapshot-diff-after-dir: ${{ runner.temp }}/mcp-tools-capture
           snapshot-diff-fail-on: breaking
           snapshot-diff-comment: "true"
+          snapshot-diff-changelog: "true"
           output-dir: ${{ runner.temp }}/compare
           artifact-name: mcp-tools-diff
 
@@ -148,8 +149,11 @@ jobs:
         env:
           STATUS: ${{ steps.diff.outputs.status }}
           DIFF_JSON: ${{ steps.diff.outputs.snapshot-diff-json-path }}
+          CHANGELOG: ${{ steps.diff.outputs.snapshot-diff-changelog-path }}
         run: |
           test "$STATUS" = "0"
+          # Nothing changed, so the release notes say so.
+          test "$(cat "$CHANGELOG")" = "$(printf '## MCP surface changes\n\nNo changes to the MCP surface.')"
           node -e '
             const report = JSON.parse(require("node:fs").readFileSync(process.env.DIFF_JSON, "utf8"));
             if (report.status !== "pass" || !report.comparison.complete || report.comparison.breaking !== 0 || report.comparison.unclassified !== 0) {

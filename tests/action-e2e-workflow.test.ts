@@ -6,6 +6,8 @@ interface WorkflowStep {
   id?: string;
   uses?: string;
   with?: Record<string, string>;
+  env?: Record<string, string>;
+  run?: string;
 }
 
 interface Workflow {
@@ -61,9 +63,14 @@ describe("Action end-to-end workflow", () => {
       "snapshot-diff-before-dir": "tests/fixtures/action-e2e/snapshot-baseline",
       "snapshot-diff-after-dir": "${{ runner.temp }}/mcp-tools-capture",
       "snapshot-diff-fail-on": "breaking",
-      "snapshot-diff-comment": "true"
+      "snapshot-diff-comment": "true",
+      "snapshot-diff-changelog": "true"
     });
     expect(compare.with?.runtime).toBeUndefined();
+    // The unchanged comparison's release notes say that nothing changed.
+    const check = workflow.jobs.compare.steps.find((step) => step.env?.CHANGELOG !== undefined);
+    expect(check?.env?.CHANGELOG).toBe("${{ steps.diff.outputs.snapshot-diff-changelog-path }}");
+    expect(check?.run).toContain(String.raw`test "$(cat "$CHANGELOG")" = "$(printf '## MCP surface changes\n\nNo changes to the MCP surface.')"`);
   });
 
   it("commits a baseline snapshot whose manifest names every list file it holds", async () => {
