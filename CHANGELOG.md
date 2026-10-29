@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.89.0] - 2026-10-29
+
+### Added
+
+- the GitHub Action input `snapshot-diff-changelog: "true"` also writes the snapshot diff as `doctor mcp-snapshot-diff --changelog` release notes to `mcp-snapshot-diff-changelog.md`, with the output `snapshot-diff-changelog-path` and `snapshotDiffChangelog` in the action manifest, for example for `gh release create --notes-file`; the notes name tools, prompts, and templates, so they reach neither the step summary nor a pull request comment, and the comparison's exit code still sets the status; it needs `snapshot-diff-before-dir` and CLI 1.87.0 or later, and records status `2` otherwise
+- the Action end-to-end workflow checks the release notes of its unchanged comparison
+
 ## [1.88.0] - 2026-10-28
 
 ### Changed

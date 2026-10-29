@@ -218,6 +218,10 @@ inputs:
     description: Post or update one pull request comment with the snapshot diff summary, under the same conditions as tools-diff-comment.
     required: false
     default: "false"
+  snapshot-diff-changelog:
+    description: Also write the snapshot diff as release notes with tool, prompt, and template names (doctor mcp-snapshot-diff --changelog) to mcp-snapshot-diff-changelog.md, for a release. The notes reach neither the step summary nor a pull request comment. Requires snapshot-diff-before-dir and CLI 1.87.0 or later in version.
+    required: false
+    default: "false"
   installed:
     description: Validate plugins from the local Codex plugin cache.
     required: false
@@ -394,6 +398,9 @@ outputs:
   snapshot-diff-summary-path:
     description: Path to the MCP snapshot diff Markdown summary when the snapshot diff ran.
     value: ${{ steps.run-doctor.outputs.snapshot-diff-summary-path }}
+  snapshot-diff-changelog-path:
+    description: Path to the MCP snapshot diff release notes when snapshot-diff-changelog is true and the snapshot diff ran.
+    value: ${{ steps.run-doctor.outputs.snapshot-diff-changelog-path }}
   review-bundle-path:
     description: Path to the generated review bundle directory when review-bundle is enabled.
     value: ${{ steps.run-doctor.outputs.review-bundle-path }}
@@ -470,6 +477,7 @@ runs:
         SNAPSHOT_DIFF_BEFORE_DIR_INPUT: ${{ inputs['snapshot-diff-before-dir'] }}
         SNAPSHOT_DIFF_AFTER_DIR_INPUT: ${{ inputs['snapshot-diff-after-dir'] }}
         SNAPSHOT_DIFF_FAIL_ON_INPUT: ${{ inputs['snapshot-diff-fail-on'] }}
+        SNAPSHOT_DIFF_CHANGELOG_INPUT: ${{ inputs['snapshot-diff-changelog'] }}
         OUTPUT_DIR_INPUT: ${{ inputs['output-dir'] }}
         REVIEW_BUNDLE_DIR_INPUT: ${{ inputs['review-bundle-dir'] }}
         FILTER_INPUT: ${{ inputs.filter }}
@@ -646,6 +654,7 @@ runs:
         snapshot_diff_ran=false
         snapshot_diff_json_output=""
         snapshot_diff_summary_output=""
+        snapshot_diff_changelog_output=""
         doctor_version="$(codex-plugin-doctor --version)"
 
         mkdir -p "$report_dir"
@@ -1028,7 +1037,10 @@ runs:
           snapshot_diff_after="$report_dir"
         fi
         if [[ -z "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" && -z "$SNAPSHOT_DIFF_AFTER_DIR_INPUT" ]]; then
-          :
+          if [[ "${SNAPSHOT_DIFF_CHANGELOG_INPUT,,}" == "true" ]]; then
+            echo "snapshot-diff-changelog requires snapshot-diff-before-dir." >&2
+            record_status 2
+          fi
         elif [[ -z "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" || -z "$snapshot_diff_after" ]]; then
           echo "snapshot-diff-before-dir requires snapshot-diff-after-dir or a snapshot in this step, and snapshot-diff-after-dir requires snapshot-diff-before-dir." >&2
           record_status 2
@@ -1050,6 +1062,19 @@ runs:
             snapshot_diff_ran=false
             snapshot_diff_json_output=""
             snapshot_diff_summary_output=""
+          elif [[ "${SNAPSHOT_DIFF_CHANGELOG_INPUT,,}" == "true" ]]; then
+            # The notes name tools, prompts, and templates, so they go only to this file. The comparison's exit
+            # code is already in the status.
+            snapshot_diff_changelog_path="$report_dir/mcp-snapshot-diff-changelog.md"
+            codex-plugin-doctor doctor mcp-snapshot-diff --before "$SNAPSHOT_DIFF_BEFORE_DIR_INPUT" --after "$snapshot_diff_after" \
+              --changelog > "$snapshot_diff_changelog_path" 2>/dev/null || true
+            if [[ "$(head -n 1 "$snapshot_diff_changelog_path")" == "## MCP surface changes" ]]; then
+              snapshot_diff_changelog_output="$snapshot_diff_changelog_path"
+            else
+              rm -f "$snapshot_diff_changelog_path"
+              echo "MCP snapshot diff wrote no release notes; snapshot-diff-changelog needs CLI 1.87.0 or later in version." >&2
+              record_status 2
+            fi
           fi
         fi
 
@@ -1144,6 +1169,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_CAPTURE_PATH="$resource_templates_capture_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF="$resource_templates_diff_ran"
         export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF="$snapshot_diff_ran"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_CHANGELOG="$([[ -n "$snapshot_diff_changelog_output" ]] && echo true || echo false)"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE="${REVIEW_BUNDLE_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY="${REVIEW_BUNDLE_VERIFY_INPUT}"
         export CODEX_PLUGIN_DOCTOR_ACTION_SUMMARY_PATH="$summary_path"
@@ -1166,6 +1192,7 @@ runs:
         export CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_SUMMARY_PATH="$resource_templates_diff_summary_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_JSON_PATH="$snapshot_diff_json_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_SUMMARY_PATH="$snapshot_diff_summary_output"
+        export CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_CHANGELOG_PATH="$snapshot_diff_changelog_output"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH="$review_bundle_path"
         export CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH="$review_bundle_verification_path"
         node <<'NODE'
@@ -1219,6 +1246,7 @@ runs:
             resourceTemplatesDiffSummary: report("resourceTemplatesDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_RESOURCE_TEMPLATES_DIFF_SUMMARY_PATH"),
             snapshotDiffJson: report("snapshotDiffJson", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_JSON_PATH"),
             snapshotDiffSummary: report("snapshotDiffSummary", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_SUMMARY_PATH"),
+            snapshotDiffChangelog: report("snapshotDiffChangelog", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_CHANGELOG", "CODEX_PLUGIN_DOCTOR_ACTION_SNAPSHOT_DIFF_CHANGELOG_PATH"),
             reviewBundle: report("reviewBundle", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_PATH"),
             reviewBundleVerification: report("reviewBundleVerification", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFY", "CODEX_PLUGIN_DOCTOR_ACTION_REVIEW_BUNDLE_VERIFICATION_PATH")
           }
@@ -1267,6 +1295,7 @@ runs:
           echo "resource-templates-diff-summary-path=$resource_templates_diff_summary_output"
           echo "snapshot-diff-json-path=$snapshot_diff_json_output"
           echo "snapshot-diff-summary-path=$snapshot_diff_summary_output"
+          echo "snapshot-diff-changelog-path=$snapshot_diff_changelog_output"
           echo "review-bundle-path=$review_bundle_path"
           echo "review-bundle-verification-path=$review_bundle_verification_path"
         } >> "$GITHUB_OUTPUT"

@@ -157,6 +157,13 @@ fi
 if [[ "\${1:-} \${2:-}" == "doctor mcp-snapshot-diff" ]]; then
   if [[ " $* " == *" --json "* ]]; then
     printf '{"scope":"%s","status":"warn"}\\n' "\${MOCK_SNAPSHOT_DIFF_SCOPE:-mcp-snapshot-diff}"
+  elif [[ " $* " == *" --changelog "* ]]; then
+    if [[ -n "\${MOCK_NO_CHANGELOG:-}" ]]; then
+      printf 'Invalid comparison arguments.\\n' >&2
+      exit 2
+    fi
+    printf '## MCP surface changes\\n\\n### Breaking\\n\\n- Stopped offering prompts\\n'
+    exit "\${MOCK_CHANGELOG_EXIT:-0}"
   elif [[ " $* " == *" --markdown "* ]]; then
     if [[ -n "\${MOCK_NO_MARKDOWN:-}" ]]; then
       printf 'Invalid comparison arguments.\\n' >&2
@@ -1648,6 +1655,82 @@ describe("GitHub Action MCP snapshot diff", () => {
     try {
       const summary = await readFile(path.join(run.reportDirectory, "mcp-snapshot-diff.md"), "utf8");
       expect(summary.startsWith("## MCP Snapshot Diff\n\n```text\nMCP Snapshot Diff\n")).toBe(true);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("writes release notes only to their own file when snapshot-diff-changelog is true", async () => {
+    const run = await runArchiveAction({
+      check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after", "snapshot-diff-changelog": "true",
+      "snapshot-diff-comment": "true", "github-token": "token-sentinel"
+    }, "0", "0", false, { MOCK_SNAPSHOT_DIFF_EXIT: "1" });
+
+    try {
+      const notesPath = `${toBashPath(run.reportDirectory)}/mcp-snapshot-diff-changelog.md`;
+      expect(snapshotDiffInvocations(run)).toContainEqual(["doctor", "mcp-snapshot-diff", "--before", "before", "--after", "after", "--changelog"]);
+      expect(await readFile(path.join(run.reportDirectory, "mcp-snapshot-diff-changelog.md"), "utf8")).toBe("## MCP surface changes\n\n### Breaking\n\n- Stopped offering prompts\n");
+      expect(run.output["snapshot-diff-changelog-path"]).toBe(notesPath);
+      expect(run.manifest.reports.snapshotDiffChangelog).toEqual({ enabled: true, path: notesPath });
+      // The comparison still sets the status, and the names reach neither the step summary nor the comment.
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "1" });
+      expect(await run.runSummary()).not.toContain("MCP surface changes");
+      const comment = await run.runComment({ name: "pull_request", payload: { pull_request: { number: 42 } } });
+      expect(comment.body?.startsWith("<!-- codex-plugin-doctor:snapshot-diff -->\n## MCP Snapshot Diff")).toBe(true);
+      expect(comment.body).not.toContain("MCP surface changes");
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("ignores the release notes' own exit code, which has no fail-on mode", async () => {
+    const run = await runArchiveAction({
+      check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after", "snapshot-diff-fail-on": "breaking", "snapshot-diff-changelog": "true"
+    }, "0", "0", false, { MOCK_CHANGELOG_EXIT: "1" });
+
+    try {
+      expect(await run.readState()).toMatchObject({ snapshotDiff: "true", status: "0" });
+      expect(run.output["snapshot-diff-changelog-path"]).toBe(`${toBashPath(run.reportDirectory)}/mcp-snapshot-diff-changelog.md`);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("writes the release notes of this step's snapshot into its directory", async () => {
+    const run = await runArchiveAction({ ...snapshot, "snapshot-diff-before-dir": "mcp/baseline", "snapshot-diff-changelog": "true" });
+
+    try {
+      const reportDirectory = toBashPath(run.reportDirectory);
+      expect(snapshotDiffInvocations(run)).toContainEqual(["doctor", "mcp-snapshot-diff", "--before", "mcp/baseline", "--after", reportDirectory, "--changelog"]);
+      expect(run.output["snapshot-diff-changelog-path"]).toBe(`${reportDirectory}/mcp-snapshot-diff-changelog.md`);
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it("writes no release notes unless snapshot-diff-changelog is true", async () => {
+    const run = await runArchiveAction({ check: "false", "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" });
+
+    try {
+      expect(snapshotDiffInvocations(run).some((invocation) => invocation.includes("--changelog"))).toBe(false);
+      expect(run.output["snapshot-diff-changelog-path"]).toBe("");
+      expect(run.manifest.reports.snapshotDiffChangelog).toEqual({ enabled: false, path: "" });
+    } finally {
+      await run.cleanup();
+    }
+  });
+
+  it.each([
+    ["the pinned CLI has no --changelog", { "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, { MOCK_NO_CHANGELOG: "1" }, "true"],
+    ["the pinned CLI has no snapshot diff", { "snapshot-diff-before-dir": "before", "snapshot-diff-after-dir": "after" }, { MOCK_SNAPSHOT_DIFF_SCOPE: "environment" }, "false"],
+    ["no snapshot diff is configured", { "tools-diff-before": "before.json", "tools-diff-after": "after.json" }, {}, "false"]
+  ])("records status 2 without release notes when %s", async (_case, overrides, environment, snapshotDiff) => {
+    const run = await runArchiveAction({ check: "false", "snapshot-diff-changelog": "true", ...overrides }, "0", "0", false, environment);
+
+    try {
+      expect(await run.readState()).toMatchObject({ snapshotDiff, status: "2" });
+      expect(run.output["snapshot-diff-changelog-path"]).toBe("");
+      await expect(readFile(path.join(run.reportDirectory, "mcp-snapshot-diff-changelog.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await run.cleanup();
     }
