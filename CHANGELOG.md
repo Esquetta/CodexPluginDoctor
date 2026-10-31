@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.90.0] - 2026-10-31
+
+### Added
+
+- the workflow that `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes also runs when a release is published: with the read-only token, a `release-notes` job finds the newest earlier release whose tag the new tag was built on (a stable release skips prereleases), extracts its committed baseline with `git archive`, and compares it with the baseline at the new tag into `doctor mcp-snapshot-diff --changelog` release notes; a `publish-release-notes` job with `contents: write`, which runs no package code, adds them below the release's own notes under a marker that a rerun replaces, cut to fit GitHub's limit; neither starts a server, a release with no earlier release or no baseline at either tag is left as it is, the jobs fail without editing the release when it is not among the 100 newest releases, the comparison writes no notes, or its notes leave no room, and the `capture` job no longer runs for a release
+
 ## [1.89.0] - 2026-10-29
 
 ### Added

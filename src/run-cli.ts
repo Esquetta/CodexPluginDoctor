@@ -4067,7 +4067,8 @@ export async function runCli(
             ? `Capture and commit a baseline at ${baseline}, for example with: codex-plugin-doctor doctor tools ${JSON.stringify(targetPath)} ${runtime} --save-response ${JSON.stringify(path.join(targetPath, baseline))}`
             : [
               `Capture and commit a snapshot baseline in ${snapshotBaselineDir}, for example with: codex-plugin-doctor doctor mcp-snapshot ${JSON.stringify(targetPath)} ${runtime} --save-dir ${JSON.stringify(path.join(targetPath, snapshotBaselineDir))}`,
-              "Later, run the workflow by hand to open a pull request that updates the baseline from a new snapshot; allow GitHub Actions to create pull requests in the repository settings first."
+              "Later, run the workflow by hand to open a pull request that updates the baseline from a new snapshot; allow GitHub Actions to create pull requests in the repository settings first.",
+              "Publishing a release adds the MCP surface changes since the release before it to the release notes."
             ].join("\n"),
           ...(promptsBaseline === null ? [] : [
             `Capture and commit a prompt baseline at ${promptsBaseline}, for example with: codex-plugin-doctor doctor prompts ${JSON.stringify(targetPath)} --server ${JSON.stringify(server)} --runtime${sandbox === "docker" ? " --sandbox docker" : ""} --save-response ${JSON.stringify(path.join(targetPath, promptsBaseline))}`

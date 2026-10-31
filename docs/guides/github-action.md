@@ -27,9 +27,9 @@ The Action transfers these boolean inputs through environment-backed shell varia
 Use local Registry metadata gating when the repository contains a `server.json` intended for publication:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     registry-metadata: ./server.json
     require-registry-readiness: "true"
@@ -42,9 +42,9 @@ The Action writes `mcp-registry-readiness.json` and exposes `registry-report-pat
 Use the submission preflight only when a workflow needs its separate offline report:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     submission: "true"
     require-submission-ready: "true"
@@ -79,9 +79,9 @@ Compare two saved MCP `tools/list` responses, for example a committed baseline a
 a capture made earlier in the job with `doctor tools --save-response`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     tools-diff-before: mcp/tools-baseline.json
     tools-diff-after: tools-current.json
@@ -114,9 +114,9 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: Esquetta/CodexPluginDoctor@v1.89.0
+  - uses: Esquetta/CodexPluginDoctor@v1.90.0
     with:
-      version: "1.89.0"
+      version: "1.90.0"
       path: .
       tools-diff-before: mcp/tools-baseline.json
       tools-diff-after: tools-current.json
@@ -165,9 +165,9 @@ Repositories that ship an HTTP MCP server without a Codex plugin package can tur
 off the package check and compare the live tool list with a committed baseline:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     allow-network: "true"
     tools-capture-url: https://mcp.example.com/mcp
@@ -218,9 +218,9 @@ To capture a stdio server from the package's MCP configuration, set
 `tools-capture-server` to its name instead of `tools-capture-url`:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -289,9 +289,9 @@ Every `tools-capture-*` and `tools-diff-*` input has a `prompts-*` counterpart
 with the same rules, validation, and exit statuses:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     runtime: "true"
     tools-capture-server: my-server
@@ -350,9 +350,9 @@ different path.
 stdio server in one session:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     runtime: "true"
     snapshot-server: my-server
@@ -410,9 +410,9 @@ committed baseline written by `doctor mcp-snapshot --save-dir`, with
 list, which labels a list the server stopped offering as breaking.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     runtime: "true"
     snapshot-server: my-server
@@ -469,10 +469,10 @@ job does, and compare the uploaded snapshot in the release job.
   with:
     name: mcp-snapshot
     path: ${{ runner.temp }}/mcp-snapshot
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   id: doctor
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     check: "false"
     snapshot-diff-before-dir: mcp/release-baseline
     snapshot-diff-after-dir: ${{ runner.temp }}/mcp-snapshot
@@ -507,12 +507,33 @@ baseline files does anyway; they leave out definition findings, which
 into the branch the workflow ran on: run it from
 the default branch to update the baseline there, or from a feature branch whose
 pull request shows the intended change. Nothing is pushed to an existing branch,
-and the job runs no package code; only it has `contents: write`, and the token
-reaches git only in the step that pushes. GitHub creates the pull request only when the
+and the job runs no package code; it is the only job of a manual run with
+`contents: write`, and the token reaches git only in the step that pushes. GitHub creates the pull request only when the
 repository allows GitHub Actions to create pull requests (Settings → Actions →
 General → Workflow permissions), and a pull request opened with `github.token`
 does not start other workflows, so push a commit to the branch or close and
 reopen the pull request to run its checks.
+
+Publishing a release runs two other jobs. With the read-only token,
+`release-notes` finds the release before it: the newest of the 100 newest
+releases, drafts left out, whose tag the new tag was built on, so a backport is
+compared with the release it came from and not with a newer one, and a stable
+release skips prereleases. It extracts the baseline directory at that tag with
+`git archive`, compares it with the baseline at the new tag, and uploads the
+comparison's [release notes](mcp-snapshot.md#release-notes). It reads only the
+committed baselines, so it starts no server. `publish-release-notes`, the only
+job of a release with `contents: write`, runs no package code: it checks the
+downloaded notes and adds them below the release's own notes under the marker
+`<!-- codex-plugin-doctor:mcp-surface-changes -->`. Running it again replaces
+the last such section and everything below it. The notes are as current as the
+baselines, so accept a new snapshot before you release. A release with no
+earlier release, or where either tag has no baseline, is left as it is; the jobs
+fail when the release is not among the 100 newest or the comparison writes no
+notes, and the notes are cut to fit GitHub's limit next to the release's own
+notes. The workflow runs from the tagged commit, so it must be committed before
+the tag; it runs once, when the release is published, so a prerelease promoted
+to a release later keeps the notes it got as a prerelease; and a release created
+with `github.token`, for example by another workflow, does not start it.
 
 ## Recommended Workflow
 
@@ -530,9 +551,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.89.0
+      - uses: Esquetta/CodexPluginDoctor@v1.90.0
         with:
-          version: "1.89.0"
+          version: "1.90.0"
           path: .
           runtime: "true"
           policy: codex-publish
@@ -559,9 +580,9 @@ Every action run also writes `codex-plugin-doctor-action-manifest.json`. The man
 Use SARIF when repository security tooling should ingest validation findings.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     sarif: "true"
 ```
@@ -573,9 +594,9 @@ The action writes `codex-plugin-doctor.sarif` into `output-dir`. Uploading it to
 Use artifact and summary controls when the workflow needs custom retention or wants to disable generated report uploads.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     output-dir: doctor-ci-reports
     artifact-name: codex-plugin-doctor-reports
@@ -627,11 +648,11 @@ The action also exposes these workflow outputs for follow-up steps:
 Use review bundle artifacts when a pull request or release workflow should preserve signed runtime approval, runtime policy, attestation, and release evidence handoff files.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   env:
     CODEX_PLUGIN_DOCTOR_SIGNING_KEY: ${{ secrets.CODEX_PLUGIN_DOCTOR_SIGNING_KEY }}
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     review-bundle: "true"
     review-bundle-verify: "true"
@@ -662,9 +683,9 @@ The CLI can produce badge output for release notes, README automation, or a stat
 Use a private corpus metrics manifest to measure reviewed precision, recall, and false-positive share in CI. The action writes only the public-safe metrics report into its artifact directory; snapshots, manifest contents, local paths, and review notes are not copied.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
 ```
@@ -672,9 +693,9 @@ Use a private corpus metrics manifest to measure reviewed precision, recall, and
 This writes `corpus-metrics.json`. To compare the result with a retained report and fail the job on regression:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     corpus-metrics-manifest: ../private-corpus/metrics.json
     corpus-metrics-baseline: .doctor-baselines/corpus-metrics.json
@@ -703,9 +724,9 @@ The history file is newline-delimited JSON. Store it as an artifact, cache, or r
 The composite action can also append history directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     runtime: "true"
     history: validation-history.jsonl
@@ -725,9 +746,9 @@ Use profiles when a consuming workflow needs a named validation policy instead o
 The composite action can pass profiles directly:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     profile: publish
 ```
@@ -737,9 +758,9 @@ The composite action can pass profiles directly:
 Use policy presets when a workflow should apply one of the opinionated release gates without adding a local `.codex-doctor.json`.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     path: .
     policy: codex-publish
 ```
@@ -751,9 +772,9 @@ Supported policy values are `codex-publish`, `mcp-strict`, and `security`. The C
 Use installed-cache mode only in environments where Codex plugins are already available on the runner.
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
     installed: "true"
     filter: github
     runtime: "false"
@@ -764,9 +785,9 @@ Use installed-cache mode only in environments where Codex plugins are already av
 Pin both the action ref and npm package version for reproducible CI:
 
 ```yaml
-- uses: Esquetta/CodexPluginDoctor@v1.89.0
+- uses: Esquetta/CodexPluginDoctor@v1.90.0
   with:
-    version: "1.89.0"
+    version: "1.90.0"
 ```
 
 Use `version: "latest"` only when the consuming repository intentionally wants automatic CLI upgrades.

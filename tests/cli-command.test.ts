@@ -3375,8 +3375,12 @@ describe("runCli", () => {
     expect(raw).not.toMatch(/tools-diff-|prompts-diff-|resource-templates-diff-|-capture-server/u);
 
     // A manual run captures a snapshot and opens a pull request that makes it the baseline.
-    const jobs = workflow.jobs as Record<string, { if?: string; needs?: string; permissions?: Record<string, string>; steps: Array<{ uses?: string; with?: Record<string, unknown>; env?: Record<string, string>; run?: string }> }>;
-    expect(Object.keys((parse(raw) as { on: Record<string, unknown> }).on)).toEqual(["pull_request", "workflow_dispatch"]);
+    const jobs = workflow.jobs as Record<string, { if?: string; needs?: string; permissions?: Record<string, string>; steps: Array<{ name?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string>; run?: string }> }>;
+    const on = (parse(raw) as { on: Record<string, unknown> }).on;
+    expect(Object.keys(on)).toEqual(["pull_request", "workflow_dispatch", "release"]);
+    expect(on.release).toEqual({ types: ["published"] });
+    // A release starts no server: it compares the committed baselines of two tags.
+    expect(jobs.capture.if).toBe("github.event_name != 'release'");
     expect(jobs.compare.if).toBe("github.event_name == 'pull_request'");
     expect(jobs["update-baseline"]).toMatchObject({ if: "github.event_name == 'workflow_dispatch'", needs: "capture", permissions: { contents: "write", "pull-requests": "write" } });
     expect(jobs.capture.permissions).toBeUndefined();
@@ -3400,6 +3404,34 @@ describe("runCli", () => {
     expect(update[4].run).toContain("head -c 60000");
     // The write token reaches no step that runs package code.
     expect(JSON.stringify(jobs.capture)).not.toContain("github.token");
+    // A release writes its notes with the read-only token, and only a job that runs no package code edits it.
+    const notes = jobs["release-notes"];
+    expect(notes).toMatchObject({ if: "github.event_name == 'release'" });
+    expect(notes.permissions).toBeUndefined();
+    expect(notes.needs).toBeUndefined();
+    expect(notes.steps.map((step) => step.uses ?? step.name)).toEqual([
+      "actions/checkout@v5", "Find the release before this one", "actions/setup-node@v5", "Write the MCP surface changes since that release", "actions/upload-artifact@v7"
+    ]);
+    expect(notes.steps[0].with).toEqual({ "persist-credentials": false, "fetch-depth": 0 });
+    expect(notes.steps[1].env).toEqual({
+      GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}", TAG: "${{ github.event.release.tag_name }}", PRERELEASE: "${{ github.event.release.prerelease }}"
+    });
+    expect(notes.steps[2].with).toEqual({ "node-version": 22, "package-manager-cache": false });
+    expect(notes.steps[3].env).toEqual({
+      PREVIOUS: "${{ steps.previous.outputs.tag }}", BASELINE_DIR: "mcp/baseline", DOCTOR: `codex-plugin-doctor@${packageJson.version}`
+    });
+    // The steps hand the tag and the notes on by these ids and outputs, and the later steps run only with them.
+    expect((notes as { outputs?: Record<string, string> }).outputs).toEqual({ written: "${{ steps.notes.outputs.written }}" });
+    expect(notes.steps.map((step) => [(step as { id?: string }).id, (step as { if?: string }).if])).toEqual([
+      [undefined, undefined], ["previous", undefined], [undefined, "steps.previous.outputs.tag != ''"],
+      ["notes", "steps.previous.outputs.tag != ''"], [undefined, "steps.notes.outputs.written == 'true'"]
+    ]);
+    const publish = jobs["publish-release-notes"];
+    expect(publish).toMatchObject({ needs: "release-notes", if: "needs.release-notes.outputs.written == 'true'", permissions: { contents: "write" } });
+    expect(publish.steps.map((step) => step.uses ?? step.name)).toEqual(["actions/download-artifact@v5", "Add the MCP surface changes to the release notes"]);
+    expect(JSON.stringify(publish)).not.toMatch(/npx|checkout|setup-node|DOCTOR/u);
+    for (const step of [...notes.steps, ...publish.steps]) expect(step.run ?? "").not.toContain("${{");
+    expect(stdout.join("")).toContain("Publishing a release adds the MCP surface changes since the release before it to the release notes.");
     expect(stdout.join("")).toContain("run the workflow by hand to open a pull request that updates the baseline");
     expect(stdout.join("")).toContain(`doctor mcp-snapshot ${JSON.stringify(targetPath)} --server "my-server" --runtime --sandbox docker --save-dir ${JSON.stringify(path.join(targetPath, "mcp/baseline"))}`);
     await expect(stat(path.join(targetPath, "mcp"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -3427,6 +3459,7 @@ describe("runCli", () => {
     expect(workflow).not.toContain("resource-templates-");
     expect(workflow).not.toContain("workflow_dispatch");
     expect(workflow).not.toContain("update-baseline");
+    expect(workflow).not.toContain("release");
   });
 
   it("writes the default tool diff baseline path", async () => {
