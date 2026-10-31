@@ -189,7 +189,8 @@ one report and one pull request comment through `snapshot-diff-before-dir` (CLI
 1.82.0 or later); see [GitHub Action Usage](github-action.md#snapshot-comparison).
 `codex-plugin-doctor init-ci . --tools-diff-server <name> --snapshot-baseline-dir <dir>`
 writes a workflow that compares the server's snapshot with a committed snapshot
-directory and posts one comment, and that opens a pull request with an updated
-baseline when it is run by hand; with `--prompts-baseline` or
+directory and posts one comment, that opens a pull request with an updated
+baseline when it is run by hand, and that adds the release notes since the
+release before it to a published release; with `--prompts-baseline` or
 `--resource-templates-baseline` instead, the capture job still uses one snapshot
 and the compare job compares each list on its own.

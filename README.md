@@ -226,8 +226,9 @@ directory in one report, and
 `init-ci --tools-diff-server <name> --snapshot-baseline-dir <dir>` writes a
 two-job workflow that posts it as one pull request comment;
 `snapshot-diff-changelog` also writes the release notes to a file for a release. After an intended
-change, `doctor mcp-snapshot-accept` makes a new snapshot the baseline, and
-running that workflow by hand opens a pull request that does the same.
+change, `doctor mcp-snapshot-accept` makes a new snapshot the baseline,
+running that workflow by hand opens a pull request that does the same, and
+publishing a release adds the changes since the release before it to its notes.
 See [MCP Snapshot](docs/guides/mcp-snapshot.md).
 
 ### Remote MCP Readiness
@@ -648,9 +649,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Esquetta/CodexPluginDoctor@v1.89.0
+      - uses: Esquetta/CodexPluginDoctor@v1.90.0
         with:
-          version: "1.89.0"
+          version: "1.90.0"
           path: .
           runtime: "true"
           policy: codex-publish
