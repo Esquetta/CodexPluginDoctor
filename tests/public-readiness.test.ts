@@ -51,10 +51,16 @@ describe("public repository readiness", () => {
   it("keeps public documentation focused on users and contributors", async () => {
     const readme = await readText("README.md");
     const docsReadme = await readText("docs/README.md");
+    const cliReference = await readText("docs/guides/cli-reference.md");
     const releasing = await readText("docs/contributing/releasing.md");
 
-    expect(readme).not.toContain("early public CLI release");
+    expect(`${readme}\n${cliReference}`).not.toContain("early public CLI release");
     expect(readme).toContain("1.0 Stability");
+    // The README opens with the command to run, and the details live in the CLI reference.
+    expect(readme).toContain("npx codex-plugin-doctor check path/to/plugin");
+    expect(readme.indexOf("npx codex-plugin-doctor check path/to/plugin")).toBeLessThan(readme.indexOf("## What It Checks"));
+    expect(readme).toContain("./docs/guides/cli-reference.md");
+    expect(docsReadme).toContain("guides/cli-reference.md");
     expect(docsReadme).toContain("## Architecture");
     expect(docsReadme).toContain("## Guides");
     expect(docsReadme).toContain("## Security");
@@ -64,7 +70,7 @@ describe("public repository readiness", () => {
     expect(releasing).toContain("npm run release-check");
     expect(releasing).toContain("npm run verify-release-sync");
     await expect(access("validation-sessions")).rejects.toThrow();
-    expect(`${readme}\n${docsReadme}`).not.toMatch(/validation-sessions|internal only/i);
+    expect(`${readme}\n${docsReadme}\n${cliReference}`).not.toMatch(/validation-sessions|internal only/i);
   });
 
   it("documents remote MCP transport and endpoint validation rules", async () => {
@@ -142,6 +148,7 @@ describe("public repository readiness", () => {
     const readme = await readText("README.md");
     const actionGuide = await readText("docs/guides/github-action.md");
     const conformance = await readText("docs/architecture/mcp-2025-11-conformance.md");
+    const cliReference = await readText("docs/guides/cli-reference.md");
     const readiness = await readText("docs/architecture/remote-mcp-readiness.md");
     const reliability = await readText("docs/architecture/remote-mcp-transport-reliability.md");
     const releaseGating = await readText("docs/guides/release-gating.md");
@@ -162,8 +169,8 @@ describe("public repository readiness", () => {
     expect(readiness).toContain("redirects");
     expect(docsReadme).toContain("Remote MCP Readiness");
     expect(docsReadme).toContain("Remote MCP Transport Reliability");
-    expect(readme).toContain("--allow-session-lifecycle");
-    expect(readme).toContain("--require-remote-reliability");
+    expect(cliReference).toContain("--allow-session-lifecycle");
+    expect(cliReference).toContain("--require-remote-reliability");
     expect(readiness).toContain("--allow-session-lifecycle");
     expect(readiness).toContain("--require-remote-reliability");
     expect(reliability).toContain("GET returning 405");
@@ -172,7 +179,7 @@ describe("public repository readiness", () => {
     expect(reliability).toContain("does not claim delivery guarantees");
     expect(reliability).toContain("GET carrying an issued session identifier");
     expect(reliability).toContain("DELETE 404 never restarts or retries");
-    for (const document of [reliability, readme, readiness, releaseGating, runtimeSecurity, actionGuide]) {
+    for (const document of [reliability, cliReference, readiness, releaseGating, runtimeSecurity, actionGuide]) {
       expect(document).toMatch(/every attempted remote\s+reliability scorecard passes/);
       expect(document).toContain("Local-only runs are unaffected.");
     }
@@ -205,19 +212,19 @@ describe("public repository readiness", () => {
   });
 
   it("documents offline public directory submission preflight without implying portal approval", async () => {
-    const readme = await readText("README.md");
+    const cliReference = await readText("docs/guides/cli-reference.md");
     const docsReadme = await readText("docs/README.md");
     const architecture = await readText("docs/architecture/public-directory-submission-preflight.md");
     const actionGuide = await readText("docs/guides/github-action.md");
     const catalog = await readText("docs/rules/catalog.md");
 
-    expect(readme).toContain("codex-plugin-doctor doctor submission <path>");
-    expect(readme).toContain("--json");
-    expect(readme).toContain("--markdown");
-    expect(readme).toContain("--require-ready");
-    expect(readme).toContain("manual_review_required");
-    expect(readme).toContain("codex-plugin-doctor doctor submission archive <zip>");
-    expect(readme).toContain("does not extract archive entries to disk");
+    expect(cliReference).toContain("codex-plugin-doctor doctor submission <path>");
+    expect(cliReference).toContain("--json");
+    expect(cliReference).toContain("--markdown");
+    expect(cliReference).toContain("--require-ready");
+    expect(cliReference).toContain("manual_review_required");
+    expect(cliReference).toContain("codex-plugin-doctor doctor submission archive <zip>");
+    expect(cliReference).toContain("does not extract archive entries to disk");
     expect(actionGuide).toContain('submission-archive: ./plugin.zip');
     expect(actionGuide).toContain('require-submission-ready: "true"');
     expect(actionGuide).toContain("submission-archive-json-path");
@@ -233,7 +240,7 @@ describe("public repository readiness", () => {
     expect(architecture).toContain("no network requests");
     expect(architecture).toContain("does not submit a package");
     expect(architecture).toContain("manual_review_required");
-    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.90.0");
+    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.90.1");
     expect(actionGuide).toContain('submission: "true"');
     expect(actionGuide).toContain('require-submission-ready: "true"');
     expect(actionGuide).toContain("submission-json-path");

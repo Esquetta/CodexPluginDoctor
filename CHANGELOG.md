@@ -4,6 +4,13 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.90.1] - 2026-11-01
+
+### Changed
+
+- the README, which is also the npm page, starts with the command to run and a real report and is about 140 lines instead of 740; the details of each check, the commands, and the examples moved to the new `docs/guides/cli-reference.md`, with example output regenerated from the current CLI, and the product direction section is gone
+- the README's Action example keeps a read-only token with `permissions: contents: read` and `persist-credentials: false`, because `runtime: "true"` runs the package's code
+
 ## [1.90.0] - 2026-10-31
 
 ### Added
