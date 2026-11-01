@@ -21,6 +21,7 @@ This directory contains public documentation for users, contributors, and securi
 
 ## Guides
 
+- [CLI Reference](guides/cli-reference.md)
 - [MCP Discovery](guides/mcp-discovery.md)
 - [MCP Tool Catalog](guides/mcp-tool-catalog.md)
 - [Offline MCP Tool Definitions](guides/offline-tool-definitions.md)
