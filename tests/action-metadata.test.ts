@@ -308,6 +308,12 @@ describe("GitHub Action metadata", () => {
     expect(actionUsage).toContain('upload-artifact: "true"');
     expect(actionUsage).toContain('artifact-name: codex-plugin-doctor-reports');
     expect(actionUsage).toContain('output-dir: codex-plugin-doctor-reports');
+    // Both full-job examples run package code, so they keep a read-only token out of the checkout.
+    const recommended = actionUsage.slice(actionUsage.indexOf("## Recommended Workflow"), actionUsage.indexOf("By default the action writes:"));
+    for (const example of [recommended, readme]) {
+      expect(example.replace(/\r\n/gu, "\n")).toContain("permissions:\n  contents: read");
+      expect(example).toContain("persist-credentials: false");
+    }
     expect(actionUsage).toContain("codex-plugin-doctor-summary.md");
     expect(actionUsage).toContain("codex-plugin-doctor-report.json");
     expect(actionUsage).toContain("review-bundle:");

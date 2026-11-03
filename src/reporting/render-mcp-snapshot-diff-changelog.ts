@@ -17,6 +17,10 @@ function section(impact: "breaking" | "compatible" | "unclassified"): Section {
   return impact === "breaking" ? "breaking" : impact === "compatible" ? "compatible" : "review";
 }
 
+function warningCount(report: { findings: Array<{ severity: string }> }): number {
+  return report.findings.filter((finding) => finding.severity === "warn").length;
+}
+
 // The notes are list items, not table cells, so a pipe in a name needs no escape.
 const code = (text: string) => markdownCodeSpan(text, { table: false });
 
@@ -65,9 +69,13 @@ export function renderMcpSnapshotDiffChangelog(report: McpSnapshotDiffReport): s
       const verb = change.kind === "added" ? "Added" : change.kind === "removed" ? "Removed" : "Changed";
       entries[section(change.impact)].push(`${verb} ${noun.one} ${name}${reasons}`);
     }
-    // Input warnings fail --fail-on any without changing a definition, so they are named too.
-    if (entry.diff?.comparison.complete && entry.diff.status === "warn" && changes.length === 0) {
-      entries.review.push(`The ${noun.one} lists have input warnings`);
+    // Warnings fail --fail-on any without changing a definition, and changes can add more, so both are counted.
+    if (entry.diff?.comparison.complete) {
+      const before = warningCount(entry.diff.before);
+      const after = warningCount(entry.diff.after);
+      if (after > before || (changes.length === 0 && before + after > 0)) {
+        entries.review.push(`The ${noun.one} list has ${after} definition ${after === 1 ? "warning" : "warnings"} (${before} before)`);
+      }
     }
   }
 

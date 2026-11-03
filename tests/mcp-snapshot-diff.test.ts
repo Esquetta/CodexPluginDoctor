@@ -423,6 +423,7 @@ describe("compareMcpSnapshotDirectories", () => {
         "### Needs review",
         "",
         `- Changed server instructions (\`"sha256:${prefix("Use lookup.")}, 11 characters -> sha256:${prefix("Use search.")}, 11 characters"\`)`,
+        "- The tool list has 1 definition warning (0 before)",
         "",
         "### Compatible",
         "",
@@ -462,9 +463,17 @@ describe("compareMcpSnapshotDirectories", () => {
         "No changes in the lists that were compared."
       ].join("\n"));
       expect(await changelog(base, broken)).toContain("### Not compared\n\n- Tools: compared, incomplete (");
+
+      // An incomplete comparison counts no warnings: the warning sits next to a definition that fails.
+      const warnedAndFailing = await snapshotDirectory("warned-and-failing", {
+        tools: [{ name: "has space", inputSchema: { type: "object" } }, { inputSchema: { type: "object" } }], prompts: "not-applicable", resourceTemplates: "not-applicable"
+      }, same);
+      const incomplete = await changelog(base, warnedAndFailing);
+      expect(incomplete).toContain("### Not compared\n\n- Tools: compared, incomplete (");
+      expect(incomplete).not.toContain("definition warning");
     });
 
-    it("says so when nothing changed, names input warnings, and notes a surface that was not recorded", async () => {
+    it("says so when nothing changed, counts definition warnings, and notes a surface that was not recorded", async () => {
       const first = await snapshotDirectory("first", { tools, prompts, resourceTemplates: "not-applicable" }, same);
       const second = await snapshotDirectory("second", { tools, prompts, resourceTemplates: "not-applicable" }, same);
       // A tool name outside the recommended pattern is an input warning, not a failure.
@@ -473,12 +482,31 @@ describe("compareMcpSnapshotDirectories", () => {
       const older = await snapshotDirectory("older", { tools, prompts, resourceTemplates: "not-applicable" });
 
       expect(await changelog(first, second)).toBe("## MCP surface changes\n\nNo changes to the MCP surface.");
-      expect(await changelog(warned, warnedAgain)).toBe("## MCP surface changes\n\n### Needs review\n\n- The tool lists have input warnings");
+      expect(await changelog(warned, warnedAgain)).toBe("## MCP surface changes\n\n### Needs review\n\n- The tool list has 1 definition warning (1 before)");
       expect(await changelog(older, second)).toBe([
         "## MCP surface changes", "",
         "The server surface was not recorded in both snapshots, so protocol versions and capabilities were not compared.", "",
         "No changes to the MCP surface."
       ].join("\n"));
+    });
+
+    it("counts new definition warnings in a list that also changed, and no others", async () => {
+      const spaced = (name: string) => ({ name, inputSchema: { type: "object" } });
+      const list = (name: string, listed: Array<{ name: string; inputSchema: { type: string } }>) =>
+        snapshotDirectory(name, { tools: listed, prompts: "not-applicable", resourceTemplates: "not-applicable" }, same);
+      const clean = await list("clean", tools);
+      const oneWarning = await list("one-warning", [...tools, spaced("has space")]);
+      const twoWarnings = await list("two-warnings", [...tools, spaced("has space"), spaced("has more space")]);
+      const oneWarningMore = await list("one-warning-more", [...tools, spaced("has space"), spaced("plain")]);
+
+      expect(await changelog(clean, oneWarning)).toContain("### Needs review\n\n- The tool list has 1 definition warning (0 before)");
+      expect(await changelog(oneWarning, twoWarnings)).toContain("- The tool list has 2 definition warnings (1 before)");
+      // The same or fewer warnings with changes in the list are not news; the changes are.
+      expect(await changelog(oneWarning, oneWarningMore)).not.toContain("definition warning");
+      expect(await changelog(twoWarnings, clean)).not.toContain("definition warning");
+      // A list without warnings or changes says nothing.
+      const cleanAgain = await list("clean-again", tools);
+      expect(await changelog(clean, cleanAgain)).not.toContain("definition warning");
     });
 
     it("names the reasons of a changed entry", async () => {

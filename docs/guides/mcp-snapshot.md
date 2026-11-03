@@ -149,11 +149,13 @@ codex-plugin-doctor doctor mcp-snapshot-diff --before ./mcp/baseline --after ./m
 `--changelog` prints the comparison as release notes for the server's
 maintainer; it cannot be combined with `--json` or `--markdown`. Every change
 appears once under **Breaking**, **Needs review** (unclassified changes, server
-instructions, a new list whose definitions have warnings, and lists with input
-warnings), or **Compatible**, such as ``Removed tool `"search"` ``,
+instructions, and a new list whose definitions have warnings), or **Compatible**,
+such as ``Removed tool `"search"` ``,
 ``Changed tool `"lookup"` (`input-required-added`)``, "Stopped offering
 prompts", or ``Dropped protocol version `"2025-06-18"` ``. Changed entries list
-their reasons. Names appear as quoted code, so `--changelog` implies
+their reasons. Needs review also counts definition warnings, as "The tool list has
+2 definition warnings (1 before)", when a list has more than before, or has any
+and none of its definitions changed. Names appear as quoted code, so `--changelog` implies
 `--show-names`: publish the notes only where the server's tool, prompt, and
 template names may appear. When the comparison is incomplete, including a new
 list whose definitions fail or cannot be read, the notes start with what could
