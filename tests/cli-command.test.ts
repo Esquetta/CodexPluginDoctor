@@ -3238,6 +3238,11 @@ describe("runCli", () => {
     expect(workflow).toContain("path: .");
     expect(workflow).toContain('runtime: "true"');
     expect(workflow).toContain("policy: codex-publish");
+    // The runtime check runs the package's code, which must get only a read-only token, kept out of the checkout.
+    const parsed = parse(workflow) as { permissions: Record<string, string>; jobs: { doctor: { permissions?: unknown; steps: Array<{ uses?: string; with?: Record<string, unknown> }> } } };
+    expect(parsed.permissions).toEqual({ contents: "read" });
+    expect(parsed.jobs.doctor.permissions).toBeUndefined();
+    expect(parsed.jobs.doctor.steps[0]).toEqual({ uses: "actions/checkout@v5", with: { "persist-credentials": false } });
     expect(workflow).toContain('json: "true"');
     expect(workflow).toContain('markdown: "true"');
     expect(workflow).toContain('sarif: "true"');

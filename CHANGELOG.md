@@ -4,6 +4,16 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.91.0] - 2026-11-03
+
+### Security
+
+- the workflow that `init-ci <path>` writes runs `runtime: "true"` and `policy: codex-publish`, which execute the package's code, with `permissions: contents: read` and `persist-credentials: false` on `actions/checkout`; before 1.91.0 it set neither, so on a push to `main` or a pull request from the same repository, for example, that code could read the workflow's token from the checkout, with the repository's default permissions. Add both settings to a workflow written by an earlier version, or run `init-ci` again, which replaces the file, including any edits to it; the recommended workflow in the GitHub Action guide now has both
+
+### Changed
+
+- `doctor mcp-snapshot-diff --changelog` also notes a list with changes when its definition warnings grew, and counts them in place of "The tool lists have input warnings": `The tool list has 2 definition warnings (1 before)` under Needs review, as it does for any warnings in a list without changes
+
 ## [1.90.1] - 2026-11-01
 
 ### Changed
