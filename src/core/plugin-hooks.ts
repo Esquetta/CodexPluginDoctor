@@ -10,10 +10,21 @@ import {
 import { auditHookCommand } from "../security/security-audit.js";
 import { resolveSafePackagePath } from "./plugin-components.js";
 
-const ignoredMatcherEvents = new Set(["Stop", "UserPromptSubmit"]);
+const ignoredMatcherEvents = new Set(["Stop", "UserPromptSubmit", "PreModelRequest", "PostModelRequest", "Interrupt"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+// Codex stores MCP hook input as TOML, which has no null.
+function containsNull(value: unknown): boolean {
+  if (value === null) return true;
+  if (Array.isArray(value)) return value.some(containsNull);
+  return isPlainObject(value) && Object.values(value).some(containsNull);
 }
 
 function packagePath(rootPath: string, targetPath: string): string {
@@ -68,13 +79,13 @@ function warning(id: string, sourcePath: string, event: string, field: string): 
   const messages: Record<string, [string, string, string]> = {
     "plugin.hook.unsupported_handler": [
       "A plugin lifecycle hook uses a handler type the host skips.",
-      "Prompt and agent lifecycle handlers are not executed by this host.",
-      "Use a command handler for behavior that must run in this host."
+      "The host skips prompt and agent handlers, and MCP tool handlers on `SessionEnd`.",
+      "Use a command handler, or an MCP tool handler on another event, for behavior that must run."
     ],
     "plugin.hook.async_unsupported": [
       "A plugin lifecycle hook requests unsupported asynchronous execution.",
-      "The host does not support asynchronous lifecycle hook execution.",
-      "Remove `async: true` or run the command synchronously."
+      "The host runs `SessionEnd` hooks and MCP tool handlers synchronously and skips prompt and agent handlers.",
+      "Remove `async: true` from this handler."
     ],
     "plugin.hook.matcher_ignored": [
       "A plugin lifecycle hook matcher is ignored for this event.",
@@ -84,6 +95,27 @@ function warning(id: string, sourcePath: string, event: string, field: string): 
   };
   const [message, impact, suggestedFix] = messages[id];
   return finding("warn", id, message, impact, suggestedFix, { sourcePath, event, field });
+}
+
+function validateTimeoutAndStatus(
+  value: Record<string, unknown>,
+  sourcePath: string,
+  event: string,
+  field: string
+): Finding[] {
+  const findings: Finding[] = [];
+  if (value.timeout !== undefined && (
+    typeof value.timeout !== "number" || !Number.isFinite(value.timeout) || value.timeout <= 0
+  )) {
+    findings.push(invalidShape(sourcePath, `${field}.timeout`));
+  }
+  if (event === "SessionEnd" && typeof value.timeout === "number" && value.timeout > 3) {
+    findings.push(invalidShape(sourcePath, `${field}.timeout`));
+  }
+  if (value.statusMessage !== undefined && typeof value.statusMessage !== "string") {
+    findings.push(invalidShape(sourcePath, `${field}.statusMessage`));
+  }
+  return findings;
 }
 
 function validateHandler(
@@ -100,18 +132,32 @@ function validateHandler(
   }
 
   const findings: Finding[] = [];
-  if (value.type !== "command" && value.type !== "prompt" && value.type !== "agent") {
+  if (value.type !== "command" && value.type !== "mcp_tool" && value.type !== "prompt" && value.type !== "agent") {
     return [invalidShape(sourcePath, `${field}.type`)];
   }
 
-  if (value.async !== undefined && typeof value.async !== "boolean") {
+  // Codex runs command hooks asynchronously on every event except SessionEnd; other handler types have no async field.
+  if (value.type === "command" && value.async !== undefined && typeof value.async !== "boolean") {
     findings.push(invalidShape(sourcePath, `${field}.async`));
-  } else if (value.async === true) {
+  } else if (value.async === true && (value.type !== "command" || event === "SessionEnd")) {
     findings.push(warning("plugin.hook.async_unsupported", sourcePath, event, `${field}.async`));
   }
 
   if (value.type === "prompt" || value.type === "agent") {
     findings.push(warning("plugin.hook.unsupported_handler", sourcePath, event, `${field}.type`));
+    return findings;
+  }
+
+  if (value.type === "mcp_tool") {
+    if (event === "SessionEnd") {
+      findings.push(warning("plugin.hook.unsupported_handler", sourcePath, event, `${field}.type`));
+    }
+    if (!isNonBlankString(value.server)) findings.push(invalidShape(sourcePath, `${field}.server`));
+    if (!isNonBlankString(value.tool)) findings.push(invalidShape(sourcePath, `${field}.tool`));
+    if (value.input !== undefined && (!isPlainObject(value.input) || containsNull(value.input))) {
+      findings.push(invalidShape(sourcePath, `${field}.input`));
+    }
+    findings.push(...validateTimeoutAndStatus(value, sourcePath, event, field));
     return findings;
   }
 
@@ -127,17 +173,7 @@ function validateHandler(
       findings.push(...auditHookCommand(rootPath, sourcePath, event, `${field}.commandWindows`, value.commandWindows));
     }
   }
-  if (value.timeout !== undefined && (
-    typeof value.timeout !== "number" || !Number.isFinite(value.timeout) || value.timeout <= 0
-  )) {
-    findings.push(invalidShape(sourcePath, `${field}.timeout`));
-  }
-  if (event === "SessionEnd" && typeof value.timeout === "number" && value.timeout > 3) {
-    findings.push(invalidShape(sourcePath, `${field}.timeout`));
-  }
-  if (value.statusMessage !== undefined && typeof value.statusMessage !== "string") {
-    findings.push(invalidShape(sourcePath, `${field}.statusMessage`));
-  }
+  findings.push(...validateTimeoutAndStatus(value, sourcePath, event, field));
   if (value.additionalContextLimit !== undefined && (
     typeof value.additionalContextLimit !== "number" ||
     !Number.isFinite(value.additionalContextLimit) ||

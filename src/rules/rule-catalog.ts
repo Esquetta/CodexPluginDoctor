@@ -167,8 +167,8 @@ export const ruleCatalog: RuleDefinition[] = [
     category: "package",
     defaultSeverity: "warn",
     summary: "A plugin lifecycle hook uses a handler type the host skips.",
-    why: "Prompt and agent lifecycle handlers are not executed by this host.",
-    fix: "Use a command handler for behavior that must run in this host.",
+    why: "The host skips prompt and agent handlers, and MCP tool handlers on `SessionEnd`.",
+    fix: "Use a command handler, or an MCP tool handler on another event, for behavior that must run.",
     example: '{ "type": "command", "command": "node hooks/check.js" }'
   },
   {
@@ -176,8 +176,8 @@ export const ruleCatalog: RuleDefinition[] = [
     category: "package",
     defaultSeverity: "warn",
     summary: "A plugin lifecycle hook requests unsupported asynchronous execution.",
-    why: "The host does not support asynchronous lifecycle hook execution.",
-    fix: "Remove `async: true` or run the command synchronously.",
+    why: "The host runs `SessionEnd` hooks and MCP tool handlers synchronously and skips prompt and agent handlers.",
+    fix: "Remove `async: true` from this handler.",
     example: '{ "type": "command", "command": "node hooks/check.js" }'
   },
   {

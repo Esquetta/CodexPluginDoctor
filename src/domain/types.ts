@@ -63,7 +63,7 @@ export interface PluginManifest {
   name?: string;
   version?: string;
   description?: string;
-  skills?: string;
+  skills?: string | string[];
   mcpServers?: string;
   author?: unknown;
   homepage?: unknown;
@@ -76,6 +76,8 @@ export interface PluginManifest {
 }
 
 export const pluginHookEvents = [
+  "PreModelRequest",
+  "PostModelRequest",
   "PreToolUse",
   "PermissionRequest",
   "PostToolUse",
@@ -86,7 +88,8 @@ export const pluginHookEvents = [
   "Stop",
   "SessionStart",
   "SubagentStart",
-  "SessionEnd"
+  "SessionEnd",
+  "Interrupt"
 ] as const;
 
 export type PluginHookEvent = (typeof pluginHookEvents)[number];
@@ -101,13 +104,22 @@ export interface PluginHookCommandHandler {
   async?: boolean;
 }
 
+export interface PluginHookMcpToolHandler {
+  type: "mcp_tool";
+  server: string;
+  tool: string;
+  input?: Record<string, unknown>;
+  timeout?: number;
+  statusMessage?: string;
+}
+
 export interface PluginHookUnsupportedHandler {
   type: "prompt" | "agent";
   async?: boolean;
   [key: string]: unknown;
 }
 
-export type PluginHookHandler = PluginHookCommandHandler | PluginHookUnsupportedHandler;
+export type PluginHookHandler = PluginHookCommandHandler | PluginHookMcpToolHandler | PluginHookUnsupportedHandler;
 
 export interface PluginHookMatcherGroup {
   matcher?: string;

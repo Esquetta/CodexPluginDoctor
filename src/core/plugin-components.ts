@@ -16,7 +16,7 @@ const interfaceStringFields = [
 ] as const;
 const interfaceUrlFields = new Set(["websiteURL", "privacyPolicyURL", "termsOfServiceURL"]);
 const interfacePathFields = ["composerIcon", "logo"] as const;
-const interfaceStringArrayFields = ["capabilities", "defaultPrompt"] as const;
+const interfaceStringArrayFields = ["capabilities"] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -167,6 +167,10 @@ function validateMetadata(manifest: PluginManifest, manifestPath: string): Findi
   for (const field of interfaceStringArrayFields) {
     validateStringArray(manifest.interface[field], `interface.${field}`, manifestPath, findings);
   }
+  // Codex accepts one default prompt as a string or several as an array.
+  if (typeof manifest.interface.defaultPrompt !== "string") {
+    validateStringArray(manifest.interface.defaultPrompt, "interface.defaultPrompt", manifestPath, findings);
+  }
   return findings;
 }
 
@@ -175,10 +179,15 @@ export async function validatePluginComponents(discoveredPackage: DiscoveredPack
   const manifestPath = relativePackagePath(rootPath, discoveredPackage.manifestPath);
   const findings = validateMetadata(manifest, manifestPath);
 
-  const componentPaths: Array<[string, unknown]> = [
-    ["skills", manifest.skills],
-    ["mcpServers", manifest.mcpServers]
-  ];
+  const componentPaths: Array<[string, unknown]> = [["mcpServers", manifest.mcpServers]];
+  // Codex accepts `skills` as one path or a list of paths.
+  if (!Array.isArray(manifest.skills)) {
+    componentPaths.unshift(["skills", manifest.skills]);
+  } else if (manifest.skills.some((item) => typeof item !== "string")) {
+    findings.push(invalidField("skills", manifestPath));
+  } else {
+    componentPaths.unshift(...manifest.skills.map((item, index): [string, unknown] => [`skills[${index}]`, item]));
+  }
   if (isPlainObject(manifest.interface)) {
     for (const field of interfacePathFields) componentPaths.push([`interface.${field}`, manifest.interface[field]]);
     const screenshots = manifest.interface.screenshots;

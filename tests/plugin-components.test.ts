@@ -100,6 +100,66 @@ describe("plugin component validation", () => {
     expect(findings.flatMap((finding) => Object.values(finding.evidence ?? {}))).not.toContain("mailto:ada@example.test");
   });
 
+  it("accepts interface.defaultPrompt as a single string", async () => {
+    const rootPath = await createPlugin({ interface: { defaultPrompt: "Summarise this repository" } });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
+  });
+
+  it.each([[3], [["Help me", 3]], [{ text: "Help me" }]])("rejects interface.defaultPrompt %j", async (defaultPrompt) => {
+    const rootPath = await createPlugin({ interface: { defaultPrompt } });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({ id: "plugin.manifest.invalid_field", evidence: { field: "interface.defaultPrompt" } });
+  });
+
+  it("accepts skills as a list of package paths and checks the skills in each one", async () => {
+    const rootPath = await createPlugin({ skills: ["./skills", "./more-skills"] });
+    await mkdir(path.join(rootPath, "skills"));
+    await mkdir(path.join(rootPath, "more-skills", "draft"), { recursive: true });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(findingIds(result)).toEqual(["plugin.skill.skill_md.missing"]);
+
+    await writeFile(
+      path.join(rootPath, "more-skills", "draft", "SKILL.md"),
+      "---\nname: draft\ndescription: Drafts release notes.\n---\n",
+      "utf8"
+    );
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
+  });
+
+  it("checks a skills directory listed twice once", async () => {
+    const rootPath = await createPlugin({ skills: ["./skills", "./skills/"] });
+    await mkdir(path.join(rootPath, "skills", "draft"), { recursive: true });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual(["plugin.skill.skill_md.missing"]);
+  });
+
+  it("reports each unsafe or missing path in a skills list", async () => {
+    const rootPath = await createPlugin({ skills: ["./skills", "../outside-skills", "./missing"] });
+    await mkdir(path.join(rootPath, "skills"));
+
+    const result = await validatePlugin(rootPath);
+
+    expect(findingIds(result)).toEqual(["plugin.manifest.invalid_path", "plugin.skills.path.missing"]);
+    expect(result.findings[0].evidence).toMatchObject({ field: "skills[1]" });
+    expect(result.findings[1].evidence).toMatchObject({ field: "skills[2]", configuredPath: "./missing", resolvedPath: "missing" });
+  });
+
+  it.each([[["./skills", 3]], [{ path: "./skills" }], [3]])("rejects skills %j", async (skills) => {
+    const rootPath = await createPlugin({ skills });
+    await mkdir(path.join(rootPath, "skills"));
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({ id: "plugin.manifest.invalid_field", evidence: { field: "skills" } });
+  });
+
   it.each(["assets/logo.svg", "..\\outside.json", "../outside.json"])("rejects non-package app paths: %s", async (apps) => {
     const rootPath = await createPlugin({ apps });
 

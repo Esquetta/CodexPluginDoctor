@@ -4,6 +4,18 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.91.1] - 2026-11-05
+
+### Fixed
+
+- `check` no longer fails plugins that Codex 0.164.0 and later load: the `PreModelRequest`, `PostModelRequest`, and `Interrupt` hook events are accepted (matchers on the three are reported as ignored, as Codex ignores them), as are `mcp_tool` hook handlers, which need non-empty `server` and `tool` strings and an optional `input` object without `null` values
+- `async: true` on a command hook is accepted, since Codex runs command hooks asynchronously; it is still reported on `SessionEnd`, which runs hooks synchronously, and on `mcp_tool`, prompt, and agent handlers, which have no `async` field, so a non-boolean `async` on those is no longer a failure; `mcp_tool` handlers on `SessionEnd`, which Codex skips, are reported as unsupported
+- `interface.defaultPrompt` can be a single string, and `skills` can be a list of package paths; each listed skills directory gets the same path, missing-directory, and `SKILL.md` checks as a single path, once even if it is listed twice, with the list position in the finding's `field`, such as `skills[1]`
+
+### Not changed
+
+- an inline `mcpServers` object still fails as an invalid field, because runtime probing and the MCP commands read `mcpServers` as a file path; support is planned for a later minor release
+
 ## [1.91.0] - 2026-11-03
 
 ### Security
