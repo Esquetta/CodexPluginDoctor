@@ -141,12 +141,20 @@ describe("plugin lifecycle hooks", () => {
     ]));
   });
 
-  it.each(["SessionEnd", "Interrupt"])("rejects a %s timeout over three seconds", async (event) => {
+  it("rejects a SessionEnd timeout over three seconds", async () => {
     const rootPath = await createPlugin({
-      hooks: { [event]: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
+      hooks: { SessionEnd: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
     });
 
     expect(findingIds(await validatePlugin(rootPath))).toContain("plugin.hook.invalid_shape");
+  });
+
+  it("accepts an Interrupt timeout over three seconds, which Codex shortens to three", async () => {
+    const rootPath = await createPlugin({
+      hooks: { Interrupt: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
   });
 
   it.each(["PreModelRequest", "PostModelRequest", "Interrupt"])("accepts the %s event", async (event) => {
@@ -213,6 +221,14 @@ describe("plugin lifecycle hooks", () => {
       "plugin.hook.unsupported_handler",
       "plugin.hook.async_unsupported"
     ]);
+  });
+
+  it("ignores a non-boolean async on handlers that have no async field", async () => {
+    const rootPath = await createPlugin({
+      hooks: { Stop: [{ hooks: [{ type: "mcp_tool", server: "audit", tool: "record", async: "yes" }] }] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
   });
 
   it("accepts async command hooks and warns only on SessionEnd, which runs them synchronously", async () => {

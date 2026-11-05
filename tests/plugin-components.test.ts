@@ -132,6 +132,13 @@ describe("plugin component validation", () => {
     expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
   });
 
+  it("checks a skills directory listed twice once", async () => {
+    const rootPath = await createPlugin({ skills: ["./skills", "./skills/"] });
+    await mkdir(path.join(rootPath, "skills", "draft"), { recursive: true });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual(["plugin.skill.skill_md.missing"]);
+  });
+
   it("reports each unsafe or missing path in a skills list", async () => {
     const rootPath = await createPlugin({ skills: ["./skills", "../outside-skills", "./missing"] });
     await mkdir(path.join(rootPath, "skills"));

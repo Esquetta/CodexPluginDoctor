@@ -394,15 +394,21 @@ interface SkillsPathEntry {
   field: string;
 }
 
-// Codex accepts `skills` as one path or a list of paths.
-function manifestSkillsPaths(manifest: DiscoveredPackage["manifest"]): SkillsPathEntry[] {
+// Codex accepts `skills` as one path or a list of paths, and loads a directory listed twice once.
+function manifestSkillsPaths(rootPath: string, manifest: DiscoveredPackage["manifest"]): SkillsPathEntry[] {
   if (typeof manifest.skills === "string") {
     return [{ configuredPath: manifest.skills, field: "skills" }];
   }
-  if (Array.isArray(manifest.skills) && manifest.skills.every((value) => typeof value === "string")) {
-    return manifest.skills.map((configuredPath, index) => ({ configuredPath, field: `skills[${index}]` }));
+  if (!Array.isArray(manifest.skills) || !manifest.skills.every((value) => typeof value === "string")) {
+    return [];
   }
-  return [];
+  const seen = new Set<string>();
+  return manifest.skills.flatMap((configuredPath, index) => {
+    const resolvedPath = path.resolve(rootPath, configuredPath);
+    if (seen.has(resolvedPath)) return [];
+    seen.add(resolvedPath);
+    return [{ configuredPath, field: `skills[${index}]` }];
+  });
 }
 
 async function validateSkillsDirectory(
@@ -812,7 +818,7 @@ export async function validatePlugin(
 
   const componentFindings = await validatePluginComponents(discoveredPackage);
   const hookFindings = await validatePluginHooks(discoveredPackage);
-  const skillsPaths = manifestSkillsPaths(discoveredPackage.manifest)
+  const skillsPaths = manifestSkillsPaths(discoveredPackage.rootPath, discoveredPackage.manifest)
     .filter((entry) => !hasInvalidComponentPath(componentFindings, entry.field));
   const skillsFindings: Finding[] = [];
   for (const entry of skillsPaths) {

@@ -11,7 +11,6 @@ import { auditHookCommand } from "../security/security-audit.js";
 import { resolveSafePackagePath } from "./plugin-components.js";
 
 const ignoredMatcherEvents = new Set(["Stop", "UserPromptSubmit", "PreModelRequest", "PostModelRequest", "Interrupt"]);
-const shortTimeoutEvents = new Set(["SessionEnd", "Interrupt"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -110,7 +109,7 @@ function validateTimeoutAndStatus(
   )) {
     findings.push(invalidShape(sourcePath, `${field}.timeout`));
   }
-  if (shortTimeoutEvents.has(event) && typeof value.timeout === "number" && value.timeout > 3) {
+  if (event === "SessionEnd" && typeof value.timeout === "number" && value.timeout > 3) {
     findings.push(invalidShape(sourcePath, `${field}.timeout`));
   }
   if (value.statusMessage !== undefined && typeof value.statusMessage !== "string") {
@@ -137,8 +136,8 @@ function validateHandler(
     return [invalidShape(sourcePath, `${field}.type`)];
   }
 
-  // Codex runs command hooks asynchronously on every event except SessionEnd.
-  if (value.async !== undefined && typeof value.async !== "boolean") {
+  // Codex runs command hooks asynchronously on every event except SessionEnd; other handler types have no async field.
+  if (value.type === "command" && value.async !== undefined && typeof value.async !== "boolean") {
     findings.push(invalidShape(sourcePath, `${field}.async`));
   } else if (value.async === true && (value.type !== "command" || event === "SessionEnd")) {
     findings.push(warning("plugin.hook.async_unsupported", sourcePath, event, `${field}.async`));
