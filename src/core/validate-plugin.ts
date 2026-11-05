@@ -50,7 +50,7 @@ function buildWarning(
   };
 }
 
-function hasInvalidComponentPath(findings: Finding[], field: "skills" | "mcpServers"): boolean {
+function hasInvalidComponentPath(findings: Finding[], field: string): boolean {
   return findings.some(
     (finding) => finding.id === "plugin.manifest.invalid_path" && finding.evidence?.field === field
   );
@@ -389,18 +389,28 @@ function validateRequiredManifestFields(
   return findings;
 }
 
-async function validateSkillsDirectory(
-  discoveredPackage: DiscoveredPackage
-): Promise<Finding[]> {
-  const { manifest, rootPath } = discoveredPackage;
+interface SkillsPathEntry {
+  configuredPath: string;
+  field: string;
+}
 
-  if (manifest.skills === undefined) {
-    return [];
+// Codex accepts `skills` as one path or a list of paths.
+function manifestSkillsPaths(manifest: DiscoveredPackage["manifest"]): SkillsPathEntry[] {
+  if (typeof manifest.skills === "string") {
+    return [{ configuredPath: manifest.skills, field: "skills" }];
   }
+  if (Array.isArray(manifest.skills) && manifest.skills.every((value) => typeof value === "string")) {
+    return manifest.skills.map((configuredPath, index) => ({ configuredPath, field: `skills[${index}]` }));
+  }
+  return [];
+}
 
-  if (typeof manifest.skills !== "string") return [];
-
-  const skillsPath = path.resolve(rootPath, manifest.skills);
+async function validateSkillsDirectory(
+  discoveredPackage: DiscoveredPackage,
+  { configuredPath, field }: SkillsPathEntry
+): Promise<Finding[]> {
+  const { rootPath } = discoveredPackage;
+  const skillsPath = path.resolve(rootPath, configuredPath);
 
   if (!isPathWithinRoot(rootPath, skillsPath)) {
     return [
@@ -411,8 +421,8 @@ async function validateSkillsDirectory(
         "Keep the `skills` path inside the plugin root.",
         {
           manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
-          field: "skills",
-          configuredPath: manifest.skills,
+          field,
+          configuredPath,
           resolvedPath: relativePackagePath(rootPath, skillsPath)
         }
       )
@@ -433,8 +443,8 @@ async function validateSkillsDirectory(
       `Create the skills directory at \`${skillsPath}\` or update the manifest path.`,
       {
         manifestPath: relativePackagePath(rootPath, discoveredPackage.manifestPath),
-        field: "skills",
-        configuredPath: manifest.skills,
+        field,
+        configuredPath,
         resolvedPath: relativePackagePath(rootPath, skillsPath)
       }
     )
@@ -442,15 +452,11 @@ async function validateSkillsDirectory(
 }
 
 async function validateSkillDefinitions(
-  discoveredPackage: DiscoveredPackage
+  discoveredPackage: DiscoveredPackage,
+  { configuredPath }: SkillsPathEntry
 ): Promise<Finding[]> {
-  const { manifest, rootPath } = discoveredPackage;
-
-  if (typeof manifest.skills !== "string") {
-    return [];
-  }
-
-  const skillsPath = path.resolve(rootPath, manifest.skills);
+  const { rootPath } = discoveredPackage;
+  const skillsPath = path.resolve(rootPath, configuredPath);
 
   if (!isPathWithinRoot(rootPath, skillsPath)) {
     return [];
@@ -806,14 +812,21 @@ export async function validatePlugin(
 
   const componentFindings = await validatePluginComponents(discoveredPackage);
   const hookFindings = await validatePluginHooks(discoveredPackage);
-  const hasInvalidSkillsPath = hasInvalidComponentPath(componentFindings, "skills");
+  const skillsPaths = manifestSkillsPaths(discoveredPackage.manifest)
+    .filter((entry) => !hasInvalidComponentPath(componentFindings, entry.field));
+  const skillsFindings: Finding[] = [];
+  for (const entry of skillsPaths) {
+    skillsFindings.push(...await validateSkillsDirectory(discoveredPackage, entry));
+  }
+  for (const entry of skillsPaths) {
+    skillsFindings.push(...await validateSkillDefinitions(discoveredPackage, entry));
+  }
   const hasInvalidMcpPath = hasInvalidComponentPath(componentFindings, "mcpServers");
   const staticFindings = [
     ...validateRequiredManifestFields(discoveredPackage),
     ...componentFindings,
     ...hookFindings,
-    ...(hasInvalidSkillsPath ? [] : await validateSkillsDirectory(discoveredPackage)),
-    ...(hasInvalidSkillsPath ? [] : await validateSkillDefinitions(discoveredPackage)),
+    ...skillsFindings,
     ...(hasInvalidMcpPath ? [] : await validateMcpConfig(discoveredPackage))
   ];
   const staticFailed = staticFindings.some(

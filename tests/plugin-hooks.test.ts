@@ -141,12 +141,93 @@ describe("plugin lifecycle hooks", () => {
     ]));
   });
 
-  it("rejects a SessionEnd timeout over three seconds", async () => {
+  it.each(["SessionEnd", "Interrupt"])("rejects a %s timeout over three seconds", async (event) => {
     const rootPath = await createPlugin({
-      hooks: { SessionEnd: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
+      hooks: { [event]: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
     });
 
     expect(findingIds(await validatePlugin(rootPath))).toContain("plugin.hook.invalid_shape");
+  });
+
+  it.each(["PreModelRequest", "PostModelRequest", "Interrupt"])("accepts the %s event", async (event) => {
+    const rootPath = await createPlugin({
+      hooks: { [event]: [{ hooks: [{ type: "command", command: "node scripts/check.js" }] }] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
+  });
+
+  it.each(["PreModelRequest", "PostModelRequest", "Interrupt"])("reports a matcher on %s as ignored", async (event) => {
+    const rootPath = await createPlugin({
+      hooks: { [event]: [{ matcher: "anything", hooks: [{ type: "command", command: "node scripts/check.js" }] }] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual(["plugin.hook.matcher_ignored"]);
+  });
+
+  it("accepts MCP tool handlers and checks their fields", async () => {
+    const validRoot = await createPlugin({
+      hooks: {
+        PostToolUse: [{ matcher: "Bash", hooks: [
+          { type: "mcp_tool", server: "audit", tool: "record", input: { level: "info", tags: ["a"] }, timeout: 5, statusMessage: "Recording" },
+          { type: "mcp_tool", server: "audit", tool: "record" }
+        ] }],
+        Interrupt: [{ hooks: [{ type: "mcp_tool", server: "audit", tool: "record" }] }]
+      }
+    });
+    expect(findingIds(await validatePlugin(validRoot))).toEqual([]);
+
+    const invalidRoot = await createPlugin({
+      hooks: { PostToolUse: [{ hooks: [
+        { type: "mcp_tool", tool: "record" },
+        { type: "mcp_tool", server: " ", tool: "record" },
+        { type: "mcp_tool", server: "audit", tool: 3 },
+        { type: "mcp_tool", server: "audit", tool: "record", input: ["level"] },
+        { type: "mcp_tool", server: "audit", tool: "record", input: { level: null } },
+        { type: "mcp_tool", server: "audit", tool: "record", timeout: 0 },
+        { type: "mcp_tool", server: "audit", tool: "record", statusMessage: 1 }
+      ] }] }
+    });
+    const result = await validatePlugin(invalidRoot);
+    expect(findingIds(result).filter((id) => id === "plugin.hook.invalid_shape")).toHaveLength(7);
+    expect(result.findings.map((finding) => finding.evidence?.field)).toEqual(expect.arrayContaining([
+      "hooks.PostToolUse[0].hooks[0].server",
+      "hooks.PostToolUse[0].hooks[1].server",
+      "hooks.PostToolUse[0].hooks[2].tool",
+      "hooks.PostToolUse[0].hooks[3].input",
+      "hooks.PostToolUse[0].hooks[4].input",
+      "hooks.PostToolUse[0].hooks[5].timeout",
+      "hooks.PostToolUse[0].hooks[6].statusMessage"
+    ]));
+  });
+
+  it("warns that SessionEnd skips MCP tool handlers and that MCP tool handlers never run asynchronously", async () => {
+    const rootPath = await createPlugin({
+      hooks: {
+        SessionEnd: [{ hooks: [{ type: "mcp_tool", server: "audit", tool: "record" }] }],
+        Stop: [{ hooks: [{ type: "mcp_tool", server: "audit", tool: "record", async: true }] }]
+      }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([
+      "plugin.hook.unsupported_handler",
+      "plugin.hook.async_unsupported"
+    ]);
+  });
+
+  it("accepts async command hooks and warns only on SessionEnd, which runs them synchronously", async () => {
+    const asyncRoot = await createPlugin({
+      hooks: {
+        PreToolUse: [{ hooks: [{ type: "command", command: "node scripts/log.js", async: true }] }],
+        Interrupt: [{ hooks: [{ type: "command", command: "node scripts/log.js", async: true }] }]
+      }
+    });
+    expect(findingIds(await validatePlugin(asyncRoot))).toEqual([]);
+
+    const sessionEndRoot = await createPlugin({
+      hooks: { SessionEnd: [{ hooks: [{ type: "command", command: "node scripts/log.js", async: true }] }] }
+    });
+    expect(findingIds(await validatePlugin(sessionEndRoot))).toEqual(["plugin.hook.async_unsupported"]);
   });
 
   it("audits command and commandWindows without leaking command content", async () => {
