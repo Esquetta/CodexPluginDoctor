@@ -335,43 +335,54 @@ function validateRequiredManifestFields(
     discoveredPackage.manifestPath
   );
 
-  if (!manifest.name) {
-    findings.push(
-      buildFailure(
-        "plugin.manifest.name.missing",
-        "The plugin manifest is missing a `name` field.",
-        "Codex cannot identify the plugin reliably without a stable package name.",
-        "Add a kebab-case `name` field to `.codex-plugin/plugin.json`.",
-        { manifestPath, field: "name" }
-      )
-    );
-  }
+  const missingFields = [
+    {
+      field: "name",
+      impact: "Codex names the plugin after its folder, so renaming or copying the folder changes the plugin's name.",
+      suggestedFix: "Add a kebab-case `name` field to `.codex-plugin/plugin.json`."
+    },
+    {
+      field: "version",
+      impact: "Release and compatibility workflows cannot reason about the package version.",
+      suggestedFix: "Add a semantic `version` field to `.codex-plugin/plugin.json`."
+    },
+    {
+      field: "description",
+      impact: "The package will be harder to understand and present in Codex surfaces.",
+      suggestedFix: "Add a concise `description` field to `.codex-plugin/plugin.json`."
+    }
+  ] as const;
 
-  if (!manifest.version) {
-    findings.push(
-      buildFailure(
-        "plugin.manifest.version.missing",
-        "The plugin manifest is missing a `version` field.",
-        "Release and compatibility workflows cannot reason about the package version.",
-        "Add a semantic `version` field to `.codex-plugin/plugin.json`.",
-        { manifestPath, field: "version" }
-      )
-    );
-  }
-
-  if (!manifest.description) {
-    findings.push(
-      buildFailure(
-        "plugin.manifest.description.missing",
-        "The plugin manifest is missing a `description` field.",
-        "The package will be harder to understand and present in Codex surfaces.",
-        "Add a concise `description` field to `.codex-plugin/plugin.json`.",
-        { manifestPath, field: "description" }
-      )
-    );
+  for (const { field, impact, suggestedFix } of missingFields) {
+    const value: unknown = manifest[field];
+    // Codex loads a plugin without these fields, or with them blank, and names it after its folder
+    // when `name` is blank; it refuses the whole manifest when one is not a string (only
+    // `version` and `description` may be null).
+    if (value === undefined || (value === null && field !== "name") || (typeof value === "string" && value.trim() === "")) {
+      findings.push(
+        buildWarning(
+          `plugin.manifest.${field}.missing`,
+          `The plugin manifest is missing a \`${field}\` field.`,
+          impact,
+          suggestedFix,
+          { manifestPath, field }
+        )
+      );
+    } else if (typeof value !== "string") {
+      findings.push(
+        buildFailure(
+          "plugin.manifest.invalid_field",
+          `The plugin manifest field \`${field}\` has an invalid value.`,
+          "Codex does not load a plugin whose manifest has a non-string `name`, `version`, or `description`.",
+          `Set \`${field}\` to a string in .codex-plugin/plugin.json.`,
+          { manifestPath, field }
+        )
+      );
+    }
   }
 
   if (
+    typeof manifest.description === "string" &&
     manifest.description &&
     isDescriptionLikelyVerbose(manifest.description, "plugin")
   ) {

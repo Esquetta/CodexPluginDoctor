@@ -100,6 +100,50 @@ describe("plugin component validation", () => {
     expect(findings.flatMap((finding) => Object.values(finding.evidence ?? {}))).not.toContain("mailto:ada@example.test");
   });
 
+  it("warns, without failing, about a missing version and description and a blank name, which Codex loads", async () => {
+    const rootPath = await createPlugin({ name: "  ", version: undefined, description: undefined });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.findings.map((finding) => [finding.id, finding.severity])).toEqual([
+      ["plugin.manifest.name.missing", "warn"],
+      ["plugin.manifest.version.missing", "warn"],
+      ["plugin.manifest.description.missing", "warn"]
+    ]);
+  });
+
+  it("warns about a null version or description, which Codex reads as missing", async () => {
+    const rootPath = await createPlugin({ version: null, description: null });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings.map((finding) => [finding.id, finding.severity])).toEqual([
+      ["plugin.manifest.version.missing", "warn"],
+      ["plugin.manifest.description.missing", "warn"]
+    ]);
+  });
+
+  it.each([
+    ["name", null],
+    ["name", 5],
+    ["version", 0],
+    ["version", false],
+    ["description", false],
+    ["description", ["Fixture"]]
+  ])("rejects a non-string %s %j, since Codex then does not load the manifest", async (field, value) => {
+    const rootPath = await createPlugin({ [field]: value });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.status).toBe("fail");
+    expect(result.findings).toEqual([expect.objectContaining({
+      id: "plugin.manifest.invalid_field",
+      severity: "fail",
+      evidence: expect.objectContaining({ field })
+    })]);
+  });
+
   it("accepts interface.defaultPrompt as a single string", async () => {
     const rootPath = await createPlugin({ interface: { defaultPrompt: "Summarise this repository" } });
 
@@ -113,6 +157,44 @@ describe("plugin component validation", () => {
 
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]).toMatchObject({ id: "plugin.manifest.invalid_field", evidence: { field: "interface.defaultPrompt" } });
+  });
+
+  it("warns about each default prompt Codex ignores: empty, over 128 characters, or past the third usable one", async () => {
+    const rootPath = await createPlugin({
+      interface: {
+        defaultPrompt: [" Summarise   this ", "   ", "x".repeat(129), `${"y".repeat(127)}  z`, "Draft the reply", "Archive old mail", "One too many"]
+      }
+    });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.findings.map((finding) => [finding.id, finding.severity, finding.evidence?.field])).toEqual([
+      ["plugin.manifest.default_prompt_ignored", "warn", "interface.defaultPrompt[1]"],
+      ["plugin.manifest.default_prompt_ignored", "warn", "interface.defaultPrompt[2]"],
+      ["plugin.manifest.default_prompt_ignored", "warn", "interface.defaultPrompt[3]"],
+      ["plugin.manifest.default_prompt_ignored", "warn", "interface.defaultPrompt"]
+    ]);
+  });
+
+  it("accepts three default prompts of up to 128 characters after collapsing whitespace", async () => {
+    const rootPath = await createPlugin({
+      interface: { defaultPrompt: [`${"a".repeat(64)}    ${"b".repeat(63)}`, "Draft the reply", "Archive old mail"] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
+  });
+
+  it.each([["   "], ["x".repeat(129)]])("warns that Codex ignores the single default prompt %j", async (defaultPrompt) => {
+    const rootPath = await createPlugin({ interface: { defaultPrompt } });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings).toEqual([expect.objectContaining({
+      id: "plugin.manifest.default_prompt_ignored",
+      severity: "warn",
+      evidence: expect.objectContaining({ field: "interface.defaultPrompt" })
+    })]);
   });
 
   it("accepts skills as a list of package paths and checks the skills in each one", async () => {

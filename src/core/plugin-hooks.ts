@@ -11,6 +11,10 @@ import { auditHookCommand } from "../security/security-audit.js";
 import { resolveSafePackagePath } from "./plugin-components.js";
 
 const ignoredMatcherEvents = new Set(["Stop", "UserPromptSubmit", "PreModelRequest", "PostModelRequest", "Interrupt"]);
+// Codex caps hook timeouts on these events at three seconds.
+const shortTimeoutEvents = new Set(["SessionEnd", "Interrupt"]);
+// Only these events can emit additional context, so Codex ignores `additionalContextLimit` elsewhere.
+const additionalContextEvents = new Set(["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "SubagentStart"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,6 +95,16 @@ function warning(id: string, sourcePath: string, event: string, field: string): 
       "A plugin lifecycle hook matcher is ignored for this event.",
       "This lifecycle event does not use matcher filtering.",
       "Remove the matcher from this event group."
+    ],
+    "plugin.hook.timeout_clamped": [
+      "A plugin lifecycle hook timeout is longer than the host allows for this event.",
+      "The host shortens `SessionEnd` and `Interrupt` hook timeouts to three seconds.",
+      "Set `timeout` to 3 or less on this handler."
+    ],
+    "plugin.hook.additional_context_ignored": [
+      "A plugin lifecycle hook sets `additionalContextLimit` on an event that cannot add context.",
+      "The host applies `additionalContextLimit` only on `PreToolUse`, `PostToolUse`, `SessionStart`, `UserPromptSubmit`, and `SubagentStart`.",
+      "Remove `additionalContextLimit` from this handler."
     ]
   };
   const [message, impact, suggestedFix] = messages[id];
@@ -101,7 +115,8 @@ function validateTimeoutAndStatus(
   value: Record<string, unknown>,
   sourcePath: string,
   event: string,
-  field: string
+  field: string,
+  runs = true
 ): Finding[] {
   const findings: Finding[] = [];
   if (value.timeout !== undefined && (
@@ -109,8 +124,8 @@ function validateTimeoutAndStatus(
   )) {
     findings.push(invalidShape(sourcePath, `${field}.timeout`));
   }
-  if (event === "SessionEnd" && typeof value.timeout === "number" && value.timeout > 3) {
-    findings.push(invalidShape(sourcePath, `${field}.timeout`));
+  if (runs && shortTimeoutEvents.has(event) && typeof value.timeout === "number" && value.timeout > 3) {
+    findings.push(warning("plugin.hook.timeout_clamped", sourcePath, event, `${field}.timeout`));
   }
   if (value.statusMessage !== undefined && typeof value.statusMessage !== "string") {
     findings.push(invalidShape(sourcePath, `${field}.statusMessage`));
@@ -157,7 +172,8 @@ function validateHandler(
     if (value.input !== undefined && (!isPlainObject(value.input) || containsNull(value.input))) {
       findings.push(invalidShape(sourcePath, `${field}.input`));
     }
-    findings.push(...validateTimeoutAndStatus(value, sourcePath, event, field));
+    // Codex skips MCP tool handlers on SessionEnd before it shortens their timeout.
+    findings.push(...validateTimeoutAndStatus(value, sourcePath, event, field, event !== "SessionEnd"));
     return findings;
   }
 
@@ -180,6 +196,8 @@ function validateHandler(
     value.additionalContextLimit < 0
   )) {
     findings.push(invalidShape(sourcePath, `${field}.additionalContextLimit`));
+  } else if (value.additionalContextLimit !== undefined && !additionalContextEvents.has(event)) {
+    findings.push(warning("plugin.hook.additional_context_ignored", sourcePath, event, `${field}.additionalContextLimit`));
   }
   return findings;
 }
@@ -187,6 +205,10 @@ function validateHandler(
 function validateConfig(rootPath: string, config: unknown, sourcePath: string): Finding[] {
   if (!isPlainObject(config)) return [invalidShape(sourcePath, "root")];
   const findings: Finding[] = [];
+  // Codex rejects the whole hook configuration when it has any other top-level key.
+  for (const key of Object.keys(config)) {
+    if (key !== "description" && key !== "hooks") findings.push(invalidShape(sourcePath, key));
+  }
   if (config.description !== undefined && typeof config.description !== "string") {
     findings.push(invalidShape(sourcePath, "description"));
   }

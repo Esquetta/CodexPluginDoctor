@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -3792,6 +3792,60 @@ describe("runCli", () => {
     expect(stderr).toEqual([]);
     expect(output).toContain("No safe automatic fixes available.");
     expect(output).not.toContain("external-skill");
+  });
+
+  it("plans skill fixes for each directory in a skills list, once per directory and never outside the plugin root", async () => {
+    const workspacePath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-skills-list-"));
+    const targetPath = path.join(workspacePath, "plugin");
+    const manifestDirectory = path.join(targetPath, ".codex-plugin");
+    await mkdir(manifestDirectory, { recursive: true });
+    await mkdir(path.join(targetPath, "skills", "draft"), { recursive: true });
+    await mkdir(path.join(workspacePath, "outside-skills", "external-skill"), { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "plugin.json"),
+      JSON.stringify({
+        name: "skills-list-plugin",
+        version: "0.1.0",
+        description: "A plugin with a skills list.",
+        skills: ["../outside-skills", "./skills", "./more-skills", "./skills/"],
+        mcpServers: "./.mcp.json"
+      }, null, 2),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--dry-run", "--json"], io);
+    const report = JSON.parse(stdout.join(""));
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(report.actions.map((action: { id: string; relativePath: string }) => [action.id, action.relativePath])).toEqual([
+      ["skills.create_directory", "more-skills"],
+      ["skill.scaffold_skill_md", "skills/draft/SKILL.md"],
+      ["mcp.scaffold_config", ".mcp.json"]
+    ]);
+  });
+
+  it("does not plan a skills directory below a link that leads out of the plugin root", async () => {
+    const workspacePath = await mkdtemp(path.join(os.tmpdir(), "codex-plugin-doctor-fix-skills-link-"));
+    const targetPath = path.join(workspacePath, "plugin");
+    const outsidePath = path.join(workspacePath, "outside");
+    await mkdir(path.join(targetPath, ".codex-plugin"), { recursive: true });
+    await mkdir(outsidePath, { recursive: true });
+    await symlink(outsidePath, path.join(targetPath, "vendor"), "junction");
+    await writeFile(
+      path.join(targetPath, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ name: "skills-link-plugin", version: "0.1.0", description: "A plugin with a linked skills path.", skills: "./vendor/skills" }),
+      "utf8"
+    );
+    const { io, stdout, stderr } = createIo();
+
+    const exitCode = await runCli(["fix", targetPath, "--apply", "--backup"], io);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Files changed: 0");
+    expect(await readdir(outsidePath)).toEqual([]);
   });
 
   it("writes the JSON report to the requested output path", async () => {

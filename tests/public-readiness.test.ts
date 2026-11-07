@@ -240,7 +240,7 @@ describe("public repository readiness", () => {
     expect(architecture).toContain("no network requests");
     expect(architecture).toContain("does not submit a package");
     expect(architecture).toContain("manual_review_required");
-    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.91.1");
+    expect(actionGuide).toContain("Esquetta/CodexPluginDoctor@v1.92.0");
     expect(actionGuide).toContain('submission: "true"');
     expect(actionGuide).toContain('require-submission-ready: "true"');
     expect(actionGuide).toContain("submission-json-path");

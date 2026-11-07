@@ -168,10 +168,51 @@ function validateMetadata(manifest: PluginManifest, manifestPath: string): Findi
     validateStringArray(manifest.interface[field], `interface.${field}`, manifestPath, findings);
   }
   // Codex accepts one default prompt as a string or several as an array.
-  if (typeof manifest.interface.defaultPrompt !== "string") {
-    validateStringArray(manifest.interface.defaultPrompt, "interface.defaultPrompt", manifestPath, findings);
+  const defaultPrompt = manifest.interface.defaultPrompt;
+  if (typeof defaultPrompt === "string") {
+    validateDefaultPromptText(defaultPrompt, "interface.defaultPrompt", manifestPath, findings);
+  } else if (Array.isArray(defaultPrompt) && defaultPrompt.every((prompt): prompt is string => typeof prompt === "string")) {
+    let accepted = 0;
+    for (const [index, prompt] of defaultPrompt.entries()) {
+      // Codex keeps the first three usable prompts and ignores the rest.
+      if (accepted === maxDefaultPrompts) {
+        findings.push(defaultPromptIgnored("interface.defaultPrompt", `Codex uses at most ${maxDefaultPrompts} default prompts, so it ignores the rest.`, manifestPath));
+        break;
+      }
+      if (validateDefaultPromptText(prompt, `interface.defaultPrompt[${index}]`, manifestPath, findings)) accepted += 1;
+    }
+  } else {
+    validateStringArray(defaultPrompt, "interface.defaultPrompt", manifestPath, findings);
   }
   return findings;
+}
+
+const maxDefaultPrompts = 3;
+const maxDefaultPromptLength = 128;
+
+function defaultPromptIgnored(field: string, impact: string, manifestPath: string): Finding {
+  return {
+    id: "plugin.manifest.default_prompt_ignored",
+    severity: "warn",
+    message: `Codex ignores the default prompt in \`${field}\`.`,
+    impact,
+    suggestedFix: `Keep at most ${maxDefaultPrompts} non-empty default prompts of up to ${maxDefaultPromptLength} characters each.`,
+    evidence: { manifestPath, field }
+  };
+}
+
+// Mirrors Codex, which collapses whitespace before checking a prompt.
+function validateDefaultPromptText(prompt: string, field: string, manifestPath: string, findings: Finding[]): boolean {
+  const normalized = prompt.split(/\s+/).filter(Boolean).join(" ");
+  if (normalized === "") {
+    findings.push(defaultPromptIgnored(field, "Codex ignores an empty default prompt.", manifestPath));
+    return false;
+  }
+  if ([...normalized].length > maxDefaultPromptLength) {
+    findings.push(defaultPromptIgnored(field, `Codex ignores a default prompt longer than ${maxDefaultPromptLength} characters.`, manifestPath));
+    return false;
+  }
+  return true;
 }
 
 export async function validatePluginComponents(discoveredPackage: DiscoveredPackage): Promise<Finding[]> {
