@@ -4,6 +4,24 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.92.0] - 2026-11-07
+
+### Changed
+
+- a missing or blank `name`, `version`, or `description` in `.codex-plugin/plugin.json`, or a `null` `version` or `description`, is a warning instead of a failure, because Codex 0.167.0 loads such a plugin and names it after its folder when `name` is blank; the finding IDs are unchanged, and a policy such as `codex-publish` still fails on them, as on any warning
+- a `SessionEnd` hook timeout over 3 seconds is reported as `plugin.hook.timeout_clamped`, a warning, instead of `plugin.hook.invalid_shape`, because Codex shortens it to 3 seconds; the same warning now covers an `Interrupt` timeout over 3 seconds, which Codex also shortens and which was accepted without a finding
+- `fix` plans a missing skills directory at the path the manifest names, once for each missing directory in a `skills` list and never below a link that leads out of the package, instead of always at `skills`, and plans `SKILL.md` and frontmatter fixes in each listed directory instead of only for a single `skills` path; a listed path outside the plugin root is skipped without stopping the other plans
+
+### Added
+
+- `plugin.manifest.default_prompt_ignored` warns about each default prompt Codex ignores: one that is empty or longer than 128 characters after Codex collapses its whitespace, and, in a list, everything after the first three prompts Codex uses
+- `plugin.hook.additional_context_ignored` warns about `additionalContextLimit` on a command hook for an event other than `PreToolUse`, `PostToolUse`, `SessionStart`, `UserPromptSubmit`, and `SubagentStart`, which Codex ignores because the event cannot add context
+
+### Fixed
+
+- a `name`, `version`, or `description` that is not a string, such as `"version": 1` or `"name": null`, fails as `plugin.manifest.invalid_field`, because Codex then does not load the manifest; before, a truthy value passed and a falsy one failed as missing
+- a hook configuration, in a hook file or inline in the manifest, with a top-level key other than `description` and `hooks` fails with `plugin.hook.invalid_shape` and the key as its `field`, because Codex skips every hook in it; it was accepted before
+
 ## [1.91.1] - 2026-11-05
 
 ### Fixed

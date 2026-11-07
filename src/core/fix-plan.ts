@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { validatePlugin } from "./validate-plugin.js";
@@ -50,6 +50,17 @@ function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
   );
 }
 
+// A missing directory can sit below a symlink that leads out of the package.
+async function existingAncestorWithinRoot(rootPath: string, candidatePath: string): Promise<boolean> {
+  for (let current = candidatePath; ; current = path.dirname(current)) {
+    try {
+      return isPathWithinRoot(await realpath(rootPath), await realpath(current));
+    } catch {
+      if (path.dirname(current) === current) return false;
+    }
+  }
+}
+
 export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
   const result = await validatePlugin(targetPath);
   const rootPath = result.targetPath;
@@ -75,13 +86,17 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
     });
   }
 
-  if (findingIds.has("plugin.skills.path.missing")) {
+  for (const finding of result.findings) {
+    const resolvedPath = finding.evidence?.resolvedPath;
+    if (finding.id !== "plugin.skills.path.missing" || typeof resolvedPath !== "string") continue;
+    const skillsPath = path.join(rootPath, resolvedPath);
+    if (!(await existingAncestorWithinRoot(rootPath, skillsPath))) continue;
     actions.push({
       id: "skills.create_directory",
       title: "Create missing skills directory",
-      targetPath: path.join(rootPath, "skills"),
+      targetPath: skillsPath,
       operation: "mkdir",
-      details: "Create the skills directory referenced by the manifest."
+      details: `Create the skills directory referenced by \`${finding.evidence?.field ?? "skills"}\` in the manifest.`
     });
   }
 
@@ -89,14 +104,17 @@ export async function buildFixPlan(targetPath: string): Promise<FixPlan> {
     .then((content) => JSON.parse(content) as { skills?: unknown; mcpServers?: unknown })
     .catch(() => ({}));
 
-  if (typeof manifest.skills === "string") {
-    const skillsPath = path.resolve(rootPath, manifest.skills);
+  // Codex accepts `skills` as one path or a list of paths.
+  const configuredSkills = typeof manifest.skills === "string"
+    ? [manifest.skills]
+    : Array.isArray(manifest.skills) && manifest.skills.every((value): value is string => typeof value === "string")
+      ? manifest.skills
+      : [];
+  const skillsPaths = [...new Set(configuredSkills.map((value) => path.resolve(rootPath, value)))];
 
+  for (const skillsPath of skillsPaths) {
     if (!isPathWithinRoot(rootPath, skillsPath)) {
-      return {
-        targetPath: rootPath,
-        actions
-      };
+      continue;
     }
 
     if (await directoryExists(skillsPath)) {

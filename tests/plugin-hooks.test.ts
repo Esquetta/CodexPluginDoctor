@@ -141,20 +141,74 @@ describe("plugin lifecycle hooks", () => {
     ]));
   });
 
-  it("rejects a SessionEnd timeout over three seconds", async () => {
+  it.each(["SessionEnd", "Interrupt"])("warns that Codex shortens a %s timeout over three seconds to three", async (event) => {
     const rootPath = await createPlugin({
-      hooks: { SessionEnd: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
+      hooks: { [event]: [{ hooks: [
+        { type: "command", command: "node end.js", timeout: 4 },
+        { type: "command", command: "node end.js", timeout: 3 }
+      ] }] }
     });
 
-    expect(findingIds(await validatePlugin(rootPath))).toContain("plugin.hook.invalid_shape");
+    const result = await validatePlugin(rootPath);
+
+    expect(result.status).toBe("warn");
+    expect(result.findings).toEqual([expect.objectContaining({
+      id: "plugin.hook.timeout_clamped",
+      severity: "warn",
+      evidence: expect.objectContaining({ event, field: `hooks.${event}[0].hooks[0].timeout` })
+    })]);
   });
 
-  it("accepts an Interrupt timeout over three seconds, which Codex shortens to three", async () => {
+  it("does not report the timeout of an MCP tool handler on SessionEnd, which Codex skips", async () => {
     const rootPath = await createPlugin({
-      hooks: { Interrupt: [{ hooks: [{ type: "command", command: "node end.js", timeout: 4 }] }] }
+      hooks: { SessionEnd: [{ hooks: [{ type: "mcp_tool", server: "audit", tool: "record", timeout: 5 }] }] }
+    });
+
+    expect(findingIds(await validatePlugin(rootPath))).toEqual(["plugin.hook.unsupported_handler"]);
+  });
+
+  it("does not limit the timeout on other events", async () => {
+    const rootPath = await createPlugin({
+      hooks: { Stop: [{ hooks: [{ type: "command", command: "node stop.js", timeout: 600 }] }] }
     });
 
     expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
+  });
+
+  it.each([
+    ["an inline config", (config: unknown) => config],
+    ["a hook file", () => "./hooks/config.json"]
+  ])("rejects a top-level key other than description and hooks in %s, since Codex then skips every hook in it", async (_name, source) => {
+    const config = { description: "Checks", hooks: hookConfig().hooks, PreToolUse: [] };
+    const rootPath = await createPlugin(source(config));
+    await mkdir(path.join(rootPath, "hooks"), { recursive: true });
+    await writeFile(path.join(rootPath, "hooks", "config.json"), JSON.stringify(config), "utf8");
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings).toEqual([expect.objectContaining({
+      id: "plugin.hook.invalid_shape",
+      severity: "fail",
+      evidence: expect.objectContaining({ field: "PreToolUse" })
+    })]);
+  });
+
+  it("warns about additionalContextLimit on events that cannot add context", async () => {
+    const rootPath = await createPlugin({
+      hooks: Object.fromEntries(
+        ["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "SubagentStart", "Stop", "PreCompact"].map((event) => [
+          event,
+          [{ hooks: [{ type: "command", command: "node scripts/context.js", additionalContextLimit: 4096 }] }]
+        ])
+      )
+    });
+
+    const result = await validatePlugin(rootPath);
+
+    expect(result.findings.map((finding) => [finding.id, finding.evidence?.event])).toEqual([
+      ["plugin.hook.additional_context_ignored", "Stop"],
+      ["plugin.hook.additional_context_ignored", "PreCompact"]
+    ]);
   });
 
   it.each(["PreModelRequest", "PostModelRequest", "Interrupt"])("accepts the %s event", async (event) => {

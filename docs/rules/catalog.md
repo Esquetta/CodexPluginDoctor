@@ -13,10 +13,11 @@ codex-plugin-doctor explain plugin.manifest.missing
 | Rule ID | Severity | Meaning |
 | --- | --- | --- |
 | `plugin.manifest.missing` | fail | Target is not a Codex plugin package root because `.codex-plugin/plugin.json` is missing. |
-| `plugin.manifest.name.missing` | fail | Plugin manifest is missing `name`. |
-| `plugin.manifest.version.missing` | fail | Plugin manifest is missing `version`. |
-| `plugin.manifest.description.missing` | fail | Plugin manifest is missing `description`. |
+| `plugin.manifest.name.missing` | warn | Plugin manifest is missing `name`, or it is blank. |
+| `plugin.manifest.version.missing` | warn | Plugin manifest is missing `version`. |
+| `plugin.manifest.description.missing` | warn | Plugin manifest is missing `description`. |
 | `plugin.manifest.invalid_field` | fail | A plugin manifest optional field is invalid. |
+| `plugin.manifest.default_prompt_ignored` | warn | Codex ignores a default prompt that is empty, longer than 128 characters, or after the first three it uses. |
 | `plugin.manifest.invalid_path` | fail | A plugin manifest path is not a safe package-relative path. |
 | `plugin.app.missing_file` | fail | Manifest points to a missing `.app.json` file. |
 | `plugin.app.invalid_json` | fail | Referenced `.app.json` file is not valid JSON. |
@@ -29,6 +30,8 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.hook.unsupported_handler` | warn | Plugin lifecycle hook uses a handler type the host skips. |
 | `plugin.hook.async_unsupported` | warn | Plugin lifecycle hook requests unsupported asynchronous execution. |
 | `plugin.hook.matcher_ignored` | warn | Plugin lifecycle hook matcher is ignored for this event. |
+| `plugin.hook.timeout_clamped` | warn | Codex shortens a `SessionEnd` or `Interrupt` hook timeout over 3 seconds. |
+| `plugin.hook.additional_context_ignored` | warn | Plugin lifecycle hook sets `additionalContextLimit` on an event that cannot add context. |
 | `plugin.heuristic.description.too_long` | warn | Plugin description is likely too verbose. |
 
 ## Skill Rules

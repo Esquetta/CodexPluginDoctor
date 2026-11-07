@@ -48,16 +48,16 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.manifest.name.missing",
     category: "package",
-    defaultSeverity: "fail",
+    defaultSeverity: "warn",
     summary: "The plugin manifest is missing a stable `name` field.",
-    why: "Codex and release tooling need a stable package name for display, matching, and diagnostics.",
+    why: "Codex names a plugin with a missing or blank `name` after its folder, so renaming or copying the folder changes the plugin's name.",
     fix: "Add a kebab-case `name` field to `.codex-plugin/plugin.json`.",
     example: '{ "name": "github-workflow-doctor" }'
   },
   {
     id: "plugin.manifest.version.missing",
     category: "package",
-    defaultSeverity: "fail",
+    defaultSeverity: "warn",
     summary: "The plugin manifest is missing a `version` field.",
     why: "Compatibility checks and release workflows cannot reason about package changes without a version.",
     fix: "Add a semantic `version` field to `.codex-plugin/plugin.json`.",
@@ -66,7 +66,7 @@ export const ruleCatalog: RuleDefinition[] = [
   {
     id: "plugin.manifest.description.missing",
     category: "package",
-    defaultSeverity: "fail",
+    defaultSeverity: "warn",
     summary: "The plugin manifest is missing a `description` field.",
     why: "Plugin surfaces and reviewers need concise package metadata to understand what the plugin does.",
     fix: "Add a short, specific `description` field to `.codex-plugin/plugin.json`.",
@@ -80,6 +80,15 @@ export const ruleCatalog: RuleDefinition[] = [
     why: "Malformed optional metadata cannot be interpreted reliably by Codex clients.",
     fix: "Use the official type for the affected field in `.codex-plugin/plugin.json`.",
     example: '{ "keywords": ["validation", "mcp"] }'
+  },
+  {
+    id: "plugin.manifest.default_prompt_ignored",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "Codex ignores a default prompt in `interface.defaultPrompt`.",
+    why: "Codex ignores a default prompt that is empty or longer than 128 characters after collapsing whitespace, and uses only the first three that remain.",
+    fix: "Keep at most three non-empty default prompts of up to 128 characters each.",
+    example: '{ "interface": { "defaultPrompt": ["Summarize this repository", "Draft release notes"] } }'
   },
   {
     id: "plugin.manifest.invalid_path",
@@ -188,6 +197,24 @@ export const ruleCatalog: RuleDefinition[] = [
     why: "This lifecycle event does not use matcher filtering.",
     fix: "Remove the matcher from this event group.",
     example: '{ "hooks": { "Stop": [{ "hooks": [] }] } }'
+  },
+  {
+    id: "plugin.hook.timeout_clamped",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "A plugin lifecycle hook timeout is longer than the host allows for this event.",
+    why: "The host shortens `SessionEnd` and `Interrupt` hook timeouts to three seconds.",
+    fix: "Set `timeout` to 3 or less on this handler.",
+    example: '{ "hooks": { "SessionEnd": [{ "hooks": [{ "type": "command", "command": "node hooks/end.js", "timeout": 3 }] }] } }'
+  },
+  {
+    id: "plugin.hook.additional_context_ignored",
+    category: "package",
+    defaultSeverity: "warn",
+    summary: "A plugin lifecycle hook sets `additionalContextLimit` on an event that cannot add context.",
+    why: "The host applies `additionalContextLimit` only on `PreToolUse`, `PostToolUse`, `SessionStart`, `UserPromptSubmit`, and `SubagentStart`.",
+    fix: "Remove `additionalContextLimit` from this handler.",
+    example: '{ "type": "command", "command": "node hooks/stop.js" }'
   },
   {
     id: "plugin.heuristic.description.too_long",
