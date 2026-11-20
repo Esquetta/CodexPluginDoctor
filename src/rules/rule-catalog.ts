@@ -86,8 +86,8 @@ export const ruleCatalog: RuleDefinition[] = [
     category: "package",
     defaultSeverity: "warn",
     summary: "Codex ignores a default prompt in `interface.defaultPrompt`.",
-    why: "Codex ignores a default prompt that is empty or longer than 128 characters after collapsing whitespace, and uses only the first three that remain.",
-    fix: "Keep at most three non-empty default prompts of up to 128 characters each.",
+    why: "Codex ignores a default prompt that is empty or longer than 512 characters after collapsing whitespace, and uses only the first three that remain.",
+    fix: "Keep at most three non-empty default prompts of up to 512 characters each.",
     example: '{ "interface": { "defaultPrompt": ["Summarize this repository", "Draft release notes"] } }'
   },
   {

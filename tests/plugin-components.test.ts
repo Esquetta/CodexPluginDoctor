@@ -159,10 +159,10 @@ describe("plugin component validation", () => {
     expect(result.findings[0]).toMatchObject({ id: "plugin.manifest.invalid_field", evidence: { field: "interface.defaultPrompt" } });
   });
 
-  it("warns about each default prompt Codex ignores: empty, over 128 characters, or past the third usable one", async () => {
+  it("warns about each default prompt Codex ignores: empty, over 512 characters, or past the third usable one", async () => {
     const rootPath = await createPlugin({
       interface: {
-        defaultPrompt: [" Summarise   this ", "   ", "x".repeat(129), `${"y".repeat(127)}  z`, "Draft the reply", "Archive old mail", "One too many"]
+        defaultPrompt: [" Summarise   this ", "   ", "x".repeat(513), `${"y".repeat(511)}  z`, "Draft the reply", "Archive old mail", "One too many"]
       }
     });
 
@@ -177,15 +177,15 @@ describe("plugin component validation", () => {
     ]);
   });
 
-  it("accepts three default prompts of up to 128 characters after collapsing whitespace", async () => {
+  it("accepts three default prompts of up to 512 characters after collapsing whitespace", async () => {
     const rootPath = await createPlugin({
-      interface: { defaultPrompt: [`${"a".repeat(64)}    ${"b".repeat(63)}`, "Draft the reply", "Archive old mail"] }
+      interface: { defaultPrompt: [`${"a".repeat(256)}    ${"b".repeat(255)}`, "c".repeat(129), "😀".repeat(512)] }
     });
 
     expect(findingIds(await validatePlugin(rootPath))).toEqual([]);
   });
 
-  it.each([["   "], ["x".repeat(129)]])("warns that Codex ignores the single default prompt %j", async (defaultPrompt) => {
+  it.each([["   "], ["x".repeat(513)]])("warns that Codex ignores the single default prompt %j", async (defaultPrompt) => {
     const rootPath = await createPlugin({ interface: { defaultPrompt } });
 
     const result = await validatePlugin(rootPath);

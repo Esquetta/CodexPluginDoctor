@@ -87,9 +87,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: Esquetta/CodexPluginDoctor@v1.92.0
+      - uses: Esquetta/CodexPluginDoctor@v1.92.1
         with:
-          version: "1.92.0"
+          version: "1.92.1"
           path: .
           runtime: "true"
           policy: codex-publish
