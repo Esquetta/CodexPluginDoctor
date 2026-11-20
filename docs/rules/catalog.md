@@ -17,7 +17,7 @@ codex-plugin-doctor explain plugin.manifest.missing
 | `plugin.manifest.version.missing` | warn | Plugin manifest is missing `version`. |
 | `plugin.manifest.description.missing` | warn | Plugin manifest is missing `description`. |
 | `plugin.manifest.invalid_field` | fail | A plugin manifest optional field is invalid. |
-| `plugin.manifest.default_prompt_ignored` | warn | Codex ignores a default prompt that is empty, longer than 128 characters, or after the first three it uses. |
+| `plugin.manifest.default_prompt_ignored` | warn | Codex ignores a default prompt that is empty, longer than 512 characters, or after the first three it uses. |
 | `plugin.manifest.invalid_path` | fail | A plugin manifest path is not a safe package-relative path. |
 | `plugin.app.missing_file` | fail | Manifest points to a missing `.app.json` file. |
 | `plugin.app.invalid_json` | fail | Referenced `.app.json` file is not valid JSON. |

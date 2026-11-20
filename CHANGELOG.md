@@ -4,6 +4,12 @@ All notable changes to `codex-plugin-doctor` are documented here.
 
 This changelog groups the shipped work into product-level release blocks instead of repeating every low-level git diff in isolation.
 
+## [1.92.1] - 2026-11-20
+
+### Fixed
+
+- `plugin.manifest.default_prompt_ignored` warns only about a default prompt longer than 512 characters after Codex collapses its whitespace, instead of 128, because Codex 0.169.0 raised its limit to 512 characters; a prompt of 129 to 512 characters no longer gets a warning. `doctor submission` still checks the OpenAI directory's own limit of 128 characters per starter prompt
+
 ## [1.92.0] - 2026-11-07
 
 ### Changed

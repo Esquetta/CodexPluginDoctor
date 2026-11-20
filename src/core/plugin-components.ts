@@ -188,7 +188,7 @@ function validateMetadata(manifest: PluginManifest, manifestPath: string): Findi
 }
 
 const maxDefaultPrompts = 3;
-const maxDefaultPromptLength = 128;
+const maxDefaultPromptLength = 512;
 
 function defaultPromptIgnored(field: string, impact: string, manifestPath: string): Finding {
   return {
