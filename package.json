@@ -63,7 +63,7 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.11.0",
+    "fast-xml-parser": "^5.12.1",
     "iconv-lite": "^0.7.3",
     "yaml": "^2.9.0",
     "yauzl": "^3.4.0"
